@@ -11,8 +11,8 @@ provenance record is intentional and must not be removed by a bulk replacement.
 | Canonical | Accepted legacy input | Compatibility owner |
 | --- | --- | --- |
 | `DEVRYAN_*` | `OPENCHAMBER_*` | Shared-runtime environment helpers adopt unset aliases. Launchers targeting an older child may set both; the canonical value wins. |
-| `@devryan/*` workspace packages | Old installed package/profile paths | Package manifests and lockfile use DevRyan. CLI package-manager detection recognizes both installed scopes and executable names. |
-| `devryan` CLI | `openchamber` | Both bins remain shipped; new help, replay commands, update targets and installer text use DevRyan. |
+| `@devryan/*` workspace packages | Old installed package/profile paths | Package manifests and lockfile use DevRyan. |
+| `devryan` CLI | `openchamber` | Both bins remain shipped; new help and replay commands use DevRyan. |
 | `/api/devryan/*` | `/api/openchamber/*` | First middleware rewrites aliases before admission, auth, multi-user and tunnel policy. |
 | `devryan:*` synthetic events | `openchamber:*` journal/wire records | New emitters use DevRyan. Shared-runtime canonicalizes old reader inputs. `event-dialect.js` rewrites only the leading serialized type: current UI requests `events=devryan`; no-query cached clients retain the legacy wire spelling. Properties and event ordering are unchanged. |
 | `x-devryan-message-id`, `X-DevRyan-Warning`, `x-devryan-ui-session` | `x-openchamber-*` | Readers/preview stripping accept both; compatibility warning headers may be returned under both names. |

@@ -9,6 +9,6 @@
     "@devryan/shared-runtime": "workspace:*"
   },
   "scripts": {
-    "test": "bun test"
+    "test": "node ../../scripts/test-isolation-guard.mjs bun test"
   }
 }

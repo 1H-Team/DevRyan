@@ -42,11 +42,20 @@ describe('bounded test pool', () => {
         require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));
         setInterval(() => {}, 1000);`);
       const lines = [];
+      // On a busy host the 400 ms budget can expire before the unit has even started its
+      // grandchild. The pool logs the expiry before it kills the group, so the log holds that
+      // kill until the grandchild's pid file exists: the group always has a grandchild to kill.
+      const holdKillUntilGrandchild = (line) => {
+        if (!/hung exceeded/.test(line)) return;
+        const tick = new Int32Array(new SharedArrayBuffer(4));
+        const settled = Date.now() + 30_000;
+        while (!(existsSync(pidFile) && readFileSync(pidFile, 'utf8')) && Date.now() < settled) Atomics.wait(tick, 0, 0, 10);
+      };
       const started = performance.now();
       const outcome = await runTestUnits([
         { name: 'hung', timeoutMs: 400, ...hung },
         { name: 'quick', ...node('') },
-      ], { ...quiet, concurrency: 2, log: (line) => lines.push(line) });
+      ], { ...quiet, concurrency: 2, log: (line) => { holdKillUntilGrandchild(line); lines.push(line); } });
       assert.ok(performance.now() - started < 8000, 'the hung unit must not stall the run');
       assert.equal(outcome.passed, false);
       assert.deepEqual(outcome.results.map((row) => [row.name, row.status, row.timedOut]), [['hung', 'failed', true], ['quick', 'passed', false]]);
@@ -101,12 +110,20 @@ describe('bounded test pool', () => {
   });
 
   test('runs units at the same time up to the bound and reports each one', async () => {
-    const units = ['a', 'b', 'c'].map((name) => ({ name, ...node('setTimeout(() => {}, 700)') }));
-    const outcome = await runTestUnits(units, { ...quiet, concurrency: 3 });
-    assert.equal(outcome.passed, true);
-    assert.ok(outcome.wallMs < 1900, `three 700 ms units took ${outcome.wallMs} ms with three slots`);
-    assert.deepEqual(outcome.results.map((row) => [row.name, row.status]), [['a', 'passed'], ['b', 'passed'], ['c', 'passed']]);
-    const serial = await runTestUnits(units.slice(0, 2), { ...quiet, concurrency: 1, log: () => {} });
+    const scratch = mkdtempSync(path.join(os.tmpdir(), 'devryan-test-parallel-'));
+    try {
+      // Each unit marks that it started and exits only once all three have: they pass only if
+      // all three ran at the same time, however slowly a busy host starts them. The budget is a
+      // hang guard: a pool that ran them one after another fails in about 20 s.
+      const together = (name) => ({ name, timeoutMs: 10_000, ...node(`const fs = require('node:fs'), path = require('node:path');
+        fs.writeFileSync(path.join(${JSON.stringify(scratch)}, ${JSON.stringify(name)}), '');
+        const all = setInterval(() => { if (['a', 'b', 'c'].every((peer) => fs.existsSync(path.join(${JSON.stringify(scratch)}, peer)))) clearInterval(all); }, 10);`) });
+      const outcome = await runTestUnits(['a', 'b', 'c'].map(together), { ...quiet, concurrency: 3 });
+      assert.equal(outcome.passed, true, 'three units with three slots did not run at the same time');
+      assert.deepEqual(outcome.results.map((row) => [row.name, row.status]), [['a', 'passed'], ['b', 'passed'], ['c', 'passed']]);
+    } finally { rmSync(scratch, { recursive: true, force: true }); }
+    const units = ['a', 'b'].map((name) => ({ name, ...node('setTimeout(() => {}, 700)') }));
+    const serial = await runTestUnits(units, { ...quiet, concurrency: 1, log: () => {} });
     assert.ok(serial.wallMs >= 1300, `one slot must run units one after another (${serial.wallMs} ms)`);
   });
 

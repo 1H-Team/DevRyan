@@ -20,7 +20,7 @@ export async function reviewQaProjectBrowser({ fixture, check, sanitize = String
   const child = startOwnedProcess(process.execPath, ['src/server.mjs'], { cwd: fixture.fixtureRoot,
     env: { PATH: process.env.PATH, LANG: 'en_US.UTF-8', PORT: String(port), TMPDIR: output } });
   const evidence = { origin, outcome: 'failed', screenshots: [], consoleErrors: [], visualReview: 'pending' };
-  let cdp, browser;
+  let cdp, browser, failed = false, failure;
   const alive = () => { checkAlive(); child.check(); };
   try {
     const deadline = Date.now() + 30_000;
@@ -112,6 +112,7 @@ export async function reviewQaProjectBrowser({ fixture, check, sanitize = String
     assert.deepEqual(evidence.consoleErrors, []);
     evidence.outcome = 'passed';
   } catch (error) {
+    failed = true; failure = error;
     evidence.error = sanitize(error.message);
     if (cdp) {
       const capture = await cdp.send('Page.captureScreenshot', { format: 'png' }).catch(() => null);
@@ -128,7 +129,11 @@ export async function reviewQaProjectBrowser({ fixture, check, sanitize = String
     if (cleanupErrors.length) evidence.cleanupError = cleanupErrors.join('; ');
     await writeFile(path.join(output, 'server.log'), sanitize(child.getLog()), { mode: 0o600 });
     await writeFile(path.join(output, 'result.json'), JSON.stringify(evidence, null, 2), { mode: 0o600 });
-    if (evidence.cleanupError) throw new Error(evidence.cleanupError);
+    if (evidence.cleanupError) {
+      // A cleanup failure is reported with, never instead of, the review's own failure.
+      const cleanupFailure = new Error(evidence.cleanupError);
+      throw failed ? new AggregateError([failure, cleanupFailure], `${failure?.message ?? failure}; cleanup also failed: ${evidence.cleanupError}`, { cause: failure }) : cleanupFailure;
+    }
   }
   return evidence;
 }

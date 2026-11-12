@@ -327,7 +327,6 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     uiAuthController,
     readSettingsFromDiskMigrated,
     normalizeTunnelSessionTtlMs,
-    getRuntimeReady = () => true,
   } = dependencies;
   const requireMultiUserCsrf = (req, res) => {
     if (!uiAuthController.multiUser) return true;
@@ -549,6 +548,12 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     }
   });
 
+  // The tunnel access boundary owns the link exchange, which the controller
+  // accepts only as a same-origin POST, and answers non-local requests for the
+  // exact path /tunnel/connect itself. Local requests, and non-local ones it
+  // passes on (/connect, other letter cases, a trailing slash), reach these GET
+  // routes, so the controller refuses every exchange that reaches here: the
+  // answer is the rate limit or an unusable link, never a session.
   const handleTunnelConnect = async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     try {
@@ -561,37 +566,13 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
         res,
         token,
         sessionTtlMs: tunnelSessionTtlMs,
-        beforeCommit: async () => {
-          if (!getRuntimeReady()) {
-            throw Object.assign(new Error('DevRyan runtime is still starting'), { code: 'runtime_not_ready' });
-          }
-          if (uiAuthController.multiUser && typeof uiAuthController.prepareFreshTunnelLogin === 'function') {
-            await uiAuthController.prepareFreshTunnelLogin(req, res);
-          }
-        },
       });
 
-      if (!exchange.ok) {
-        if (exchange.reason === 'rate-limited') {
-          res.setHeader('Retry-After', String(exchange.retryAfter || 60));
-          return res.status(429).type('text/plain').send('Too many attempts. Please try again later.');
-        }
-        if (exchange.reason === 'exchange-in-progress') {
-          res.setHeader('Retry-After', '1');
-          return res.status(503).type('text/plain').send('Connection is already being prepared. Please retry.');
-        }
-        if (exchange.reason === 'precondition-failed') {
-          res.setHeader('Retry-After', exchange.code === 'runtime_not_ready' ? '2' : '5');
-          return res.status(503).type('text/plain').send(
-            exchange.code === 'runtime_not_ready'
-              ? 'DevRyan is still starting. Please retry this connection link shortly.'
-              : 'Fresh sign-in could not be prepared. Please retry this connection link.',
-          );
-        }
-        return res.status(401).type('text/plain').send('Connection link is invalid or expired.');
+      if (exchange.reason === 'rate-limited') {
+        res.setHeader('Retry-After', String(exchange.retryAfter || 60));
+        return res.status(429).type('text/plain').send('Too many attempts. Please try again later.');
       }
-
-      return res.redirect(302, '/');
+      return res.status(401).type('text/plain').send('Connection link is invalid or expired.');
     } catch {
       return res.status(500).type('text/plain').send('Failed to process connect request.');
     }

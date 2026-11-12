@@ -68,15 +68,25 @@ export function retireLegacyCursorPlugin({ configDirectory, fs: io = fs, hashCon
       throw error;
     }
   };
+  // The temporary file is removed after every attempt. A removal error is raised
+  // only after a successful write: it never replaces the write's own failure.
+  const removeTemporary = (temporary) => { try { io.unlinkSync(temporary); } catch (error) { if (error.code !== 'ENOENT') throw error; } };
+  const withTemporary = (temporary, write) => {
+    try { write(); } catch (error) {
+      try { removeTemporary(temporary); } catch { /* The write's own failure is the one raised. */ }
+      throw error;
+    }
+    removeTemporary(temporary);
+  };
   // Exclusive create and byte checks protect an existing backup; .disabled and
   // .link.json files are never discovered as plugins.
   const writeBackup = (file, bytes) => {
     io.mkdirSync(path.dirname(file), { recursive: true });
     const temporary = `${file}.${crypto.randomUUID()}.tmp`;
-    try {
+    withTemporary(temporary, () => {
       io.writeFileSync(temporary, bytes, { flag: 'wx', mode: 0o600 });
       io.linkSync(temporary, file);
-    } finally { try { io.unlinkSync(temporary); } catch (error) { if (error.code !== 'ENOENT') throw error; } }
+    });
     result.changed = true;
   };
   try {
@@ -146,10 +156,10 @@ export function retireLegacyCursorPlugin({ configDirectory, fs: io = fs, hashCon
     for (const edit of edits) {
       if (!io.readFileSync(edit.file).equals(edit.bytes)) throw new Error('configuration_changed');
       const temporary = `${edit.file}.${crypto.randomUUID()}.tmp`;
-      try {
+      withTemporary(temporary, () => {
         io.writeFileSync(temporary, edit.next, { flag: 'wx', mode: io.statSync(edit.file).mode & 0o777 });
         io.renameSync(temporary, edit.file);
-      } finally { try { io.unlinkSync(temporary); } catch (error) { if (error.code !== 'ENOENT') throw error; } }
+      });
       result.changed = true;
       result.updated.push(edit.file);
     }

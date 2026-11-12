@@ -28,7 +28,10 @@ it('serves concurrent Revert and Redo through the existing HTTP envelopes withou
   await runtime.finish({ directory: project, token: a.token });
   const b = await begin('b'); await fs.writeFile(path.join(b.viewDirectory, 'x'), 'a=3; b=4');
   let session = { id: 'a', directory: project }; let statusReads = 0;
-  const client = { generation: () => 2, sessions: { get: async () => session } };
+  // Session b is busy: a scoped revert of a must not consult that foreign activity (the read this counted
+  // was GET /session/status before the v2 client; its v2 form is sessions.status).
+  const client = { generation: () => 2, sessions: { get: async () => session,
+    status: async () => { statusReads++; return { b: { type: 'busy' } }; } } };
   const nativeConversation = createNativeRevertConversation({ openCodeClient: client, isReady: async () => true,
     privilegedClient: { revert: {
       stage: async (_id, body) => { expect(body.files).toBe(false); session = { ...session, revert: { messageID: body.messageID, files: [] } }; },

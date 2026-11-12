@@ -367,7 +367,6 @@ describe("sync plan lifecycle on message.part.delta", () => {
       planModeUserMessages: new Set(),
       planModeUserMessagesBySession: new Map(),
       starterAssistantMessages: new Map(),
-      pendingChangesBarDismissed: new Map(),
     })
     useSessionWorktreeStore.setState({ attachments: new Map() })
     useSessionPlanFileStore.setState({ recordsBySession: {} })

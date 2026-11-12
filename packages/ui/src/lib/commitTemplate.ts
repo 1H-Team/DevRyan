@@ -22,21 +22,6 @@ export const ALLOWED_COMMIT_TYPES = [
   'revert',
 ] as const;
 
-export const PREFERRED_COMMIT_SCOPES = [
-  'dashboard',
-  'admin',
-  'data',
-  'db',
-  'i18n',
-  'services',
-  'analytics',
-  'booking',
-  'billing',
-  'provider',
-  'professionals',
-  'components',
-] as const;
-
 export const COMMIT_SUBJECT_MAX_LENGTH = 72;
 
 const TYPE_PATTERN = ALLOWED_COMMIT_TYPES.join('|');

@@ -2,12 +2,18 @@
 // Bun schedules them on separate workers). Each test gets a fresh repository,
 // copied from a template rather than `git init`, and fresh private storage.
 import { test as bunTest } from 'bun:test';
+import { assertTestIsolation } from '../../../scripts/test-isolation-check.mjs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { initGitRepository } from '../../../scripts/test-git-template.mjs';
 import { createSessionMutationRuntime } from '../lib/session-mutations.js';
 import { openChangeStore, changeKey } from '../lib/session-changes-store.js';
+
+// A `bun test` started inside a source subfolder reads no bunfig.toml, so the
+// test isolation preload never ran there: this shared setup stops such a run
+// with the same explanation (scripts/test-isolation-check.mjs).
+assertTestIsolation({ selectors: false });
 
 export const roots = [];
 /** A test with the suite's 60 s budget. */

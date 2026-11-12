@@ -10,9 +10,10 @@ import { fileURLToPath } from 'node:url';
 import { bunTestArgs, bunTestWorkers, discoverTestFiles, isBunTestSource } from './test-runner-utils.mjs';
 import { discoverElectronTestFiles, planElectronTests } from './test-electron.mjs';
 import { discoverScriptTestFiles } from './test-scripts.mjs';
-import { FULL_TEST_COMMANDS } from './test-full.mjs';
-import { buildPlan, isVersionOnlyChange, testUnitsForPlan } from './validate.mjs';
+import { FULL_TEST_COMMANDS, FULL_TEST_SUITES } from './test-full.mjs';
+import { buildPlan, describeScriptSelection, isVersionOnlyChange, lintRoots, testUnitsForPlan } from './validate.mjs';
 import { STARTUP_CONTRACT_GROUPS } from './test-startup-contract.mjs';
+import { NODE_ISOLATION_ARGS } from './test-isolation-guard.mjs';
 
 const repoRoot = new URL('..', import.meta.url);
 
@@ -265,7 +266,7 @@ describe('release workflow', () => {
 
 describe('maintenance validation selection', () => {
   test('checks documentation without running unrelated code suites', () => {
-    assert.deepEqual(buildPlan('fast', ['docs/TESTING.md']).commands.map(c => c.label), ['docs:validate']);
+    assert.deepEqual(buildPlan('fast', ['docs/TESTING.md']).commands.map(c => c.label), ['docs:validate', 'test:scripts']);
     assert.deepEqual(buildPlan('fast', []).commands.map(c => c.label), ['test:startup']);
   });
 
@@ -290,6 +291,142 @@ describe('maintenance validation selection', () => {
     }
   });
 
+  test('selects script tests by import graph: a leaf script schedules its tests, a shared helper its importers', () => {
+    const all = discoverScriptTestFiles();
+    const scriptsCommand = file => buildPlan('fast', [file]).commands.find(c => c.label === 'test:scripts');
+    const scheduled = command => testUnitsForPlan([command]).flatMap(unit => unit.args.filter(arg => /test\.[cm]?[jt]sx?$/.test(arg))).map(arg => arg.replace(/^\.\//, '')).sort();
+    const leaf = scriptsCommand('scripts/release-ci-wait.mjs');
+    assert.ok(leaf.tests.includes('scripts/release-ci-wait.test.mjs'));
+    assert.ok(leaf.tests.length < all.length / 10, `${leaf.tests.length} tests`);
+    assert.ok(!leaf.tests.some(file => /\.graph\.test\./.test(file)));
+    assert.deepEqual(scheduled(leaf), leaf.tests);
+    // Every script test that names the helper's path is scheduled, and not the whole suite.
+    const helper = scriptsCommand('scripts/qa/run-root.mjs');
+    const importers = all.filter(file => /['"][^'"]*\/run-root\.mjs['"]/.test(readFileSync(new URL(file, repoRoot), 'utf8')));
+    assert.ok(importers.length > 3);
+    for (const file of importers) assert.ok(helper.tests.includes(file), file);
+    assert.ok(helper.tests.length < all.length);
+    assert.deepEqual(scheduled(helper), helper.tests);
+    // A subset leaves the startup contract's scripts group to run; the whole suite covers it.
+    const subset = buildPlan('fast', ['scripts/release-ci-wait.mjs']);
+    assert.deepEqual(subset.commands.at(-1).coveredBy, []);
+    const lines = describeScriptSelection(subset.scriptSelection, all.length);
+    assert.ok(lines.length <= 2);
+    assert.match(lines[0], new RegExp(`^Script tests: ${leaf.tests.length} of ${all.length} selected`));
+    assert.match(lines[1], /scripts\/release-ci-wait\.mjs: \d+ reaching it.*CI runs every script test/);
+    for (const file of ['scripts/validate.mjs', 'scripts/test-select.mjs', 'scripts/test-pool.mjs', 'bun.lock']) {
+      const plan = buildPlan('fast', [file]);
+      assert.equal(plan.commands.find(c => c.label === 'test:scripts').tests, undefined, file);
+      assert.ok(plan.commands.at(-1).coveredBy.includes('scripts'), file);
+      assert.deepEqual(scheduled(plan.commands.find(c => c.label === 'test:scripts')), [...all].sort(), file);
+    }
+  });
+
+  test('needs Rust only for a change to the ledger core crate, its build script or its tracked module', () => {
+    const plan = files => buildPlan('fast', files);
+    const labels = files => plan(files).commands.map(c => c.label);
+    const ledgerCore = { label: 'ledger-core', executable: 'node', args: ['scripts/build-ledger-core.mjs', '--verify'] };
+    // A new crate file that no source names yet still reaches the contract test.
+    for (const file of ['packages/harness-runtime/native/ledger-core/src/diff.rs', 'packages/harness-runtime/native/ledger-core/src/unnamed-module.rs',
+      'packages/harness-runtime/native/ledger-core/Cargo.lock',
+      'packages/harness-runtime/native/ledger-core/rust-toolchain.toml', 'packages/harness-runtime/native/ledger-core/tests/vectors.tsv',
+      'scripts/build-ledger-core.mjs', 'packages/harness-runtime/lib/native/ledger-core.wasm', 'packages/harness-runtime/lib/native/ledger-core.json']) {
+      const selected = plan([file]);
+      assert.deepEqual(selected.commands.filter(c => c.label === 'ledger-core').map(({ label, executable, args }) => ({ label, executable, args })), [ledgerCore], file);
+      // The contract test, which needs no Rust, runs with it.
+      assert.ok(selected.commands.find(c => c.label === 'test:scripts')?.tests.includes('scripts/build-ledger-core.test.mjs'), file);
+    }
+    // The contract also checks what the workspace's DOCUMENTATION.md says: a docs-only change to it runs the contract, and no cargo.
+    const documentation = plan(['packages/native/DOCUMENTATION.md']);
+    assert.ok(documentation.commands.find(c => c.label === 'test:scripts')?.tests.includes('scripts/check-native.test.mjs'));
+    assert.ok(!documentation.commands.some(c => c.label === 'native'));
+    // The toolchain pin is also checked against CI and the docs.
+    assert.ok(plan(['packages/harness-runtime/native/ledger-core/rust-toolchain.toml']).commands.find(c => c.label === 'test:scripts').tests.includes('scripts/toolchain-pins.test.mjs'));
+    // The loader tests execute the tracked module.
+    assert.ok(labels(['packages/harness-runtime/lib/native/ledger-core.wasm']).includes('test:harness'));
+    assert.ok(!labels(['packages/harness-runtime/native/ledger-core/src/diff.rs']).includes('test:harness'));
+    for (const file of ['packages/harness-runtime/lib/ledger-core.js', 'packages/harness-runtime/lib/session-mutation-text.js', 'scripts/validate.mjs',
+      'packages/web/server/index.js', '.github/workflows/ci.yml', 'docs/TESTING.md']) assert.ok(!labels([file]).includes('ledger-core'), file);
+    assert.ok(labels(['packages/harness-runtime/lib/ledger-core.js']).includes('test:harness'));
+  });
+
+  test('runs the native ledger verify for its workspace, its tests, the ledger core and the JavaScript lock it mirrors', () => {
+    const plan = files => buildPlan('fast', files);
+    const ledgerNative = { label: 'ledger-native', executable: 'node', args: ['scripts/build-ledger-native.mjs', '--verify'] };
+    for (const file of ['packages/harness-runtime/native/ledger/ledger-io/src/atomic.rs', 'packages/harness-runtime/native/ledger/ledger-io/src/unnamed.rs',
+      'packages/harness-runtime/native/ledger/Cargo.lock', 'scripts/build-ledger-native.mjs', 'scripts/ledger-native/atomic-spec.mjs',
+      'packages/harness-runtime/native/ledger-core/src/diff.rs', 'packages/harness-runtime/lib/atomic-file.js']) {
+      const selected = plan([file]);
+      assert.deepEqual(selected.commands.filter(c => c.label === 'ledger-native').map(({ label, executable, args }) => ({ label, executable, args })), [ledgerNative], file);
+    }
+    // A new workspace file that no source names still reaches the Rust-free contract test.
+    assert.ok(plan(['packages/harness-runtime/native/ledger/ledger-io/src/unnamed.rs']).commands.find(c => c.label === 'test:scripts')?.tests.includes('scripts/build-ledger-native.test.mjs'));
+    for (const file of ['packages/harness-runtime/lib/session-mutation-text.js', 'packages/harness-runtime/lib/ledger-core.js', 'scripts/validate.mjs', 'docs/TESTING.md']) {
+      assert.ok(!plan([file]).commands.some(c => c.label === 'ledger-native'), file);
+    }
+  });
+
+  test('runs the Cargo workspace checks only for a change to packages/native or its check script', () => {
+    const plan = files => buildPlan('fast', files);
+    const labels = files => plan(files).commands.map(c => c.label);
+    const native = { label: 'native', executable: 'node', args: ['scripts/check-native.mjs'] };
+    // A new workspace file that no source names yet still reaches the contract test.
+    for (const file of ['packages/native/crates/front/src/proxy.rs', 'packages/native/crates/front/src/unnamed-module.rs', 'packages/native/Cargo.lock',
+      'packages/native/Cargo.toml', 'packages/native/deny.toml', 'packages/native/rust-toolchain.toml', 'packages/native/crates/front/tests/transparency.rs',
+      'scripts/check-native.mjs', 'scripts/check-native-licenses.mjs']) {
+      const selected = plan([file]);
+      assert.deepEqual(selected.commands.filter(c => c.label === 'native').map(({ label, executable, args }) => ({ label, executable, args })), [native], file);
+      assert.ok(selected.commands.find(c => c.label === 'test:scripts')?.tests.includes('scripts/check-native.test.mjs'), file);
+    }
+    // The contract also checks what the workspace's DOCUMENTATION.md says: a docs-only change to it runs the contract, and no cargo.
+    const documentation = plan(['packages/native/DOCUMENTATION.md']);
+    assert.ok(documentation.commands.find(c => c.label === 'test:scripts')?.tests.includes('scripts/check-native.test.mjs'));
+    assert.ok(!documentation.commands.some(c => c.label === 'native'));
+    // The toolchain pin is also checked against CI and the docs.
+    assert.ok(plan(['packages/native/rust-toolchain.toml']).commands.find(c => c.label === 'test:scripts').tests.includes('scripts/toolchain-pins.test.mjs'));
+    for (const file of ['packages/harness-runtime/native/ledger-core/src/diff.rs', 'scripts/validate.mjs', 'packages/web/server/index.js', '.github/workflows/ci.yml',
+      'docs/TESTING.md', 'scripts/qa/front-lane.mjs']) assert.ok(!labels([file]).includes('native'), file);
+    assert.ok(!labels(['packages/native/crates/front/src/proxy.rs']).includes('ledger-core'));
+    assert.ok(!labels(['packages/native/crates/front/src/proxy.rs']).includes('test:web'));
+    // Nothing in the workspace reads the server's sources: a server source change runs no native check and no contract test for it.
+    for (const file of ['packages/web/server/index.js', 'packages/web/server/application.js', 'packages/web/server/lib/opencode/lifecycle.js']) {
+      assert.ok(!plan([file]).commands.find(c => c.label === 'test:scripts')?.tests.includes('scripts/check-native.test.mjs'), file);
+    }
+  });
+
+  test('runs the script tests that read every tracked Markdown file for any Markdown change', () => {
+    const scriptTests = files => buildPlan('fast', files).commands.find(c => c.label === 'test:scripts')?.tests;
+    // docs:validate does not check the release-docs rule, so a docs-only change runs that test too.
+    const docsOnly = buildPlan('fast', ['docs/RELEASE_PIPELINE.md']);
+    assert.deepEqual(docsOnly.commands.map(c => c.label), ['docs:validate', 'test:scripts']);
+    assert.deepEqual(scriptTests(['docs/RELEASE_PIPELINE.md']), ['scripts/release-docs.test.mjs', 'scripts/toolchain-pins.test.mjs']);
+    assert.deepEqual(testUnitsForPlan(docsOnly.commands.filter(c => c.label === 'test:scripts')).flatMap(unit => unit.args.filter(arg => arg.endsWith('.test.mjs'))),
+      ['scripts/release-docs.test.mjs', 'scripts/toolchain-pins.test.mjs']);
+    // Mixed with code: the graph's selection plus the Markdown readers.
+    for (const [code, markdown] of [['scripts/release.mjs', 'docs/RELEASE_PIPELINE.md'], ['scripts/release-ci-wait.mjs', 'scripts/perf/INTERACTIVE.md']]) {
+      const tests = scriptTests([code, markdown]);
+      assert.ok(tests.includes('scripts/release-docs.test.mjs'), code);
+      for (const test of scriptTests([code])) assert.ok(tests.includes(test), `${code}: ${test}`);
+    }
+    // Markdown beside a change that runs no script tests still adds them; the startup scripts group stays.
+    const ui = buildPlan('fast', ['packages/ui/src/App.tsx', 'README.md']);
+    assert.deepEqual(ui.commands.find(c => c.label === 'test:scripts').tests, ['scripts/release-docs.test.mjs', 'scripts/toolchain-pins.test.mjs']);
+    assert.ok(!ui.commands.at(-1).coveredBy.includes('scripts'));
+    assert.match(describeScriptSelection(ui.scriptSelection, 295)[1], /README\.md: 2 reading every tracked Markdown file/);
+    // The rule skips the changelog (history), so a changelog-only change runs none.
+    assert.equal(scriptTests(['CHANGELOG.md']), undefined);
+    // No script test reads tracked .txt files, so a text-only change runs none (docs:validate runs for every change).
+    assert.deepEqual(buildPlan('fast', ['scripts/notes.txt']).commands.map(c => c.label), ['docs:validate']);
+  });
+
+  test('runs the whole scripts suite in full mode and CI lanes, whatever changed', () => {
+    for (const mode of ['full', 'ci:portable-1']) {
+      const plan = buildPlan(mode, ['scripts/release-ci-wait.mjs']);
+      assert.equal(plan.scriptSelection, undefined, mode);
+      assert.ok(!plan.commands.some(c => c.tests), mode);
+    }
+  });
+
   test('includes shared-runtime behavior and its web dependent', () => {
     const labels = buildPlan('fast', ['packages/shared-runtime/safe-archive.js']).commands.map(c => c.label);
     assert.ok(labels.includes('test:shared'));
@@ -303,10 +440,13 @@ describe('maintenance validation selection', () => {
     ]) {
       const plan = buildPlan('fast', [file]);
       const testCommands = plan.commands.filter((entry) => entry.label.startsWith('test:'));
-      assert.deepEqual(testCommands.map((entry) => entry.label), ['test:desktop', 'test:startup'], file);
+      // A test file change also runs the suite contract, which inventories every test file.
+      const contract = file.endsWith('.test.mjs');
+      assert.deepEqual(testCommands.map((entry) => entry.label), ['test:desktop', ...(contract ? ['test:scripts'] : []), 'test:startup'], file);
       // The desktop suite owns no startup group, so the whole startup contract runs too.
       assert.deepEqual(testUnitsForPlan(testCommands).map((unit) => [unit.command, unit.args]), [
         ['bun', ['run', '--cwd', 'packages/desktop', 'test:managed-orchestration']],
+        ...(contract ? [[process.execPath, [...NODE_ISOLATION_ARGS, '--test', '--test-concurrency=1', '--test-timeout=300000', '--test-force-exit', 'scripts/test-suite-contract.test.mjs']]] : []),
         ...STARTUP_CONTRACT_GROUPS.map((group) => [group.command, group.args]),
       ], file);
     }
@@ -330,8 +470,129 @@ describe('maintenance validation selection', () => {
     assert.equal(boundaries(['scripts/release.mjs']), undefined);
   });
 
+  test('checks unreached browser files for package code, tests and the allowlist, and declaration parity for JavaScript and declarations', () => {
+    const labels = files => buildPlan('fast', files).commands.map(c => c.label);
+    for (const file of ['packages/ui/src/App.tsx', 'packages/ui/package.json', 'scripts/check-browser-graph.mjs', 'scripts/unreached-files.json',
+      'scripts/check-unreached-files.mjs', 'tests/visual-reasoning/main.tsx', 'scripts/release.test.mjs']) {
+      assert.ok(labels([file]).includes('unreached-files'), file);
+    }
+    // The allowlist, checker or a test outside packages/ alone does not re-run the boundary checks.
+    for (const file of ['scripts/unreached-files.json', 'scripts/release.test.mjs']) assert.ok(!labels([file]).includes('import-boundaries'), file);
+    assert.ok(!labels(['scripts/release.mjs']).includes('unreached-files'));
+    assert.deepEqual(buildPlan('fast', ['scripts/unreached-files.json']).commands.find(c => c.label === 'unreached-files').args, ['scripts/check-unreached-files.mjs']);
+    for (const file of ['packages/harness-runtime/index.js', 'packages/harness-runtime/index.d.ts', 'scripts/native-runtime-assets.d.mts', 'scripts/release.mjs',
+      'packages/shared-runtime/package.json', 'scripts/declaration-parity.json', 'scripts/check-declarations.mjs']) {
+      assert.ok(labels([file]).includes('declarations'), file);
+    }
+    for (const file of ['packages/ui/src/App.tsx', 'packages/agents-core/src/agents/registry.ts']) assert.ok(!labels([file]).includes('declarations'), file);
+    assert.deepEqual(buildPlan('fast', ['scripts/check-declarations.mjs']).commands.find(c => c.label === 'declarations').args, ['scripts/check-declarations.mjs']);
+  });
+
+  test('validates docs for every change, because docs:validate reads manifests, source exports and environment variables', () => {
+    for (const file of ['packages/ui/src/App.tsx', 'packages/web/server/index.js', 'scripts/release.mjs', 'packages/shared-runtime/package.json', 'bun.lock', 'scripts/notes.txt']) {
+      const docs = buildPlan('fast', [file]).commands.find(c => c.label === 'docs:validate');
+      assert.deepEqual(docs && [docs.executable, ...docs.args], ['bun', 'run', 'docs:validate'], file);
+    }
+    assert.ok(!buildPlan('fast', []).commands.some(c => c.label === 'docs:validate'));
+  });
+
+  test('selects every package suite from a test file under that package', () => {
+    // FULL_TEST_SUITES is the suite inventory; a suite no change can select never runs locally.
+    for (const suite of FULL_TEST_SUITES) {
+      const cwd = suite.args.indexOf('--cwd');
+      const directory = cwd === -1 ? 'scripts' : suite.args[cwd + 1];
+      const file = discoverTestFiles(fileURLToPath(new URL(directory, repoRoot)), fileURLToPath(repoRoot))[0];
+      assert.ok(file, directory);
+      assert.ok(buildPlan('fast', [file]).commands.some(c => c.label === `test:${suite.key}`), `${suite.key}: ${file}`);
+    }
+  });
+
+  test('runs the agents-core suite and its web dependent for agents-core source and tests', () => {
+    for (const file of ['packages/agents-core/src/agents/registry.ts', 'packages/agents-core/src/admission-runtime.test.ts']) {
+      const labels = buildPlan('fast', [file]).commands.map(c => c.label);
+      for (const label of ['typeCheck:agentsCore', 'typeCheck:web', 'test:agentsCore', 'test:web', 'test:startup']) assert.ok(labels.includes(label), `${file}: ${label}`);
+    }
+  });
+
+  test('runs the UI suite for any UI source file and the web suite for any web file', () => {
+    for (const file of ['packages/ui/src/App.tsx', 'packages/ui/src/apps/AppEffects.tsx', 'packages/ui/src/contexts/RuntimeAPIProvider.tsx',
+      'packages/ui/src/constants/sidebar.ts', 'packages/ui/src/types/question.ts', 'packages/ui/src/styles/typography.css']) {
+      assert.ok(buildPlan('fast', [file]).commands.some(c => c.label === 'test:ui'), file);
+    }
+    for (const file of ['packages/web/src/pwa-service-worker.ts', 'packages/web/src/api/index.ts', 'packages/web/vite-chunking.ts', 'packages/web/vite.config.ts', 'packages/web/vitest.config.ts']) {
+      assert.ok(buildPlan('fast', [file]).commands.some(c => c.label === 'test:web'), file);
+    }
+  });
+
+  test('type-checks web for every UI source change, because the web tsconfig includes the UI source', () => {
+    const web = JSON.parse(readFileSync(new URL('packages/web/tsconfig.json', repoRoot), 'utf8'));
+    assert.ok(web.include.includes('../ui/src'));
+    for (const file of ['packages/ui/src/components/ui/button.tsx', 'packages/ui/src/styles/typography.css', 'packages/ui/src/types/question.ts']) {
+      const labels = buildPlan('fast', [file]).commands.map(c => c.label);
+      assert.ok(labels.includes('typeCheck:ui') && labels.includes('typeCheck:web'), file);
+    }
+  });
+
+  test('runs every suite for dependency, patch and toolchain changes, including the MCP client patch test', () => {
+    const every = FULL_TEST_SUITES.map(suite => `test:${suite.key}`);
+    for (const file of ['bun.lock', 'package.json', 'patches/@modelcontextprotocol%2Fclient@2.3.1.patch', '.nvmrc', 'bunfig.toml']) {
+      const labels = buildPlan('fast', [file]).commands.map(c => c.label);
+      for (const label of every) assert.ok(labels.includes(label), `${file}: ${label}`);
+      assert.equal(labels.at(-1), 'test:startup', file);
+    }
+    const plan = buildPlan('fast', ['patches/@modelcontextprotocol%2Fclient@2.3.1.patch']);
+    const units = testUnitsForPlan(plan.commands.filter(c => c.label === 'test:scripts'));
+    assert.ok(units.some(unit => unit.args.includes('scripts/opencode-v2-native/mcp-client-patch.test.mjs')));
+  });
+
+  test('runs the owning suites for reviewed runtime inputs, and the catalog check for the model catalog', () => {
+    const catalog = buildPlan('fast', ['packages/web/runtime/reviewed-inputs/model-catalog/provenance.json']).commands;
+    for (const label of ['catalog:check', 'test:scripts', 'test:web']) assert.ok(catalog.some(c => c.label === label), label);
+    assert.deepEqual(catalog.find(c => c.label === 'catalog:check').args, ['run', 'catalog:check']);
+    const jsdom = buildPlan('fast', ['packages/web/runtime/reviewed-inputs/jsdom-30.1.1/provenance.json']).commands.map(c => c.label);
+    assert.ok(jsdom.includes('test:scripts') && jsdom.includes('test:web'));
+    assert.ok(!jsdom.includes('catalog:check'));
+    assert.ok(!buildPlan('fast', ['packages/web/server/index.js']).commands.some(c => c.label === 'catalog:check'));
+    // The reviewed-inputs manifest hashes their Markdown too, so it is not a docs-only change.
+    const readme = buildPlan('fast', ['packages/web/runtime/reviewed-inputs/model-catalog/README.md']).commands.map(c => c.label);
+    for (const label of ['docs:validate', 'catalog:check', 'test:scripts', 'test:web', 'test:startup']) assert.ok(readme.includes(label), label);
+  });
+
+  test('lints and type-checks everything for a dependency patch, but not for runtime pins', () => {
+    const patch = buildPlan('fast', ['patches/@modelcontextprotocol%2Fclient@2.3.1.patch']).commands.map(c => c.label);
+    assert.ok(patch.includes('lint:full') && patch.includes('type-check:full'));
+    for (const file of ['.nvmrc', 'bunfig.toml']) {
+      const labels = buildPlan('fast', [file]).commands.map(c => c.label);
+      assert.ok(!labels.includes('type-check:full') && !labels.some(label => label.startsWith('typeCheck:')), file);
+    }
+  });
+
+  test('type-checks web for the native scripts its runtime-host tsconfig includes', () => {
+    const runtimeHost = JSON.parse(readFileSync(new URL('packages/web/server/lib/opencode/runtime-host/tsconfig.json', repoRoot), 'utf8'));
+    assert.ok(runtimeHost.include.includes('../../../../../../scripts/opencode-v2-native/**/*.ts'));
+    const labels = buildPlan('fast', ['scripts/opencode-v2-native/simulation.ts']).commands.map(c => c.label);
+    assert.ok(labels.includes('typeCheck:web') && labels.includes('test:scripts'));
+    assert.ok(!buildPlan('fast', ['scripts/release.mjs']).commands.some(c => c.label === 'typeCheck:web'));
+  });
+
+  test('lints in fast mode only the files full and CI lint cover', () => {
+    const roots = lintRoots();
+    assert.deepEqual(roots.filter(root => ['packages/ui/src/', 'packages/web/src/'].includes(root)), ['packages/ui/src/', 'packages/web/src/']);
+    const lint = files => buildPlan('fast', files).commands.find(c => c.label === 'lint:changed')?.args.slice(3);
+    // Outside every workspace lint target: CI never lints these, so fast mode does not either.
+    for (const file of ['packages/agents-core/src/agents/registry.ts', 'scripts/opencode-v2-native/simulation.ts', 'packages/web/vite-chunking.ts']) {
+      assert.ok(!roots.some(root => file.startsWith(root)), file);
+      assert.equal(lint([file]), undefined, file);
+    }
+    assert.deepEqual(lint(['packages/agents-core/src/agents/registry.ts', 'packages/ui/src/App.tsx', 'packages/web/src/pwa-service-worker.ts']),
+      ['packages/ui/src/App.tsx', 'packages/web/src/pwa-service-worker.ts']);
+    assert.deepEqual(buildPlan('full').commands.find(c => c.label === 'lint:full').args, ['run', 'lint']);
+  });
+
   test('runs every check in full mode and refuses unknown modes', () => {
-    assert.deepEqual(buildPlan('full').commands.map(c => c.label), ['lint:full', 'import-boundaries', 'browser-graph', 'type-check:full', 'docs:validate', 'build', 'bundle:check', 'test:full']);
+    assert.deepEqual(buildPlan('full').commands.map(c => c.label), ['lint:full', 'import-boundaries', 'browser-graph', 'unreached-files', 'declarations', 'type-check:full', 'docs:validate', 'build', 'bundle:check', 'test:full']);
+    // CI's static job runs the same static checks.
+    for (const label of ['import-boundaries', 'browser-graph', 'unreached-files', 'declarations', 'docs:validate']) assert.ok(buildPlan('static').commands.some(c => c.label === label), label);
     assert.throws(() => buildPlan('quick', []), /Unknown validation mode/);
   });
 });
@@ -392,8 +653,10 @@ describe('version-only and startup-covered validation', () => {
     // The web suite itself still runs every Vitest project and its native files.
     assert.ok(units.some((unit) => unit.name === 'web:native'));
     assert.ok(units.filter((unit) => unit.name.startsWith('web:vitest')).length > 1);
-    const alone = buildPlan('fast', ['scripts/release.mjs']).commands.find((c) => c.label === 'test:startup');
+    // The whole scripts suite covers its startup group; a selected subset does not.
+    const alone = buildPlan('fast', ['scripts/test-pool.mjs']).commands.find((c) => c.label === 'test:startup');
     assert.deepEqual(alone.coveredBy, ['scripts']);
+    assert.deepEqual(buildPlan('fast', ['scripts/release.mjs']).commands.find((c) => c.label === 'test:startup').coveredBy, []);
     assert.deepEqual(buildPlan('fast', []).commands.find((c) => c.label === 'test:startup').coveredBy, []);
   });
 });

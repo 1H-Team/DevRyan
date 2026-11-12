@@ -1,0 +1,63 @@
+{
+  "module": "toy-scheduler.mjs",
+  "export": "createManagedTaskScheduler",
+  "defaults": {
+    "createTaskId": "toy_task_",
+    "createLeaseToken": "toy_lease_"
+  },
+  "env": [
+    "DEVRYAN_ORCHESTRATION_UNACKNOWLEDGED_EXPIRY"
+  ],
+  "defaultPersistence": [
+    "const persistence = options.persistence ?? { async load() { return null; }, async save() {} };"
+  ],
+  "savedState": {
+    "file": "toy-ledger.mjs",
+    "export": "encodeLedgerSnapshot",
+    "port": "persistence.save",
+    "arg": 0
+  },
+  "sites": [
+    {
+      "site": "persistLocked",
+      "kind": "draw",
+      "anchor": "const owner = createRandomId('toy_save_');"
+    },
+    {
+      "site": "stop",
+      "kind": "draw",
+      "anchor": "const stop = { taskId, requestId: createRandomId('toy_stop_'), at: now() };"
+    },
+    {
+      "site": "createRandomId",
+      "kind": "helper",
+      "anchor": "const random = globalThis.crypto.randomUUID();"
+    },
+    {
+      "site": "runExclusive.queued",
+      "kind": "clock",
+      "anchor": "const queuedAt = options.onMutationTiming ? performance.now() : 0;"
+    },
+    {
+      "site": "runExclusive.started",
+      "kind": "clock",
+      "anchor": "const startedAt = options.onMutationTiming ? performance.now() : 0;"
+    },
+    {
+      "site": "runExclusive.held",
+      "kind": "clock",
+      "anchor": "holdMs: performance.now() - startedAt"
+    },
+    {
+      "site": "persistLocked",
+      "kind": "env",
+      "anchor": "const expire = globalThis.process?.env?.DEVRYAN_ORCHESTRATION_UNACKNOWLEDGED_EXPIRY !== '0';"
+    }
+  ],
+  "unreached": [
+    {
+      "anchor": "const now = options.now ?? Date.now;",
+      "reason": "the recorder always passes now"
+    }
+  ]
+}

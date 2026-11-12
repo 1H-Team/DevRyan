@@ -424,15 +424,6 @@ textarea[data-chat-input="true"]:focus-visible {
 }
 
 
-@keyframes spin-once {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 @keyframes oc-migrate-up {
   0% {
     opacity: 1;
@@ -802,10 +793,6 @@ svg.animate-spin {
   -webkit-app-region: no-drag;
 }
 
-.animate-spin-once {
-  animation: spin-once 0.5s linear forwards;
-}
-
 /* Custom scrollbar styles */
 *::-webkit-scrollbar {
   width: 10px !important;
@@ -952,7 +939,6 @@ html:not(.dark) .chat-scroll {
 }
 
 .overlay-scrollbar--dense,
-.overlay-scrollbar--bottom-right,
 .overlay-scrollbar--zero,
 .overlay-scrollbar--flush {
   /* no-op: positioning handled inline */
@@ -1079,23 +1065,6 @@ html:not(.dark) .chat-scroll {
 
 
 
-/* Commit actions: collapse labels when narrow. */
-@container commit-actions (max-width: 21rem) {
-  .commit-actions__label--long {
-    display: none;
-  }
-}
-
-@container commit-actions (max-width: 19rem) {
-  .commit-actions__label {
-    display: none;
-  }
-
-  .commit-actions__btn {
-    padding-inline: 0.5rem;
-  }
-}
-
 /* Utility: hide scrollbars without affecting layout */
 .scrollbar-none {
   -ms-overflow-style: none;
@@ -1105,13 +1074,6 @@ html:not(.dark) .chat-scroll {
   width: 0;
   height: 0;
   display: none;
-}
-
-/* Git right-sidebar header/actions collapse to icon-only when narrow. */
-@container git-header (max-width: 26rem) {
-  .git-header-label {
-    display: none;
-  }
 }
 
 /* Status row: collapse optional text when narrow to keep both sides in one line. */
@@ -1716,10 +1678,6 @@ input[aria-label="Terminal input"] {
 }
 
 /* Font loading states */
-.fonts-loading .terminal-viewport-container {
-  font-family: monospace;
-}
-
 .fonts-loaded .terminal-viewport-container {
   font-family: "JetBrainsMono Nerd Font", "FiraCode Nerd Font", "Fira Code", "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", "Courier New", monospace;
 }
@@ -1744,63 +1702,6 @@ input[aria-label="Terminal input"] {
   animation: oc-busy-pulse 2.4s ease-in-out infinite;
 }
 
-@keyframes navrail-dot-wave {
-  0%, 100% {
-    transform: scale(0.72);
-    opacity: 0.52;
-  }
-  50% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-.animate-navrail-dot-wave {
-  animation: navrail-dot-wave 1.2s ease-in-out infinite;
-}
-
-@keyframes border-glow-pulse {
-  0%, 100% {
-    border-color: var(--interactive-border);
-    outline-color: transparent;
-  }
-  12.5% {
-    border-color: color-mix(in srgb, var(--primary) 22%, var(--interactive-border));
-    outline-color: color-mix(in srgb, var(--primary) 8%, transparent);
-  }
-  25% {
-    border-color: color-mix(in srgb, var(--primary) 40%, var(--interactive-border));
-    outline-color: color-mix(in srgb, var(--primary) 16%, transparent);
-  }
-  37.5% {
-    border-color: color-mix(in srgb, var(--primary) 62%, var(--interactive-border));
-    outline-color: color-mix(in srgb, var(--primary) 26%, transparent);
-  }
-  50% {
-    border-color: color-mix(in srgb, var(--primary) 78%, var(--interactive-border));
-    outline-color: color-mix(in srgb, var(--primary) 34%, transparent);
-  }
-  62.5% {
-    border-color: color-mix(in srgb, var(--primary) 62%, var(--interactive-border));
-    outline-color: color-mix(in srgb, var(--primary) 26%, transparent);
-  }
-  75% {
-    border-color: color-mix(in srgb, var(--primary) 40%, var(--interactive-border));
-    outline-color: color-mix(in srgb, var(--primary) 16%, transparent);
-  }
-  87.5% {
-    border-color: color-mix(in srgb, var(--primary) 22%, var(--interactive-border));
-    outline-color: color-mix(in srgb, var(--primary) 8%, transparent);
-  }
-}
-
-.animate-border-glow-pulse {
-  outline: 1px solid transparent;
-  outline-offset: 1px;
-  will-change: border-color, outline-color;
-  animation: border-glow-pulse 3.8s linear infinite;
-}
-
 @keyframes marquee-scroll {
   0% { transform: translateX(0); }
   100% { transform: translateX(-100%); }
@@ -1809,11 +1710,6 @@ input[aria-label="Terminal input"] {
 .marquee-text {
   display: inline-block;
   white-space: nowrap;
-}
-
-.marquee-text--auto {
-  animation: marquee-scroll 6s linear infinite alternate;
-  will-change: transform;
 }
 
 .group:hover .marquee-text--active,
@@ -1827,7 +1723,6 @@ input[aria-label="Terminal input"] {
     animation: none;
   }
 
-  .marquee-text--auto,
   .group:hover .marquee-text--active,
   .marquee-text--active:hover {
     animation: none;

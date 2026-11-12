@@ -1,0 +1,36 @@
+# The native ledger's workspace (research file 28, section 3). Not wired into
+# the product: nothing calls it yet. Build, lint and test it with
+# `node scripts/build-ledger-native.mjs --verify`
+# (packages/harness-runtime/DOCUMENTATION.md, "Native ledger I/O"). The Rust
+# toolchain is ledger-core's pin (../ledger-core/rust-toolchain.toml), which
+# the build script selects through RUSTUP_TOOLCHAIN.
+[workspace]
+resolver = "3"
+members = ["ledger-io"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+debug = false
+incremental = false
+
+# The test probes inflate and hash in debug builds: these crates are built
+# optimized there, and ledger-io lightly (overflow checks and debug
+# assertions stay on), so the differential tests stay short. Release builds
+# are unaffected.
+[profile.dev.package.ledger-io]
+opt-level = 1
+
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+
+[profile.dev.package.sha1]
+opt-level = 3
+
+[profile.dev.package.sha2]
+opt-level = 3

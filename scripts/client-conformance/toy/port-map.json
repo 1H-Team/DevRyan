@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "note": "Port map of the harness-owned toy modules (the self-test corpus).",
+  "families": [
+    { "name": "toy-reducer", "module": "toy-reducer.mjs", "entries": [{ "export": "applyEvent", "draft": 0 }, { "export": "createState" }] },
+    { "name": "toy-timers", "module": "toy-timers.mjs", "entries": [{ "export": "createDebouncer", "returns": "entry-object" }], "state": "snapshotState",
+      "injected": [{ "entry": "createDebouncer", "arg": 0, "key": "onFlush", "name": "onFlush" }] },
+    { "name": "toy-transport", "module": "toy-transport.mjs", "entries": [{ "export": "connect", "returns": "entry-object" }],
+      "ports": [{ "module": "toy-log.mjs", "exports": ["log"] }],
+      "injected": [{ "entry": "connect", "arg": 0, "name": "sdk" }, { "entry": "connect", "arg": 1, "key": "onEvent", "name": "onEvent" }] },
+    { "name": "toy-flow", "module": "toy-flow.mjs", "entries": [{ "export": "createFlow", "returns": "entry-object" }],
+      "ports": [{ "module": "toy-guard.mjs", "exports": ["guard"] }],
+      "injected": [{ "entry": "createFlow", "arg": 0, "name": "sdk" }, { "entry": "createFlow", "arg": 1, "key": "onEvent", "name": "onEvent" }] },
+    { "name": "toy-guard", "module": "toy-guard.mjs", "entries": [{ "export": "guard" }, { "export": "deferred" }], "state": "guardState" },
+    { "name": "toy-gate", "module": "toy-gate.mjs", "state": "gateState",
+      "entries": [{ "export": "wait" }, { "export": "eager" }, { "export": "waitDeep" }, { "export": "waitOn" }, { "export": "signal" }, { "export": "arm" }, { "export": "ask" }, { "export": "poke" },
+        { "export": "eagerLater" }, { "export": "waitResolvers" }, { "export": "signalResolvers" }, { "export": "waitLong" }, { "export": "subscribe" }, { "export": "items" },
+        { "export": "meter" }, { "export": "promiseLike" }, { "export": "nested" }, { "export": "frozenControls" }, { "export": "start" }, { "export": "drainOpen" }],
+      "ports": [{ "module": "toy-log.mjs", "exports": ["log"] }],
+      "injected": [{ "entry": "ask", "arg": 0, "name": "sdk" }, { "entry": "poke", "arg": 0, "name": "sdk" }, { "entry": "start", "arg": 0, "name": "sdk" },
+        { "entry": "drainOpen", "arg": 0, "name": "stream", "wrapAnswers": true }] },
+    { "name": "toy-clock", "module": "toy-clock.mjs", "entries": [{ "export": "readClock" }, { "export": "roll" }, { "export": "later" }, { "export": "ping" }, { "export": "online" }] }
+  ],
+  "globals": { "fetch": { "wrapAnswers": true } }
+}

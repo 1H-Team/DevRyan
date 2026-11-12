@@ -132,11 +132,6 @@
   }
 
 
-  /* Allow system context menu only when explicitly requested via the "More" button */
-  :root.mobile-pointer:not(.desktop-runtime) .message-content-text.show-system-menu {
-    -webkit-touch-callout: default;
-  }
-
   /* Improve mobile spacing */
   :root.mobile-pointer:not(.desktop-runtime) .px-4 {
     padding-left: 1rem !important;
@@ -201,12 +196,6 @@
   /* Ensure proper flex behavior */
   :root.mobile-pointer:not(.desktop-runtime) .flex.flex-col {
     min-height: 0;
-  }
-
-  /* Mobile sidebar positioning */
-  :root.mobile-pointer:not(.desktop-runtime) .mobile-sidebar-top {
-    top: var(--header-height, 3rem);
-    height: calc(100vh - var(--header-height, 3rem));
   }
 
   /* Set header height variable */
@@ -319,12 +308,6 @@
       --header-height: 4.5rem;
     }
 
-    :root.device-mobile:not(.desktop-runtime) .mobile-sidebar-top,
-    :root.device-tablet:not(.desktop-runtime) .mobile-sidebar-top,
-    :root.mobile-pointer:not(.desktop-runtime) .mobile-sidebar-top {
-      --header-height: 4.5rem;
-    }
-
   }
 
   /* Fallback for non-iOS standalone mode */
@@ -374,36 +357,9 @@
     row-gap: clamp(0.75rem, 2vw, 1.25rem);
   }
 
-  .pwa-dialog-content.pwa-compact {
-    --pwa-dialog-padding: clamp(0.5rem, 2vw, 0.85rem);
-    row-gap: clamp(0.45rem, 1.5vw, 0.8rem);
-  }
-
   .pwa-dialog-content [data-slot="dialog-close"] {
     top: calc(0.25rem + (var(--oc-safe-area-top, 0px) * 0.35));
     right: var(--pwa-dialog-padding);
-  }
-
-  .pwa-dialog-content.pwa-compact [data-slot="dialog-close"] {
-    top: calc(0.2rem + (var(--oc-safe-area-top, 0px) * 0.3));
-  }
-
-  .pwa-dialog-content .settings-page-body {
-    max-width: 100%;
-    padding: 0.75rem 1rem;
-    row-gap: 0;
-  }
-
-  .pwa-dialog-content .settings-page-body > :not([hidden]) ~ :not([hidden]) {
-    margin-top: 0.85rem;
-  }
-
-  .pwa-dialog-content .directory-dialog-body {
-    padding: 0.5rem 0.75rem;
-  }
-
-  .pwa-dialog-content .directory-dialog-body .directory-grid {
-    gap: 0.6rem;
   }
 
   .pwa-overlay-panel {

@@ -90,6 +90,27 @@ export function versionPredates(from, to) {
   return false;
 }
 
+/**
+ * The DMG step: the candidate's sha256 must equal the manifest's and, when the
+ * version is already published, the published asset's digest. The reason names
+ * both identities, so a log line says why the step failed.
+ */
+export function dmgStepVerdict({ version, sha, manifest = null, publishedDigest = null }) {
+  const manifestMatches = !manifest || manifest.sha256 === sha;
+  const publishedMatches = !publishedDigest || publishedDigest === `sha256:${sha}`;
+  const reasons = [];
+  if (!manifestMatches) reasons.push(`the candidate sha256:${sha} differs from release-manifest.json sha256:${manifest.sha256}`);
+  if (!publishedMatches) reasons.push(`v${version} is already published and the candidate differs from the published asset ${releaseAssetName('macos-arm64', version)}: `
+    + `candidate sha256:${sha}, published ${publishedDigest}. A published version is final: bump the patch version (an owner-authorized replacement removes the old release before this run)`);
+  return { passed: manifestMatches && publishedMatches,
+    detail: { manifest: manifest ? manifestMatches : 'not given', published: publishedDigest ? publishedMatches : 'unpublished' },
+    reason: reasons.join('; ') };
+}
+
+/** Why a step failed, for the log: its reason, else its detail. */
+export const failedStepMessage = (name, detail = {}, reason = '') =>
+  `[visual-qa] FAIL ${name}${reason ? `: ${reason}` : Object.keys(detail).length ? `: ${JSON.stringify(detail)}` : ''}`;
+
 export function gradeVisualQa(evidence) {
   const failures = (evidence.upgradeOnly ? ['dmg'] : STEPS).filter(step => evidence.steps?.[step]?.passed !== true);
   if (evidence.upgradeRequired ? evidence.upgrade?.status !== 'passed' : evidence.upgrade && !['passed', 'skipped'].includes(evidence.upgrade.status)) failures.push('upgrade');
@@ -315,7 +336,7 @@ export async function runVisualQa(options, { log = console.log } = {}) {
   const evidence = { schemaVersion: 1, kind: 'release-visual-qa', sourceRevision: process.env.GITHUB_SHA ?? null, runID: process.env.GITHUB_RUN_ID ?? null,
     version: options.version ?? null, steps: {}, screenshots: {}, upgradeRequired: Boolean(options.candidateUpgrade || options.requireUpgrade),
     ...(options.upgradeOnly ? { upgradeOnly: true } : {}) };
-  const step = (name, passed, detail = {}) => { evidence.steps[name] = { passed, ...detail }; log(`[visual-qa] ${passed ? 'pass' : 'FAIL'} ${name}`); };
+  const step = (name, passed, detail = {}, reason = '') => { evidence.steps[name] = { passed, ...detail }; log(passed ? `[visual-qa] pass ${name}` : failedStepMessage(name, detail, reason)); };
   let root, cdpModule, cdp, launched, upgradeLaunch, fixture, feedMirror, restoreLaunchEnvironment, failed = true;
   const cleanupFailures = [];
   const stopAll = async () => {
@@ -364,8 +385,8 @@ export async function runVisualQa(options, { log = console.log } = {}) {
     evidence.dmgSha256 = sha;
     const published = await publicRelease(`v${version}`).catch(() => null);
     const publishedDigest = published?.assets?.find(row => row.name === releaseAssetName('macos-arm64', version))?.digest ?? null;
-    step('dmg', (!manifest || manifest.sha256 === sha) && (!publishedDigest || publishedDigest === `sha256:${sha}`),
-      { manifest: manifest ? manifest.sha256 === sha : 'not given', published: publishedDigest ? publishedDigest === `sha256:${sha}` : 'unpublished' });
+    const dmgVerdict = dmgStepVerdict({ version, sha, manifest, publishedDigest });
+    step('dmg', dmgVerdict.passed, dmgVerdict.detail, dmgVerdict.reason);
     const latestResponse = await publicReleaseResponse('latest');
     const latest = latestResponse.status === 200 ? JSON.parse(latestResponse.body)?.tag_name?.slice(1) ?? null : null;
     // An installed-upgrade lane qualifies only the upgrade: the visual-qa job
@@ -447,6 +468,7 @@ export async function runVisualQa(options, { log = console.log } = {}) {
     failed = false;
   } catch (error) {
     evidence.error = { code: errorCode(error?.code), message: boundedDiagnostic(error?.message, root?.dir, 1200), ...(error?.detail ? { detail: error.detail } : {}) };
+    log(`[visual-qa] FAIL error: ${evidence.error.code ? `${evidence.error.code}: ` : ''}${evidence.error.message}`);
     if (cdp) await capture('failure.png').catch(() => {});
   } finally {
     if (fixture) evidence.upgradeTransport = { kind: 'isolated-inspector-fixture', sha256: fixture.sha256, ...fixture.requests };

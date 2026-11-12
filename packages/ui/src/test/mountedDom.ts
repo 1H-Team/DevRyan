@@ -1,3 +1,10 @@
+import { assertTestIsolation } from '../../../../scripts/test-isolation-check.mjs';
+
+// A `bun test` started inside a source subfolder reads no bunfig.toml, so the
+// test isolation preload never ran there: this shared setup stops such a run
+// with the same explanation (scripts/test-isolation-check.mjs).
+assertTestIsolation({ selectors: false });
+
 // Minimal host DOM, following the repo's mounted subscription tests. It runs
 // React's real reconciliation and delegated events; real browser layout is
 // covered separately by the visual fixtures.

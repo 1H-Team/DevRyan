@@ -1,0 +1,30 @@
+# The product's Cargo workspace (packages/native/DOCUMENTATION.md). Nothing here
+# ships in the app; packaging excludes the whole folder.
+[workspace]
+resolver = "3"
+members = ["crates/config-text", "crates/front"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+publish = false
+
+# Every third-party crate is pinned to an exact version and named, with its
+# purpose and licence, in DOCUMENTATION.md; deny.toml checks the licences.
+[workspace.dependencies]
+httparse = { version = "=1.10.1", default-features = false, features = ["std"] }
+libc = { version = "=0.2.191", default-features = false, features = ["std"] }
+serde_json = { version = "=1.0.154", default-features = false, features = ["std"] }
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+
+[profile.release]
+debug = false
+# No strip step: the minimal toolchain profile has no rust-objcopy runtime.
+strip = "none"

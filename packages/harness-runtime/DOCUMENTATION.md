@@ -520,7 +520,35 @@ for tests; inline, the host clock covers the ledger). A publication's
 `finish_materialize`), so its lock hold is read directly, never by
 subtraction; a finish summary carries 21 of the 32 step names a summary keeps. A worker exit fails pending calls with
 `mutation_runtime_unavailable` (503); the next call starts a new worker and
-the next lock runs durable recovery, as after a host crash. The worker
+the next lock runs durable recovery, as after a host crash. An owner lock the
+dead worker held would otherwise stay: its file names the host process, which
+lives on, so no other owner ever removes it and every later call failed with
+`LOCK_TIMEOUT` after 30 s until the app restarted. The ledger therefore draws
+each owner lock's token itself (passed to the lock as `randomToken`, the
+expression the lock uses) and, with the runtime option `ownerLockClaims`,
+names it to its worker's host before the lock file can exist and settles it
+once the lock call has ended. The worker sends these on a dedicated
+`MessagePort` in `workerData.lockPort`, not on the seam (absent inline and
+under the dual-run harness's stdio transport). Posting is synchronous, so a
+claim made before the thread dies is queued; on the worker's `exit` the host
+drains the port, removes each unsettled lock whose file still holds exactly
+that token and this process's pid (anything else is another owner's lock and
+stays, including the lock a worker was only waiting for), journals one
+`ledger_worker` `worker_lock_released` diagnostic, and only then fails the
+pending calls; after an uncaught error the calls fail on `error`, just before
+`exit`, and a new worker that already waits takes the lock at its next retry.
+The lock protocol, its bytes and every other owner are unchanged. A Git
+child the dead worker started (a `git update-ref` already running) is not
+killed with the thread and can outlive it, so it may still run after the next
+owner has taken the lock. The state ref moves only by compare-and-swap, so
+such a late child makes at most one call fail (its own move or the next
+owner's) and cannot corrupt the ledger: the same exposure as after a process
+crash, whose children are reparented and finish, only now reached within a
+lock retry rather than after an app restart.
+`scripts/harness-session-mutation-host.test.mjs` makes a worker die through the
+harness's crash preload (thread exit, uncaught error, termination) before the
+lock file exists, holding it, during the commit and after release, with two
+hosts in one process, and with the lock replaced meanwhile. The worker
 inherits the host's Node flags except inline-entry ones (`--input-type`,
 `-e`, `-p`): a host started with `node --input-type=module -e …`, as the
 release upgrade lane starts the server, used to lose its worker before it
@@ -909,7 +937,737 @@ reasons. Each file row also exposes the same observation as `verification: { sta
 content mismatch does not identify an author or authorize restoration. See
 `docs/SESSION_CHANGES.md` for verification states and limits.
 
-For a provider-free preparation benchmark, run `DEVRYAN_VIEW_PREWARM_BENCHMARK=1 bun test packages/harness-runtime/lib/session-mutations-view-reuse.test.js -t "prewarm benchmark"`. The isolated 243-file fixture compares cold, prewarmed and two concurrently prewarmed first leases plus a subsequent lease in the same session, reports elapsed times without timing assertions, checks adopted-file counts, and verifies separate private views. The symlink is intentionally copied during the first preparation; the subsequent lease adopts all 243 unchanged entries and verifies the complete view's content. These measurements exclude provider, SDK startup, network and native process latency.
+For a provider-free preparation benchmark, run `DEVRYAN_VIEW_PREWARM_BENCHMARK=1 node scripts/test-isolation-guard.mjs bun test packages/harness-runtime/lib/session-mutations-view-reuse.test.js -t "prewarm benchmark"`. The isolated 243-file fixture compares cold, prewarmed and two concurrently prewarmed first leases plus a subsequent lease in the same session, reports elapsed times without timing assertions, checks adopted-file counts, and verifies separate private views. The symlink is intentionally copied during the first preparation; the subsequent lease adopts all 243 unchanged entries and verifies the complete view's content. These measurements exclude provider, SDK startup, network and native process latency.
+
+## Direct ledger listings
+
+Once a ledger's whole listing has passed the 1 MiB bound, its store lists one
+prefix at a time (`ls-tree -r -l -z <tree> -- <prefix>/`). That paged listing
+no longer starts a Git process: `listTreeRows` in
+`lib/session-changes-trees.js` walks the prefix's tree objects through the
+store's persistent object reader, parses them with `parseTree` and asks the
+reader's `--batch-check` mode for blob sizes. The rows and their order are
+exactly Git's. It is on by default wherever the persistent reader is (not on
+Windows, nor with `DEVRYAN_LEDGER_PERSISTENT_READER=0` or a runner without
+`readObject`).
+
+Git still answers whenever its answer could differ: any missing, corrupt or
+unreadable object on the path or below it (Git then fails as before,
+`capture_git_failed`), a mode Git would print otherwise, a tree on the path or
+below it that is not strictly in Git's order or repeats a name (`inGitOrder`;
+Git's walk stops early or matches twice there), a prefix component that names
+a file, or a prefix outside `[a-zA-Z0-9_-]` path components. A
+prefix is resolved one tree at a time, and an empty answer is given only when
+a component is absent from a tree that was read. Nothing is remembered between
+listings, and a listing keeps at most 256 reads queued on the shared reader.
+Whole-tree listings stay with `git ls-tree`: read object by object without a
+cache, they cost a read per tree and blob of the ledger, which the harness
+budget (`session-mutations.latency-budget.test.js`) forbids.
+
+Kill switch, read per use: `DEVRYAN_LEDGER_DIRECT_LISTINGS=0` pages with
+`git ls-tree` as before. The switch is recorded in run fingerprints. Measured
+on 2026-11-12 on a shared, loaded machine (ratios between interleaved arms): a
+first warm of a 7,324-file repository starts 28 instead of about 3,018 Git
+processes (2,988 of them were paged listings) and takes about half the time;
+a publication in a ledger under the bound is unchanged.
+
+## Rust ledger core
+
+A first-party Rust port of the ledger's text diff (`mutationDiff` in
+`lib/session-mutation-text.js`), run as WebAssembly. `mutationDiff` uses it
+only when `DEVRYAN_LEDGER_RUST=1`, which is off by default. The JavaScript
+implementation (`javascriptMutationDiff`, unchanged) is the reference and
+stays the fallback.
+
+- **Where.** The crate is `native/ledger-core/` (no dependencies of any kind;
+  `rust-toolchain.toml` pins Rust 1.99.1 with `rustfmt`, `clippy` and the
+  `wasm32-unknown-unknown` target). `native/ledger-core/src/diff.rs` is the
+  port and forbids unsafe code; `native/ledger-core/src/lib.rs` is the export
+  layer and the only unsafe code. The
+  built module is tracked as `lib/native/ledger-core.wasm`, with
+  `lib/native/ledger-core.json` beside it. `native/ledger-core/tests/vectors.tsv`
+  holds edit scripts the JavaScript produced
+  (`native/ledger-core/tests/generate-vectors.mjs` writes it), so
+  `cargo test` checks the port without JavaScript.
+- **Rebuild** after any crate edit with `node scripts/build-ledger-core.mjs`.
+  It needs the pinned toolchain and never downloads one; a missing toolchain,
+  component or target fails with the `rustup toolchain install` command. Every
+  cargo command runs on a copy of the crate under the OS temp dir, with a
+  private `CARGO_HOME` and target directory there, so no Cargo configuration
+  of the checkout's ancestors (a `~/.cargo/config.toml`) reaches the build; any
+  above the copy fails it. The copy is removed afterwards (`--keep-artifacts`
+  keeps a failed build's). It builds with `--locked --offline` in release, the
+  flags recorded in the provenance file and `SOURCE_DATE_EPOCH=0`. Two builds from different directories are
+  byte-identical. `--check` rebuilds and fails unless both tracked files are
+  byte-identical; `--verify` runs `cargo fmt --check`, `cargo clippy -D
+  warnings` for the host and the WebAssembly target, `cargo test`, then
+  `--check`. Fast `validate` runs `--verify` when the crate, the build script
+  or the tracked module change, so only those changes need Rust; CI's `static`
+  job runs it on every push and on pull requests that make such changes.
+- **The provenance file** records the schema version, the module's SHA-256 and
+  size, its ABI version, the target, the compiler and Cargo versions, the build
+  command, flags (`{crate}`, `{cargoHome}` and `{toolchain}` stand for local
+  paths) and environment, and the SHA-256 of each crate input with their
+  digest: SHA-256 over one `<path>\0<sha256>\n` line per file, in the order
+  `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, then `build.rs`,
+  `.cargo/config.toml` and `.cargo/config` when they exist, then every file
+  under `src/` sorted by path. `scripts/build-ledger-core.test.mjs`, which needs
+  no Rust, fails when the digest, the module's hash or its ABI no longer match,
+  so a crate edit without a rebuild fails on every lane, and when the crate
+  holds a file that is neither a digest input nor under `tests/` (or
+  `.gitignore`).
+- **The native acceptance digest** (`scripts/opencode-v2-native/artifacts.mjs`)
+  hashes the `.js`, `.json` and `.rs` files of this package, so it covers the
+  loader, the crate sources and `lib/native/ledger-core.json`, not the `.wasm`
+  itself nor the `.toml` and `.lock` files. That is enough: the provenance file
+  pins the module's SHA-256 and size and the hashes of those crate files, and
+  the loader refuses any module whose bytes differ, so the code that can run is
+  bound to the digest through the provenance file. Every crate edit changes the
+  digest, so existing native evidence goes stale as for any runtime change.
+- **The switch.** `DEVRYAN_LEDGER_RUST=1` turns the Rust path on; it is off by
+  default and any other value is off. `lib/ledger-core.js` reads it on every
+  call; it is recorded in run fingerprints (`HARNESS_BEHAVIOUR_SWITCHES`). In
+  the ledger worker the value is the one the worker started with. Off,
+  `mutationDiff` calls `javascriptMutationDiff` directly, as before (it adds
+  one environment read, a counter increment and a `{ budget }` object per
+  call). On, `mutationDiff` keeps the JavaScript early exits
+  ahead of the core (equal texts, a NUL byte, invalid UTF-8: nothing is
+  copied), asks the core for the edit script as (kind, byte length) pairs and
+  rebuilds the same `[{ kind, text }]` list by slicing its own two strings, so
+  the result, and every run and byte the ledger persists from it, is the one
+  `javascriptMutationDiff` returns. `applyMutationText` and the rest of the
+  ledger are unchanged and reach the core only through `mutationDiff`. The core
+  repeats the early exits itself so that it is a total function over bytes
+  (`native/ledger-core/tests/vectors.tsv` pins both); from `mutationDiff` they
+  are never reached, and JavaScript owns them. `mutationDiffPaths()` counts the
+  calls each path answered in this thread (`rust`, `javascript`, `early`); the
+  tests use it to fail a silent fallback, nothing in the product reads it.
+- **The loader.** `ledgerCoreDiff(before, after, budget, { onDiagnostic })`
+  takes the two latin1 byte strings `mutationDiff` receives and a budget, and
+  returns the edit script as a `Uint32Array` of `[kind, bytes, ...]` pairs
+  (kind 0 equal, 1 delete, 2 insert), or `null` to use JavaScript.
+  `createLedgerCore({ moduleUrl, provenanceUrl, environment })` builds a
+  separate loader (tests). The module is read once, lazily and synchronously,
+  and compiled only when its size and SHA-256 equal the provenance file's.
+  Paths resolve relative to the loader, which the packaged app keeps in the
+  unpacked `harness-runtime` folder. It works on the main thread and in worker
+  threads, under Node and under Bun; `lib/ledger-core.test.js` also loads a copy
+  laid out as `Resources/app.asar.unpacked/node_modules/@devryan/harness-runtime`
+  from a worker thread. The packaged proof itself is the release dry run.
+  WebAssembly memory never shrinks, so an instance whose memory exceeds
+  `LEDGER_CORE_RETAINED_MEMORY_BYTES` (8 MiB) after a call is dropped and the
+  next call instantiates the compiled module again. Measured: a two-edit diff
+  of a 32 KiB file leaves 1.4 MiB, 256 KiB 3.7 MiB, 1 MiB 11.2 MiB, 8 MiB
+  81 MiB. So edits up to a few hundred KiB reuse one instance (about 1 µs per
+  call for a tiny diff), and nothing a large call grew is kept. A fresh
+  instance costs about 50 µs under Node and 160 µs under Bun (measured on a
+  loaded machine, load average 20 to 30).
+- **Fallback.** A call answers `null` when the switch is off, and also when the
+  module or provenance file is missing or unreadable, the hash does not match,
+  compiling or instantiating fails, the ABI version or exports differ, the
+  budget is not a safe integer, a text is not a byte string, an allocation
+  fails, the call traps (the instance is then dropped), the status is an error,
+  or the script does not cover both texts exactly. Each cause except the
+  switch is reported once per loader (once per thread for `ledgerCoreDiff`) to
+  the caller's `onDiagnostic` as `{ phase: 'ledger_core', state: 'fallback',
+  code: 'ledger_core_<cause>' }`, the shape the runtime's other diagnostics
+  take. The loader never throws: any options value (`null`, a non-object, a
+  throwing getter) is accepted, and only a function `onDiagnostic` is called.
+  `mutationDiff` passes the execution's own diagnostics
+  (`executionDiagnostic`, and only while an admission, summary or observation
+  journals the work), so a fallback reaches the diagnostic journal as a
+  `session_execution` record with `phase: 'ledger_core'`, `state: 'fallback'`,
+  `code: 'ledger_core_<cause>'` and the call's session, message and call IDs;
+  from the ledger worker it crosses to the host like the worker's other
+  reports. Diffs outside such work (background maintenance) fall back silently
+  and leave the cause unreported, so the next journaled call reports it. A
+  call that falls back runs `javascriptMutationDiff` (after a load-time cause,
+  every later call does), so a fallback never changes a result.
+- **Equivalence evidence.** `lib/session-mutation-text.test.js` runs every case
+  on both paths and asserts the path counters; with the module missing every
+  Rust run fails. `lib/session-mutation-text.differential.test.js` compares the
+  whole result of both paths on seeded inputs for a time budget (2 s by
+  default, each case with its own timeout): one-ASCII-side pairs, four-byte
+  code points sharing leading bytes, unrelated pairs, empty sides, early exits,
+  budgets 0, 1, small, random and the default (at least 1,000 pairs whatever
+  the clock, `DEVRYAN_LEDGER_DIFFERENTIAL_PAIRS`), budgets that run out inside
+  the second recursive call (found by bisection on constructed pairs, and
+  asserted to occur), every pair of small strings over `ab` and `abc` across 16
+  budgets, and texts at and near the 8 MiB granular limit, after which no
+  instance larger than the retention cap is kept. The trap fallback is tested
+  on the loader (`lib/ledger-core.test.js`), the journal wiring through
+  `mutationDiff` with a budget fallback. The extended run (by hand,
+  before default-on):
+  `cd packages/harness-runtime && DEVRYAN_LEDGER_DIFFERENTIAL=extended DEVRYAN_LEDGER_DIFFERENTIAL_MS=1800000 bun run test ./lib/session-mutation-text.differential.test.js --timeout 7200000`
+  adds pairs up to 64 KiB and prints its counts (`DEVRYAN_LEDGER_DIFFERENTIAL_SEED`
+  picks another seed). The history replay diffs every file each commit in a
+  range changed (to 8 MiB) on both paths and exits 1 on any difference or
+  fallback:
+  `ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/Electron.app/Contents/MacOS/Electron scripts/perf/mutation-diff-history-replay.mjs [--range "-n 2000 HEAD"]`
+  (default `--all`). Results on 2026-11-12 (Bun for the tests, Electron's
+  Node for the replay, a heavily loaded machine): the extended run compared
+  7,846,576 results over 1,553,773 pairs in 40 minutes, plus 1,666 budgets that
+  run out inside the second recursive call and the 8 MiB pairs; the replay of
+  all 318 commits reachable in the checkout compared 34,130 distinct
+  before-and-after pairs of file versions (43,848 file changes, 1.44 GB,
+  largest 7.8 MB, 8,463 with non-ASCII text, 1,086 binary or invalid UTF-8) in
+  95 minutes. No difference and no fallback in either.
+  `scripts/perf/mutation-ancestry-replay.mjs` (70 overlapping rewrites through
+  `applyMutationText`) writes the same report with the switch off and on, apart
+  from its timing fields, with every diff answered by the core. A split point
+  past the end of a text, which the core clamps as JavaScript's `slice` does,
+  was never produced: the extended run's exhaustive search (all 393,617 pairs
+  over `ab` to length 8 and `abc` to length 5, 16 budgets each, 6,297,872
+  comparisons) stored 653,992 past-the-edge entries but returned none as a
+  split, and
+  the crate's `a_split_point_past_the_end_clamps_like_javascript` test covers
+  the clamp directly.
+- **Benchmark.** `scripts/perf/mutation-diff-benchmark.mjs` reruns R0's
+  measurement on the product code: R0's diff shapes on both arms, interleaved,
+  then, with `--publication`, one confined edit's `finish` with the switch off,
+  on and off again (the A/A arm shows the noise), with the load average on
+  every row:
+  `ELECTRON_RUN_AS_NODE=1 node scripts/test-isolation-guard.mjs node_modules/electron/dist/Electron.app/Contents/MacOS/Electron --expose-gc scripts/perf/mutation-diff-benchmark.mjs --publication`
+  (also under `node --expose-gc` or `bun`; `--sizes 32k,256k,1m,8m`,
+  `--shapes`, `--publication-shapes`, `--runs`, `--out`). On 2026-11-12, in
+  Electron's Node at load average 12 to 18 on 8 cores (read as ratios): the
+  diff is 10 to 19 times faster on the 256 KiB edit shapes and 6.7 to 12.5 times on
+  the 1 MiB ones (copies and rebuild included), about 4.5 times on unrelated
+  texts, where the work budget caps both; no instance over 8 MiB is kept after
+  a call. Publication (`finish`) measured, on that loaded machine: a ten-hunk
+  edit to a 256 KiB file +20%, +34%, -7% (with 17% A/A noise) and +22% in four
+  runs; two edits to a 1 MiB file +18% to +35% in four runs; a 32 KiB file
+  -0.5% and +2.0% over 31 calls per arm (A/A 0.4 to 2.9%). A later rerun with 21
+  calls per arm (load 36 to 59, so times are inflated) gave +50.7% for the
+  ten-hunk 256 KiB edit against 11% A/A noise and +39.9% for two edits to a
+  1 MiB file, and the measurement before the port, on a quieter machine, gave
+  +23% and +19 to +22%: the restated bar is met.
+- **Never** load a native Rust module (`.node`, `dlopen`) into the process that
+  hosts the server: a fault there ends every session. Rust runs in this process
+  only as WebAssembly. Never ship the crate: the packaged app excludes `.rs`,
+  `Cargo.*`, `rust-toolchain.toml` and the crate folder, and
+  `scripts/packaged-app.config.mjs` fails a package that holds them. Never edit
+  the tracked module or provenance file by hand, and never change the switch's
+  default without the owner's yes.
+
+### JavaScript semantics in the crate (`js`, `base64`, `collate`)
+
+Foundations for the native ledger (research file 28, package L1a). No export
+of the WebAssembly module calls them, and nothing in the product uses them
+yet.
+
+- **The shipped module.** Its behaviour is unchanged; its bytes are not.
+  Declaring `js` and `base64` changed how the optimiser compiled one internal
+  function, so the module grew from 42,719 to 42,729 bytes (same exports,
+  imports and data; one function 10 bytes longer and the code reordered).
+  Evidence: the loader's tests (`lib/ledger-core.test.js`) and the text
+  module's tests (`lib/session-mutation-text.test.js`,
+  `lib/session-mutation-text.differential.test.js`) pass on the new module, and
+  R1's 1,580 diff vectors give the same scripts. Every module added to the
+  crate can move the bytes again.
+- **What they are.** `js` holds `JsStr` (a string as UTF-16 code units, so lone
+  surrogates survive; `Ord` is JavaScript's `<`; `to_utf8` is
+  `Buffer.from(string)`, lone surrogates to `EF BF BD`; `from_utf8_lossy` is
+  `buffer.toString('utf8')`), `Value` (with a distinct `Undefined`; no holes,
+  which no ledger value has; no `Buffer` value, which no corpus record holds)
+  and `JsObject` in V8's property order (canonical array indices `"0"` to
+  `"4294967294"` first, ascending, then insertion order; `__proto__` an
+  ordinary key), `parse` and `stringify` exactly as `JSON.parse` and
+  `JSON.stringify` (research file 28 §4.3, with the corrections below),
+  `number_to_string` (ECMAScript `Number::toString`) and `default_sort`
+  (`.sort()` with no comparator). `base64` is `Buffer`'s base64 both ways,
+  including Node's lenient decoding (rules in
+  `native/ledger-core/src/base64.rs`). `collate` is described under "The locale
+  check". `Value`'s `PartialEq` compares numbers as `f64` (`NaN != NaN`,
+  `-0 == 0`): compare `stringify` output where the JavaScript compares text.
+  `ParseError.position` is not V8's error position.
+- **Depth, a deliberate difference from V8.** `parse` and `stringify` refuse
+  values nested deeper than `js::MAX_DEPTH` (512 containers): `parse` with
+  `ParseErrorKind::TooDeep`, `stringify` with `TooDeep`, and callers fail
+  closed. V8 parses any depth, and its `stringify` throws at a depth that
+  depends on shape, thread and version (measured on 2026-11-12: from 2,688
+  levels of `{"0":...}` on Node 26's main thread, 3,634 on Electron's Node 24
+  main thread and 14,524 on its worker thread, to 400,000 levels of
+  `[{"a":...}]`), which cannot be reproduced. The deepest record of the
+  aged-profile corpus nests 5 containers. Drop, `Clone`, `PartialEq`, `Debug`
+  and `to_js_string` are iterative, so any depth is safe on a small thread
+  stack or in WebAssembly (tests walk a million levels on a 64 KiB stack).
+- **Number layout.** Rust's shortest formatting supplies the digits, except on
+  an exact tie between two shortest candidates (`1000000000000042.25`), where
+  Rust rounds up and V8 takes the even digit (`...42.2`); `number_to_string`
+  detects the tie exactly and takes the even candidate.
+- **Vectors.** Each of `native/ledger-core/tests/generate-{json,numbers,strings,sort,base64,collate}.mjs`
+  writes a seeded file beside it (`json.tsv`, `numbers.tsv`, `strings.tsv`,
+  `sort.tsv`, `base64.tsv`, `collate.tsv`) from what Node actually does, closed
+  by an `end <rows>` row so that a truncated file fails, and the matching
+  `native/ledger-core/tests/*.rs` checks the Rust against it in `cargo test`.
+  `generate-collate.mjs` also writes `native/ledger-core/src/collate_table.rs`,
+  `native/ledger-core/src/key_sample.rs` and
+  `native/ledger-core/tests/ledger-key-sample.txt`. Regenerate with
+  `node packages/harness-runtime/native/ledger-core/tests/generate-<name>.mjs`;
+  `--check` fails unless the file is what this Node writes (the header line
+  naming the runtime and its default locale is ignored).
+  `scripts/build-ledger-core.test.mjs` runs that check for all six files, the
+  table and the sample, so a Node or ICU whose behaviour differs fails the
+  contract test. A new table or sample is a source change: rebuild the module
+  afterwards. The tracked JSON set is 3,000 seeded texts plus fixed cases (the
+  design asked for 50,000; the extended run below runs 500,000).
+- **Extended run and corpus.**
+  `node packages/harness-runtime/native/ledger-core/tests/run-extended.mjs`
+  generates much larger sets (500,000 JSON texts, 1,000,000 numbers, 200,000
+  collation strings, 200,000 base64 cases, `--scale` multiplies) and the record
+  corpus into a scratch directory under the OS temp dir and runs
+  `cargo test --release` with `LEDGER_CORE_EXTENDED_DIR` pointing at it (a
+  missing file there fails); the scratch is removed unless `--keep-artifacts`.
+  The corpus test is the `corpus` test target, which a plain `cargo test`
+  leaves out (`test = false`) and which fails without a corpus
+  (`LEDGER_CORE_CORPUS`) or with an empty one. The corpus is every record of
+  the aged-profile fixture (`scripts/opencode-v2-native/aged-profile-fixture.mjs`,
+  written under the test isolation preload; at least 300 records or the run
+  fails): the blobs of its ledger's Git store and the files of its web data,
+  each read as Node reads a record (`JSON.parse(buffer.toString('utf8'))`).
+  `--corpus <dir>` (repeatable) adds every file under a directory, a Git object
+  store in it read as its blobs;
+  `native/ledger-core/tests/json-corpus.mjs --out <file> --dir <dir>` writes
+  such a corpus file on its own. The ledger dual-run harness's stage records
+  and seam messages are to be added this way when that harness lands.
+- **Known engine discrepancies.**
+  `native/ledger-core/tests/known-engine-discrepancies.mjs` lists the cases
+  where an engine answered against ECMA-262 and the other engine. Each entry
+  names the seed and row, the engine and version, the wrong answer, the
+  specification's answer, and why the ledger cannot meet that input. Under the
+  listed engine the row must still give exactly the listed wrong answer. It is
+  then written with the specification's answer, named
+  `known-engine-discrepancy:<id>:<row>`, reported as a known engine
+  discrepancy, and the Rust is checked against it. If the engine agrees again,
+  or answers differently, generation fails and asks for the list to be
+  updated. A discrepancy that is not listed fails as any other. The one entry
+  so far comes from the 500,000-text extended run under Electron's Node 24.22
+  (V8 15.2), row `random-440717`. There the duplicate escaped key `"\u0015"`
+  came back as `"\\"` and was not merged, while Node 26 and the same text
+  parsed on its own gave the merged object. The ledger's own records cannot
+  hold a duplicate key, since they are `JSON.stringify` of objects. The entry
+  names the files the ledger parses without having written them: the
+  confined launchers' receipts and identities, which use fixed formats; the
+  launcher manifest; and a hand-written `no-execution-socket.json`, the one
+  place a duplicate key can occur, whose keys are validated.
+
+### The locale check
+
+- **What `collate` covers.** The collation of the root locale, which English
+  uses, for ASCII strings, and nothing else: `locale_compare` returns
+  `NotCovered` for any other code unit. Its tables are generated under the
+  pinned locale `en` (not `und`: `Intl.Collator('und')` falls back to the
+  process's default locale), checked against other locales that inherit root
+  unchanged, with the locale and the ICU version recorded in the headers;
+  the generator ignores `LANG`. Under root, keys made of
+  `collate::CODE_UNIT_ORDER_SAFE` (`-./0-9a-z`, which every key shape the
+  ledger builds uses) sort the same by collation and by code unit; `A`-`Z` and
+  `_` do not (`native/ledger-core/tests/collate.rs` proves the first from
+  Node's weights and lists the counterexamples).
+- **Why a check is needed.** The ledger sorts keys with `localeCompare` and no
+  locale (`session-changes-store.js`, the pending keys of both commit paths;
+  `session-mutations.js`, staged `files` documents and restore paths), so
+  today's JavaScript orders them by the process's default locale. Some locales
+  order the ledger's keys differently from code units (Danish and Norwegian
+  put `aa` after `z`, so any hex digest or UUID holding `aa` moves; Czech and
+  Slovak put `ch` after `h`; Thai orders `-`, `.` and `/` differently). The
+  native ledger sorts by code unit, and the JavaScript is not changed, so the
+  native ledger must not be used where the two differ.
+- **The sample.** `collate::ledger_key_sample()` returns, in code-unit order,
+  1,867 strings: keys of every shape the ledger builds, from seeded IDs, and
+  every one- and two-character string over `CODE_UNIT_ORDER_SAFE`, which
+  catches a locale that reorders two of those characters, gives two of them
+  one primary weight, or contracts two of them. The same list is tracked in
+  `native/ledger-core/tests/ledger-key-sample.txt`.
+- **What the host check must do** (L3i, in the JavaScript host, before it
+  selects the native ledger, once per host object, on the thread that would
+  otherwise run the ledger worker, since that thread's default locale is the
+  one the JavaScript ledger would use):
+  1. Obtain the native ledger's sample (in its start-up handshake) and verify
+     it is byte-for-byte the copy shipped with the host (the tracked file),
+     refusing on any difference, so a binary cannot pass with an empty or
+     altered sample.
+  2. Sort a copy with exactly the ledger's call,
+     `[...sample].sort((a, b) => a.localeCompare(b))`, with no locale argument.
+  3. Use the native ledger only if that order equals the sample's order element
+     for element. Otherwise use the JavaScript worker for the host's lifetime
+     and journal the fallback with the resolved default locale
+     (`new Intl.Collator().resolvedOptions().locale`) and the first pair out of
+     order. The check is read once, like the switch: a locale change takes
+     effect at the next host start, as it does for the JavaScript ledger.
+  The check covers key order only. Restore rows sorted by user paths
+  (`session-mutations.js` `targets.rows`) need the D-collate decision in
+  addition.
+- **The survey.** `native/ledger-core/tests/survey-locales.mjs` sorts the
+  sample, 2,902 real-shape keys and the safe alphabet under every locale the
+  runtime's ICU supports and writes `native/ledger-core/tests/locale-survey.tsv`
+  (it fails if a locale passes the sample but not the keys). The tracked file
+  is Electron's, since the app ships it:
+  `ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/Electron.app/Contents/MacOS/Electron packages/harness-runtime/native/ledger-core/tests/survey-locales.mjs [--check]`.
+  Electron's ICU data has 56 locales; a full-ICU Node 26 (ICU 79.1) has 121
+  and refuses 35 of them, because a locale with no data in Electron collates
+  as root there. Under these default locales the native ledger is not used
+  (ICU 78.2, Electron's Node 24.22): `cs`, `da`, `et`, `fil`, `hr`, `hu`, `lt`, `lv`, `nb`, `no`, `sk`, `sr-Latn`, `th`.
+  `scripts/build-ledger-core.test.mjs` fails when that sentence and the survey
+  disagree. Of these, the real keys sampled differ only under `da`, `nb` and
+  `no`; the others fail the stricter sample.
+
+### The codecs in the crate (`tree`, `keys`, `text`, `paths`)
+
+Ports for the native ledger (research file 28, package L1b). As with `js`, no
+export of the WebAssembly module calls them and nothing in the product uses
+them. Each is a line-for-line port of today's JavaScript, which stays the
+reference.
+
+- **`tree`** is `lib/session-changes-trees.js` without its file-system half:
+  `parse_tree`, `serialize_tree` (Git's order, a subtree compared as if its
+  name ended in `/`), `object_header` and `object_id`, and
+  `commit_tree_changes` over a `TreeStore` the caller supplies (`read_tree`,
+  `write_object`). Names, modes and ids are JavaScript strings as the
+  JavaScript holds them: latin1 names, and ids written as `Buffer.from(oid,
+  'hex')` does (pairs of digits read from each unit's low byte, up to the
+  first pair that is not one). On success the set of objects written
+  equals the JavaScript's, and so does the root with one exception; their
+  order does not, since the JavaScript starts the writes concurrently and
+  this writes blobs first, then trees after their subtrees. The exception:
+  two entries new to one directory (not in the tree being rewritten), of
+  the same kind, whose names differ as strings but have the same latin1
+  bytes (a code unit above U+00FF: `Ā` and `\ud800` are both byte `00`).
+  `serializeTree`'s stable sort keeps their insertion order, which in the
+  JavaScript is the order their branches finish, so its root depends on
+  timing; the Rust adds them in change order, one of the JavaScript's
+  possible roots but not always its undelayed one. Only `importPrefix` can
+  stage such names, by copying names that `git ls-tree` lists (decoded as
+  UTF-8) from a ledger tree; `set`, `remove` and the lists take `validKey`
+  names (ASCII), and the product imports only the ledger's own `runs/` and
+  `bases/` trees, so a ledger the product wrote holds none. On failure this
+  stops at the first error, while the JavaScript's other branches keep
+  writing unreferenced objects. A conflict among one directory's children
+  (409) is reported before any of its subtrees is read, so it wins over an
+  unreadable subtree beside it (503), as the JavaScript finds it
+  synchronously. Timing-dependent in the JavaScript, and fixed here: a
+  conflict inside one subtree against an unreadable tree inside another,
+  and a failing blob write against a conflict (the Rust reports the
+  write's error). For these and the names above the vectors record every
+  outcome the JavaScript gives under several schedules (`{ any: [...] }`),
+  one of which the Rust must give. An odd `oid_length` (the callers pass 40
+  or 64) makes the JavaScript's width a fraction; the Rust rounds it down.
+- **`keys`** is the pure part of `lib/session-changes-store.js`: `valid_key`
+  and the other id and token checks (`at`, `ref`, lease tokens,
+  `importPrefix`'s source, `setListObjects`' ids), page names, `pages_of`
+  (at most 128 values and 256 KiB of the values' UTF-8 JSON per page, a
+  larger value on a page of its own; `undefined` fails as `Buffer.byteLength`
+  throws, values past `js::MAX_DEPTH` fail closed), the 512 KiB record bound,
+  and `entity_key` (`key()` of `lib/session-mutations.js`).
+- **`paths`** is `safeChangePath` (`lib/session-changes-snapshot.js`), POSIX only.
+- **`text`** is `lib/session-mutation-text.js` apart from the diff
+  (`apply_mutation_text` with the hunk budget and coalescing,
+  `initial_mutation_runs`, `visible_mutation_runs`, `mutation_text`, run rows
+  in format 2, `minimize_mutation_ancestry`) and the run-row code of
+  `lib/session-mutations.js` (format 1 rows, `runsFor` as `load_document`,
+  the marker and fence predicates, the choice `saveRuns` makes as
+  `save_plan`). A `Run` keeps the JavaScript object's property order and any
+  other properties a stored row carries (`Shape`): a decoded run holds `text`
+  last, a format 1 run keeps its stale `bytes`, and the rows written again
+  carry them. The typed fields cover what the ledger writes (`id` a string,
+  `start` an integer, `owner` `null` or a string, `deletedBy` strings,
+  `replaces` exactly `{ id, start, length }`). The model's numbers are
+  integers of magnitude at most 2^62 (a safe integer where the JavaScript
+  checks for one), and every sum or difference of them rounds as the
+  JavaScript's doubles do: a continuation of a run at 2^53 - 1 with 2 bytes
+  starts at 2^53, and range ends past 2^53 round the same way. Rows the
+  JavaScript accepts outside that model (an `owner` that is a number, a
+  range with another property, a format 1 row without `start`, `bytes` that
+  `Buffer.from` takes as an array, also `{ length: 1e10 }`, for which the
+  JavaScript tries to allocate 10 GB) are refused as `Unsupported`, after
+  every check the JavaScript makes has passed, so that the JavaScript's own
+  refusals (`invalid`, `TypeError`, also from a marker whose `baseline`
+  has its own `toString`, which `RegExp.prototype.test` cannot convert)
+  come out the same and a caller can fail closed on the rest. The native
+  layer must surface `Unsupported` like `invalid_change_record`: it locks
+  one document, not the ledger. One further difference: the JavaScript's
+  recursive `visit` in `applyMutationText` can overflow its stack on a very
+  deep ancestry chain, which the Rust's explicit stack does not.
+  `load_document`'s `bytes_for` must make `bytesFor`'s checks (a string of
+  64 hex digits whose object exists and hashes to it).
+- **Yielding.** `minimize_mutation_ancestry` is an `async fn` that awaits the
+  caller's `AncestryPause::pause(site)` exactly where the JavaScript awaits
+  `pause()` (every 256 units of work, at its six call sites, in order);
+  `SlicedPause` is the JavaScript's rule (yield once `sliceMs` have passed on
+  a clock) and `minimize_mutation_ancestry_now` runs it with a hook that never
+  waits. The two recursive walks of `applyMutationText` run on explicit
+  stacks in the JavaScript's order.
+- **Hashing** is the caller's (`tree::Digest`): the crate implements no hash.
+  The tests use FNV-1a only as a fingerprint and, for commits, as a stand-in
+  object id (`testObjectId` in `native/ledger-core/tests/codec-tools.mjs`):
+  `commitTreeChanges` takes whatever ids its store returns.
+- **Vectors.** `native/ledger-core/tests/generate-trees.mjs` writes
+  `trees.tsv` (1,000 seeded trees per id width, whose entries
+  `native/ledger-core/tests/support/mod.rs` draws again from the seed, with Git's order and id;
+  damaged trees for `parseTree`; JavaScript strings no Git tree holds for
+  `serializeTree`) and `commits.tsv` (500 cases of two commits over an
+  in-memory store). When writing, `git mktree --missing` builds every seeded
+  tree and the generator refuses unless `serializeTree` gives Git's bytes and
+  `objectID` Git's id (`--no-git` skips that; the content is the same).
+  `generate-keys.mjs` writes `keys.tsv`; `generate-text.mjs` writes `text.tsv`
+  (300 seeded edit histories with undo, redo, overlapping hunks, small hunk
+  budgets, multi-byte and invalid UTF-8; texts of 32 KiB and more; seeded
+  ancestry graphs with a fake clock, whose pause sites are read from the
+  JavaScript's stack; hand-made rows and pages; runs whose starts and range
+  ends pass 2^53). `commits.tsv` ends with fixed cases: a sibling conflict
+  beside an unreadable subtree, and new names with the same latin1 bytes,
+  each under 64 schedules. The closures of
+  `session-mutations.js` that are not exported (`formatOneRows`, `runsFor`,
+  `saveRuns`, the predicates, `key`) and `validKey` and `pagesOf` are
+  evaluated from their own source text (`codec-tools.mjs`
+  `declarationSource`), so the vectors are today's code. `cargo test`
+  (`native/ledger-core/tests/trees.rs`, `keys.rs`, `text.rs`) checks the Rust against them;
+  `scripts/build-ledger-core.test.mjs` fails when they are not what today's
+  JavaScript writes (without Git). Regenerate with
+  `node packages/harness-runtime/native/ledger-core/tests/generate-<trees|keys|text>.mjs`
+  (`--check` compares). The extended run (`run-extended.mjs`) adds 20,000
+  trees per width checked against `git mktree` with the Rust's own bytes
+  hashed by `git hash-object` (`LEDGER_CORE_GIT`), 5,000 commit cases,
+  20,000 key cases and 3,000 histories.
+
+## Native ledger I/O
+
+The first package of the native ledger (research file 28, plan package L2):
+the file-system primitives, the cross-process lock and the atomic writes of
+`lib/atomic-file.js`, in Rust. **Nothing in the product calls it**: there is
+no switch, no binary in the package and no change to any JavaScript.
+
+- **Where.** `native/ledger/` is a cargo workspace (tracked `Cargo.lock`) with
+  one library crate, `ledger-io`. It has no toolchain file of its own: the
+  build script selects ledger-core's pin through `RUSTUP_TOOLCHAIN`. Its
+  dependencies are `libc` (exactly pinned, MIT or Apache-2.0),
+  `../ledger-core` by path (JavaScript strings, numbers and JSON for the lock
+  file's bytes) and, for the object database below, `sha1`, `sha2` and
+  `miniz_oxide` (exactly pinned, default features off; see "The object
+  database").
+  - `ledger-io/src/fs.rs` reproduces the primitives as the libuv inside
+    Electron's Node makes them (`process.versions.uv`, 1.52.1 when this was
+    written), and holds every `unsafe` block of the workspace. It covers bigint
+    stamps (`dev:ino:size:mtimeNs:ctimeNs[:mode]`, signed 64-bit as Node's
+    `BigInt64Array` holds them), `mtimeMs`, the sync chain, `copyfile`, `link`,
+    `rename`, `unlink`, `chmod`, exclusive opens with a mode, Node's recursive
+    `mkdir`, `utimes`, `realpath`, `statfs`, directory listing and directory
+    sync.
+  - Errors are Node's: libuv's names and texts (`uv_err_name`,
+    `uv_strerror`, the table `util.getSystemErrorMap()` prints) in Node's
+    layout (`<code>: <text>, <syscall> '<path>' -> '<dest>'`), with `errno`
+    negated as Node's is, `syscall`, `path` and `dest`. An errno libuv does
+    not know (macOS `EOPNOTSUPP` and `ENODATA`) is `Unknown system error -<n>`
+    in both. A recursive `mkdir` reports every failure as `mkdir` of the path
+    it was making, a failed `stat` included.
+  - Limits a caller must know: `utimes` takes seconds at libuv's level, so a
+    caller applies Node's `toUnixTimestamp` first (a negative time becomes the
+    current time there); `read_file` reads to the end without Node's size
+    check (`ERR_FS_FILE_TOO_LARGE` above 2 GiB), which a reader of large files
+    must add; `realpath` and directory names decode ill-formed UTF-8 lossily,
+    as Node's `'utf8'` does.
+  - `ledger-io/src/atomic.rs` holds `write_file_atomic`,
+    `with_cross_process_file_lock` and `cleanup_stale_atomic_files`: the same
+    calls in the same order, the same names, modes, retry gaps, timeouts,
+    codes and lock bytes. Everything the JavaScript lets a caller inject is
+    injectable (`Fs`, `Env`: clock, wait, liveness, token, identifier, signal,
+    progress). The functions block; a caller that needs concurrency runs them
+    on a blocking thread.
+  - `ledger-io/src/path.rs` ports the `path.posix` functions they use.
+  - `ledger-io/src/bin/atomic-probe.rs` is a test-only binary, built only with
+    the `probe` feature.
+- **What libuv does, measured.** These were checked with a test-only
+  interposer (`scripts/ledger-native/trace-interpose.c`, macOS
+  `DYLD_INSERT_LIBRARIES` on the unsigned development Electron):
+  - **Sync on macOS** is `fcntl(F_FULLFSYNC)`; if that does not return 0,
+    `fcntl(F_BARRIERFSYNC)` (85); if that does not either, `fsync`. The whole
+    chain is retried on `EINTR`. Each fallback was forced and observed in both
+    implementations. On Linux it is `fsync`.
+  - **`copyfile` has no `copyfile(3)` and no clone on macOS** in this libuv.
+    It opens, `fstat`s, opens the destination with the source's mode,
+    truncates, `futimens`, `fchown`, `fchmod`, then copies the bytes:
+    `sendfile` refuses a file target, so it falls back to 8 KiB
+    `pread`/`write` rounds. `COPYFILE_FICLONE` is ignored there and
+    `COPYFILE_FICLONE_FORCE` fails with `ENOSYS`. The bytes are written after
+    the times are set, so a non-empty copy does not keep the source's
+    modification time (measured on Electron's Node). On Linux, `FICLONE`,
+    `copy_file_range` and `sendfile` are tried first.
+  - **Writes** go out in chunks of at most 512 KiB (`kWriteFileMaxChunkSize`).
+  - **`rm(path, { force: true })`** is `lstat`, `lstat`, `unlink`.
+  - **Recursive `mkdir`** is Node's own `MKDirpAsync`: `mkdir`; on `ENOENT`
+    the parent first; `EACCES`, `ENOSPC`, `ENOTDIR` and `EPERM` end it; any
+    other error (`EEXIST` above all) `stat`s the path.
+- **Build and verify** with `node scripts/build-ledger-native.mjs [--verify]`.
+  Every cargo command runs with `--locked` on a copy of the workspace and of
+  ledger-core under the OS temp dir, with a private `CARGO_HOME` and target
+  directory there (removed afterwards; `--keep-artifacts` keeps them). The
+  dependencies are fetched once per run with `cargo fetch --locked`, which
+  needs the network; everything after that runs `--offline`. `--verify` runs
+  `cargo fmt --check`, `cargo clippy -D warnings` (every target and feature),
+  `cargo test`, then `cargo check` and `cargo clippy -D warnings` for
+  `x86_64-unknown-linux-gnu` when the pinned toolchain has that target (the
+  only way to lint the Linux-only code on a Mac; it prints one line saying so
+  when the target is missing, and on x86_64 Linux the host clippy is that
+  lint), then the differential tests
+  (`scripts/ledger-native/atomic-differential.mjs`) against the probe it
+  built. It passes the probe's path in `LEDGER_NATIVE_PROBE`; the tests build
+  one themselves when that is unset. The system-call tests skip themselves
+  off macOS, with the reason in the output.
+  - **The JavaScript reference** is the Node inside Electron, the ledger's
+    runtime: the binary the installed `electron` package names, started with
+    `ELECTRON_RUN_AS_NODE=1` (`scripts/ledger-native/reference-runtime.mjs`).
+    Only where that binary is absent does the JavaScript run on the Node that
+    runs the tests. The run prints which runtime it used and its libuv.
+  - **Inputs.** `scripts/ledger-native/inputs.mjs` lists what reruns the
+    verify: the workspace, ledger-core's crate, `lib/atomic-file.js` and every
+    local module the build script and the differential tests load (the
+    isolation preload included). Fast `validate` reads that list, and both CI
+    steps print it as their pull-request filter. The build script's contract
+    test follows the imports and fails when one is missing from the list.
+  - **CI** runs the verify on every push and on pull requests that change an
+    input: in the `static` job on Ubuntu (Linux code, the JavaScript on CI's
+    Electron or Node), and in the `native-1` macOS lane after its suites
+    (the macOS code, the sync chain and the system-call traces). The macOS
+    step adds a Rust install and the verify, a few minutes, only when an input
+    changed.
+- **The differential tests** compare the JavaScript (`lib/atomic-file.js`)
+  with the Rust:
+  - The shared specification (`scripts/ledger-native/atomic-spec.mjs`)
+    restates as data the 10 cases of `lib/atomic-file.test.js` that concern
+    these three functions. It lists the 5 it leaves out: Windows,
+    `writeFileAtomicSync`, `readJsonGuarded`. It adds 31 edge cases, among
+    them the 24-hour cutoff at its exact boundary, names that only look like
+    temporaries, `ENOTDIR` for a file or a dangling link in the middle of a
+    path, `ERR_FS_EISDIR`, a lock naming a process this user may not signal
+    (`EPERM`, alive), a lock file of ill-formed UTF-8, and a dead owner
+    rewritten with the same token before the re-read. Results, errors (code,
+    errno, syscall, path, dest and message), file-system call traces,
+    progress, observations and the tree after every run must be equal, and
+    the probe's tree must be the one Node reads.
+  - Lock bytes are checked against the documented format.
+  - JavaScript and Rust processes contend on one counter: 4 of each, 25
+    cycles each, 200 in all (the design asked for 2,000; the tenth keeps the
+    gate short).
+  - A SIGKILLed holder of each language is reclaimed by the other, and a live
+    holder is never stolen.
+  - On macOS, system-call sequences are compared: `writeFileAtomic`, lock
+    publication and the sync chain with each fallback forced; a forced
+    `fsync` failure must fail both writes alike and leave no temporary.
+    `copyfile` is compared by outcome, mode (one the umask would clip), times,
+    bytes and its `EEXIST` failure.
+  - Stamps are compared with the reference Node's bigint stats, and the
+    system error table with its `util.getSystemErrorMap()`.
+  - `scripts/build-ledger-native.test.mjs`, which needs no Rust, runs the
+    specification against the JavaScript alone on every lane, and checks the
+    workspace's files, lockfile, probe and `unsafe` placement.
+- **Known defects carried over.** The Rust reproduces these defects of
+  today's JavaScript, because the lock is shared with it; any fix belongs to
+  both at once (an owner decision):
+  - A dangling symbolic link at the lock path makes the lock spin forever:
+    `link` gives `EEXIST`, reading the lock gives `ENOENT`, and that retries
+    at once, before the timeout is checked, so it never waits and never
+    times out. No test reproduces it, because it would hang.
+  - A lock is left behind if the temporary cannot be removed after a
+    successful link (the error skips the release), and a failed release turns
+    a callback that finished into a failure.
+  - A lock naming a pid above 2^31 - 1 is reclaimed at once (`process.kill`
+    refuses it, which counts as dead).
+  - libuv's `copyfile` loops forever if the source shrinks during the copy.
+- **Packaging.** Nothing ships: `packages/electron/package.json` excludes
+  `native/ledger`, and the packaged-app check forbids it.
+- **The native acceptance digest** hashes this package's `.rs` files, so every
+  workspace edit changes it, as for ledger-core.
+
+### The object database
+
+`ledger-io/src/git/odb/` (plan package L3a) reads the ledger repository
+in-process and writes its loose objects as `lib/session-changes-trees.js`
+writes them. Nothing in the product calls it yet; `update-ref`, `init`,
+`repack`, `prune`, `count-objects` and every Git command on a user's project
+keep spawning Git (research file 28, section 5).
+
+- **What it reads.** Loose objects (zlib, the `<type> <size>\0` header checked
+  as Git's `parse_loose_header` checks it: a known type, no leading zeros, the
+  stream ending at the declared size with nothing after it); packs of
+  version 2 with indexes of version 2 (fan-out, binary search, the 64-bit
+  offset table, OFS and REF deltas, chains followed without recursion, every
+  base looked up only in its delta's own pack, as Git resolves it: a REF base
+  elsewhere, loose or in another pack, asks Git (`corrupt_pack`), since Git
+  reports such an object missing), sha1 and sha256
+  repositories. Type and size come from headers alone: a loose header, a pack
+  entry header, a delta's own header and its chain's entry headers. An object
+  not found makes it list `objects/pack` again before it says "absent", and
+  packs already open stay readable after `repack` deletes them.
+- **Refs.** A loose ref file holding exactly one lowercase id (and a newline),
+  otherwise `packed-refs` (a directory at the ref's path reads past to it, as
+  Git does); `for-each-ref` with and without a plain pattern.
+- **Names and listings.** `<id>` and `<tree>:<path>` as `cat-file --batch`
+  resolves them (`<id> submodule` for a gitlink whose commit is absent), and
+  the rows of `ls-tree -r -l -z <tree> [-- <prefix>/]` in Git's order: the
+  JavaScript's `listTreeRows` and paged `listDirectPrefix`, with its rule
+  that a tree not strictly in Git's order, or repeating a name, is not
+  answered here. It is stricter in one place: any mode outside Git's five
+  (`40000`, `100644`, `100755`, `120000`, `160000`) in a tree it reads asks
+  Git.
+- **Fail closed.** Every answer is found, absent (only when every object
+  source was read and understood) or "ask Git" with a reason
+  (`odb::Reason`): `repository_format` (not a directory, no `objects`, a
+  linked worktree's `commondir`, a format version other than 0 or 1, a
+  configuration it cannot parse), `extension` (any `extensions.*` but
+  `objectFormat` sha1 or sha256 in version 1: reftable, partial clone, a
+  compatibility format, anything in version 0), `alternates`, `promisor`,
+  `replace_refs` (checked on every read), `multi_pack_index`,
+  `unindexed_pack`, `unstable_packs`, `pack_version`, `index_version`
+  (version 1 included), `corrupt_index`, `corrupt_pack`, `corrupt_object`,
+  `too_large`, `delta_depth`, `delta_cycle`, `delta_budget`, `id_mismatch`
+  (when ids are checked), `io`, `ref_format`, `ref_name`, `tree_order`,
+  `tree_mode`, `tree_missing`, `tree_format`, `tree_limit`, `name_syntax` and
+  `peel` (`<commit>:<path>`). The bounds (`OdbOptions`) default to 256 MiB per
+  object, 10,000 deltas per chain, 1 GiB produced per chain, 4,096 tree levels
+  and ten million rows; output buffers are never larger than a declared size
+  plus one byte.
+- **Not seen by the reader.** Inputs that change what Git answers but that
+  the reader does not read: the environment variables `GIT_REPLACE_REF_BASE`
+  and `GIT_NO_REPLACE_OBJECTS`, a `remote.*.promisor` set in global or
+  included configuration, and `safe.directory` (where Git refuses a
+  repository another user owns, the reader answers). None can make it say
+  "absent" for a private ledger the product created; they are out of scope
+  here, and the caller that replaces a Git spawn with the reader decides
+  whether to clear or check them, as `gitEnvironment` in
+  `lib/session-changes-git.js` clears others today.
+- **Errors are not yet the ledger's.** The reader returns `odb::AskGit` with
+  its `Reason`, and the writer returns the system error with its Node errno
+  code (`ENOENT`, `EACCES`, …), as `writeLooseObject` throws it. Turning them
+  into the ledger's own codes (`invalid_change_record`, `storage_unavailable`,
+  `capture_git_failed` and the rest), and deciding which "ask Git" answers
+  fall back to a Git spawn, is left to the store package that will call this
+  one.
+- **Writes.** `write_loose_object` is `writeLooseObject` call for call:
+  freshen with `utimes`, else up to five attempts of recursive `mkdir`,
+  `stat`, `tmp_obj_<uuid>` written `wx` with mode 0o444, `link` (`EEXIST`
+  is success), and always `unlink` of the temporary; `ENOENT`, or `EINVAL`
+  when the fan-out directory was removed or replaced, retries. Never synced.
+  The zlib bytes are `miniz_oxide` at level 6 and differ from Node's zlib for
+  most objects; **identity is the object id**, and the tests compare objects
+  by content and id, never as files.
+- **Dependencies.** `sha1` 0.11.0 and `sha2` 0.11.1 (MIT or Apache-2.0; with
+  `digest`, `block-buffer`, `crypto-common`, `hybrid-array`, `typenum`,
+  `cfg-if`, `cpufeatures`, all MIT or Apache-2.0), `miniz_oxide` 0.9.1 (MIT,
+  Zlib or Apache-2.0; with `adler2`, 0BSD, MIT or Apache-2.0). The workspace
+  builds these three optimized in its development profile, so the debug probe
+  inflates and hashes at release speed; release builds are unaffected.
+- **Tests.** Unit tests in `git/odb/tests.rs` (handcrafted packs for delta
+  cycles, huge declared sizes, external bases and large offsets; seeded
+  fuzzing of the delta, index, pack, tree and configuration parsers; the
+  writer's call sequence). The differential tests,
+  `scripts/ledger-native/odb-differential.mjs`, drive the test-only
+  `odb-probe` with Git as the oracle ([testing](../../docs/TESTING.md#native-ledger-module-tests)).
+  The extended run, `node scripts/build-ledger-native.mjs --verify --extended`,
+  adds the full fuzz rounds and `scripts/ledger-native/odb-real-ledgers.mjs`,
+  which reads the aged-profile corpus and every ledger the dual-run scenarios
+  write; `scripts/ledger-native/odb-planted.mjs` checks that twenty-one
+  planted bugs are each caught.
 
 ## Registered host-dependent operations
 

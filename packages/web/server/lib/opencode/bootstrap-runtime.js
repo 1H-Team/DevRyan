@@ -25,7 +25,6 @@ export const createBootstrapRuntime = (dependencies) => {
       tunnelAuthController,
       readSettingsFromDiskMigrated,
       normalizeTunnelSessionTtlMs,
-      getRuntimeReady,
       resolveZenModel,
       sayTTSCapability,
       ensurePushInitialized,
@@ -91,7 +90,6 @@ export const createBootstrapRuntime = (dependencies) => {
       uiAuthController,
       readSettingsFromDiskMigrated,
       normalizeTunnelSessionTtlMs,
-      getRuntimeReady,
     });
 
     registerTtsRoutes(app, { resolveZenModel, sayTTSCapability });

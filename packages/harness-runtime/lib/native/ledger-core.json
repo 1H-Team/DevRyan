@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "module": "ledger-core.wasm",
+  "sha256": "50e8590389c81b14daa794ba9309313de231f814f9005d0807fbdc0397e2e3d9",
+  "bytes": 42729,
+  "abiVersion": 1,
+  "target": "wasm32-unknown-unknown",
+  "toolchain": {
+    "channel": "1.99.1",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)"
+  },
+  "build": {
+    "command": "cargo build --locked --offline --release --target wasm32-unknown-unknown --lib",
+    "rustflags": [
+      "--remap-path-prefix={crate}=/ledger-core",
+      "--remap-path-prefix={cargoHome}=/cargo",
+      "--remap-path-prefix={toolchain}=/toolchain",
+      "-Ctarget-cpu=generic"
+    ],
+    "environment": {
+      "SOURCE_DATE_EPOCH": "0"
+    }
+  },
+  "sources": {
+    "crate": "packages/harness-runtime/native/ledger-core",
+    "digest": "725650f816ea8e18dc8812b26b03355cf5b5a55bf0c155aef38de774a4004859",
+    "files": {
+      "Cargo.toml": "7b6f693dc0c297b32f0d2224a4744862fcf555b8111ea1e72717e4b2a26ca62e",
+      "Cargo.lock": "31dd713047540af7fbd5f33ff28fe331692c48647c8a3ff7ac2c4a0304a545fa",
+      "rust-toolchain.toml": "f3e797d28d4f6d91291d7a0dd8ece02be58d51b9b3ea14920de4554e91d420ac",
+      "src/base64.rs": "731ff9a62d53778fb6cf6187c98366c41c23bb7c243d73718147895f77499b18",
+      "src/collate.rs": "dad99ec4843b2bc93f32f25941b30334c3f44e245f44da6cad71cb865159ec80",
+      "src/collate_table.rs": "f57ad663a7a1eedf21cf37d81e2bc385884ef50494bbd6347c499fb20d154820",
+      "src/diff.rs": "a65d661f86e0f9767f5c52dc0bed4fbb915481939ac3d3a1a3b343e857c00cb4",
+      "src/js/json.rs": "4e2a97e1ea6b1b92d30b6f39250e1c8b96e7289a26b5e2787144ded6f1424b9f",
+      "src/js/mod.rs": "85e12a88df4574a9d6ee3b104b7a158201a73544babc86c0b8f0bc69594a4049",
+      "src/js/number.rs": "3c32fadaf2729563e8c5e5798995ce4120580353d8d8e9d17d286de208714565",
+      "src/js/string.rs": "0ace4f39b174b0aeee0c37050f0269d55ac60c096942f09a928d6a39b0fe2a20",
+      "src/js/value.rs": "25aefa9bf78424e7ab4024ebc94156e150b6ee86789eb4c22092060c4a65abf9",
+      "src/key_sample.rs": "a0d090f03339b32a7d1be3306d838dbe64b6d9eed1f3c9a8dbb533b981979173",
+      "src/keys.rs": "687ea95261e0ce261379d926143a86cd758fd12790afc0647f0f461c3b42dde6",
+      "src/lib.rs": "9b80c44b11ee421f79e61f1d4cdd877e9e92e18402ee35c1748f5cef9ddecc8a",
+      "src/paths.rs": "b2296fa918a8f1af01ba69464e3589e2aed39e02da09329e4bf9f9cd8d9b69ef",
+      "src/text/ancestry.rs": "d77ab82b1ef300104d1a5a23bbdff595bab04e55e93d594be5ef48eaa5a3991e",
+      "src/text/apply.rs": "664b2db46acd1a12af076b1c6644a8b34d4fbaf040c2b04fbda3e48e671d3533",
+      "src/text/mod.rs": "04814add1485f7588524ece4063c22fd453f27c0e7ef3fb2aaa8199906232ca4",
+      "src/text/rows.rs": "78b7b4e999ca201674f5109897b74ad4bf99fae91058745206147a7e53f0fa4a",
+      "src/tree.rs": "6b532c2dbfb384ae0184987f6b3bd62c11af8fa6e9cefcb3037bb184b2d5815a"
+    }
+  }
+}

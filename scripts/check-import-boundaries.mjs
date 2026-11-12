@@ -61,7 +61,8 @@ export function loadPackages(root = repositoryRoot) {
   return packages;
 }
 
-function resolveFile(root, repositoryPath) {
+/** The existing repository file a module path names, trying the resolver's suffixes; the path itself when none exists. */
+export function resolveFile(root, repositoryPath) {
   for (const suffix of RESOLVE_SUFFIXES) {
     const candidate = repositoryPath + suffix;
     const absolute = path.join(root, candidate);
@@ -90,7 +91,8 @@ export function resolveSpecifier({ root = repositoryRoot, packages, importer, sp
 }
 
 let typescript;
-function importSpecifiers(source) {
+/** Static imports, re-exports, require() and literal import() specifiers of a source, as TypeScript's pre-processor reads them. */
+export function importSpecifiers(source) {
   typescript ??= createRequire(path.join(repositoryRoot, 'package.json'))('@typescript/typescript6');
   return typescript.preProcessFile(source, true, true).importedFiles.map(entry => entry.fileName);
 }

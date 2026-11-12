@@ -46,7 +46,14 @@ function existing(root, candidate) {
 
 const bareName = specifier => specifier.startsWith('@') ? specifier.split('/').slice(0, 2).join('/') : specifier.split('/')[0];
 
-export function walkBrowserGraph({ root = repositoryRoot, entries = BROWSER_ENTRIES } = {}) {
+/**
+ * The files the browser graph reaches from `entries`, and its non-portable imports.
+ * `privilegedEntries` reads the imports of an entry under a privileged prefix (a
+ * server test, for scripts/check-unreached-files.mjs); the walk still stops at
+ * every privileged file it reaches. Walks that share `specifiers` (a Map) read
+ * each file once.
+ */
+export function walkBrowserGraph({ root = repositoryRoot, entries = BROWSER_ENTRIES, privilegedEntries = false, specifiers = new Map() } = {}) {
   const packages = loadPackages(root);
   const visited = new Set(), violations = [];
   const queue = entries.map(file => ({ file, from: null }));
@@ -54,11 +61,12 @@ export function walkBrowserGraph({ root = repositoryRoot, entries = BROWSER_ENTR
     const { file, from } = queue.shift();
     if (visited.has(file)) continue;
     visited.add(file);
-    if (PRIVILEGED_PREFIXES.some(prefix => file.startsWith(prefix))) {
+    if (!(privilegedEntries && from === null) && PRIVILEGED_PREFIXES.some(prefix => file.startsWith(prefix))) {
       violations.push({ importer: from, target: file, reason: 'privileged implementation' });
       continue;
     }
-    for (const raw of specifiersOf(readFileSync(path.join(root, file), 'utf8'))) {
+    if (!specifiers.has(file)) specifiers.set(file, specifiersOf(readFileSync(path.join(root, file), 'utf8')));
+    for (const raw of specifiers.get(file)) {
       const specifier = raw.split('?')[0];
       if (specifier.startsWith('node:') || BUILTINS.has(specifier) || BUILTINS.has(bareName(specifier)) && !specifier.startsWith('.')) {
         violations.push({ importer: file, target: raw, reason: 'Node builtin' });
@@ -79,7 +87,7 @@ export function walkBrowserGraph({ root = repositoryRoot, entries = BROWSER_ENTR
       else if (PRIVILEGED_PREFIXES.some(prefix => candidate.startsWith(prefix))) violations.push({ importer: file, target: candidate, reason: 'privileged implementation' });
     }
   }
-  return { files: visited.size, violations };
+  return { files: visited.size, visited, violations };
 }
 
 export function main() {

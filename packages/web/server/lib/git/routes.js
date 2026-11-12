@@ -1,5 +1,4 @@
 import { DEFAULT_HELPER_MODEL_SELECTION } from '@devryan/shared-runtime';
-import { registerCommitTemplateRoutes } from './template-routes.js';
 import { generateCommitMessageDirect } from './commit-message.js';
 import { collectCommitMessageContext, validateCommitMessageSelectedFiles } from './commit-message-context.js';
 import { generatePullRequestDescriptionDirect } from './pr-description.js';
@@ -135,8 +134,6 @@ export function registerGitRoutes(app, {
   prepareNativeDirectory,
   loadGitLibraries,
 } = {}) {
-  registerCommitTemplateRoutes(app);
-
   const resolveOpenCodeClient = () => (typeof openCodeClient === 'function' ? openCodeClient() : openCodeClient) ?? null;
   const openCodeClientArgs = () => {
     const client = resolveOpenCodeClient();

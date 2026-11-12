@@ -1,4 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from '../../test-supertest.js';
 import {
@@ -8,7 +11,8 @@ import {
   resolveHealthOpenCodeGeneration,
   resolveSharedJsonBodyLimit,
 } from './core-routes.js';
-import { createTunnelAuth } from './tunnel-auth.js';
+import { createSupabaseConnection } from '../multi-user/supabase-connection.js';
+import { createTunnelAccessControl } from '../tunnels/access-control.js';
 
 describe('core-routes', () => {
   const createApp = ({ uiAuthController = null } = {}) => {
@@ -329,6 +333,26 @@ describe('common request middleware', () => {
 });
 
 describe('managed tunnel and invitation links', () => {
+  const roots = []; const disposers = [];
+  afterEach(async () => {
+    for (const close of disposers.splice(0).reverse()) await close();
+    for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true });
+  });
+  // The tunnel controller application.js uses, bound to the local owner as
+  // with Supabase Off, with an active tunnel on the given public hostname.
+  const createActiveTunnelController = async (mode, { now } = {}) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-core-routes-tunnel-')); roots.push(root);
+    const connection = await createSupabaseConnection({
+      config: { dataDirectory: root, configured: false, enabled: false },
+      fetchImpl: () => { throw new Error('Cloud calls forbidden in this test'); },
+    });
+    disposers.push(() => connection.dispose());
+    await connection.bootstrapLocalOwner();
+    const controller = createTunnelAccessControl(now ? { now } : undefined);
+    await controller.initialize({ connection }); disposers.push(() => controller.dispose());
+    await controller.setActiveTunnel({ publicUrl: 'https://tunnel.example.com', mode });
+    return controller;
+  };
   it('preserves authentication middleware errors while instrumenting selection requests', async () => {
     const app = express();
     registerAuthAndAccessRoutes(app, {
@@ -354,14 +378,18 @@ describe('managed tunnel and invitation links', () => {
     expect((await request(app).post('/api/auth/reset')).status).toBe(200);
     expect(order).toEqual(['tunnels', 'reset']);
   });
-  const createAuthApp = ({ multiUser = true, prepareFreshTunnelLogin, getRuntimeReady } = {}) => {
+  // The product's only tunnel controller, with the routes as application.js
+  // composes them. The tunnel access boundary owns the POST link exchange
+  // (tunnels/access-control.test.js); these GET routes reach the controller
+  // directly, as a local request does.
+  const createAuthApp = async ({ multiUser = true, now, readSettingsFromDiskMigrated } = {}) => {
     const app = express();
-    const tunnelAuthController = createTunnelAuth();
+    const tunnelAuthController = await createActiveTunnelController('managed-remote', { now });
     const handleConnect = vi.fn((_req, res) => res.status(200).type('text/plain').send('invite'));
     const uiAuthController = {
       multiUser,
       handleConnect,
-      prepareFreshTunnelLogin: prepareFreshTunnelLogin ?? vi.fn(async (_req, res) => {
+      prepareFreshTunnelLogin: vi.fn(async (_req, res) => {
         res.setHeader('Set-Cookie', 'oc_app_session=; Path=/; Max-Age=0');
       }),
       requireAuth: vi.fn((_req, res) => res.status(401).json({ error: 'Authentication required' })),
@@ -370,15 +398,8 @@ describe('managed tunnel and invitation links', () => {
     registerAuthAndAccessRoutes(app, {
       tunnelAuthController,
       uiAuthController,
-      readSettingsFromDiskMigrated: vi.fn(async () => ({ tunnelSessionTtlMs: 60_000 })),
+      readSettingsFromDiskMigrated: readSettingsFromDiskMigrated ?? vi.fn(async () => ({ tunnelSessionTtlMs: 60_000 })),
       normalizeTunnelSessionTtlMs: (value) => value,
-      getRuntimeReady: getRuntimeReady ?? vi.fn(() => true),
-    });
-
-    tunnelAuthController.setActiveTunnel({
-      tunnelId: 'tunnel-1',
-      publicUrl: 'https://tunnel.example.com',
-      mode: 'managed-remote',
     });
 
     return { app, tunnelAuthController, handleConnect, prepareFreshTunnelLogin: uiAuthController.prepareFreshTunnelLogin };
@@ -387,12 +408,7 @@ describe('managed tunnel and invitation links', () => {
   it('rejects shared-password auth and API access on a managed-remote hostname', async () => {
     const app = express();
     app.use(express.json());
-    const tunnelAuthController = createTunnelAuth();
-    tunnelAuthController.setActiveTunnel({
-      tunnelId: 'tunnel-1',
-      publicUrl: 'https://tunnel.example.com',
-      mode: 'managed-remote',
-    });
+    const tunnelAuthController = await createActiveTunnelController('managed-remote');
     const handleSessionStatus = vi.fn((_req, res) => (
       res.status(401).json({ authenticated: false, locked: true })
     ));
@@ -411,7 +427,6 @@ describe('managed tunnel and invitation links', () => {
       uiAuthController,
       readSettingsFromDiskMigrated: vi.fn(async () => ({ tunnelSessionTtlMs: 60_000 })),
       normalizeTunnelSessionTtlMs: (value) => value,
-      getRuntimeReady: vi.fn(() => true),
     });
     app.get('/api/direct-login-check', (_req, res) => res.json({ ok: true }));
 
@@ -444,12 +459,7 @@ describe('managed tunnel and invitation links', () => {
   it('uses managed-account login directly on a managed-remote hostname', async () => {
     const app = express();
     app.use(express.json());
-    const tunnelAuthController = createTunnelAuth();
-    tunnelAuthController.setActiveTunnel({
-      tunnelId: 'tunnel-1',
-      publicUrl: 'https://tunnel.example.com',
-      mode: 'managed-remote',
-    });
+    const tunnelAuthController = await createActiveTunnelController('managed-remote');
     const handleSessionStatus = vi.fn((_req, res) => (
       res.status(401).json({ authenticated: false, locked: true, mode: 'multi-user' })
     ));
@@ -467,7 +477,6 @@ describe('managed tunnel and invitation links', () => {
       uiAuthController,
       readSettingsFromDiskMigrated: vi.fn(async () => ({ tunnelSessionTtlMs: 60_000 })),
       normalizeTunnelSessionTtlMs: (value) => value,
-      getRuntimeReady: vi.fn(() => true),
     });
     app.get('/api/direct-login-check', (_req, res) => res.json({ ok: true }));
 
@@ -492,68 +501,71 @@ describe('managed tunnel and invitation links', () => {
     expect(requireAuth).toHaveBeenCalledTimes(1);
   });
 
-  it('exchanges a canonical tunnel link in multi-user mode without invoking invitations', async () => {
-    const { app, tunnelAuthController, handleConnect, prepareFreshTunnelLogin } = createAuthApp();
-    const { token } = tunnelAuthController.issueBootstrapToken({ ttlMs: 60_000 });
-
-    const response = await request(app).get(`/tunnel/connect?t=${encodeURIComponent(token)}`);
-
-    expect(response.status).toBe(302);
-    expect(response.headers.location).toBe('/');
-    expect(response.headers['set-cookie']).toEqual(expect.arrayContaining([
-      expect.stringContaining('oc_app_session='),
-      expect.stringContaining('oc_tunnel_session='),
-    ]));
+  const expectRefusedLink = (response) => {
+    expect(response.status).toBe(401);
+    expect(response.headers['content-type']).toBe('text/plain; charset=utf-8');
+    expect(response.text).toBe('Connection link is invalid or expired.');
     expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.headers['set-cookie']).toBeUndefined();
+  };
+
+  it('refuses a link exchanged by GET, sets no cookie and leaves the link usable', async () => {
+    const { app, tunnelAuthController, handleConnect, prepareFreshTunnelLogin } = await createAuthApp();
+    const { token } = await tunnelAuthController.issueBootstrapToken();
+
+    expectRefusedLink(await request(app).get(`/tunnel/connect?t=${encodeURIComponent(token)}`));
+    expect(tunnelAuthController.getBootstrapStatus().hasBootstrapToken).toBe(true);
     expect(handleConnect).not.toHaveBeenCalled();
-    expect(prepareFreshTunnelLogin).toHaveBeenCalledTimes(1);
+    expect(prepareFreshTunnelLogin).not.toHaveBeenCalled();
   });
 
   it('does not sign the browser out for an invalid connection link', async () => {
-    const prepareFreshTunnelLogin = vi.fn();
-    const { app } = createAuthApp({ prepareFreshTunnelLogin });
+    const { app, prepareFreshTunnelLogin } = await createAuthApp();
 
-    await request(app).get('/tunnel/connect?t=invalid-token').expect(401);
+    expectRefusedLink(await request(app).get('/tunnel/connect?t=invalid-token'));
 
     expect(prepareFreshTunnelLogin).not.toHaveBeenCalled();
   });
 
-  it('returns a retryable 503 and preserves the token when fresh-login cleanup fails', async () => {
-    const prepareFreshTunnelLogin = vi.fn()
-      .mockRejectedValueOnce(Object.assign(new Error('vault unavailable'), { code: 'fresh_login_cleanup_failed' }))
-      .mockResolvedValueOnce(undefined);
-    const { app, tunnelAuthController } = createAuthApp({ prepareFreshTunnelLogin });
-    const { token } = tunnelAuthController.issueBootstrapToken({ ttlMs: 60_000 });
+  it('refuses a link while no tunnel is active', async () => {
+    const { app, tunnelAuthController } = await createAuthApp();
+    const { token } = await tunnelAuthController.issueBootstrapToken();
+    tunnelAuthController.suspendActiveTunnel();
 
-    const failed = await request(app).get(`/tunnel/connect?t=${encodeURIComponent(token)}`).expect(503);
-    expect(failed.headers['retry-after']).toBe('5');
-    expect(tunnelAuthController.getBootstrapStatus().hasBootstrapToken).toBe(true);
-
-    await request(app).get(`/tunnel/connect?t=${encodeURIComponent(token)}`).expect(302);
-    expect(prepareFreshTunnelLogin).toHaveBeenCalledTimes(2);
+    expectRefusedLink(await request(app).get(`/tunnel/connect?t=${encodeURIComponent(token)}`));
   });
 
-  it('pauses token exchange until authoritative runtime readiness returns', async () => {
-    let ready = false;
-    const prepareFreshTunnelLogin = vi.fn();
-    const { app, tunnelAuthController } = createAuthApp({
-      prepareFreshTunnelLogin,
-      getRuntimeReady: () => ready,
+  it('answers the exchange rate limit with 429 and Retry-After and sets no cookie', async () => {
+    const { app } = await createAuthApp({ now: () => 1_800_000_000_000 });
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      expectRefusedLink(await request(app).get('/tunnel/connect?t=invalid-token'));
+    }
+    const limited = await request(app).get('/tunnel/connect?t=invalid-token');
+
+    expect(limited.status).toBe(429);
+    expect(limited.headers['retry-after']).toBe('60');
+    expect(limited.headers['content-type']).toBe('text/plain; charset=utf-8');
+    expect(limited.text).toBe('Too many attempts. Please try again later.');
+    expect(limited.headers['cache-control']).toBe('no-store');
+    expect(limited.headers['set-cookie']).toBeUndefined();
+  });
+
+  it('answers 500 without exchanging when settings cannot be read', async () => {
+    const { app } = await createAuthApp({
+      readSettingsFromDiskMigrated: vi.fn(async () => { throw new Error('settings unavailable'); }),
     });
-    const { token } = tunnelAuthController.issueBootstrapToken({ ttlMs: 60_000 });
 
-    const starting = await request(app).get(`/tunnel/connect?t=${encodeURIComponent(token)}`).expect(503);
-    expect(starting.headers['retry-after']).toBe('2');
-    expect(prepareFreshTunnelLogin).not.toHaveBeenCalled();
-    expect(tunnelAuthController.getBootstrapStatus().hasBootstrapToken).toBe(true);
+    const response = await request(app).get('/tunnel/connect?t=invalid-token');
 
-    ready = true;
-    await request(app).get(`/tunnel/connect?t=${encodeURIComponent(token)}`).expect(302);
-    expect(prepareFreshTunnelLogin).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(500);
+    expect(response.text).toBe('Failed to process connect request.');
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.headers['set-cookie']).toBeUndefined();
   });
 
   it('keeps canonical invitation links in the invitation flow', async () => {
-    const { app, handleConnect } = createAuthApp();
+    const { app, handleConnect } = await createAuthApp();
 
     const response = await request(app).get('/invite?t=invite-token');
 
@@ -563,21 +575,34 @@ describe('managed tunnel and invitation links', () => {
     expect(handleConnect).toHaveBeenCalledTimes(1);
   });
 
-  it('recognizes an old tunnel link and never reinterprets a consumed token as an invitation', async () => {
-    const { app, tunnelAuthController, handleConnect } = createAuthApp();
-    const { token } = tunnelAuthController.issueBootstrapToken({ ttlMs: 60_000 });
+  it('keeps an old tunnel link in the tunnel flow and never reinterprets it as an invitation', async () => {
+    const { app, tunnelAuthController, handleConnect } = await createAuthApp();
+    const { token } = await tunnelAuthController.issueBootstrapToken();
 
-    const firstResponse = await request(app).get(`/connect?t=${encodeURIComponent(token)}`);
-    const secondResponse = await request(app).get(`/connect?t=${encodeURIComponent(token)}`);
+    expectRefusedLink(await request(app).get(`/connect?t=${encodeURIComponent(token)}`));
+    expectRefusedLink(await request(app).get(`/connect?t=${encodeURIComponent(token)}`));
+    expect(handleConnect).not.toHaveBeenCalled();
+  });
 
-    expect(firstResponse.status).toBe(302);
-    expect(secondResponse.status).toBe(401);
-    expect(secondResponse.text).toContain('invalid or expired');
+  it('keeps a used tunnel link at /connect in the tunnel flow, never the invitation flow', async () => {
+    const { app, tunnelAuthController, handleConnect } = await createAuthApp();
+    const { token } = await tunnelAuthController.issueBootstrapToken();
+    // Use the link the way the tunnel access boundary does: a same-origin POST.
+    const headers = {};
+    const exchanged = await tunnelAuthController.exchangeBootstrapToken({
+      req: { method: 'POST', headers: { host: 'tunnel.example.com', origin: 'https://tunnel.example.com', 'x-devryan-csrf': '1' } },
+      res: { getHeader: (name) => headers[name], setHeader: (name, value) => { headers[name] = value; } },
+      token,
+    });
+    expect(exchanged.ok).toBe(true);
+    expect(tunnelAuthController.getBootstrapStatus().hasBootstrapToken).toBe(false);
+
+    expectRefusedLink(await request(app).get(`/connect?t=${encodeURIComponent(token)}`));
     expect(handleConnect).not.toHaveBeenCalled();
   });
 
   it('dispatches an old invitation link to the invitation flow', async () => {
-    const { app, handleConnect } = createAuthApp();
+    const { app, handleConnect } = await createAuthApp();
 
     const response = await request(app).get('/connect?t=legacy-invite-token');
 
@@ -586,17 +611,20 @@ describe('managed tunnel and invitation links', () => {
     expect(handleConnect).toHaveBeenCalledTimes(1);
   });
 
+  it('answers an old link as a tunnel link outside multi-user mode', async () => {
+    const { app, handleConnect } = await createAuthApp({ multiUser: false });
+
+    expectRefusedLink(await request(app).get('/connect?t=legacy-invite-token'));
+    expect(handleConnect).not.toHaveBeenCalled();
+  });
+
   it('keeps tunnel bootstrap required when a request forges a local forwarded host', async () => {
     const app = express();
     // Mirrors packages/web/server/index.js. With `trust proxy` enabled Express
     // reports req.hostname from the client-supplied X-Forwarded-Host header, so
     // this is the configuration the spoof would be mounted against.
     app.set('trust proxy', true);
-    const tunnelAuthController = createTunnelAuth();
-    tunnelAuthController.setActiveTunnel({
-      tunnelId: 'tunnel-1',
-      publicUrl: 'https://tunnel.example.com',
-    });
+    const tunnelAuthController = await createActiveTunnelController('quick');
     const handleSessionStatus = vi.fn((_req, res) => res.json({ authenticated: true }));
 
     registerAuthAndAccessRoutes(app, {
@@ -606,7 +634,6 @@ describe('managed tunnel and invitation links', () => {
       tunnelAuthController,
       readSettingsFromDiskMigrated: vi.fn(async () => ({ tunnelSessionTtlMs: 60_000 })),
       normalizeTunnelSessionTtlMs: (value) => value,
-      getRuntimeReady: vi.fn(() => true),
     });
 
     const response = await request(app)

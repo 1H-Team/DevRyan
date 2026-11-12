@@ -177,5 +177,3 @@ export function VoiceStatusIndicator({
         </div>
     );
 }
-
-export default VoiceStatusIndicator;

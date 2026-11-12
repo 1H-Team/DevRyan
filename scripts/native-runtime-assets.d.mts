@@ -20,9 +20,8 @@ export interface ReviewedNativeInputs {
  readonly ast:{readonly source:string;readonly path:string;readonly sha256:string};
  readonly claudeAssets:Readonly<Record<'claude'|'libsql',{readonly source:string;readonly path:string;readonly sha256:string;readonly version:string;readonly mode:number}>>;
 }
-export function prepareReviewedNativeInputs(repository:string,options?:{target?:'darwin-arm64'|'win32-x64'|'win32-arm64'}):Promise<ReviewedNativeInputs>;
+export function prepareReviewedNativeInputs(repository:string):Promise<ReviewedNativeInputs>;
 export function reviewedNativeInputPlugin(input:Pick<ReviewedNativeInputs,'rewrites'|'virtualModules'|'inputFiles'|'resolutions'|'workspaceResolutions'>):BunPlugin;
-export const NATIVE_CLAUDE_AGENT_SDK_SOURCE_SHA256:string;
 export const EFFECT_NODE_WS_SOURCE_SHA256:string;
 export function isEffectNodeWsSource(file:string):boolean;
 export function rewriteEffectNodeWs(source:string|Uint8Array):string;

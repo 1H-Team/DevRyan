@@ -1,0 +1,209 @@
+// The ledger core's tracked WebAssembly module against its sources, with no
+// Rust toolchain: the provenance file must describe the crate as it is, the
+// module must be the one it names, and the module's ABI must be the loader's.
+// A crate edit without `node scripts/build-ledger-core.mjs` fails here on every
+// lane; `--check` (CI and fast validate, with Rust) proves the bytes rebuild.
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { after, describe, test } from 'node:test';
+
+import { LEDGER_CORE_ABI_VERSION } from '../packages/harness-runtime/lib/ledger-core.js';
+import { VECTORS_FILE, renderVectors } from '../packages/harness-runtime/native/ledger-core/tests/generate-vectors.mjs';
+import { BASE64_TRACKED, renderBase64 } from '../packages/harness-runtime/native/ledger-core/tests/generate-base64.mjs';
+import { COLLATE_TRACKED, KEY_SAMPLE_FILE, KEY_SAMPLE_RS, TABLE_FILE as COLLATE_TABLE_FILE, renderCollate, renderKeySampleRust, renderKeySampleText, renderTable } from '../packages/harness-runtime/native/ledger-core/tests/generate-collate.mjs';
+import { SURVEY_FILE, refusedLocales, surveyIcu } from '../packages/harness-runtime/native/ledger-core/tests/survey-locales.mjs';
+import { JSON_TRACKED, renderJson } from '../packages/harness-runtime/native/ledger-core/tests/generate-json.mjs';
+import { NUMBERS_TRACKED, renderNumbers } from '../packages/harness-runtime/native/ledger-core/tests/generate-numbers.mjs';
+import { SORT_TRACKED, renderSort } from '../packages/harness-runtime/native/ledger-core/tests/generate-sort.mjs';
+import { STRINGS_TRACKED, renderStrings } from '../packages/harness-runtime/native/ledger-core/tests/generate-strings.mjs';
+import { stripRuntime } from '../packages/harness-runtime/native/ledger-core/tests/vector-tools.mjs';
+import { COMMITS_FILE, COMMITS_TRACKED, TREES_FILE, TREES_TRACKED, renderCommits, renderTrees } from '../packages/harness-runtime/native/ledger-core/tests/generate-trees.mjs';
+import { KEYS_FILE, KEYS_TRACKED, renderKeys } from '../packages/harness-runtime/native/ledger-core/tests/generate-keys.mjs';
+import { TEXT_FILE, TEXT_TRACKED, renderText } from '../packages/harness-runtime/native/ledger-core/tests/generate-text.mjs';
+import {
+  BUILD_ARGS, BUILD_ENVIRONMENT, CRATE_DIR, CRATE_INPUTS, MODULE_PATH, NON_BUILD_CRATE_FILES, PROVENANCE_PATH, PROVENANCE_SCHEMA_VERSION,
+  RUSTFLAG_TEMPLATES, WASM_TARGET, ancestorCargoConfigs, installCommand, ledgerCoreCrateFiles, ledgerCoreSourceDigest, ledgerCoreSources,
+  locateToolchain, main, moduleAbiVersion, provenanceRecord, readToolchainFile, renderProvenance, repositoryRoot,
+} from './build-ledger-core.mjs';
+
+const read = (file) => readFileSync(path.join(repositoryRoot, file));
+const provenanceText = read(PROVENANCE_PATH).toString('utf8');
+const provenance = JSON.parse(provenanceText);
+const moduleBytes = read(MODULE_PATH);
+const toolchain = readToolchainFile();
+const scratch = [];
+after(() => { for (const directory of scratch) rmSync(directory, { recursive: true, force: true }); });
+
+describe('ledger core contract', () => {
+  test('the provenance names the crate sources as they are (rebuild after any crate edit)', () => {
+    const sources = ledgerCoreSources();
+    assert.deepEqual(sources.slice(0, CRATE_INPUTS.length).map((source) => source.path), [...CRATE_INPUTS]);
+    assert.ok(sources.some((source) => source.path === 'src/lib.rs') && sources.some((source) => source.path === 'src/diff.rs'));
+    const stale = sources.filter((source) => provenance.sources.files[source.path] !== source.sha256).map((source) => source.path);
+    const gone = Object.keys(provenance.sources.files).filter((file) => !sources.some((source) => source.path === file));
+    assert.deepEqual({ stale, gone }, { stale: [], gone: [] },
+      `${PROVENANCE_PATH} does not describe ${CRATE_DIR}: rebuild with node scripts/build-ledger-core.mjs`);
+    assert.equal(provenance.sources.digest, ledgerCoreSourceDigest(sources));
+    assert.equal(provenance.sources.crate, CRATE_DIR);
+  });
+
+  test('every crate file is a digest input or one that cannot change the module', () => {
+    const inputs = new Set(ledgerCoreSources().map((source) => source.path));
+    const uncovered = ledgerCoreCrateFiles().filter((file) => !inputs.has(file) && !NON_BUILD_CRATE_FILES.some((pattern) => pattern.test(file)));
+    assert.deepEqual(uncovered, [], `${CRATE_DIR} holds files the provenance digest does not cover: add them to the digest in scripts/build-ledger-core.mjs`);
+  });
+
+  test('the tracked module is the one the provenance names', () => {
+    assert.equal(provenance.schemaVersion, PROVENANCE_SCHEMA_VERSION);
+    assert.equal(provenance.module, path.posix.basename(MODULE_PATH));
+    assert.equal(provenance.bytes, moduleBytes.length);
+    assert.equal(provenance.sha256, createHash('sha256').update(moduleBytes).digest('hex'), `${MODULE_PATH} is not the module ${PROVENANCE_PATH} names`);
+  });
+
+  test('the module speaks the ABI the loader expects', () => {
+    assert.equal(moduleAbiVersion(moduleBytes), LEDGER_CORE_ABI_VERSION);
+    assert.equal(provenance.abiVersion, LEDGER_CORE_ABI_VERSION);
+  });
+
+  test('the provenance records the pinned toolchain and the build script\'s flags', () => {
+    assert.equal(provenance.toolchain.channel, toolchain.channel);
+    assert.match(provenance.toolchain.rustc, new RegExp(`^rustc ${toolchain.channel.replace(/\./g, '\\.')} \\(`));
+    assert.match(provenance.toolchain.cargo, new RegExp(`^cargo ${toolchain.channel.replace(/\./g, '\\.')} \\(`));
+    assert.deepEqual([provenance.target, provenance.build], [WASM_TARGET,
+      { command: `cargo ${BUILD_ARGS.join(' ')}`, rustflags: [...RUSTFLAG_TEMPLATES], environment: { ...BUILD_ENVIRONMENT } }]);
+    // Field for field and byte for byte what the build script writes.
+    assert.equal(provenanceText, renderProvenance(provenanceRecord({ sources: ledgerCoreSources(), moduleBytes, abiVersion: LEDGER_CORE_ABI_VERSION,
+      toolchain, rustc: provenance.toolchain.rustc, cargo: provenance.toolchain.cargo })));
+  });
+
+  test('the crate has no dependencies of any kind', () => {
+    const manifest = read(`${CRATE_DIR}/Cargo.toml`).toString('utf8');
+    const sections = [...manifest.matchAll(/^\[([^\]]+)\]\s*$/gm)].map((match) => match[1]);
+    assert.ok(sections.includes('dependencies'));
+    for (const section of sections.filter((name) => /(?:^|[.])(?:dev-|build-)?dependencies(?:\.|$)/.test(name) || name.startsWith('target.') || name === 'patch' || name.startsWith('patch.') || name === 'replace')) {
+      const body = manifest.split(`[${section}]`)[1].split(/^\[/m)[0];
+      assert.equal(body.replace(/#.*$/gm, '').trim(), '', `[${section}] must stay empty`);
+    }
+    const lock = read(`${CRATE_DIR}/Cargo.lock`).toString('utf8');
+    assert.deepEqual([...lock.matchAll(/^name = "([^"]+)"$/gm)].map((match) => match[1]), ['ledger-core'], 'Cargo.lock holds only the crate itself');
+  });
+
+  test('the committed vectors are what the generator writes', () => {
+    assert.equal(readFileSync(VECTORS_FILE, 'utf8'), renderVectors(),
+      `${path.relative(repositoryRoot, VECTORS_FILE)} is stale: node ${CRATE_DIR}/tests/generate-vectors.mjs`);
+  });
+
+  // The JavaScript-semantics vectors record what this Node does: a stale file,
+  // or a Node whose JSON, number layout, base64 or ICU collation differs from
+  // the one that wrote them, fails here (the runtime header line is ignored).
+  test('the JavaScript-semantics vectors and collation table are what this Node writes', () => {
+    const generators = [['json.tsv', renderJson, JSON_TRACKED, 'generate-json.mjs'], ['numbers.tsv', renderNumbers, NUMBERS_TRACKED, 'generate-numbers.mjs'],
+      ['strings.tsv', renderStrings, STRINGS_TRACKED, 'generate-strings.mjs'], ['sort.tsv', renderSort, SORT_TRACKED, 'generate-sort.mjs'],
+      ['base64.tsv', renderBase64, BASE64_TRACKED, 'generate-base64.mjs'], ['collate.tsv', renderCollate, COLLATE_TRACKED, 'generate-collate.mjs']];
+    // The files are long: a failure names the first line that differs, not the whole text.
+    const sameText = (tracked, rendered, message) => {
+      if (tracked === rendered) return;
+      const [trackedLines, renderedLines] = [tracked.split('\n'), rendered.split('\n')];
+      const at = trackedLines.findIndex((line, index) => line !== renderedLines[index]);
+      const line = at === -1 ? trackedLines.length : at;
+      assert.fail(`${message}\nfirst difference at line ${line + 1} (${process.platform} ${process.arch}):\n  tracked:  ${JSON.stringify(trackedLines[line] ?? null)}\n  rendered: ${JSON.stringify(renderedLines[line] ?? null)}`);
+    };
+    for (const [file, render, count, generator] of generators) {
+      sameText(stripRuntime(read(`${CRATE_DIR}/tests/${file}`).toString('utf8')), stripRuntime(render(count)),
+        `${CRATE_DIR}/tests/${file} is not what Node ${process.version} writes: node ${CRATE_DIR}/tests/${generator}`);
+    }
+    for (const [file, render] of [[COLLATE_TABLE_FILE, renderTable], [KEY_SAMPLE_RS, renderKeySampleRust], [KEY_SAMPLE_FILE, renderKeySampleText]]) {
+      sameText(stripRuntime(readFileSync(file, 'utf8')), stripRuntime(render()),
+        `${path.relative(repositoryRoot, file)} is not what Node ${process.version} (ICU ${process.versions.icu}, collation locale en) writes: node ${CRATE_DIR}/tests/generate-collate.mjs, then rebuild`);
+    }
+  });
+
+  // The codec vectors record what today's JavaScript does (trees, commits,
+  // keys and pages, the text engine): a change to that JavaScript, or a Node
+  // that behaves differently, fails here. Git, the trees' second oracle, is
+  // consulted only when the vectors are written (generate-trees.mjs).
+  test('the codec vectors are what today\'s JavaScript writes', async () => {
+    const generators = [[TREES_FILE, () => renderTrees(TREES_TRACKED, { oracle: false }), 'generate-trees.mjs'], [COMMITS_FILE, () => renderCommits(COMMITS_TRACKED), 'generate-trees.mjs'],
+      [KEYS_FILE, () => renderKeys(KEYS_TRACKED), 'generate-keys.mjs'], [TEXT_FILE, () => renderText(TEXT_TRACKED), 'generate-text.mjs']];
+    for (const [file, render, generator] of generators) {
+      assert.equal(stripRuntime(read(`${CRATE_DIR}/tests/${file}`).toString('utf8')), stripRuntime(await render()),
+        `${CRATE_DIR}/tests/${file} is not what today's JavaScript writes under Node ${process.version}: node ${CRATE_DIR}/tests/${generator}`);
+    }
+  });
+
+  // The documented list of default locales under which the native ledger is
+  // not used must be the tracked survey's (generated under Electron's Node;
+  // regenerate it there with tests/survey-locales.mjs).
+  test('the locales the documentation says refuse the native ledger are the tracked survey\'s', () => {
+    const survey = read(`${CRATE_DIR}/tests/${SURVEY_FILE}`).toString('utf8');
+    const documentation = read('packages/harness-runtime/DOCUMENTATION.md').toString('utf8');
+    const match = /Under\s+these\s+default\s+locales\s+the\s+native\s+ledger\s+is\s+not\s+used\s+\(ICU\s+([\d.]+)[^)]*\):([^.]*)\./.exec(documentation);
+    assert.ok(match, 'DOCUMENTATION.md lacks the sentence "Under these default locales the native ledger is not used (ICU <version> ...): `xx`, ... ."');
+    assert.equal(match[1], surveyIcu(survey), 'the documented ICU version is not the survey\'s');
+    const documented = [...match[2].matchAll(/`([^`]+)`/g)].map((entry) => entry[1]);
+    assert.deepEqual(documented, refusedLocales(survey), `DOCUMENTATION.md lists ${documented.join(' ')}; ${SURVEY_FILE} refuses ${refusedLocales(survey).join(' ')}`);
+  });
+});
+
+describe('ledger core build script', () => {
+  test('a missing toolchain, component or target fails with the command that installs it', () => {
+    const install = installCommand(toolchain);
+    assert.equal(install, `rustup toolchain install ${toolchain.channel} --profile minimal --component rustfmt,clippy --target wasm32-unknown-unknown`);
+    const calls = [];
+    const missing = (args, options) => { calls.push({ args, auto: options.env.RUSTUP_AUTO_INSTALL }); return { status: 1, stdout: '', stderr: 'not installed' }; };
+    assert.throws(() => locateToolchain(toolchain, { run: (command, args, options) => missing(args, options) }),
+      (error) => error.message.includes(`Rust ${toolchain.channel} is not installed`) && error.message.includes(install));
+    assert.deepEqual(calls, [{ args: ['which', '--toolchain', toolchain.channel, 'rustc'], auto: '0' }]);
+    assert.throws(() => locateToolchain(toolchain, { run: () => ({ error: Object.assign(new Error('spawn rustup ENOENT'), { code: 'ENOENT' }) }) }),
+      (error) => error.message.includes('rustup is not installed') && error.message.includes(install));
+    // A toolchain directory without clippy and without the WebAssembly target.
+    const home = mkdtempSync(path.join(os.tmpdir(), 'ledger-core-toolchain-'));
+    scratch.push(home);
+    mkdirSync(path.join(home, 'bin'));
+    for (const name of ['cargo', 'rustc', 'rustdoc', 'rustfmt', 'cargo-fmt']) writeFileSync(path.join(home, 'bin', name), '');
+    assert.throws(() => locateToolchain(toolchain, { run: () => ({ status: 0, stdout: `${path.join(home, 'bin', 'rustc')}\n` }) }),
+      (error) => error.message.includes('cargo-clippy, clippy-driver, the wasm32-unknown-unknown target') && error.message.includes(install));
+    for (const name of ['cargo-clippy', 'clippy-driver']) writeFileSync(path.join(home, 'bin', name), '');
+    mkdirSync(path.join(home, 'lib', 'rustlib', 'wasm32-unknown-unknown', 'lib'), { recursive: true });
+    assert.deepEqual(locateToolchain(toolchain, { run: () => ({ status: 0, stdout: `${path.join(home, 'bin', 'rustc')}\n` }) }), { bin: path.join(home, 'bin'), home });
+  });
+
+  test('the digest takes build.rs and crate Cargo configuration when they exist, and refuses Cargo configuration above the build', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'ledger-core-crate-'));
+    scratch.push(root);
+    const crate = path.join(root, CRATE_DIR);
+    for (const file of [...CRATE_INPUTS, 'src/lib.rs', 'tests/vectors.rs', '.gitignore']) {
+      mkdirSync(path.dirname(path.join(crate, file)), { recursive: true });
+      writeFileSync(path.join(crate, file), file);
+    }
+    const base = ledgerCoreSources(root);
+    assert.deepEqual(base.map((source) => source.path), [...CRATE_INPUTS, 'src/lib.rs']);
+    mkdirSync(path.join(crate, '.cargo'));
+    writeFileSync(path.join(crate, 'build.rs'), 'fn main() {}\n');
+    writeFileSync(path.join(crate, '.cargo', 'config.toml'), '[build]\n');
+    const extended = ledgerCoreSources(root);
+    assert.deepEqual(extended.map((source) => source.path), [...CRATE_INPUTS, 'build.rs', '.cargo/config.toml', 'src/lib.rs']);
+    assert.notEqual(ledgerCoreSourceDigest(extended), ledgerCoreSourceDigest(base));
+    // A file that is neither an input nor a test is uncovered.
+    writeFileSync(path.join(crate, 'notes.toml'), '');
+    const inputs = new Set(extended.map((source) => source.path));
+    assert.deepEqual(ledgerCoreCrateFiles(root).filter((file) => !inputs.has(file) && !NON_BUILD_CRATE_FILES.some((pattern) => pattern.test(file))), ['notes.toml']);
+    assert.deepEqual(ancestorCargoConfigs(crate), []);
+    mkdirSync(path.join(root, 'packages', '.cargo'));
+    writeFileSync(path.join(root, 'packages', '.cargo', 'config.toml'), '[build]\n');
+    assert.deepEqual(ancestorCargoConfigs(crate), [path.join(root, 'packages', '.cargo', 'config.toml')]);
+  });
+
+  test('the toolchain file pins an exact release with what the build uses', () => {
+    assert.match(toolchain.channel, /^\d+\.\d+\.\d+$/);
+    assert.deepEqual([...toolchain.components].sort(), ['clippy', 'rustfmt']);
+    assert.deepEqual(toolchain.targets, [WASM_TARGET]);
+  });
+
+  test('refuses an unknown argument before building anything', () => {
+    assert.throws(() => main(['--chek']), /Unknown argument: --chek/);
+  });
+});

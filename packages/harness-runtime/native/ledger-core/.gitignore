@@ -1,0 +1,2 @@
+# A manual `cargo` run in this directory; scripts/build-ledger-core.mjs builds under the OS temp dir.
+/target/

@@ -1,2 +1,5 @@
+# The test isolation guard (scripts/test-isolation-guard.mjs) loads first: it
+# refuses a process whose HOME, XDG folders or DevRyan/OpenCode roots are not
+# inside a private test root. Then the agents-core owners preload.
 [test]
-preload = ["./test/preload.ts"]
+preload = ["../../scripts/test-isolation-preload.mjs", "./test/preload.ts"]

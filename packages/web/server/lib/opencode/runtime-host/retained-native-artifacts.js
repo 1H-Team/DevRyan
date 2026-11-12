@@ -115,6 +115,13 @@ export async function retainNativeArtifacts({controlRoot,manifestPath,manifestSh
    else{const now=new Date();await fs.utimes(target,now,now);}return retained;}catch(error){if(error.code!=='ENOENT')throw error;}
   const temporary=path.join(parent,`.retaining-${randomUUID()}`);
   if(windows)await windowsOwner.ensureDirectory(temporary);else await fs.mkdir(temporary,{mode:0o700});
+  // The stage is removed after every attempt. A removal error is raised only after a
+  // successful publication: it never replaces the retention's own failure.
+  const removeTemporary=async()=>{
+   if(windows){let present;try{present=await fs.lstat(temporary);}catch(error){if(error.code!=='ENOENT')throw error;}
+    if(present)await windowsOwner.removeTree(temporary,await windowsOwner.tree(temporary));}
+   else await fs.rm(temporary,{recursive:true,force:true});
+  };
   try{
    for(const row of manifest.files){const file=path.join(source,row.path);
     if(windows){const destination=path.join(temporary,row.path);await windowsOwner.ensureDirectory(path.dirname(destination));
@@ -128,11 +135,8 @@ export async function retainNativeArtifacts({controlRoot,manifestPath,manifestSh
    else await fs.writeFile(path.join(temporary,'native-bundle.json'),bytes,{flag:'wx',mode:0o600});
    await validate(temporary);
    if(windows)await windowsOwner.renameTree(temporary,target,await windowsOwner.tree(temporary));else await fs.rename(temporary,target);
-  }finally{
-   if(windows){let present;try{present=await fs.lstat(temporary);}catch(error){if(error.code!=='ENOENT')throw error;}
-    if(present)await windowsOwner.removeTree(temporary,await windowsOwner.tree(temporary));}
-   else await fs.rm(temporary,{recursive:true,force:true});
-  }
+  }catch(error){try{await removeTemporary();}catch{/* The retention's own failure is the one raised. */}throw error;}
+  await removeTemporary();
   const retained=await validate(target);
   if(path.basename(retained.controller??verified.controller)!==path.basename(verified.controller)||path.basename(retained.writer??verified.writer)!==path.basename(verified.writer))throw fail();
   return retained;

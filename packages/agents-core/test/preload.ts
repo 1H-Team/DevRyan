@@ -12,8 +12,11 @@ import { saveReviewedWebfetchBinary } from '../src/tools/smartfetch/binary';
 import { createReviewedWebfetchCache } from '../src/tools/smartfetch/cache';
 
 // bun test shares one process: keep every test off the real user directories
-// (upstream test-isolation.ts).
-const isolationRoot = mkdtempSync(path.join(tmpdir(), `devryan-agents-core-test-${process.pid}-`));
+// (upstream test-isolation.ts). HOME is already the private home of the test
+// isolation guard, whose preload runs first and refuses otherwise (Bun reads
+// HOME only at startup, so it cannot be moved here); each process still gets
+// its own XDG folders, inside the guard's private root.
+const isolationRoot = mkdtempSync(path.join(process.env.DEVRYAN_TEST_ISOLATION_ROOT ?? tmpdir(), `devryan-agents-core-test-${process.pid}-`));
 process.env.XDG_DATA_HOME = path.join(isolationRoot, 'data');
 process.env.XDG_CONFIG_HOME = path.join(isolationRoot, 'config');
 process.env.XDG_CACHE_HOME = path.join(isolationRoot, 'cache');

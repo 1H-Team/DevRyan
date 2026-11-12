@@ -57,3 +57,22 @@ test('a failing smoke is a quarantined warning until the gate is set, then a blo
   assert.match(smokeSummary(null).text, /failed: no report/);
   assert.deepEqual(smokeSummary({ passed: true, dmgSha256: 'abc' }), { level: 'notice', text: 'Final-DMG smoke passed for sha256:abc.' });
 });
+
+test('the mounted app launches on the private profile, never the runner account or its Application Support', async () => {
+  const { finalDmgSmokeLaunch } = await import('./release-final-dmg-smoke.mjs');
+  const root = '/private/tmp/devryan-release-dmg-smoke/run-x', home = `${root}/home`;
+  const launch = finalDmgSmokeLaunch({ mount: `${root}/mount`, home, root, debugPort: 9333 },
+    { PATH: '/usr/bin', HOME: '/Users/runner', XDG_STATE_HOME: '/Users/runner/.local/state', DEVRYAN_ELECTRON_USER_DATA_DIR: '/Users/runner/profile',
+      DEVRYAN_DATA_DIR: '/Users/runner/.config/devryan', GITHUB_TOKEN: 'secret' });
+  assert.equal(launch.binary, `${root}/mount/DevRyan.app/Contents/MacOS/DevRyan`);
+  assert.deepEqual(launch.args, ['--remote-debugging-port=9333', `--user-data-dir=${home}/electron-profile`, '--use-mock-keychain']);
+  for (const key of ['HOME', 'TMPDIR', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME', 'DEVRYAN_ELECTRON_USER_DATA_DIR']) {
+    assert.ok(launch.env[key] === root || launch.env[key].startsWith(`${root}/`), key);
+  }
+  assert.equal(launch.env.DEVRYAN_ELECTRON_USER_DATA_DIR, `${home}/electron-profile`);
+  for (const value of Object.values(launch.env)) assert.ok(!value.startsWith('/Users/runner'), value);
+  for (const key of ['DEVRYAN_DATA_DIR', 'GITHUB_TOKEN']) assert.equal(launch.env[key], undefined, key);
+  const source = readFileSync(new URL('./release-final-dmg-smoke.mjs', import.meta.url), 'utf8');
+  assert.match(source, /startOwnedProcess\(launch\.binary, launch\.args, \{ cwd: workspace, env \}\)/);
+  assert.equal(source.match(/MacOS\/DevRyan/g)?.length, 1, 'the app is launched only through finalDmgSmokeLaunch');
+});

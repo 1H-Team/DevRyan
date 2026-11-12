@@ -18,7 +18,7 @@ bun run build
 bun run start:web
 ```
 
-Use DevRyan release artifacts or a built checkout. The package is `@devryan/web` and the executable `devryan`; `openchamber` remains an alias. From the checkout, replace the global `openchamber` command below with `bun packages/web/bin/cli.js`.
+Use the DevRyan DMG from the [GitHub releases page](https://github.com/1H-Team/DevRyan/releases/latest) or a built checkout. DevRyan is not installed from npm: the `@devryan/web` package there is not DevRyan's. The workspace package is `@devryan/web` and the executable `devryan`; `openchamber` remains an alias. From the checkout, replace the global `openchamber` command below with `bun packages/web/bin/cli.js`.
 
 > **Prerequisites:** [OpenCode CLI](https://opencode.ai) installed, Node.js 22.13+.
 
@@ -40,7 +40,7 @@ openchamber logs                     # Follow latest instance logs
 OPENCODE_PORT=4096 OPENCODE_SKIP_START=true openchamber                    # Connect to external OpenCode server
 OPENCODE_HOST=https://myhost:4096 OPENCODE_SKIP_START=true openchamber  # Connect via custom host/HTTPS
 openchamber stop                     # Stop server
-openchamber update                   # Update to latest version
+openchamber update                   # Check for a newer release (install it from the DMG)
 ```
 
 ### Tunnel behavior notes
@@ -154,14 +154,14 @@ systemctl --user enable --now opencode openchamber
 - **Remote access** - Cloudflare tunnel with QR onboarding. Scan from your phone, start coding.
 - **Mobile-first PWA** - optimized chat controls, keyboard-safe layouts, drag-to-reorder projects
 - **Background notifications** - know when your agent finishes, even from another tab
-- **Self-update** - update and restart from the UI, server settings stay intact
+- **Update check** - the UI and `openchamber update` report a newer release and link to its DMG
 - **Cross-tab tracking** - session activity stays in sync across browser tabs
 
 - Cloudflare tunnel access with quick, managed-remote, and managed-local modes
 - One-scan onboarding with tunnel QR + password URL helpers
 - Mobile-first experience: optimized chat controls, keyboard-safe layouts, and attachment-friendly UI
 - Background notifications plus reliable cross-tab session activity tracking
-- Built-in self-update + restart flow that keeps your server settings intact
+- Update check that points to the latest DMG on the GitHub releases page
 
 ## License
 

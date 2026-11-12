@@ -16,11 +16,25 @@ export const qaPlatformEnvironment = (baseEnvironment = process.env) => Object.f
 /**
  * Launch environment for a packaged release app on a private profile: platform
  * inputs only, HOME and XDG inside the run root, no global Git configuration.
- * Used by the final-DMG smoke and the release visual QA.
+ * Used by the release visual QA; a packaged launch adds its Electron profile
+ * through `qaPackagedAppProfileEnvironment`.
  */
 export const qaPackagedAppEnvironment = ({ home, root }, baseEnvironment = process.env) => ({ ...qaPlatformEnvironment(baseEnvironment), HOME: home,
   XDG_CONFIG_HOME: path.join(home, '.config'), XDG_DATA_HOME: path.join(home, '.local/share'), XDG_STATE_HOME: path.join(home, '.local/state'),
   XDG_CACHE_HOME: path.join(home, '.cache'), TMPDIR: root, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', GIT_CEILING_DIRECTORIES: root });
+
+/**
+ * The packaged-app environment plus a private Electron profile. HOME moves the
+ * logs (~/Library/Logs/DevRyan follows os.homedir()) and every data root, but a
+ * packaged app's early startup otherwise takes userData, and with it the
+ * single-instance lock, from the account's Application Support, which does not
+ * follow HOME. Every packaged launch must set DEVRYAN_ELECTRON_USER_DATA_DIR
+ * inside its run root; the final-DMG smoke and the runtime-service package
+ * verifier get it from here.
+ */
+export const qaPackagedAppProfileEnvironment = ({ home, root }, baseEnvironment = process.env) => ({
+  ...qaPackagedAppEnvironment({ home, root }, baseEnvironment), DEVRYAN_ELECTRON_USER_DATA_DIR: path.join(home, 'electron-profile'),
+});
 
 export const createQaHostLaunchEnvironment = (profileEnvironment, overrides = {}, baseEnvironment = process.env) => ({
   ...qaPlatformEnvironment(baseEnvironment), ...profileEnvironment, ...overrides,

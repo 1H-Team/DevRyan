@@ -52,6 +52,81 @@ package lanes.
 
 3. `bun run validate`.
 
+## 4. Predict the packaged app
+
+Host and dependency upgrades are what outgrow the packaged-app ceilings: 2.2.2, the
+claude-agent provider and 2.2.6 each failed only at packaging in the macOS release dry
+run. Before pushing an upgrade, or any change to `bun.lock`, a workspace manifest or the
+`build` field of `packages/electron/package.json`:
+
+1. On an Apple Silicon Mac, after step 3.1 (the native runtime), `bun run build` (web
+   output and the Electron main bundle) and
+   `bun run --cwd packages/electron build:native-helpers`, run the predictor:
+
+   ```bash
+   node scripts/predict-packaged-app.mjs
+   ```
+
+   It runs electron-builder's own file selection (its matchers, Bun dependency collector,
+   `node_modules` filter, `package.json` transformer and smart unpack) over the installed
+   tree for the darwin-arm64 app, packages nothing, and checks the result against
+   `scripts/packaged-app.config.mjs`: forbidden content fails, and so does an estimated
+   `asarBytes`, `unpackedBytes` or `resourcesBytes` over its ceiling. With those inputs
+   built it predicts all three sizes; this is the run this step asks for. `--verbose`
+   adds a per-directory size breakdown. Files the package takes from the repository
+   count only when git tracks them (or they are a known build output), as in a clean
+   release checkout. It refuses to run against another app-builder-lib than the one it
+   was calibrated against (`CALIBRATED_BUILDER_VERSION`).
+
+   Anywhere an input is missing, each size it affects is printed as a lower bound on its
+   own line (`ok (lower bound: <what is missing>)`): build outputs, the native runtime,
+   the macOS Electron install, or darwin-arm64 platform packages a Linux host does not
+   install. A lower bound over its ceiling still fails. Packages restricted to the host's
+   own OS (Linux ones in CI) are left out, as the macOS packaging host never has them.
+
+   Its test, `scripts/predict-packaged-app.test.mjs`, runs in CI's Linux scripts lanes on
+   every push and in `bun run validate` whenever `bun.lock`, a manifest or the packaging
+   config (`build` in `packages/electron/package.json`, `scripts/packaged-app.config.mjs`)
+   changes. Those lanes build neither `dist-bundle` nor the native runtime and install no
+   darwin-arm64 binaries, so there the sizes are lower bounds and the test's teeth are the
+   forbidden-content rules: a CI pass does not replace the Mac run above.
+2. For the authoritative answer before a dry run, on an Apple Silicon Mac with the Xcode
+   command line tools and the native runtime of step 3.1:
+
+   ```bash
+   bun run electron:build
+   bun run app:check
+   ```
+
+   `electron:build` prepares (web assets, native helpers, main bundle, native rebuild) and
+   packages `packages/electron/dist/mac-arm64/DevRyan.app`; its `afterPack` hook already
+   fails on forbidden content or a size over its ceiling, and `app:check` repeats that
+   check on the built app. Its `rebuild:native` step rebuilds `node-pty` and
+   `better-sqlite3` in `node_modules` for Electron's ABI, which breaks Node-side tests
+   that load them: package in a checkout you are not testing in, or reinstall its
+   dependencies before testing there again.
+
+Calibration of the predictor (2026-11-10, on `20a2abeb`) against the last green dry run,
+42803641451 at `e344e123`, whose lockfile and manifests are the same:
+
+| Size | Predicted | Dry run | Difference |
+| --- | --- | --- | --- |
+| `asarBytes` | 158,644,044 | 158,643,772 | +272 B (+0.0002%) |
+| `unpackedBytes` | 48,174,536 | 48,175,945 | −1,409 B (−0.003%) |
+| `resourcesBytes` | 552,314,173 | 552,404,382 | −90,209 B (−0.016%) |
+
+Each is within 2%, so each fails over its ceiling (`FAILING_SIZE_KEYS`). Re-calibrate
+after an electron-builder upgrade; a size that drifts past 2% moves out of
+`FAILING_SIZE_KEYS` and is printed only.
+
+Replaying the three packaging failures with the pre-fix `build.files` on the current tree:
+
+| Failure | Mac with inputs built | CI Linux lane |
+| --- | --- | --- |
+| 2.2.6, no `node-gyp` exclusion | asar 160,410,156 B (dry run 160,409,884 B), over; `build-tool` content | asar 159.22 MB lower bound, passes; caught only by the `build-tool` content rule |
+| claude-agent provider, no SDK exclusions | asar 160.5 MB and unpacked 298.7 MB, both over | asar 159.30 MB lower bound, passes; the darwin-arm64 SDK binary is not installed, so unpacked passes too: not caught |
+| 2.2.2, Resources 836.6 MB | caught when the native runtime and web assets are built (overrun 0.19%, calibration error 0.016%) | Resources lacks about 300 MB of runtime: not caught |
+
 ## Seams in 2.2.5 → 2.2.6
 
 - `@opencode/*` 2.2.6 depends on `effect` 4.1.0; the root and web `effect` pins moved with it.

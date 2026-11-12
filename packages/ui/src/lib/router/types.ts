@@ -17,15 +17,6 @@ export interface RouteState {
 }
 
 /**
- * Context for router operations - determines what capabilities are available.
- */
-export interface RouterContext {
-
-  /** Whether URL can be updated */
-  canUpdateURL: boolean;
-}
-
-/**
  * Valid main tab values for URL routing.
  */
 export const VALID_TABS: readonly MainTab[] = ['chat', 'git', 'diff', 'terminal'] as const;

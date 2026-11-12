@@ -31,15 +31,6 @@ export function generateBranchSlug(): string {
  * @param prefix - Optional prefix like "feature", "bugfix" (no trailing slash)
  * @returns Full branch name like "feature/cosmic-dolphin" or just "cosmic-dolphin"
  */
-export function generateBranchName(prefix?: string): string {
-  const slug = generateBranchSlug();
-  if (prefix && prefix.trim()) {
-    const cleanPrefix = prefix.trim().replace(/\/+$/, '');
-    return `${cleanPrefix}/${slug}`;
-  }
-  return slug;
-}
-
 /** Prefix for branches DevRyan creates for new-chat worktrees. */
 export const DEVRYAN_BRANCH_PREFIX = 'DevRyan';
 
