@@ -112,6 +112,17 @@ const ledgerCoreCommands = (files) => files.some(isLedgerCoreInput)
 const ledgerNativeCommands = (files) => files.some(isLedgerNativeInput)
   ? [{ label: 'ledger-native', executable: 'node', args: ['scripts/build-ledger-native.mjs', '--verify'] }] : [];
 
+// The product's Cargo workspace (packages/native/DOCUMENTATION.md): a change
+// runs `node scripts/check-native.mjs` (the licence check against deny.toml,
+// cargo fmt --check, clippy with warnings denied and cargo test under the
+// pinned toolchain; without that toolchain it fails with the command that
+// installs it) and the scripts suite, whose
+// contract test (scripts/check-native.test.mjs) needs no Rust.
+const nativeWorkspace = 'packages/native/';
+const isNativeInput = (file) => file.startsWith(nativeWorkspace) || file === 'scripts/check-native.mjs' || file === 'scripts/check-native-licenses.mjs';
+const nativeCommands = (files) => files.some(isNativeInput)
+  ? [{ label: 'native', executable: 'node', args: ['scripts/check-native.mjs'] }] : [];
+
 // Files `node scripts/bump-version.mjs` rewrites. A change confined to their
 // version field is release metadata: `versions` checks they agree instead of
 // re-running every package's lint, types and tests (CI still runs everything).
@@ -431,6 +442,7 @@ function affectedTests(files) {
     if (file.startsWith('packages/shared-runtime/')) tests.add('shared');
     if (isHarnessTestRelevant(file) || ledgerCoreModule.has(file)) tests.add('harness');
     if (isLedgerCoreInput(file) || isLedgerNativeInput(file)) tests.add('scripts');
+    if (isNativeInput(file)) tests.add('scripts');
     if (file.startsWith(packages.agentsCore.prefix)) tests.add('agentsCore');
     if (isScriptsFile(file)) tests.add('scripts');
     if (isToolchainFile(file)) FULL_TEST_SUITES.forEach((suite) => tests.add(suite.key));
@@ -504,7 +516,7 @@ export function buildPlan(requestedMode, providedFiles, { versionOnly } = {}) {
     commands.push(...packageCommands(typeChecked, 'typeCheck'));
   }
   if (codeFiles.some((file) => file.startsWith(modelCatalogPrefix))) commands.push(command('catalog:check', 'bun', ['run', 'catalog:check']));
-  commands.push(...importBoundaryCommands(codeFiles), ...declarationCommands(codeFiles), ...ledgerCoreCommands(codeFiles), ...ledgerNativeCommands(codeFiles));
+  commands.push(...importBoundaryCommands(codeFiles), ...declarationCommands(codeFiles), ...ledgerCoreCommands(codeFiles), ...ledgerNativeCommands(codeFiles), ...nativeCommands(codeFiles));
   const suites = affectedTests(codeFiles);
   // Markdown is not a code file, but the scripts that read all of it must run.
   const scriptSelection = withMarkdownReaders(suites.has('scripts') ? scriptTestSelection(codeFiles) : null, files);

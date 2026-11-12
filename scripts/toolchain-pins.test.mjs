@@ -5,11 +5,13 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { CRATE_DIR, installCommand, readToolchainFile } from './build-ledger-core.mjs';
+import { NATIVE_DIR, nativeInstallCommand, readNativeToolchain } from './check-native.mjs';
 
 // Toolchain versions and their sources: Bun is the root `packageManager`,
 // Electron the root manifest's `electron` dependency, the Node minimum the
 // root `engines.node`, and Rust the ledger core's rust-toolchain.toml channel
-// (packages/harness-runtime/native/ledger-core). Every other place that states
+// (packages/harness-runtime/native/ledger-core), which the product's Cargo
+// workspace (packages/native/rust-toolchain.toml) must equal. Every other place that states
 // one is found by scanning tracked files and must agree, or be allowlisted
 // below with its reason.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -172,16 +174,19 @@ export function manifestProblems(file, manifest, pins) {
 
 /**
  * Rust toolchain installs in a workflow. Each must install the pinned channel
- * with exactly the components and target the build uses (`installCommand`).
+ * with exactly the components and targets one of the Rust trees uses: the
+ * ledger core (`installCommand`) or packages/native (`nativeInstallCommand`).
+ * `toolchain` is one ledger-core toolchain, or a list of `{ command, source }`.
  */
 export function rustWorkflowProblems(workflows, toolchain) {
   const problems = [], installs = [];
-  const expected = installCommand(toolchain);
+  const allowed = Array.isArray(toolchain) ? toolchain : [{ command: installCommand(toolchain), source: `${CRATE_DIR}/rust-toolchain.toml` }];
+  const expected = allowed.map(entry => entry.command).join('" or "');
   for (const { file, text } of workflows) {
     for (const match of text.matchAll(/rustup\s+toolchain\s+install\b[^\n]*/g)) {
       const where = `${file}:${lineOf(text, match.index)}`;
       installs.push(where);
-      if (match[0].trim() !== expected) problems.push(`${where}: "${match[0].trim()}" is not "${expected}" (${CRATE_DIR}/rust-toolchain.toml)`);
+      if (!allowed.some(entry => entry.command === match[0].trim())) problems.push(`${where}: "${match[0].trim()}" is not "${expected}" (${allowed.map(entry => entry.source).join(', ')})`);
     }
     for (const match of text.matchAll(/\b(?:toolchain|rust-version)\s*:\s*['"]?(\d+\.\d+(?:\.\d+)?|stable|beta|nightly)\b/g)) {
       problems.push(`${file}:${lineOf(text, match.index)}: a Rust toolchain input (${match[0].trim()}); install the pin with "${expected}" instead`);
@@ -234,7 +239,10 @@ const workflowFiles = tracked('.github/workflows/*.yml', '.github/workflows/*.ya
 const workflows = workflowProblems(workflowFiles.map(file => ({ file, text: read(file) })), pins, read('.nvmrc'));
 pins.releaseNodeMajor = workflows.releaseMajor;
 const rustToolchain = readToolchainFile(root);
+const nativeToolchain = readNativeToolchain(root);
 pins.rust = rustToolchain.channel;
+const rustInstalls = [{ command: installCommand(rustToolchain), source: `${CRATE_DIR}/rust-toolchain.toml` },
+  { command: nativeInstallCommand(nativeToolchain), source: `${NATIVE_DIR}/rust-toolchain.toml` }];
 
 test('each toolchain has one well-formed source', () => {
   assert.deepEqual(sources.problems, []);
@@ -248,12 +256,18 @@ test('workflow Node and Bun versions agree with their sources', () => {
 
 test('the Rust pin is one exact release that CI installs with what the build uses', () => {
   assert.match(rustToolchain.channel, /^\d+\.\d+\.\d+$/, `${CRATE_DIR}/rust-toolchain.toml`);
-  const rust = rustWorkflowProblems(workflowFiles.map(file => ({ file, text: read(file) })), rustToolchain);
+  assert.equal(nativeToolchain.channel, rustToolchain.channel, `${NATIVE_DIR}/rust-toolchain.toml pins the ledger core's Rust ${rustToolchain.channel}`);
+  const workflowTexts = workflowFiles.map(file => ({ file, text: read(file) }));
+  const rust = rustWorkflowProblems(workflowTexts, rustInstalls);
   assert.deepEqual(rust.problems, [], rust.problems.join('\n'));
   assert.ok(rust.installs.some(where => where.startsWith('.github/workflows/ci.yml:')), 'ci.yml installs the pinned Rust for the ledger core step');
+  const ci = read('.github/workflows/ci.yml');
+  assert.ok(ci.includes(installCommand(rustToolchain)), 'ci.yml installs the ledger core toolchain');
+  assert.ok(ci.includes(nativeInstallCommand(nativeToolchain)), 'ci.yml installs the packages/native toolchain');
   assert.ok(!rust.installs.some(where => where.startsWith('.github/workflows/release.yml:')), 'the release workflow builds no Rust');
-  // The tracked crate is the only Rust toolchain file outside the frozen Tauri package.
-  assert.deepEqual(tracked('*rust-toolchain', '*rust-toolchain.toml').filter(file => !file.startsWith('packages/desktop/')), [`${CRATE_DIR}/rust-toolchain.toml`]);
+  // The two Rust trees hold the only Rust toolchain files outside the frozen Tauri package.
+  assert.deepEqual(tracked('*rust-toolchain', '*rust-toolchain.toml').filter(file => !file.startsWith('packages/desktop/')).sort(),
+    [`${CRATE_DIR}/rust-toolchain.toml`, `${NATIVE_DIR}/rust-toolchain.toml`].sort());
 });
 
 test('first-party sources pin the packageManager Bun and the engines Node minimum', () => {
@@ -326,5 +340,10 @@ test('the checks flag every kind of disagreement', () => {
   assert.equal(rust(`      - run: |\n          ${install}\n          node scripts/build-ledger-core.mjs --verify\n`), '');
   assert.match(rust(`      - run: ${install.replace('1.99.1', '1.99.0')}\n`), /ci\.yml:1: .*is not/);
   assert.match(rust(`      - run: ${install.replace(',clippy', '')}\n`), /is not/);
+  // Either tree's command passes against the list; anything else fails.
+  const both = [{ command: install, source: 'a' }, { command: 'rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy', source: 'b' }];
+  const list = text => rustWorkflowProblems([{ file: 'ci.yml', text }], both).problems.join('\n');
+  assert.equal(list(`      - run: ${install}\n      - run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy\n`), '');
+  assert.match(list('      - run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt,clippy\n'), /is not/);
   assert.match(rust('      - uses: dtolnay/rust-toolchain@master\n        with:\n          toolchain: stable\n'), /a Rust toolchain input/);
 });

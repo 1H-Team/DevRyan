@@ -68,6 +68,48 @@ jobs:
           fi
           rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy --target wasm32-unknown-unknown
           node scripts/build-ledger-native.mjs --verify
+      # The product's Cargo workspace (packages/native/DOCUMENTATION.md): the
+      # licence check (every package of the locked graph against the allow list
+      # in deny.toml, with cargo metadata only), cargo fmt --check, clippy with
+      # warnings denied and cargo test, then the RustSec advisory check. Every
+      # push to main runs them; a pull request runs them only when
+      # packages/native, its check scripts or this workflow changed. Their
+      # contract test needs no Rust and runs in a test lane on every push.
+      - name: Does this run check packages/native?
+        id: native
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        run: |
+          paths="packages/native scripts/check-native.mjs scripts/check-native-licenses.mjs .github/workflows/ci.yml"
+          if [ -n "$BASE" ] && git fetch --no-tags --depth=1 origin "$BASE" && git diff --quiet "$BASE" HEAD -- $paths; then
+            echo "No packages/native change in this pull request: its checks are skipped."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Rust workspace packages/native (licences, fmt, clippy, cargo test)
+        if: steps.native.outputs.run == 'true'
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy
+          node scripts/check-native.mjs
+      # cargo-deny, built once with the pinned Rust and kept in GitHub's cache:
+      # a hit restores the binary in seconds, a miss builds it (minutes) and the
+      # job saves it. The key names the cargo-deny release (CARGO_DENY_VERSION in
+      # scripts/check-native.mjs) and the Rust that built it. actions/cache is
+      # pinned to the commit of its release v6.1.0
+      # (55cc8345863c7cc4c66a329aec7e433d2d1c52a9, 2026-06-26).
+      - name: Cache cargo-deny 0.20.2
+        if: steps.native.outputs.run == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/devryan-cargo-deny
+          key: cargo-deny-0.20.2-rust-1.99.1-${{ runner.os }}-${{ runner.arch }}
+      # Fails the job on any RustSec advisory for a crate of the locked graph,
+      # against the advisory database as of this run, except the ones
+      # packages/native/deny.toml ignores, each with its reason.
+      - name: RustSec advisories for packages/native (cargo deny 0.20.2)
+        if: steps.native.outputs.run == 'true'
+        run: CARGO_DENY_ROOT="$HOME/.cache/devryan-cargo-deny" node scripts/check-native.mjs --advisories
 
   build:
     runs-on: ubuntu-latest

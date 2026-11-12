@@ -50,12 +50,16 @@ const WHOLE_SUITE_PREFIXES = Object.freeze(['packages/web/runtime/reviewed-input
 /**
  * Script tests that read every file of a tree whose files no source names one
  * by one (the ledger core's contract test hashes the whole crate; the native
- * ledger's lists its workspace). Any file
- * under the prefix selects them, whether or not it put the suite in the plan.
+ * ledger's lists its workspace; the Cargo workspace's contract reads all of
+ * packages/native). Any file
+ * under the prefix selects them, whether or not it put the suite in the plan;
+ * so does Markdown under it, which never enters the graph (the workspace's
+ * contract checks what its DOCUMENTATION.md says).
  */
 export const TREE_READERS = Object.freeze([
   Object.freeze({ prefix: 'packages/harness-runtime/native/ledger-core/', tests: Object.freeze(['scripts/build-ledger-core.test.mjs']) }),
   Object.freeze({ prefix: 'packages/harness-runtime/native/ledger/', tests: Object.freeze(['scripts/build-ledger-native.test.mjs']) }),
+  Object.freeze({ prefix: 'packages/native/', tests: Object.freeze(['scripts/check-native.test.mjs']) }),
 ]);
 // The suite contract inventories every test file in the repository (discovery,
 // runner lists, conditional skips), so a change to any test file selects it.
@@ -241,13 +245,21 @@ export const MARKDOWN_READERS = Object.freeze(['scripts/release-docs.test.mjs', 
 // dependencies and reviewed inputs (scripts/release-docs.test.mjs `docs`).
 const isReadMarkdown = file => /\.mdx?$/.test(file) && file !== 'CHANGELOG.md' && !file.includes('node_modules/') && !WHOLE_SUITE_PREFIXES.some(prefix => file.startsWith(prefix));
 
-/** `selection` (null when the scripts suite is not in the plan) with the Markdown readers when `files` holds Markdown they read. */
+/**
+ * `selection` (null when the scripts suite is not in the plan) with the Markdown readers when `files` holds Markdown they read,
+ * and, for Markdown under a TREE_READERS prefix, that tree's readers.
+ */
 function addMarkdownReaders(selection, files) {
   const markdown = files.filter(isReadMarkdown);
   if (markdown.length === 0 || selection?.all) return selection;
   const reasons = new Map(selection?.reasons ?? []);
-  for (const file of markdown) reasons.set(file, `${MARKDOWN_READERS.length} reading every tracked Markdown file`);
-  return { all: false, tests: [...new Set([...(selection?.tests ?? []), ...MARKDOWN_READERS])].sort(), reasons, total: selection?.total };
+  const tests = new Set([...(selection?.tests ?? []), ...MARKDOWN_READERS]);
+  for (const file of markdown) {
+    const treeTests = TREE_READERS.filter(reader => file.startsWith(reader.prefix)).flatMap(reader => reader.tests);
+    for (const test of treeTests) tests.add(test);
+    reasons.set(file, `${MARKDOWN_READERS.length} reading every tracked Markdown file${treeTests.length ? `, and ${treeTests.join(', ')} reading its tree` : ''}`);
+  }
+  return { all: false, tests: [...tests].sort(), reasons, total: selection?.total };
 }
 
 /**

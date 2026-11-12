@@ -174,6 +174,17 @@ describe('script test selection', () => {
     assert.deepEqual(select(['scripts/sel-leaf.test.mjs']).tests, ['scripts/sel-inventory.test.mjs', 'scripts/sel-leaf.test.mjs', 'scripts/test-suite-contract.test.mjs']);
   });
 
+  test('the packages/native workspace is a tree its contract test reads whole', () => {
+    assert.ok(TREE_READERS.some(reader => reader.prefix === 'packages/native/' && reader.tests.includes('scripts/check-native.test.mjs')));
+  });
+
+  test('Markdown under a tree a script test reads whole selects that test, beside the Markdown readers', () => {
+    const [{ prefix, tests: [reader] }] = TREE_READERS;
+    assert.deepEqual(withMarkdownReaders(null, [`${prefix}README.md`]).tests, [...MARKDOWN_READERS, reader].sort());
+    assert.deepEqual(withMarkdownReaders(null, ['packages/native/DOCUMENTATION.md']).tests, [...MARKDOWN_READERS, 'scripts/check-native.test.mjs'].sort());
+    assert.deepEqual(withMarkdownReaders(null, ['docs/sel-other.md']).tests, [...MARKDOWN_READERS].sort());
+  });
+
   test('a file under a tree a script test reads whole selects that test, triggering or not', () => {
     const [{ prefix, tests: [reader] }] = TREE_READERS;
     const select = fixture({ ...base, [reader]: "import assert from 'node:assert';\n", [`${prefix}src/sel-unnamed.rs`]: 'fn main() {}\n',
@@ -276,6 +287,7 @@ describe('script test selection on this repository', () => {
       ['scripts/test-select.test.mjs', 'this check; reads script sources, not Markdown'],
       ['scripts/docs/validate-docs.mjs', 'the docs:validate command; script tests run it only on fixture roots'],
       ['scripts/docs/doc-retention.mjs', 'reads file names, not contents'],
+      ['scripts/check-native.test.mjs', 'lists only packages/native; reads that workspace\'s DOCUMENTATION.md (a tree reader), not the checkout\'s Markdown'],
       ['scripts/perf/ledger-benchmark.mjs', 'lists its own fixture repositories'],
       ['scripts/perf/ledger-profile-worker.mjs', 'lists its own fixture repositories'],
     ]);

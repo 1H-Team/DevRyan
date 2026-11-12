@@ -336,6 +336,10 @@ describe('maintenance validation selection', () => {
       // The contract test, which needs no Rust, runs with it.
       assert.ok(selected.commands.find(c => c.label === 'test:scripts')?.tests.includes('scripts/build-ledger-core.test.mjs'), file);
     }
+    // The contract also checks what the workspace's DOCUMENTATION.md says: a docs-only change to it runs the contract, and no cargo.
+    const documentation = plan(['packages/native/DOCUMENTATION.md']);
+    assert.ok(documentation.commands.find(c => c.label === 'test:scripts')?.tests.includes('scripts/check-native.test.mjs'));
+    assert.ok(!documentation.commands.some(c => c.label === 'native'));
     // The toolchain pin is also checked against CI and the docs.
     assert.ok(plan(['packages/harness-runtime/native/ledger-core/rust-toolchain.toml']).commands.find(c => c.label === 'test:scripts').tests.includes('scripts/toolchain-pins.test.mjs'));
     // The loader tests execute the tracked module.
@@ -359,6 +363,34 @@ describe('maintenance validation selection', () => {
     assert.ok(plan(['packages/harness-runtime/native/ledger/ledger-io/src/unnamed.rs']).commands.find(c => c.label === 'test:scripts')?.tests.includes('scripts/build-ledger-native.test.mjs'));
     for (const file of ['packages/harness-runtime/lib/session-mutation-text.js', 'packages/harness-runtime/lib/ledger-core.js', 'scripts/validate.mjs', 'docs/TESTING.md']) {
       assert.ok(!plan([file]).commands.some(c => c.label === 'ledger-native'), file);
+    }
+  });
+
+  test('runs the Cargo workspace checks only for a change to packages/native or its check script', () => {
+    const plan = files => buildPlan('fast', files);
+    const labels = files => plan(files).commands.map(c => c.label);
+    const native = { label: 'native', executable: 'node', args: ['scripts/check-native.mjs'] };
+    // A new workspace file that no source names yet still reaches the contract test.
+    for (const file of ['packages/native/crates/front/src/proxy.rs', 'packages/native/crates/front/src/unnamed-module.rs', 'packages/native/Cargo.lock',
+      'packages/native/Cargo.toml', 'packages/native/deny.toml', 'packages/native/rust-toolchain.toml', 'packages/native/crates/front/tests/transparency.rs',
+      'scripts/check-native.mjs', 'scripts/check-native-licenses.mjs']) {
+      const selected = plan([file]);
+      assert.deepEqual(selected.commands.filter(c => c.label === 'native').map(({ label, executable, args }) => ({ label, executable, args })), [native], file);
+      assert.ok(selected.commands.find(c => c.label === 'test:scripts')?.tests.includes('scripts/check-native.test.mjs'), file);
+    }
+    // The contract also checks what the workspace's DOCUMENTATION.md says: a docs-only change to it runs the contract, and no cargo.
+    const documentation = plan(['packages/native/DOCUMENTATION.md']);
+    assert.ok(documentation.commands.find(c => c.label === 'test:scripts')?.tests.includes('scripts/check-native.test.mjs'));
+    assert.ok(!documentation.commands.some(c => c.label === 'native'));
+    // The toolchain pin is also checked against CI and the docs.
+    assert.ok(plan(['packages/native/rust-toolchain.toml']).commands.find(c => c.label === 'test:scripts').tests.includes('scripts/toolchain-pins.test.mjs'));
+    for (const file of ['packages/harness-runtime/native/ledger-core/src/diff.rs', 'scripts/validate.mjs', 'packages/web/server/index.js', '.github/workflows/ci.yml',
+      'docs/TESTING.md', 'scripts/qa/front-lane.mjs']) assert.ok(!labels([file]).includes('native'), file);
+    assert.ok(!labels(['packages/native/crates/front/src/proxy.rs']).includes('ledger-core'));
+    assert.ok(!labels(['packages/native/crates/front/src/proxy.rs']).includes('test:web'));
+    // Nothing in the workspace reads the server's sources: a server source change runs no native check and no contract test for it.
+    for (const file of ['packages/web/server/index.js', 'packages/web/server/application.js', 'packages/web/server/lib/opencode/lifecycle.js']) {
+      assert.ok(!plan([file]).commands.find(c => c.label === 'test:scripts')?.tests.includes('scripts/check-native.test.mjs'), file);
     }
   });
 
