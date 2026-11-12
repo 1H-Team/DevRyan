@@ -61,9 +61,20 @@ test('a stored stamp is judged by the harness\'s own observation of the file', (
   const stored = { identity: '1:100', stamp: '1:100:5:1700000000000000009:1700000000000000009:33188' };
   assert.deepEqual(reused.value({ published: stored }), { published: { identity: '<identity project/a.js@1>', stamp: '<stamp project/a.js@1>' } });
   assert.equal(reused.text(JSON.stringify(stored)), '{"identity":"<identity project/a.js@1>","stamp":"<stamp project/a.js@1>"}');
+  // A file record's `published` entry carries the stamp as `observation`, without the mode.
+  const published = { identity: '1:100', observation: '1:100:5:1700000000000000009:1700000000000000009', size: 5, path: 'a.js' };
+  assert.deepEqual(reused.value({ published }), { published: { identity: '<identity project/a.js@1>', observation: '<stamp project/a.js@1>', size: 5, path: 'a.js' } });
+  assert.equal(reused.text(JSON.stringify(published)), '{"identity":"<identity project/a.js@1>","observation":"<stamp project/a.js@1>","size":5,"path":"a.js"}');
   assert.equal(reused.value({ published: { identity: '1:100' } }).published.identity, '<identity ledger/git/refs/x@0>');
   assert.deepEqual(reused.value({ published: { identity: '1:100', stamp: '1:101:5:1700000000000000009:1700000000000000009:33188' } }),
     { published: { identity: '<identity ledger/git/refs/x@0>', stamp: '<stamp project/b.js@1>' } });
+  // The stamp beside it matches no observation (the file changed again before the harness looked): the record's own
+  // path still names the file among those that held the number. Another path, or none, leaves it judged alone.
+  const moved = { identity: '1:100', stamp: '1:100:5:1700000000000000777:1700000000000000777:33188', path: 'a.js' };
+  assert.equal(reused.value({ published: moved }).published.identity, '<identity project/a.js@1>');
+  assert.match(reused.value({ published: moved }).published.stamp, /^<stamp ledger\/git\/refs\/x@0 differs in /);
+  assert.equal(reused.value({ published: { ...moved, path: 'c.js' } }).published.identity, '<identity ledger/git/refs/x@0>');
+  assert.equal(reused.value({ published: { ...moved, path: 's.js' } }).published.identity, '<identity ledger/git/refs/x@0>');
   const timeline = createMasker({ timeline: [{ start: 1000, end: 1010 }, { start: 1012, end: 1020 }] });
   assert.equal(timeline.timeLabel(1005), '<time in window 0>');
   assert.equal(timeline.timeLabel(1011), '<time after window 0>');

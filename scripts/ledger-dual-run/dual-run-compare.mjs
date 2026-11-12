@@ -122,8 +122,9 @@ export function createMasker({ timeline = [], observations = [], mapPath = (text
   };
   const durationKeys = new Set(VOLATILE.durationKeys), timeKeys = new Set(VOLATILE.timeKeys), stampKeys = new Set(VOLATILE.stampKeys);
   const STAMP = /^\d+:\d+(?::\d+:\d+:\d+(?::\d+)?)?$/;
-  // `{ identity: "dev:ino", stamp: "dev:ino:size:..." }` describes one file at
-  // one moment. A file system reuses a freed inode number at once (Linux does:
+  // `{ identity: "dev:ino", observation: "dev:ino:size:..." }` (a file
+  // record's `published` entry) and `{ identity, stamp }` (a view entry)
+  // describe one file at one moment. A file system reuses a freed inode number at once (Linux does:
   // the ledger's ref file is replaced on every commit), so the first
   // observation holding that number can be another, older file. The stamp is
   // matched whole, times included, and names the observation; the identity
@@ -135,6 +136,20 @@ export function createMasker({ timeline = [], observations = [], mapPath = (text
     for (let index = 0; index < observations.length; index += 1) {
       const file = stamp.split(':').length === 6 ? observations[index].stamps.get(stamp) : fiveOf(index).get(stamp);
       if (file !== undefined) return { identity: `<identity ${mapPath(file)}@${index}>`, stamp: `<stamp ${mapPath(file)}@${index}>` };
+    }
+    return null;
+  };
+  // The same record names its file (`path`, relative to the project or a
+  // view). When the stamp beside the identity matches no observation exactly
+  // (the file changed again before the harness looked), the identity still
+  // belongs to the first observation in which that inode is a file of that
+  // path, not to an older file that held the number. Null when no observation
+  // has the inode under that path: the identity is then judged alone.
+  const identityByPath = (identity, file) => {
+    if (typeof identity !== 'string' || typeof file !== 'string' || !file || !IDENTITY.test(identity)) return null;
+    for (let index = 0; index < observations.length; index += 1) {
+      const seen = observations[index].inodes.get(identity);
+      if (seen !== undefined && (seen === file || seen.endsWith(`/${file}`))) return `<identity ${mapPath(seen)}@${index}>`;
     }
     return null;
   };
@@ -157,9 +172,13 @@ export function createMasker({ timeline = [], observations = [], mapPath = (text
       if (Array.isArray(item)) return item.map((entry) => visit(entry, null));
       if (item && typeof item === 'object' && !Buffer.isBuffer(item)) {
         const out = {};
-        const paired = stampKeys.has('identity') && stampKeys.has('stamp') ? pairedTokens(item.identity, item.stamp) : null;
+        const beside = stampKeys.has('identity') ? ['stamp', 'observation'].find((name) => stampKeys.has(name) && typeof item[name] === 'string') : undefined;
+        const paired = beside ? pairedTokens(item.identity, item[beside]) : null;
+        const named = !paired && stampKeys.has('identity') ? identityByPath(item.identity, item.path) : null;
         for (const [name, entry] of Object.entries(item)) {
-          if (paired && (name === 'identity' || name === 'stamp')) out[name] = paired[name];
+          if (paired && name === 'identity') out[name] = paired.identity;
+          else if (paired && name === beside) out[name] = paired.stamp;
+          else if (named && name === 'identity') out[name] = named;
           else out[name] = name === 'steps' && typeof entry === 'string' ? maskSteps(entry) : visit(entry, name);
         }
         return out;
@@ -178,9 +197,9 @@ export function createMasker({ timeline = [], observations = [], mapPath = (text
         if (timeKeys.has(key)) { const label = ranked.get(Number(number)); return label ? `"${key}":"${label}"` : match; }
         return match;
       })
-      .replace(/"identity":"(\d+:\d+)","stamp":"(\d+:\d+:\d+:\d+:\d+(?::\d+)?)"/g, (match, identity, stamp) => {
-        const paired = pairedTokens(identity, stamp);
-        return paired ? `"identity":"${paired.identity}","stamp":"${paired.stamp}"` : match;
+      .replace(/"identity":"(\d+:\d+)","(stamp|observation)":"(\d+:\d+:\d+:\d+:\d+(?::\d+)?)"/g, (match, identity, key, stamp) => {
+        const paired = stampKeys.has(key) ? pairedTokens(identity, stamp) : null;
+        return paired ? `"identity":"${paired.identity}","${key}":"${paired.stamp}"` : match;
       })
       .replace(/"([A-Za-z]+)":"(\d+:\d+(?::\d+:\d+:\d+(?::\d+)?)?)"/g, (match, key, stamp) => (stampKeys.has(key) ? `"${key}":"${stampToken(stamp)}"` : match));
   };
