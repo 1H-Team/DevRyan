@@ -1,8 +1,9 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { assertClaudeAgentArgs, buildClaudeAgentEnvironment, claudeAgentUsageFromEvent, claudeAgentUsageFromReport, createClaudeAgentHost, readClaudeAgentUsage } from './claude-agent-host.js';
+import { assertClaudeAgentArgs, buildClaudeAgentEnvironment, claudeAgentUsageFromEvent, claudeAgentUsageFromReport, createClaudeAgentHost, readClaudeAgentConnectionChoice,
+  readClaudeAgentUsage, writeClaudeAgentConnectionChoice } from './claude-agent-host.js';
 import { createClaudeAgentChannel } from './claude-agent-io.js';
 import { CLAUDE_AGENT_EXECUTABLE } from './claude-agent-protocol.js';
 
@@ -170,4 +171,76 @@ test('session files are read and written on the host', async () => {
   expect(calls).toEqual([`exists:${sessionID}`, `fork:${sessionID}:${sessionID}`, `remove:${sessionID}`]);
   channel.close();
   await expect(channel.io.sessionExists(sessionID)).rejects.toThrow('claude_agent_closed');
+});
+
+// Holds every writeFile and rename under `root` until the test releases it, oldest first, so the
+// interleaving of overlapping choice writes is chosen by the test rather than by timing.
+const scheduleChoiceWrites = (root: string) => {
+  const pending: { run: () => Promise<void> }[] = [];
+  const realWriteFile = fs.writeFile, realRename = fs.rename;
+  const hold = (target: unknown, run: () => Promise<void>) => String(target).startsWith(root)
+    ? new Promise<void>((resolve, reject) => { pending.push({ run: () => run().then(resolve, reject) }); }) : run();
+  const writes = vi.spyOn(fs, 'writeFile').mockImplementation((file, data, options) => hold(file, () => realWriteFile(file, data, options)));
+  const renames = vi.spyOn(fs, 'rename').mockImplementation((from, to) => hold(from, () => realRename(from, to)));
+  const drive = async (done: () => boolean) => {
+    const started = Date.now();
+    while (!done()) {
+      if (Date.now() - started > 10_000) throw new Error('choice writes did not settle');
+      await new Promise(resolve => setImmediate(resolve));
+      await pending.shift()?.run().catch(() => undefined);
+    }
+  };
+  return { drive, restore: () => { writes.mockRestore(); renames.mockRestore(); } };
+};
+
+test('overlapping connection-choice writes all succeed and the last one requested is stored', async () => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-claude-agent-')));
+  const choiceFile = path.join(root, 'runtime', 'claude-agent-connection.json');
+  const { drive, restore } = scheduleChoiceWrites(root);
+  try {
+    const choices = ['connected', 'disconnected', 'connected', 'disconnected'] as const;
+    let settled = 0;
+    const outcomes = choices.map(choice => writeClaudeAgentConnectionChoice(choiceFile, choice)
+      .then(() => 'fulfilled', (error: unknown) => `rejected: ${error instanceof Error ? error.message : String(error)}`)
+      .finally(() => { settled += 1; }));
+    await drive(() => settled === choices.length);
+    expect(await Promise.all(outcomes)).toEqual(choices.map(() => 'fulfilled'));
+    expect(await fs.readFile(choiceFile, 'utf8')).toBe('{"version":1,"choice":"disconnected"}');
+    expect((await fs.stat(choiceFile)).mode & 0o777).toBe(0o600);
+    expect(readClaudeAgentConnectionChoice(choiceFile)).toBe('disconnected');
+    expect(await fs.readdir(path.dirname(choiceFile))).toEqual(['claude-agent-connection.json']);
+  } finally { restore(); await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('a failed connection-choice write removes its temporary file and does not hold up the next', async () => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-claude-agent-')));
+  const choiceFile = path.join(root, 'runtime', 'claude-agent-connection.json');
+  const realRename = fs.rename;
+  const renames = vi.spyOn(fs, 'rename').mockImplementationOnce(async () => { throw Object.assign(new Error('rename refused'), { code: 'EIO' }); })
+    .mockImplementation((from, to) => realRename(from, to));
+  try {
+    await expect(writeClaudeAgentConnectionChoice(choiceFile, 'connected')).rejects.toThrow('rename refused');
+    expect(await fs.readdir(path.dirname(choiceFile))).toEqual([]);
+    renames.mockImplementationOnce(async () => { throw Object.assign(new Error('rename refused'), { code: 'EIO' }); });
+    const failed = writeClaudeAgentConnectionChoice(choiceFile, 'connected');
+    const next = writeClaudeAgentConnectionChoice(choiceFile, 'disconnected');
+    await expect(failed).rejects.toThrow('rename refused');
+    await next;
+    expect(readClaudeAgentConnectionChoice(choiceFile)).toBe('disconnected');
+    expect(await fs.readdir(path.dirname(choiceFile))).toEqual(['claude-agent-connection.json']);
+  } finally { renames.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('a connection-choice write removes a temporary file a crash left a day ago and keeps a fresh one', async () => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-claude-agent-')));
+  const choiceFile = path.join(root, 'claude-agent-connection.json');
+  const stale = `${choiceFile}.tmp-4242-${'a'.repeat(36)}`, fresh = `${choiceFile}.tmp-4243-${'b'.repeat(36)}`;
+  try {
+    await fs.writeFile(stale, '{"version":1'); await fs.writeFile(fresh, '{"version":1');
+    const dayAndAMinuteAgo = new Date(Date.now() - (24 * 60 + 1) * 60 * 1000);
+    await fs.utimes(stale, dayAndAMinuteAgo, dayAndAMinuteAgo);
+    await writeClaudeAgentConnectionChoice(choiceFile, 'connected');
+    expect((await fs.readdir(root)).sort()).toEqual([path.basename(choiceFile), path.basename(fresh)].sort());
+    expect(readClaudeAgentConnectionChoice(choiceFile)).toBe('connected');
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
