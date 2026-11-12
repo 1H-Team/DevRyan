@@ -342,7 +342,6 @@ pagination state.
 | `viewport-store.ts` | Scroll anchors, session memory, loading indicators | App UI state |
 | `input-store.ts` | Draft input state, attached files, synthetic parts | App UI state |
 | `selection-store.ts` | Model/agent/variant selections | App UI state |
-| `voice-store.ts` | Voice state | App UI state |
 
 `selection-store.ts` retains reversible archive context, but permanent
 `session.deleted` events clear every selection keyed by the deleted session:
@@ -603,7 +602,7 @@ Current consumers:
 - `SessionSidebar.tsx`
 - `SessionNodeItem.tsx`
 - `Header.tsx`
-- agent/session activity surfaces using `useGlobalSessionStatus()` / `useAllSessionStatuses()`
+- agent/session activity surfaces using `useAllSessionStatuses()`
 
 ### Mutation responsibility
 
@@ -1047,7 +1046,6 @@ The optimization multiplies with targeted event cloning: fewer new references pe
 | Store | Owns | When it changes |
 |-------|------|-----------------|
 | `session-ui-store.ts` | Session selection, draft lifecycle, abort, worktree, SDK actions | Session switch, draft open/close |
-| `voice-store.ts` | Voice connection/activity state | Voice toggle |
 | `input-store.ts` | Pending input text, synthetic parts, attached files | User typing, file attach, revert/fork |
 | `selection-store.ts` | Per-session model/agent/variant choices | Model/agent picker |
 | `viewport-store.ts` | Scroll anchors, session memory state, sync status | Streaming, scroll, session switch |

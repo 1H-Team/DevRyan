@@ -1,13 +1,10 @@
 import type { AttachedFile } from "@/stores/types/sessionTypes"
-import { isLikelyTransientStreamFailure } from "@/lib/messages/transientStreamError"
-import { decodeAssistantMessageError } from "@/lib/decoders/assistantMessageError"
 import { planManualRecovery, planTransientRecovery } from "@/lib/messages/transientRecovery"
 import { latestUserMessageId } from "@/lib/messages/providerRecovery"
 import { resolveSessionSendConfig } from "./send-config"
 import {
   getSyncMessages,
   getSyncParts,
-  getSyncSessionDirectoryAnyDirectory,
 } from "./sync-refs"
 import { useSessionUIStore } from "./session-ui-store"
 import { waitForAbortGuardSettlement } from "./abort-retry-guard"
@@ -80,39 +77,4 @@ export async function executeProviderRecovery(record: ProviderRecoveryRecord): P
     variant: record.selection.variant,
     agent: record.agent ?? undefined,
   }, { preserveProviderRecovery: true })
-}
-
-export async function executeTransientRetry(
-  sessionId: string,
-  options: { onRecoveryUserMessageId?: (messageId: string) => void } = {},
-): Promise<boolean> {
-  const directory = getSyncSessionDirectoryAnyDirectory(sessionId)
-  if (!directory) {
-    return false
-  }
-
-  const messages = getSyncMessages(sessionId, directory)
-  const latestMessage = messages.at(-1)
-  if (!latestMessage || latestMessage.role !== "assistant" || !latestMessage.error) {
-    return false
-  }
-
-  const error = decodeAssistantMessageError(latestMessage.error)
-  if (!isLikelyTransientStreamFailure(error?.name, error?.detail)) {
-    return false
-  }
-
-  const recovery = planTransientRecovery({
-    messages,
-    getParts: (messageId) => getSyncParts(messageId, directory),
-    erroredMessageId: latestMessage.id,
-  })
-  if (!recovery) {
-    return false
-  }
-
-  return await sendRecovery(sessionId, recovery, {
-    providerID: recovery.providerID,
-    modelID: recovery.modelID,
-  }, options)
 }
