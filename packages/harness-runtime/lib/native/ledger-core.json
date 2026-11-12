@@ -24,7 +24,7 @@
   },
   "sources": {
     "crate": "packages/harness-runtime/native/ledger-core",
-    "digest": "162e1e2050d1fb11998e08c80fe9000a6172eb4ab77d25cb10ae05584c122b7e",
+    "digest": "725650f816ea8e18dc8812b26b03355cf5b5a55bf0c155aef38de774a4004859",
     "files": {
       "Cargo.toml": "7b6f693dc0c297b32f0d2224a4744862fcf555b8111ea1e72717e4b2a26ca62e",
       "Cargo.lock": "31dd713047540af7fbd5f33ff28fe331692c48647c8a3ff7ac2c4a0304a545fa",
@@ -39,7 +39,14 @@
       "src/js/string.rs": "0ace4f39b174b0aeee0c37050f0269d55ac60c096942f09a928d6a39b0fe2a20",
       "src/js/value.rs": "25aefa9bf78424e7ab4024ebc94156e150b6ee86789eb4c22092060c4a65abf9",
       "src/key_sample.rs": "a0d090f03339b32a7d1be3306d838dbe64b6d9eed1f3c9a8dbb533b981979173",
-      "src/lib.rs": "4ee86b59924af75da001aa945e8d65369a4c978c965f44f6160411b857a5c65c"
+      "src/keys.rs": "687ea95261e0ce261379d926143a86cd758fd12790afc0647f0f461c3b42dde6",
+      "src/lib.rs": "9b80c44b11ee421f79e61f1d4cdd877e9e92e18402ee35c1748f5cef9ddecc8a",
+      "src/paths.rs": "b2296fa918a8f1af01ba69464e3589e2aed39e02da09329e4bf9f9cd8d9b69ef",
+      "src/text/ancestry.rs": "d77ab82b1ef300104d1a5a23bbdff595bab04e55e93d594be5ef48eaa5a3991e",
+      "src/text/apply.rs": "664b2db46acd1a12af076b1c6644a8b34d4fbaf040c2b04fbda3e48e671d3533",
+      "src/text/mod.rs": "04814add1485f7588524ece4063c22fd453f27c0e7ef3fb2aaa8199906232ca4",
+      "src/text/rows.rs": "78b7b4e999ca201674f5109897b74ad4bf99fae91058745206147a7e53f0fa4a",
+      "src/tree.rs": "6b532c2dbfb384ae0184987f6b3bd62c11af8fa6e9cefcb3037bb184b2d5815a"
     }
   }
 }

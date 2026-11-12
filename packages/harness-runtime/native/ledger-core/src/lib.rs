@@ -17,12 +17,18 @@
 //! WebAssembly; the loader then drops the instance and uses JavaScript.
 //!
 //! `js`, `base64` and `collate` (JavaScript values and JSON, Node's base64,
-//! ICU root collation for ASCII) are the native ledger's foundations; no
-//! export calls them yet, so they are not part of the module's code.
+//! ICU root collation for ASCII) are the native ledger's foundations, and
+//! `tree`, `keys`, `text` and `paths` its codecs (Git trees and direct tree
+//! commits, store keys and list pages, run rows and the text engine, change
+//! paths); no export calls them yet, so they are not part of the module's code.
 pub mod base64;
 pub mod collate;
 pub mod diff;
 pub mod js;
+pub mod keys;
+pub mod paths;
+pub mod text;
+pub mod tree;
 
 use std::alloc::{Layout, alloc, dealloc};
 

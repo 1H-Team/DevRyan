@@ -9,7 +9,10 @@
 //   node packages/harness-runtime/native/ledger-core/tests/run-extended.mjs [--scale S] [--corpus <dir>]... [--keep-artifacts]
 //
 // --scale multiplies the default counts (json 500,000; numbers 1,000,000;
-// collate 200,000 strings; base64 200,000; strings 50,000; sort 20,000).
+// collate 200,000 strings; base64 200,000; strings 50,000; sort 20,000; and
+// for the codecs trees 20,000 per id width, checked against git mktree, with
+// the Rust's own bytes hashed by `git hash-object` (LEDGER_CORE_GIT); commits
+// 5,000; keys 20,000; text 3,000 histories).
 // --corpus adds every record under a directory (json-corpus.mjs --dir). The
 // aged-profile fixture's records are always included; they are written by
 // a child process under the test isolation preload, because the fixture runs
@@ -27,11 +30,15 @@ import { knownDiscrepanciesSeen, renderJson } from './generate-json.mjs';
 import { renderNumbers } from './generate-numbers.mjs';
 import { renderSort } from './generate-sort.mjs';
 import { renderStrings } from './generate-strings.mjs';
+import { renderCommits, renderTrees } from './generate-trees.mjs';
+import { renderKeys } from './generate-keys.mjs';
+import { renderText } from './generate-text.mjs';
 
 export const EXTENDED_COUNTS = Object.freeze({ 'json.tsv': [renderJson, 500_000], 'numbers.tsv': [renderNumbers, 1_000_000], 'collate.tsv': [renderCollate, 200_000],
-  'base64.tsv': [renderBase64, 200_000], 'strings.tsv': [renderStrings, 50_000], 'sort.tsv': [renderSort, 20_000] });
+  'base64.tsv': [renderBase64, 200_000], 'strings.tsv': [renderStrings, 50_000], 'sort.tsv': [renderSort, 20_000],
+  'trees.tsv': [renderTrees, 20_000], 'commits.tsv': [renderCommits, 5_000], 'keys.tsv': [renderKeys, 20_000], 'text.tsv': [renderText, 3_000] });
 
-function main(argv) {
+async function main(argv) {
   const at = argv.indexOf('--scale');
   const scale = at < 0 ? 1 : Number(argv[at + 1]);
   if (!(scale > 0)) throw new Error(`--scale must be positive, not ${argv[at + 1]}`);
@@ -53,7 +60,7 @@ function main(argv) {
     console.log(`Node ${process.version}, V8 ${process.versions.v8}, ICU ${process.versions.icu}; scratch ${scratch}`);
     for (const [file, [render, count]] of Object.entries(EXTENDED_COUNTS)) {
       const started = Date.now();
-      const text = render(Math.round(count * scale));
+      const text = await render(Math.round(count * scale));
       writeFileSync(path.join(vectors, file), text);
       console.log(`${file}: ${Math.round(count * scale)} generated cases, ${Buffer.byteLength(text)} bytes, ${((Date.now() - started) / 1000).toFixed(1)} s`);
       if (file === 'json.tsv') {
@@ -63,11 +70,11 @@ function main(argv) {
     const corpus = spawnSync(process.execPath, ['--import=./scripts/test-isolation-preload.mjs', path.join(CRATE_DIR, 'tests', 'json-corpus.mjs'),
       '--out', path.join(vectors, 'json-corpus.tsv'), '--aged-profile', '--min', '300', ...corpora.flatMap((directory) => ['--dir', path.resolve(directory)])], { cwd: repositoryRoot, stdio: 'inherit' });
     if (corpus.error || corpus.status !== 0) throw new Error('json-corpus.mjs failed');
-    const env = { ...process.env, LEDGER_CORE_EXTENDED_DIR: vectors, LEDGER_CORE_CORPUS: path.join(vectors, 'json-corpus.tsv'), RUSTUP_TOOLCHAIN: toolchain.channel, RUSTUP_AUTO_INSTALL: '0',
+    const env = { ...process.env, LEDGER_CORE_EXTENDED_DIR: vectors, LEDGER_CORE_CORPUS: path.join(vectors, 'json-corpus.tsv'), LEDGER_CORE_GIT: 'git', RUSTUP_TOOLCHAIN: toolchain.channel, RUSTUP_AUTO_INSTALL: '0',
       PATH: `${located.bin}${path.delimiter}${process.env.PATH ?? ''}`, CARGO_TARGET_DIR: path.join(scratch, 'target') };
     const started = Date.now();
     const result = spawnSync(path.join(located.bin, 'cargo'), ['test', '--locked', '--offline', '--release', '--no-fail-fast', '--test', 'json', '--test', 'numbers', '--test', 'collate',
-      '--test', 'base64', '--test', 'strings', '--test', 'sort', '--test', 'corpus', '--', '--nocapture'], { cwd: path.join(repositoryRoot, CRATE_DIR), env, stdio: 'inherit' });
+      '--test', 'base64', '--test', 'strings', '--test', 'sort', '--test', 'corpus', '--test', 'trees', '--test', 'keys', '--test', 'text', '--', '--nocapture'], { cwd: path.join(repositoryRoot, CRATE_DIR), env, stdio: 'inherit' });
     console.log(`cargo test: ${((Date.now() - started) / 1000).toFixed(1)} s`);
     if (result.error || result.status !== 0) throw new Error(`cargo test failed${result.error ? `: ${result.error.message}` : ` (exit ${result.status})`}`);
     failed = false;
@@ -79,4 +86,4 @@ function main(argv) {
   }
 }
 
-try { main(process.argv.slice(2)); } catch (error) { console.error(error instanceof Error ? error.message : error); process.exitCode = 1; }
+try { await main(process.argv.slice(2)); } catch (error) { console.error(error instanceof Error ? error.message : error); process.exitCode = 1; }

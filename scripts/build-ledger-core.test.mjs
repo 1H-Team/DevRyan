@@ -20,6 +20,9 @@ import { NUMBERS_TRACKED, renderNumbers } from '../packages/harness-runtime/nati
 import { SORT_TRACKED, renderSort } from '../packages/harness-runtime/native/ledger-core/tests/generate-sort.mjs';
 import { STRINGS_TRACKED, renderStrings } from '../packages/harness-runtime/native/ledger-core/tests/generate-strings.mjs';
 import { stripRuntime } from '../packages/harness-runtime/native/ledger-core/tests/vector-tools.mjs';
+import { COMMITS_FILE, COMMITS_TRACKED, TREES_FILE, TREES_TRACKED, renderCommits, renderTrees } from '../packages/harness-runtime/native/ledger-core/tests/generate-trees.mjs';
+import { KEYS_FILE, KEYS_TRACKED, renderKeys } from '../packages/harness-runtime/native/ledger-core/tests/generate-keys.mjs';
+import { TEXT_FILE, TEXT_TRACKED, renderText } from '../packages/harness-runtime/native/ledger-core/tests/generate-text.mjs';
 import {
   BUILD_ARGS, BUILD_ENVIRONMENT, CRATE_DIR, CRATE_INPUTS, MODULE_PATH, NON_BUILD_CRATE_FILES, PROVENANCE_PATH, PROVENANCE_SCHEMA_VERSION,
   RUSTFLAG_TEMPLATES, WASM_TARGET, ancestorCargoConfigs, installCommand, ledgerCoreCrateFiles, ledgerCoreSourceDigest, ledgerCoreSources,
@@ -115,6 +118,19 @@ describe('ledger core contract', () => {
     for (const [file, render] of [[COLLATE_TABLE_FILE, renderTable], [KEY_SAMPLE_RS, renderKeySampleRust], [KEY_SAMPLE_FILE, renderKeySampleText]]) {
       sameText(stripRuntime(readFileSync(file, 'utf8')), stripRuntime(render()),
         `${path.relative(repositoryRoot, file)} is not what Node ${process.version} (ICU ${process.versions.icu}, collation locale en) writes: node ${CRATE_DIR}/tests/generate-collate.mjs, then rebuild`);
+    }
+  });
+
+  // The codec vectors record what today's JavaScript does (trees, commits,
+  // keys and pages, the text engine): a change to that JavaScript, or a Node
+  // that behaves differently, fails here. Git, the trees' second oracle, is
+  // consulted only when the vectors are written (generate-trees.mjs).
+  test('the codec vectors are what today\'s JavaScript writes', async () => {
+    const generators = [[TREES_FILE, () => renderTrees(TREES_TRACKED, { oracle: false }), 'generate-trees.mjs'], [COMMITS_FILE, () => renderCommits(COMMITS_TRACKED), 'generate-trees.mjs'],
+      [KEYS_FILE, () => renderKeys(KEYS_TRACKED), 'generate-keys.mjs'], [TEXT_FILE, () => renderText(TEXT_TRACKED), 'generate-text.mjs']];
+    for (const [file, render, generator] of generators) {
+      assert.equal(stripRuntime(read(`${CRATE_DIR}/tests/${file}`).toString('utf8')), stripRuntime(await render()),
+        `${CRATE_DIR}/tests/${file} is not what today's JavaScript writes under Node ${process.version}: node ${CRATE_DIR}/tests/${generator}`);
     }
   });
 

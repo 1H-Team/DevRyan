@@ -1313,6 +1313,124 @@ yet.
   disagree. Of these, the real keys sampled differ only under `da`, `nb` and
   `no`; the others fail the stricter sample.
 
+### The codecs in the crate (`tree`, `keys`, `text`, `paths`)
+
+Ports for the native ledger (research file 28, package L1b). As with `js`, no
+export of the WebAssembly module calls them and nothing in the product uses
+them. Each is a line-for-line port of today's JavaScript, which stays the
+reference.
+
+- **`tree`** is `lib/session-changes-trees.js` without its file-system half:
+  `parse_tree`, `serialize_tree` (Git's order, a subtree compared as if its
+  name ended in `/`), `object_header` and `object_id`, and
+  `commit_tree_changes` over a `TreeStore` the caller supplies (`read_tree`,
+  `write_object`). Names, modes and ids are JavaScript strings as the
+  JavaScript holds them: latin1 names, and ids written as `Buffer.from(oid,
+  'hex')` does (pairs of digits read from each unit's low byte, up to the
+  first pair that is not one). On success the set of objects written
+  equals the JavaScript's, and so does the root with one exception; their
+  order does not, since the JavaScript starts the writes concurrently and
+  this writes blobs first, then trees after their subtrees. The exception:
+  two entries new to one directory (not in the tree being rewritten), of
+  the same kind, whose names differ as strings but have the same latin1
+  bytes (a code unit above U+00FF: `Ā` and `\ud800` are both byte `00`).
+  `serializeTree`'s stable sort keeps their insertion order, which in the
+  JavaScript is the order their branches finish, so its root depends on
+  timing; the Rust adds them in change order, one of the JavaScript's
+  possible roots but not always its undelayed one. Only `importPrefix` can
+  stage such names, by copying names that `git ls-tree` lists (decoded as
+  UTF-8) from a ledger tree; `set`, `remove` and the lists take `validKey`
+  names (ASCII), and the product imports only the ledger's own `runs/` and
+  `bases/` trees, so a ledger the product wrote holds none. On failure this
+  stops at the first error, while the JavaScript's other branches keep
+  writing unreferenced objects. A conflict among one directory's children
+  (409) is reported before any of its subtrees is read, so it wins over an
+  unreadable subtree beside it (503), as the JavaScript finds it
+  synchronously. Timing-dependent in the JavaScript, and fixed here: a
+  conflict inside one subtree against an unreadable tree inside another,
+  and a failing blob write against a conflict (the Rust reports the
+  write's error). For these and the names above the vectors record every
+  outcome the JavaScript gives under several schedules (`{ any: [...] }`),
+  one of which the Rust must give. An odd `oid_length` (the callers pass 40
+  or 64) makes the JavaScript's width a fraction; the Rust rounds it down.
+- **`keys`** is the pure part of `lib/session-changes-store.js`: `valid_key`
+  and the other id and token checks (`at`, `ref`, lease tokens,
+  `importPrefix`'s source, `setListObjects`' ids), page names, `pages_of`
+  (at most 128 values and 256 KiB of the values' UTF-8 JSON per page, a
+  larger value on a page of its own; `undefined` fails as `Buffer.byteLength`
+  throws, values past `js::MAX_DEPTH` fail closed), the 512 KiB record bound,
+  and `entity_key` (`key()` of `lib/session-mutations.js`).
+- **`paths`** is `safeChangePath` (`lib/session-changes-snapshot.js`), POSIX only.
+- **`text`** is `lib/session-mutation-text.js` apart from the diff
+  (`apply_mutation_text` with the hunk budget and coalescing,
+  `initial_mutation_runs`, `visible_mutation_runs`, `mutation_text`, run rows
+  in format 2, `minimize_mutation_ancestry`) and the run-row code of
+  `lib/session-mutations.js` (format 1 rows, `runsFor` as `load_document`,
+  the marker and fence predicates, the choice `saveRuns` makes as
+  `save_plan`). A `Run` keeps the JavaScript object's property order and any
+  other properties a stored row carries (`Shape`): a decoded run holds `text`
+  last, a format 1 run keeps its stale `bytes`, and the rows written again
+  carry them. The typed fields cover what the ledger writes (`id` a string,
+  `start` an integer, `owner` `null` or a string, `deletedBy` strings,
+  `replaces` exactly `{ id, start, length }`). The model's numbers are
+  integers of magnitude at most 2^62 (a safe integer where the JavaScript
+  checks for one), and every sum or difference of them rounds as the
+  JavaScript's doubles do: a continuation of a run at 2^53 - 1 with 2 bytes
+  starts at 2^53, and range ends past 2^53 round the same way. Rows the
+  JavaScript accepts outside that model (an `owner` that is a number, a
+  range with another property, a format 1 row without `start`, `bytes` that
+  `Buffer.from` takes as an array, also `{ length: 1e10 }`, for which the
+  JavaScript tries to allocate 10 GB) are refused as `Unsupported`, after
+  every check the JavaScript makes has passed, so that the JavaScript's own
+  refusals (`invalid`, `TypeError`, also from a marker whose `baseline`
+  has its own `toString`, which `RegExp.prototype.test` cannot convert)
+  come out the same and a caller can fail closed on the rest. The native
+  layer must surface `Unsupported` like `invalid_change_record`: it locks
+  one document, not the ledger. One further difference: the JavaScript's
+  recursive `visit` in `applyMutationText` can overflow its stack on a very
+  deep ancestry chain, which the Rust's explicit stack does not.
+  `load_document`'s `bytes_for` must make `bytesFor`'s checks (a string of
+  64 hex digits whose object exists and hashes to it).
+- **Yielding.** `minimize_mutation_ancestry` is an `async fn` that awaits the
+  caller's `AncestryPause::pause(site)` exactly where the JavaScript awaits
+  `pause()` (every 256 units of work, at its six call sites, in order);
+  `SlicedPause` is the JavaScript's rule (yield once `sliceMs` have passed on
+  a clock) and `minimize_mutation_ancestry_now` runs it with a hook that never
+  waits. The two recursive walks of `applyMutationText` run on explicit
+  stacks in the JavaScript's order.
+- **Hashing** is the caller's (`tree::Digest`): the crate implements no hash.
+  The tests use FNV-1a only as a fingerprint and, for commits, as a stand-in
+  object id (`testObjectId` in `native/ledger-core/tests/codec-tools.mjs`):
+  `commitTreeChanges` takes whatever ids its store returns.
+- **Vectors.** `native/ledger-core/tests/generate-trees.mjs` writes
+  `trees.tsv` (1,000 seeded trees per id width, whose entries
+  `native/ledger-core/tests/support/mod.rs` draws again from the seed, with Git's order and id;
+  damaged trees for `parseTree`; JavaScript strings no Git tree holds for
+  `serializeTree`) and `commits.tsv` (500 cases of two commits over an
+  in-memory store). When writing, `git mktree --missing` builds every seeded
+  tree and the generator refuses unless `serializeTree` gives Git's bytes and
+  `objectID` Git's id (`--no-git` skips that; the content is the same).
+  `generate-keys.mjs` writes `keys.tsv`; `generate-text.mjs` writes `text.tsv`
+  (300 seeded edit histories with undo, redo, overlapping hunks, small hunk
+  budgets, multi-byte and invalid UTF-8; texts of 32 KiB and more; seeded
+  ancestry graphs with a fake clock, whose pause sites are read from the
+  JavaScript's stack; hand-made rows and pages; runs whose starts and range
+  ends pass 2^53). `commits.tsv` ends with fixed cases: a sibling conflict
+  beside an unreadable subtree, and new names with the same latin1 bytes,
+  each under 64 schedules. The closures of
+  `session-mutations.js` that are not exported (`formatOneRows`, `runsFor`,
+  `saveRuns`, the predicates, `key`) and `validKey` and `pagesOf` are
+  evaluated from their own source text (`codec-tools.mjs`
+  `declarationSource`), so the vectors are today's code. `cargo test`
+  (`native/ledger-core/tests/trees.rs`, `keys.rs`, `text.rs`) checks the Rust against them;
+  `scripts/build-ledger-core.test.mjs` fails when they are not what today's
+  JavaScript writes (without Git). Regenerate with
+  `node packages/harness-runtime/native/ledger-core/tests/generate-<trees|keys|text>.mjs`
+  (`--check` compares). The extended run (`run-extended.mjs`) adds 20,000
+  trees per width checked against `git mktree` with the Rust's own bytes
+  hashed by `git hash-object` (`LEDGER_CORE_GIT`), 5,000 commit cases,
+  20,000 key cases and 3,000 histories.
+
 ## Native ledger I/O
 
 The first package of the native ledger (research file 28, plan package L2):
