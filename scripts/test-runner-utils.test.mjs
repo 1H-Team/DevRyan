@@ -346,6 +346,22 @@ describe('maintenance validation selection', () => {
     assert.ok(labels(['packages/harness-runtime/lib/ledger-core.js']).includes('test:harness'));
   });
 
+  test('runs the native ledger verify for its workspace, its tests, the ledger core and the JavaScript lock it mirrors', () => {
+    const plan = files => buildPlan('fast', files);
+    const ledgerNative = { label: 'ledger-native', executable: 'node', args: ['scripts/build-ledger-native.mjs', '--verify'] };
+    for (const file of ['packages/harness-runtime/native/ledger/ledger-io/src/atomic.rs', 'packages/harness-runtime/native/ledger/ledger-io/src/unnamed.rs',
+      'packages/harness-runtime/native/ledger/Cargo.lock', 'scripts/build-ledger-native.mjs', 'scripts/ledger-native/atomic-spec.mjs',
+      'packages/harness-runtime/native/ledger-core/src/diff.rs', 'packages/harness-runtime/lib/atomic-file.js']) {
+      const selected = plan([file]);
+      assert.deepEqual(selected.commands.filter(c => c.label === 'ledger-native').map(({ label, executable, args }) => ({ label, executable, args })), [ledgerNative], file);
+    }
+    // A new workspace file that no source names still reaches the Rust-free contract test.
+    assert.ok(plan(['packages/harness-runtime/native/ledger/ledger-io/src/unnamed.rs']).commands.find(c => c.label === 'test:scripts')?.tests.includes('scripts/build-ledger-native.test.mjs'));
+    for (const file of ['packages/harness-runtime/lib/session-mutation-text.js', 'packages/harness-runtime/lib/ledger-core.js', 'scripts/validate.mjs', 'docs/TESTING.md']) {
+      assert.ok(!plan([file]).commands.some(c => c.label === 'ledger-native'), file);
+    }
+  });
+
   test('runs the script tests that read every tracked Markdown file for any Markdown change', () => {
     const scriptTests = files => buildPlan('fast', files).commands.find(c => c.label === 'test:scripts')?.tests;
     // docs:validate does not check the release-docs rule, so a docs-only change runs that test too.

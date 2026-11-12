@@ -51,6 +51,23 @@ jobs:
           fi
           rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy --target wasm32-unknown-unknown
           node scripts/build-ledger-core.mjs --verify
+      # The native ledger's Rust workspace (packages/harness-runtime/DOCUMENTATION.md,
+      # "Native ledger I/O"): fmt, clippy and cargo test, then the JavaScript
+      # lock and atomic writes against the Rust ones on this Linux runner (the
+      # macOS code and system-call traces run in the native-1 lane). Filtered
+      # like the step above, on the inputs its build script's contract test
+      # keeps complete; that test needs no Rust and runs in a test lane on every push.
+      - name: Rust native ledger I/O (fmt, clippy, cargo test, JavaScript against Rust)
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        run: |
+          paths="$(node scripts/ledger-native/inputs.mjs) .github/workflows/ci.yml"
+          if [ -n "$BASE" ] && git fetch --no-tags --depth=1 origin "$BASE" && git diff --quiet "$BASE" HEAD -- $paths; then
+            echo "No native ledger change in this pull request: skipped."
+            exit 0
+          fi
+          rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy --target wasm32-unknown-unknown
+          node scripts/build-ledger-native.mjs --verify
 
   build:
     runs-on: ubuntu-latest
@@ -158,3 +175,22 @@ jobs:
           path: ${{ runner.temp }}/test-timings/
           if-no-files-found: ignore
           retention-days: 30
+      # The native ledger's Rust workspace on macOS, where the product runs:
+      # the F_FULLFSYNC chain, close$NOCANCEL and libuv's macOS copy path exist
+      # only here, and so do the system-call traces (DYLD interposition) with
+      # the JavaScript on Electron's Node. One lane runs it, after its suites
+      # and even when they failed, filtered like the Ubuntu step: a few
+      # minutes when an input changed, a skip line otherwise.
+      - name: Rust native ledger I/O on macOS (fmt, clippy, cargo test, JavaScript against Rust, system-call traces)
+        if: ${{ !cancelled() && matrix.lane == 'native-1' }}
+        timeout-minutes: 15
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        run: |
+          paths="$(node scripts/ledger-native/inputs.mjs) .github/workflows/ci.yml"
+          if [ -n "$BASE" ] && git fetch --no-tags --depth=1 origin "$BASE" && git diff --quiet "$BASE" HEAD -- $paths; then
+            echo "No native ledger change in this pull request: skipped."
+            exit 0
+          fi
+          rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy --target wasm32-unknown-unknown
+          node scripts/build-ledger-native.mjs --verify

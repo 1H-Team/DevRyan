@@ -11,6 +11,7 @@ import { cacheGrowthFailure, snapshotCache } from './cache-guard.mjs';
 import { isTestImporter } from './check-import-boundaries.mjs';
 import { FULL_TEST_SUITES, planFullTests } from './test-full.mjs';
 import { formatDuration, recordTestTimings, runTestUnits, summarizeTestUnits, testConcurrency } from './test-pool.mjs';
+import { isLedgerNativeInput } from './ledger-native/inputs.mjs';
 import { discoverScriptTestFiles, planScriptTests, prepareScriptTestEnvironment } from './test-scripts.mjs';
 import { selectScriptTests, withMarkdownReaders } from './test-select.mjs';
 import { STARTUP_CONTRACT_GROUPS, startupContractGroups } from './test-startup-contract.mjs';
@@ -101,6 +102,15 @@ const ledgerCoreModule = new Set(['packages/harness-runtime/lib/native/ledger-co
 const isLedgerCoreInput = (file) => file.startsWith(ledgerCoreCrate) || file === 'scripts/build-ledger-core.mjs' || ledgerCoreModule.has(file);
 const ledgerCoreCommands = (files) => files.some(isLedgerCoreInput)
   ? [{ label: 'ledger-core', executable: 'node', args: ['scripts/build-ledger-core.mjs', '--verify'] }] : [];
+// The native ledger's Rust workspace (packages/harness-runtime/DOCUMENTATION.md,
+// "Native ledger I/O"): its inputs are listed beside its differential tests
+// (the workspace, the ledger core, the JavaScript it must stay equal to and
+// every local module the verify loads; CI's filter prints the same list). A
+// change runs `--verify` (fmt, clippy, cargo test, then JavaScript against
+// Rust; needs the pinned toolchain) and the scripts suite, whose contract
+// test needs no Rust.
+const ledgerNativeCommands = (files) => files.some(isLedgerNativeInput)
+  ? [{ label: 'ledger-native', executable: 'node', args: ['scripts/build-ledger-native.mjs', '--verify'] }] : [];
 
 // Files `node scripts/bump-version.mjs` rewrites. A change confined to their
 // version field is release metadata: `versions` checks they agree instead of
@@ -420,7 +430,7 @@ function affectedTests(files) {
     if (isOrchestrationTestRelevant(file)) tests.add('orchestration');
     if (file.startsWith('packages/shared-runtime/')) tests.add('shared');
     if (isHarnessTestRelevant(file) || ledgerCoreModule.has(file)) tests.add('harness');
-    if (isLedgerCoreInput(file)) tests.add('scripts');
+    if (isLedgerCoreInput(file) || isLedgerNativeInput(file)) tests.add('scripts');
     if (file.startsWith(packages.agentsCore.prefix)) tests.add('agentsCore');
     if (isScriptsFile(file)) tests.add('scripts');
     if (isToolchainFile(file)) FULL_TEST_SUITES.forEach((suite) => tests.add(suite.key));
@@ -494,7 +504,7 @@ export function buildPlan(requestedMode, providedFiles, { versionOnly } = {}) {
     commands.push(...packageCommands(typeChecked, 'typeCheck'));
   }
   if (codeFiles.some((file) => file.startsWith(modelCatalogPrefix))) commands.push(command('catalog:check', 'bun', ['run', 'catalog:check']));
-  commands.push(...importBoundaryCommands(codeFiles), ...declarationCommands(codeFiles), ...ledgerCoreCommands(codeFiles));
+  commands.push(...importBoundaryCommands(codeFiles), ...declarationCommands(codeFiles), ...ledgerCoreCommands(codeFiles), ...ledgerNativeCommands(codeFiles));
   const suites = affectedTests(codeFiles);
   // Markdown is not a code file, but the scripts that read all of it must run.
   const scriptSelection = withMarkdownReaders(suites.has('scripts') ? scriptTestSelection(codeFiles) : null, files);

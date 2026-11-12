@@ -78,6 +78,7 @@
       "!**/*.rs",
       "!**/{Cargo.toml,Cargo.lock,rust-toolchain,rust-toolchain.toml}",
       "!node_modules/@devryan/harness-runtime/native/ledger-core{,/**}",
+      "!node_modules/@devryan/harness-runtime/native/ledger{,/**}",
       "!**/build/Release/obj{,/**}",
       "!**/prebuilds/linux-*{,/**}",
       "!**/node_modules/{,@*/}?(*-){[!${os}]in32,d[!${os}]rwin}-*{,/**}",

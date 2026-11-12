@@ -13,12 +13,13 @@ export default {
     // Native modules load their compiled .node; sources and objects only build it.
     { id: 'native-build-leftover', pattern: /(?:\.(?:c|cc|cpp|h|hpp)|\/build\/Release\/obj\/.*)$/ },
     // Rust sources never ship: the ledger core runs as its built WebAssembly
-    // module (harness-runtime/lib/native/ledger-core.wasm), its crate stays out.
+    // module (harness-runtime/lib/native/ledger-core.wasm), its crate stays out,
+    // and the native ledger workspace (harness-runtime/native/ledger) is not wired in.
     { id: 'rust-source', pattern: /(?:\.rs|(?:^|\/)(?:Cargo\.toml|Cargo\.lock|rust-toolchain(?:\.toml)?))$/ },
-    // The ledger-core crate folder, or a Cargo build directory (a `target/` holding a
+    // The ledger-core crate folder, the native ledger workspace, or a Cargo build directory (a `target/` holding a
     // profile or a target triple) under a first-party package. A source folder that is
     // merely named `target` is not one.
-    { id: 'rust-build-leftover', pattern: /\/node_modules\/@devryan\/(?:harness-runtime\/native\/ledger-core\/|[^/]+\/(?:.*\/)?target\/(?:release|debug|wasm32-[^/]+|[a-z0-9_]+-[a-z0-9_]+-[a-z0-9_-]+)\/)/ },
+    { id: 'rust-build-leftover', pattern: /\/node_modules\/@devryan\/(?:harness-runtime\/native\/ledger(?:-core)?\/|[^/]+\/(?:.*\/)?target\/(?:release|debug|wasm32-[^/]+|[a-z0-9_]+-[a-z0-9_]+-[a-z0-9_-]+)\/)/ },
     // npm's lifecycle runner (@opencode/util → @npmcli/arborist) depends on node-gyp,
     // but the app never builds addons and gyp's Python cannot read inside app.asar.
     { id: 'build-tool', pattern: /\/node_modules\/node-gyp\// },

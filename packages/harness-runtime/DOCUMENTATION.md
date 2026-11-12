@@ -1285,6 +1285,152 @@ yet.
   disagree. Of these, the real keys sampled differ only under `da`, `nb` and
   `no`; the others fail the stricter sample.
 
+## Native ledger I/O
+
+The first package of the native ledger (research file 28, plan package L2):
+the file-system primitives, the cross-process lock and the atomic writes of
+`lib/atomic-file.js`, in Rust. **Nothing in the product calls it**: there is
+no switch, no binary in the package and no change to any JavaScript.
+
+- **Where.** `native/ledger/` is a cargo workspace (tracked `Cargo.lock`) with
+  one library crate, `ledger-io`. It has no toolchain file of its own: the
+  build script selects ledger-core's pin through `RUSTUP_TOOLCHAIN`. Its
+  dependencies are `libc` (exactly pinned, MIT or Apache-2.0) and
+  `../ledger-core` by path (JavaScript strings, numbers and JSON for the lock
+  file's bytes).
+  - `ledger-io/src/fs.rs` reproduces the primitives as the libuv inside
+    Electron's Node makes them (`process.versions.uv`, 1.52.1 when this was
+    written), and holds every `unsafe` block of the workspace. It covers bigint
+    stamps (`dev:ino:size:mtimeNs:ctimeNs[:mode]`, signed 64-bit as Node's
+    `BigInt64Array` holds them), `mtimeMs`, the sync chain, `copyfile`, `link`,
+    `rename`, `unlink`, `chmod`, exclusive opens with a mode, Node's recursive
+    `mkdir`, `utimes`, `realpath`, `statfs`, directory listing and directory
+    sync.
+  - Errors are Node's: libuv's names and texts (`uv_err_name`,
+    `uv_strerror`, the table `util.getSystemErrorMap()` prints) in Node's
+    layout (`<code>: <text>, <syscall> '<path>' -> '<dest>'`), with `errno`
+    negated as Node's is, `syscall`, `path` and `dest`. An errno libuv does
+    not know (macOS `EOPNOTSUPP` and `ENODATA`) is `Unknown system error -<n>`
+    in both. A recursive `mkdir` reports every failure as `mkdir` of the path
+    it was making, a failed `stat` included.
+  - Limits a caller must know: `utimes` takes seconds at libuv's level, so a
+    caller applies Node's `toUnixTimestamp` first (a negative time becomes the
+    current time there); `read_file` reads to the end without Node's size
+    check (`ERR_FS_FILE_TOO_LARGE` above 2 GiB), which a reader of large files
+    must add; `realpath` and directory names decode ill-formed UTF-8 lossily,
+    as Node's `'utf8'` does.
+  - `ledger-io/src/atomic.rs` holds `write_file_atomic`,
+    `with_cross_process_file_lock` and `cleanup_stale_atomic_files`: the same
+    calls in the same order, the same names, modes, retry gaps, timeouts,
+    codes and lock bytes. Everything the JavaScript lets a caller inject is
+    injectable (`Fs`, `Env`: clock, wait, liveness, token, identifier, signal,
+    progress). The functions block; a caller that needs concurrency runs them
+    on a blocking thread.
+  - `ledger-io/src/path.rs` ports the `path.posix` functions they use.
+  - `ledger-io/src/bin/atomic-probe.rs` is a test-only binary, built only with
+    the `probe` feature.
+- **What libuv does, measured.** These were checked with a test-only
+  interposer (`scripts/ledger-native/trace-interpose.c`, macOS
+  `DYLD_INSERT_LIBRARIES` on the unsigned development Electron):
+  - **Sync on macOS** is `fcntl(F_FULLFSYNC)`; if that does not return 0,
+    `fcntl(F_BARRIERFSYNC)` (85); if that does not either, `fsync`. The whole
+    chain is retried on `EINTR`. Each fallback was forced and observed in both
+    implementations. On Linux it is `fsync`.
+  - **`copyfile` has no `copyfile(3)` and no clone on macOS** in this libuv.
+    It opens, `fstat`s, opens the destination with the source's mode,
+    truncates, `futimens`, `fchown`, `fchmod`, then copies the bytes:
+    `sendfile` refuses a file target, so it falls back to 8 KiB
+    `pread`/`write` rounds. `COPYFILE_FICLONE` is ignored there and
+    `COPYFILE_FICLONE_FORCE` fails with `ENOSYS`. The bytes are written after
+    the times are set, so a non-empty copy does not keep the source's
+    modification time (measured on Electron's Node). On Linux, `FICLONE`,
+    `copy_file_range` and `sendfile` are tried first.
+  - **Writes** go out in chunks of at most 512 KiB (`kWriteFileMaxChunkSize`).
+  - **`rm(path, { force: true })`** is `lstat`, `lstat`, `unlink`.
+  - **Recursive `mkdir`** is Node's own `MKDirpAsync`: `mkdir`; on `ENOENT`
+    the parent first; `EACCES`, `ENOSPC`, `ENOTDIR` and `EPERM` end it; any
+    other error (`EEXIST` above all) `stat`s the path.
+- **Build and verify** with `node scripts/build-ledger-native.mjs [--verify]`.
+  Every cargo command runs with `--locked` on a copy of the workspace and of
+  ledger-core under the OS temp dir, with a private `CARGO_HOME` and target
+  directory there (removed afterwards; `--keep-artifacts` keeps them). The
+  dependencies are fetched once per run with `cargo fetch --locked`, which
+  needs the network; everything after that runs `--offline`. `--verify` runs
+  `cargo fmt --check`, `cargo clippy -D warnings` (every target and feature),
+  `cargo test`, then `cargo check` and `cargo clippy -D warnings` for
+  `x86_64-unknown-linux-gnu` when the pinned toolchain has that target (the
+  only way to lint the Linux-only code on a Mac; it prints one line saying so
+  when the target is missing, and on x86_64 Linux the host clippy is that
+  lint), then the differential tests
+  (`scripts/ledger-native/atomic-differential.mjs`) against the probe it
+  built. It passes the probe's path in `LEDGER_NATIVE_PROBE`; the tests build
+  one themselves when that is unset. The system-call tests skip themselves
+  off macOS, with the reason in the output.
+  - **The JavaScript reference** is the Node inside Electron, the ledger's
+    runtime: the binary the installed `electron` package names, started with
+    `ELECTRON_RUN_AS_NODE=1` (`scripts/ledger-native/reference-runtime.mjs`).
+    Only where that binary is absent does the JavaScript run on the Node that
+    runs the tests. The run prints which runtime it used and its libuv.
+  - **Inputs.** `scripts/ledger-native/inputs.mjs` lists what reruns the
+    verify: the workspace, ledger-core's crate, `lib/atomic-file.js` and every
+    local module the build script and the differential tests load (the
+    isolation preload included). Fast `validate` reads that list, and both CI
+    steps print it as their pull-request filter. The build script's contract
+    test follows the imports and fails when one is missing from the list.
+  - **CI** runs the verify on every push and on pull requests that change an
+    input: in the `static` job on Ubuntu (Linux code, the JavaScript on CI's
+    Electron or Node), and in the `native-1` macOS lane after its suites
+    (the macOS code, the sync chain and the system-call traces). The macOS
+    step adds a Rust install and the verify, a few minutes, only when an input
+    changed.
+- **The differential tests** compare the JavaScript (`lib/atomic-file.js`)
+  with the Rust:
+  - The shared specification (`scripts/ledger-native/atomic-spec.mjs`)
+    restates as data the 10 cases of `lib/atomic-file.test.js` that concern
+    these three functions. It lists the 5 it leaves out: Windows,
+    `writeFileAtomicSync`, `readJsonGuarded`. It adds 31 edge cases, among
+    them the 24-hour cutoff at its exact boundary, names that only look like
+    temporaries, `ENOTDIR` for a file or a dangling link in the middle of a
+    path, `ERR_FS_EISDIR`, a lock naming a process this user may not signal
+    (`EPERM`, alive), a lock file of ill-formed UTF-8, and a dead owner
+    rewritten with the same token before the re-read. Results, errors (code,
+    errno, syscall, path, dest and message), file-system call traces,
+    progress, observations and the tree after every run must be equal, and
+    the probe's tree must be the one Node reads.
+  - Lock bytes are checked against the documented format.
+  - JavaScript and Rust processes contend on one counter: 4 of each, 25
+    cycles each, 200 in all (the design asked for 2,000; the tenth keeps the
+    gate short).
+  - A SIGKILLed holder of each language is reclaimed by the other, and a live
+    holder is never stolen.
+  - On macOS, system-call sequences are compared: `writeFileAtomic`, lock
+    publication and the sync chain with each fallback forced; a forced
+    `fsync` failure must fail both writes alike and leave no temporary.
+    `copyfile` is compared by outcome, mode (one the umask would clip), times,
+    bytes and its `EEXIST` failure.
+  - Stamps are compared with the reference Node's bigint stats, and the
+    system error table with its `util.getSystemErrorMap()`.
+  - `scripts/build-ledger-native.test.mjs`, which needs no Rust, runs the
+    specification against the JavaScript alone on every lane, and checks the
+    workspace's files, lockfile, probe and `unsafe` placement.
+- **Known defects carried over.** The Rust reproduces these defects of
+  today's JavaScript, because the lock is shared with it; any fix belongs to
+  both at once (an owner decision):
+  - A dangling symbolic link at the lock path makes the lock spin forever:
+    `link` gives `EEXIST`, reading the lock gives `ENOENT`, and that retries
+    at once, before the timeout is checked, so it never waits and never
+    times out. No test reproduces it, because it would hang.
+  - A lock is left behind if the temporary cannot be removed after a
+    successful link (the error skips the release), and a failed release turns
+    a callback that finished into a failure.
+  - A lock naming a pid above 2^31 - 1 is reclaimed at once (`process.kill`
+    refuses it, which counts as dead).
+  - libuv's `copyfile` loops forever if the source shrinks during the copy.
+- **Packaging.** Nothing ships: `packages/electron/package.json` excludes
+  `native/ledger`, and the packaged-app check forbids it.
+- **The native acceptance digest** hashes this package's `.rs` files, so every
+  workspace edit changes it, as for ledger-core.
+
 ## Registered host-dependent operations
 
 `lib/registered-host-operations.js` loads the private administrator file

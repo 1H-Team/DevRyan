@@ -1,0 +1,25 @@
+[package]
+name = "ledger-io"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# Builds the test-only `atomic-probe` binary, which the Node differential
+# tests drive (scripts/ledger-native/). Never packaged, never shipped.
+probe = []
+
+[[bin]]
+name = "atomic-probe"
+path = "src/bin/atomic-probe.rs"
+required-features = ["probe"]
+
+[dependencies]
+# Exactly pinned: the system calls libuv makes (F_FULLFSYNC, close$NOCANCEL,
+# utimensat, statfs, kill, getentropy) that std does not expose.
+libc = "=0.2.191"
+# JavaScript strings, numbers and JSON, for the lock file's bytes.
+ledger-core = { path = "../../ledger-core" }

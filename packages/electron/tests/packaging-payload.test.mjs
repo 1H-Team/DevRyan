@@ -34,7 +34,8 @@ test('the app ships no duplicate web build, source maps, tests, sources or Linux
   // stay for the Windows preview package.
   for (const pattern of ['!**/*.{c,cc,cpp,h,hpp}', '!**/build/Release/obj{,/**}', '!**/prebuilds/linux-*{,/**}',
     // Rust sources never ship; the ledger core runs as its built WebAssembly module.
-    '!**/*.rs', '!**/{Cargo.toml,Cargo.lock,rust-toolchain,rust-toolchain.toml}', '!node_modules/@devryan/harness-runtime/native/ledger-core{,/**}']) {
+    '!**/*.rs', '!**/{Cargo.toml,Cargo.lock,rust-toolchain,rust-toolchain.toml}', '!node_modules/@devryan/harness-runtime/native/ledger-core{,/**}',
+    '!node_modules/@devryan/harness-runtime/native/ledger{,/**}']) {
     assert.ok(build.files.includes(pattern), pattern);
   }
   // A platform `files` list makes electron-builder prepend `**/*`, which packs this
@@ -125,9 +126,12 @@ test('the ledger core ships its WebAssembly module and provenance, never its cra
   const crate = ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.gitignore', 'src/lib.rs', 'src/diff.rs', 'tests/vectors.rs',
     'tests/vectors.tsv', 'tests/generate-vectors.mjs', 'target/wasm32-unknown-unknown/release/ledger_core.wasm', 'build.rs']
     .map(file => `${root}/native/ledger-core/${file}`);
+  // The native ledger workspace is not wired in: none of it ships.
+  const workspace = ['Cargo.toml', 'Cargo.lock', '.gitignore', 'ledger-io/Cargo.toml', 'ledger-io/src/fs.rs', 'ledger-io/src/bin/atomic-probe.rs',
+    'target/debug/atomic-probe', 'target/release/libledger_io.rlib'].map(file => `${root}/native/ledger/${file}`);
   const elsewhere = ['node_modules/some-crate/Cargo.toml', 'node_modules/some-crate/src/main.rs', 'node_modules/some-crate/rust-toolchain'];
   for (const [os, arch] of [['mac', 'arm64'], ['mac', 'x64'], ['win', 'x64']]) {
-    assert.deepEqual(packedFor(os, arch, [...runtime, ...crate, ...elsewhere]), runtime);
+    assert.deepEqual(packedFor(os, arch, [...runtime, ...crate, ...workspace, ...elsewhere]), runtime);
   }
 });
 
