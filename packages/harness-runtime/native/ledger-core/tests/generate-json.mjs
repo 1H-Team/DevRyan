@@ -16,7 +16,7 @@
 // 1e-7 layout boundaries, -0, deep nesting, empty containers, long strings,
 // whitespace, and mutated (mostly malformed) texts.
 import { KNOWN_ENGINE_DISCREPANCIES } from './known-engine-discrepancies.mjs';
-import { b64, drawer, isMain, random, runGenerator, wtf8, vectorDocument } from './vector-tools.mjs';
+import { b64, drawer, isMain, powerOfTen, random, runGenerator, wtf8, vectorDocument } from './vector-tools.mjs';
 
 export const JSON_FILE = 'json.tsv';
 export const JSON_SEED = 20261112;
@@ -78,7 +78,7 @@ function numberText(d) {
   if (roll < 0.7) {
     // Near a power of ten, around both layout boundaries.
     const exponent = pick([-8, -7, -6, -5, 0, 1, 15, 16, 17, 20, 21, 22, int(600) - 300]);
-    const x = (1 + (next() - 0.5) * 10 ** -int(17)) * 10 ** exponent;
+    const x = (1 + (next() - 0.5) * powerOfTen(-int(17))) * powerOfTen(exponent);
     return Number.isFinite(x) ? String(x) : '1';
   }
   // Random decimal digits with an optional fraction and exponent.
@@ -176,7 +176,7 @@ function mutate(d, text) {
   return `${text}${pick(MUTATION_UNITS)}`;
 }
 
-/** Known engine discrepancies met by the last renderJson call (run-extended.mjs reports them). */
+/** Known engine discrepancies met by the last renderJson call (the extended run reports them). */
 export const knownDiscrepanciesSeen = [];
 
 /**

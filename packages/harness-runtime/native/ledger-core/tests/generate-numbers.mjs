@@ -8,7 +8,7 @@
 // around 2^53, values near the 1e21 and 1e-7 layout boundaries, short decimals
 // (few significant digits, the shapes records hold), exact halfway ties
 // between two shortest candidates, and their neighbours one ulp away.
-import { drawer, isMain, random, runGenerator, vectorDocument } from './vector-tools.mjs';
+import { drawer, isMain, powerOfTen, random, runGenerator, vectorDocument } from './vector-tools.mjs';
 
 export const NUMBERS_FILE = 'numbers.tsv';
 export const NUMBERS_SEED = 20261114;
@@ -32,13 +32,13 @@ export function numberCases(count) {
     if (roll < 0.35) x = fromBits(randomBits());
     else if (roll < 0.45) x = fromBits(randomBits() & 0x800fffffffffffffn); // subnormal
     else if (roll < 0.55) x = (chance(0.5) ? -1 : 1) * (2 ** 53 + int(2001) - 1000) * (chance(0.2) ? 2 ** int(20) : 1);
-    else if (roll < 0.7) x = (1 + (next() - 0.5) * 10 ** -int(17)) * 10 ** pick([-8, -7, -6, -5, 15, 16, 17, 20, 21, 22]);
-    else if (roll < 0.85) x = Number(`${int(10 ** (1 + int(9)))}e${int(60) - 30}`); // short decimals
+    else if (roll < 0.7) x = (1 + (next() - 0.5) * powerOfTen(-int(17))) * powerOfTen(pick([-8, -7, -6, -5, 15, 16, 17, 20, 21, 22]));
+    else if (roll < 0.85) x = Number(`${int(powerOfTen(1 + int(9)))}e${int(60) - 30}`); // short decimals
     else {
       // An exact dyadic tie: an integer plus j/2^m with few fractional bits,
       // at magnitudes where it needs 17 digits.
       const m = 1 + int(8);
-      x = Math.floor(next() * 10 ** (16 - Math.ceil(m * 0.30103))) + (2 * int(2 ** (m - 1)) + 1) / 2 ** m;
+      x = Math.floor(next() * powerOfTen(16 - Math.ceil(m * 0.30103))) + (2 * int(2 ** (m - 1)) + 1) / 2 ** m;
     }
     if (!Number.isFinite(x)) continue;
     out.push(x);

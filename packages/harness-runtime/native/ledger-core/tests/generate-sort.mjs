@@ -7,7 +7,7 @@
 // JSON cannot hold written as null; those values as `index:kind` (u
 // undefined, n NaN, i Infinity, j -Infinity), comma-separated; and the
 // sorted order as original indices, comma-separated.
-import { b64, drawer, isMain, random, runGenerator, vectorDocument } from './vector-tools.mjs';
+import { b64, drawer, isMain, powerOfTen, random, runGenerator, vectorDocument } from './vector-tools.mjs';
 
 export const SORT_FILE = 'sort.tsv';
 export const SORT_SEED = 20261116;
@@ -21,7 +21,7 @@ function value(d, depth = 0) {
   const { int, pick, next } = d;
   const roll = next();
   if (roll < 0.25) return pick(STRINGS);
-  if (roll < 0.5) return pick([0, -0, 1, 2, 9, 10, 11, 100, -1, -10, 1.5, 0.1, 1e21, 1e-7, 2 ** 53, -(2 ** 53), int(1000) - 500, (next() - 0.5) * 10 ** int(30)]);
+  if (roll < 0.5) return pick([0, -0, 1, 2, 9, 10, 11, 100, -1, -10, 1.5, 0.1, 1e21, 1e-7, 2 ** 53, -(2 ** 53), int(1000) - 500, (next() - 0.5) * powerOfTen(int(30))]);
   if (roll < 0.6) return pick([null, true, false]);
   if (roll < 0.7) return pick([...SPECIAL.keys()]);
   if (roll < 0.8 && depth < 2) return Array.from({ length: int(4) }, () => value(d, depth + 1));

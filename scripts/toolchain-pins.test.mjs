@@ -31,6 +31,9 @@ export const NODE_SOURCE_GAP = {
 export const ALLOWED_DOC_STATEMENTS = [
   { file: 'packages/electron/DOCUMENTATION.md', text: 'Node 24.22', reason: 'the Node that Electron embeds, not the toolchain Node' },
   { file: 'packages/electron/DOCUMENTATION.md', text: 'Node 24', reason: "agent-browser's Node shim requirement, not the toolchain Node" },
+  { file: 'packages/harness-runtime/DOCUMENTATION.md', text: 'Node 24.22', reason: "the Node that Electron embeds, where the ledger core's vectors were also checked, not the toolchain Node" },
+  { file: 'packages/harness-runtime/DOCUMENTATION.md', text: 'Node 24', reason: "the Node that Electron embeds, named for its measured nesting limit, not the toolchain Node" },
+  { file: 'packages/harness-runtime/DOCUMENTATION.md', text: 'Node 26', reason: "the Node the ledger core's vectors were generated with, named beside its ICU version, not the toolchain Node" },
   { file: 'docs/QA_REPAIR_VERIFICATION.md', text: 'Electron 41.2.1', reason: 'historical 2026-10-20 measurement record of the build that was sampled' },
   { file: 'packages/web/server/lib/opencode/runtime-host/DOCUMENTATION.md', text: 'Bun 1.4.3', reason: 'the previous Bun pin, named for patch and lockfile behaviour it is compared against' },
 ];

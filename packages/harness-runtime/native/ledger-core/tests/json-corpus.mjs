@@ -12,7 +12,7 @@
 // stage records and seam messages are to be fed this way once that harness
 // lands (it is not in this tree yet). A Git object store
 // inside a directory (a `git` or `.git` folder, or a bare repository) is read
-// as its blobs, not as files. run-extended.mjs calls this; run it under the
+// as its blobs, not as files. The extended run calls this; run it under the
 // test isolation preload, because the aged profile runs the real ledger.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';

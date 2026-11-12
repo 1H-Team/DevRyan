@@ -9,12 +9,20 @@
 //   node <generator> --extended <dir> [--count N]
 //                                             write a larger set (same file name) into <dir>,
 //                                             which `LEDGER_CORE_EXTENDED_DIR=<dir> cargo test` reads
-// run-extended.mjs does the extended run end to end.
+// The extended runner beside these files does the extended run end to end.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const TESTS_DIR = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * 10 to the power `n` as the decimal literal reads, which the language
+ * specifies exactly. The `**` operator is the C library's `pow`, which may
+ * round the last bit differently from one platform to the next, so a
+ * generator that used it would write different vectors on Linux and macOS.
+ */
+export const powerOfTen = (n) => Number(`1e${n}`);
 
 /** mulberry32, as generate-vectors.mjs; tests/support/mod.rs reproduces it. */
 export function random(seed) {

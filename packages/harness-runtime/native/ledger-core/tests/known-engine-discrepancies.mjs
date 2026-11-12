@@ -4,7 +4,7 @@
 // checked on every run (applyKnownDiscrepancies in generate-json.mjs):
 // - under the engine it names, that engine must return exactly `observed`;
 //   the row is then written with `specification` (what the Rust must
-//   produce) and named `known-engine-discrepancy:<id>`, and run-extended.mjs
+//   produce) and named `known-engine-discrepancy:<id>`, and the extended run
 //   and tests/json.rs report it as a known engine discrepancy;
 // - if that engine now returns `specification`, or anything other than
 //   `observed`, generation fails and says to update this list;

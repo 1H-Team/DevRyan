@@ -100,12 +100,20 @@ describe('ledger core contract', () => {
     const generators = [['json.tsv', renderJson, JSON_TRACKED, 'generate-json.mjs'], ['numbers.tsv', renderNumbers, NUMBERS_TRACKED, 'generate-numbers.mjs'],
       ['strings.tsv', renderStrings, STRINGS_TRACKED, 'generate-strings.mjs'], ['sort.tsv', renderSort, SORT_TRACKED, 'generate-sort.mjs'],
       ['base64.tsv', renderBase64, BASE64_TRACKED, 'generate-base64.mjs'], ['collate.tsv', renderCollate, COLLATE_TRACKED, 'generate-collate.mjs']];
+    // The files are long: a failure names the first line that differs, not the whole text.
+    const sameText = (tracked, rendered, message) => {
+      if (tracked === rendered) return;
+      const [trackedLines, renderedLines] = [tracked.split('\n'), rendered.split('\n')];
+      const at = trackedLines.findIndex((line, index) => line !== renderedLines[index]);
+      const line = at === -1 ? trackedLines.length : at;
+      assert.fail(`${message}\nfirst difference at line ${line + 1} (${process.platform} ${process.arch}):\n  tracked:  ${JSON.stringify(trackedLines[line] ?? null)}\n  rendered: ${JSON.stringify(renderedLines[line] ?? null)}`);
+    };
     for (const [file, render, count, generator] of generators) {
-      assert.equal(stripRuntime(read(`${CRATE_DIR}/tests/${file}`).toString('utf8')), stripRuntime(render(count)),
+      sameText(stripRuntime(read(`${CRATE_DIR}/tests/${file}`).toString('utf8')), stripRuntime(render(count)),
         `${CRATE_DIR}/tests/${file} is not what Node ${process.version} writes: node ${CRATE_DIR}/tests/${generator}`);
     }
     for (const [file, render] of [[COLLATE_TABLE_FILE, renderTable], [KEY_SAMPLE_RS, renderKeySampleRust], [KEY_SAMPLE_FILE, renderKeySampleText]]) {
-      assert.equal(stripRuntime(readFileSync(file, 'utf8')), stripRuntime(render()),
+      sameText(stripRuntime(readFileSync(file, 'utf8')), stripRuntime(render()),
         `${path.relative(repositoryRoot, file)} is not what Node ${process.version} (ICU ${process.versions.icu}, collation locale en) writes: node ${CRATE_DIR}/tests/generate-collate.mjs, then rebuild`);
     }
   });

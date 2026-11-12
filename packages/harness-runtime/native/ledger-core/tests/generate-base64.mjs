@@ -36,7 +36,8 @@ export function renderBase64(count) {
       text = damage === 0 ? encoded.replace(/=+$/, '') : damage === 1 ? encoded.replace(/\+/g, '-').replace(/\//g, '_')
         : damage === 2 ? encoded.replace(/(.{4})/g, '$1\n') : damage === 3 ? encoded.slice(0, d.int(encoded.length + 1)) : `${encoded}${d.pick(OTHER)}${encoded}`;
     } else {
-      const length = Math.floor(d.next() ** 2 * 40);
+      const skew = d.next();
+      const length = Math.floor(skew * skew * 40);
       const mostly = d.chance(0.5) ? 0.9 : 0.6;
       text = '';
       for (let at = 0; at < length; at += 1) text += d.chance(mostly) ? LETTERS[d.int(64)] : d.pick(OTHER);
