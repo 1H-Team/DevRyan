@@ -33,11 +33,6 @@ export const normalizeToolStatus = (status: unknown): string | undefined => {
     return normalized.length > 0 ? normalized : undefined;
 };
 
-export const isActiveToolStatus = (status: unknown): boolean => {
-    const normalized = normalizeToolStatus(status);
-    return normalized ? ACTIVE_TOOL_STATUSES.has(normalized) : false;
-};
-
 export const isFinalToolStatus = (status: unknown): boolean => {
     const normalized = normalizeToolStatus(status);
     return normalized ? FINAL_TOOL_STATUSES.has(normalized) : false;
