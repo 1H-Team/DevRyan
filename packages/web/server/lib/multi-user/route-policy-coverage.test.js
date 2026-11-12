@@ -155,7 +155,6 @@ const CLASSES = [
       'PUT /api/projects/:projectId/icon',
       'DELETE /api/projects/:projectId/icon',
       'POST /api/projects/:projectId/icon/discover',
-      '* /api/git/commit-template/**',
       'GET /api/git/discover-credentials',
       'GET /api/git/global-identity',
       '* /api/git/identities/**',
