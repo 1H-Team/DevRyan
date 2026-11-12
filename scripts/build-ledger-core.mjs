@@ -276,8 +276,9 @@ function verify({ scratch, toolchain, located, crate }) {
   const env = cargoEnvironment({ located, toolchain, scratch, crate, rustflags: false });
   const cargo = path.join(located.bin, 'cargo');
   runChecked(cargo, ['fmt', '--check'], { cwd: crate, env });
-  runChecked(cargo, ['clippy', '--locked', '--offline', '--all-targets', '--', '-D', 'warnings'], { cwd: crate, env });
-  runChecked(cargo, ['clippy', '--locked', '--offline', '--all-targets', '--target', WASM_TARGET, '--', '-D', 'warnings'], { cwd: crate, env });
+  // `--test corpus`: that target is `test = false` (it needs a corpus), so `--all-targets` alone skips it.
+  runChecked(cargo, ['clippy', '--locked', '--offline', '--all-targets', '--test', 'corpus', '--', '-D', 'warnings'], { cwd: crate, env });
+  runChecked(cargo, ['clippy', '--locked', '--offline', '--all-targets', '--test', 'corpus', '--target', WASM_TARGET, '--', '-D', 'warnings'], { cwd: crate, env });
   runChecked(cargo, ['test', '--locked', '--offline'], { cwd: crate, env });
 }
 

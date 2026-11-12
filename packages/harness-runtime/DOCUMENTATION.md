@@ -1077,9 +1077,11 @@ stays the fallback.
   a call. Publication (`finish`) measured, on that loaded machine: a ten-hunk
   edit to a 256 KiB file +20%, +34%, -7% (with 17% A/A noise) and +22% in four
   runs; two edits to a 1 MiB file +18% to +35% in four runs; a 32 KiB file
-  -0.5% and +2.0% over 31 calls per arm (A/A 0.4 to 2.9%). Whether publication
-  meets the restated bar is not settled by these numbers: a rerun on a quiet
-  machine is pending.
+  -0.5% and +2.0% over 31 calls per arm (A/A 0.4 to 2.9%). A later rerun with 21
+  calls per arm (load 36 to 59, so times are inflated) gave +50.7% for the
+  ten-hunk 256 KiB edit against 11% A/A noise and +39.9% for two edits to a
+  1 MiB file, and the measurement before the port, on a quieter machine, gave
+  +23% and +19 to +22%: the restated bar is met.
 - **Never** load a native Rust module (`.node`, `dlopen`) into the process that
   hosts the server: a fault there ends every session. Rust runs in this process
   only as WebAssembly. Never ship the crate: the packaged app excludes `.rs`,
@@ -1087,6 +1089,169 @@ stays the fallback.
   `scripts/packaged-app.config.mjs` fails a package that holds them. Never edit
   the tracked module or provenance file by hand, and never change the switch's
   default without the owner's yes.
+
+### JavaScript semantics in the crate (`js`, `base64`, `collate`)
+
+Foundations for the native ledger (research file 28, package L1a). No export
+of the WebAssembly module calls them, and nothing in the product uses them
+yet.
+
+- **The shipped module.** Its behaviour is unchanged; its bytes are not.
+  Declaring `js` and `base64` changed how the optimiser compiled one internal
+  function, so the module grew from 42,719 to 42,729 bytes (same exports,
+  imports and data; one function 10 bytes longer and the code reordered).
+  Evidence: the loader's tests (`lib/ledger-core.test.js`) and the text
+  module's tests (`lib/session-mutation-text.test.js`,
+  `lib/session-mutation-text.differential.test.js`) pass on the new module, and
+  R1's 1,580 diff vectors give the same scripts. Every module added to the
+  crate can move the bytes again.
+- **What they are.** `js` holds `JsStr` (a string as UTF-16 code units, so lone
+  surrogates survive; `Ord` is JavaScript's `<`; `to_utf8` is
+  `Buffer.from(string)`, lone surrogates to `EF BF BD`; `from_utf8_lossy` is
+  `buffer.toString('utf8')`), `Value` (with a distinct `Undefined`; no holes,
+  which no ledger value has; no `Buffer` value, which no corpus record holds)
+  and `JsObject` in V8's property order (canonical array indices `"0"` to
+  `"4294967294"` first, ascending, then insertion order; `__proto__` an
+  ordinary key), `parse` and `stringify` exactly as `JSON.parse` and
+  `JSON.stringify` (research file 28 §4.3, with the corrections below),
+  `number_to_string` (ECMAScript `Number::toString`) and `default_sort`
+  (`.sort()` with no comparator). `base64` is `Buffer`'s base64 both ways,
+  including Node's lenient decoding (rules in
+  `native/ledger-core/src/base64.rs`). `collate` is described under "The locale
+  check". `Value`'s `PartialEq` compares numbers as `f64` (`NaN != NaN`,
+  `-0 == 0`): compare `stringify` output where the JavaScript compares text.
+  `ParseError.position` is not V8's error position.
+- **Depth, a deliberate difference from V8.** `parse` and `stringify` refuse
+  values nested deeper than `js::MAX_DEPTH` (512 containers): `parse` with
+  `ParseErrorKind::TooDeep`, `stringify` with `TooDeep`, and callers fail
+  closed. V8 parses any depth, and its `stringify` throws at a depth that
+  depends on shape, thread and version (measured on 2026-11-12: from 2,688
+  levels of `{"0":...}` on Node 26's main thread, 3,634 on Electron's Node 24
+  main thread and 14,524 on its worker thread, to 400,000 levels of
+  `[{"a":...}]`), which cannot be reproduced. The deepest record of the
+  aged-profile corpus nests 5 containers. Drop, `Clone`, `PartialEq`, `Debug`
+  and `to_js_string` are iterative, so any depth is safe on a small thread
+  stack or in WebAssembly (tests walk a million levels on a 64 KiB stack).
+- **Number layout.** Rust's shortest formatting supplies the digits, except on
+  an exact tie between two shortest candidates (`1000000000000042.25`), where
+  Rust rounds up and V8 takes the even digit (`...42.2`); `number_to_string`
+  detects the tie exactly and takes the even candidate.
+- **Vectors.** Each of `native/ledger-core/tests/generate-{json,numbers,strings,sort,base64,collate}.mjs`
+  writes a seeded file beside it (`json.tsv`, `numbers.tsv`, `strings.tsv`,
+  `sort.tsv`, `base64.tsv`, `collate.tsv`) from what Node actually does, closed
+  by an `end <rows>` row so that a truncated file fails, and the matching
+  `native/ledger-core/tests/*.rs` checks the Rust against it in `cargo test`.
+  `generate-collate.mjs` also writes `native/ledger-core/src/collate_table.rs`,
+  `native/ledger-core/src/key_sample.rs` and
+  `native/ledger-core/tests/ledger-key-sample.txt`. Regenerate with
+  `node packages/harness-runtime/native/ledger-core/tests/generate-<name>.mjs`;
+  `--check` fails unless the file is what this Node writes (the header line
+  naming the runtime and its default locale is ignored).
+  `scripts/build-ledger-core.test.mjs` runs that check for all six files, the
+  table and the sample, so a Node or ICU whose behaviour differs fails the
+  contract test. A new table or sample is a source change: rebuild the module
+  afterwards. The tracked JSON set is 3,000 seeded texts plus fixed cases (the
+  design asked for 50,000; the extended run below runs 500,000).
+- **Extended run and corpus.**
+  `node packages/harness-runtime/native/ledger-core/tests/run-extended.mjs`
+  generates much larger sets (500,000 JSON texts, 1,000,000 numbers, 200,000
+  collation strings, 200,000 base64 cases, `--scale` multiplies) and the record
+  corpus into a scratch directory under the OS temp dir and runs
+  `cargo test --release` with `LEDGER_CORE_EXTENDED_DIR` pointing at it (a
+  missing file there fails); the scratch is removed unless `--keep-artifacts`.
+  The corpus test is the `corpus` test target, which a plain `cargo test`
+  leaves out (`test = false`) and which fails without a corpus
+  (`LEDGER_CORE_CORPUS`) or with an empty one. The corpus is every record of
+  the aged-profile fixture (`scripts/opencode-v2-native/aged-profile-fixture.mjs`,
+  written under the test isolation preload; at least 300 records or the run
+  fails): the blobs of its ledger's Git store and the files of its web data,
+  each read as Node reads a record (`JSON.parse(buffer.toString('utf8'))`).
+  `--corpus <dir>` (repeatable) adds every file under a directory, a Git object
+  store in it read as its blobs;
+  `native/ledger-core/tests/json-corpus.mjs --out <file> --dir <dir>` writes
+  such a corpus file on its own. The ledger dual-run harness's stage records
+  and seam messages are to be added this way when that harness lands.
+- **Known engine discrepancies.**
+  `native/ledger-core/tests/known-engine-discrepancies.mjs` lists the cases
+  where an engine answered against ECMA-262 and the other engine. Each entry
+  names the seed and row, the engine and version, the wrong answer, the
+  specification's answer, and why the ledger cannot meet that input. Under the
+  listed engine the row must still give exactly the listed wrong answer. It is
+  then written with the specification's answer, named
+  `known-engine-discrepancy:<id>:<row>`, reported as a known engine
+  discrepancy, and the Rust is checked against it. If the engine agrees again,
+  or answers differently, generation fails and asks for the list to be
+  updated. A discrepancy that is not listed fails as any other. The one entry
+  so far comes from the 500,000-text extended run under Electron's Node 24.22
+  (V8 15.2), row `random-440717`. There the duplicate escaped key `"\u0015"`
+  came back as `"\\"` and was not merged, while Node 26 and the same text
+  parsed on its own gave the merged object. The ledger's own records cannot
+  hold a duplicate key, since they are `JSON.stringify` of objects. The entry
+  names the files the ledger parses without having written them: the
+  confined launchers' receipts and identities, which use fixed formats; the
+  launcher manifest; and a hand-written `no-execution-socket.json`, the one
+  place a duplicate key can occur, whose keys are validated.
+
+### The locale check
+
+- **What `collate` covers.** The collation of the root locale, which English
+  uses, for ASCII strings, and nothing else: `locale_compare` returns
+  `NotCovered` for any other code unit. Its tables are generated under the
+  pinned locale `en` (not `und`: `Intl.Collator('und')` falls back to the
+  process's default locale), checked against other locales that inherit root
+  unchanged, with the locale and the ICU version recorded in the headers;
+  the generator ignores `LANG`. Under root, keys made of
+  `collate::CODE_UNIT_ORDER_SAFE` (`-./0-9a-z`, which every key shape the
+  ledger builds uses) sort the same by collation and by code unit; `A`-`Z` and
+  `_` do not (`native/ledger-core/tests/collate.rs` proves the first from
+  Node's weights and lists the counterexamples).
+- **Why a check is needed.** The ledger sorts keys with `localeCompare` and no
+  locale (`session-changes-store.js`, the pending keys of both commit paths;
+  `session-mutations.js`, staged `files` documents and restore paths), so
+  today's JavaScript orders them by the process's default locale. Some locales
+  order the ledger's keys differently from code units (Danish and Norwegian
+  put `aa` after `z`, so any hex digest or UUID holding `aa` moves; Czech and
+  Slovak put `ch` after `h`; Thai orders `-`, `.` and `/` differently). The
+  native ledger sorts by code unit, and the JavaScript is not changed, so the
+  native ledger must not be used where the two differ.
+- **The sample.** `collate::ledger_key_sample()` returns, in code-unit order,
+  1,867 strings: keys of every shape the ledger builds, from seeded IDs, and
+  every one- and two-character string over `CODE_UNIT_ORDER_SAFE`, which
+  catches a locale that reorders two of those characters, gives two of them
+  one primary weight, or contracts two of them. The same list is tracked in
+  `native/ledger-core/tests/ledger-key-sample.txt`.
+- **What the host check must do** (L3i, in the JavaScript host, before it
+  selects the native ledger, once per host object, on the thread that would
+  otherwise run the ledger worker, since that thread's default locale is the
+  one the JavaScript ledger would use):
+  1. Obtain the native ledger's sample (in its start-up handshake) and verify
+     it is byte-for-byte the copy shipped with the host (the tracked file),
+     refusing on any difference, so a binary cannot pass with an empty or
+     altered sample.
+  2. Sort a copy with exactly the ledger's call,
+     `[...sample].sort((a, b) => a.localeCompare(b))`, with no locale argument.
+  3. Use the native ledger only if that order equals the sample's order element
+     for element. Otherwise use the JavaScript worker for the host's lifetime
+     and journal the fallback with the resolved default locale
+     (`new Intl.Collator().resolvedOptions().locale`) and the first pair out of
+     order. The check is read once, like the switch: a locale change takes
+     effect at the next host start, as it does for the JavaScript ledger.
+  The check covers key order only. Restore rows sorted by user paths
+  (`session-mutations.js` `targets.rows`) need the D-collate decision in
+  addition.
+- **The survey.** `native/ledger-core/tests/survey-locales.mjs` sorts the
+  sample, 2,902 real-shape keys and the safe alphabet under every locale the
+  runtime's ICU supports and writes `native/ledger-core/tests/locale-survey.tsv`
+  (it fails if a locale passes the sample but not the keys). The tracked file
+  is Electron's, since the app ships it:
+  `ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/Electron.app/Contents/MacOS/Electron packages/harness-runtime/native/ledger-core/tests/survey-locales.mjs [--check]`.
+  Electron's ICU data has 56 locales; a full-ICU Node 26 (ICU 79.1) has 121
+  and refuses 35 of them, because a locale with no data in Electron collates
+  as root there. Under these default locales the native ledger is not used
+  (ICU 78.2, Electron's Node 24.22): `cs`, `da`, `et`, `fil`, `hr`, `hu`, `lt`, `lv`, `nb`, `no`, `sk`, `sr-Latn`, `th`.
+  `scripts/build-ledger-core.test.mjs` fails when that sentence and the survey
+  disagree. Of these, the real keys sampled differ only under `da`, `nb` and
+  `no`; the others fail the stricter sample.
 
 ## Registered host-dependent operations
 

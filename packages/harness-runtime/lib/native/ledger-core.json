@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "module": "ledger-core.wasm",
-  "sha256": "f83282fc634ac12aef598d1853542b72cb7df2b53a9c3a750bcc3925915b39e3",
-  "bytes": 42719,
+  "sha256": "50e8590389c81b14daa794ba9309313de231f814f9005d0807fbdc0397e2e3d9",
+  "bytes": 42729,
   "abiVersion": 1,
   "target": "wasm32-unknown-unknown",
   "toolchain": {
@@ -24,13 +24,22 @@
   },
   "sources": {
     "crate": "packages/harness-runtime/native/ledger-core",
-    "digest": "0f52889b5fa2a52ac71260999335f09cecdc1db0b0aa11149a7e71c94ddc2080",
+    "digest": "162e1e2050d1fb11998e08c80fe9000a6172eb4ab77d25cb10ae05584c122b7e",
     "files": {
-      "Cargo.toml": "9c016fcbd1421beaf9e6b494361f2d3c6f1605337b20d7d4e63b7381b5e2d41a",
+      "Cargo.toml": "7b6f693dc0c297b32f0d2224a4744862fcf555b8111ea1e72717e4b2a26ca62e",
       "Cargo.lock": "31dd713047540af7fbd5f33ff28fe331692c48647c8a3ff7ac2c4a0304a545fa",
       "rust-toolchain.toml": "f3e797d28d4f6d91291d7a0dd8ece02be58d51b9b3ea14920de4554e91d420ac",
+      "src/base64.rs": "731ff9a62d53778fb6cf6187c98366c41c23bb7c243d73718147895f77499b18",
+      "src/collate.rs": "dad99ec4843b2bc93f32f25941b30334c3f44e245f44da6cad71cb865159ec80",
+      "src/collate_table.rs": "f57ad663a7a1eedf21cf37d81e2bc385884ef50494bbd6347c499fb20d154820",
       "src/diff.rs": "a65d661f86e0f9767f5c52dc0bed4fbb915481939ac3d3a1a3b343e857c00cb4",
-      "src/lib.rs": "bd91ffeba7ca26c6095e4fbc6084b5c27921dc44589a98dd201e6d040b1b0e11"
+      "src/js/json.rs": "4e2a97e1ea6b1b92d30b6f39250e1c8b96e7289a26b5e2787144ded6f1424b9f",
+      "src/js/mod.rs": "85e12a88df4574a9d6ee3b104b7a158201a73544babc86c0b8f0bc69594a4049",
+      "src/js/number.rs": "3c32fadaf2729563e8c5e5798995ce4120580353d8d8e9d17d286de208714565",
+      "src/js/string.rs": "0ace4f39b174b0aeee0c37050f0269d55ac60c096942f09a928d6a39b0fe2a20",
+      "src/js/value.rs": "25aefa9bf78424e7ab4024ebc94156e150b6ee86789eb4c22092060c4a65abf9",
+      "src/key_sample.rs": "a0d090f03339b32a7d1be3306d838dbe64b6d9eed1f3c9a8dbb533b981979173",
+      "src/lib.rs": "4ee86b59924af75da001aa945e8d65369a4c978c965f44f6160411b857a5c65c"
     }
   }
 }

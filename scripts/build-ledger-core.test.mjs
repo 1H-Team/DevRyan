@@ -12,6 +12,14 @@ import { after, describe, test } from 'node:test';
 
 import { LEDGER_CORE_ABI_VERSION } from '../packages/harness-runtime/lib/ledger-core.js';
 import { VECTORS_FILE, renderVectors } from '../packages/harness-runtime/native/ledger-core/tests/generate-vectors.mjs';
+import { BASE64_TRACKED, renderBase64 } from '../packages/harness-runtime/native/ledger-core/tests/generate-base64.mjs';
+import { COLLATE_TRACKED, KEY_SAMPLE_FILE, KEY_SAMPLE_RS, TABLE_FILE as COLLATE_TABLE_FILE, renderCollate, renderKeySampleRust, renderKeySampleText, renderTable } from '../packages/harness-runtime/native/ledger-core/tests/generate-collate.mjs';
+import { SURVEY_FILE, refusedLocales, surveyIcu } from '../packages/harness-runtime/native/ledger-core/tests/survey-locales.mjs';
+import { JSON_TRACKED, renderJson } from '../packages/harness-runtime/native/ledger-core/tests/generate-json.mjs';
+import { NUMBERS_TRACKED, renderNumbers } from '../packages/harness-runtime/native/ledger-core/tests/generate-numbers.mjs';
+import { SORT_TRACKED, renderSort } from '../packages/harness-runtime/native/ledger-core/tests/generate-sort.mjs';
+import { STRINGS_TRACKED, renderStrings } from '../packages/harness-runtime/native/ledger-core/tests/generate-strings.mjs';
+import { stripRuntime } from '../packages/harness-runtime/native/ledger-core/tests/vector-tools.mjs';
 import {
   BUILD_ARGS, BUILD_ENVIRONMENT, CRATE_DIR, CRATE_INPUTS, MODULE_PATH, NON_BUILD_CRATE_FILES, PROVENANCE_PATH, PROVENANCE_SCHEMA_VERSION,
   RUSTFLAG_TEMPLATES, WASM_TARGET, ancestorCargoConfigs, installCommand, ledgerCoreCrateFiles, ledgerCoreSourceDigest, ledgerCoreSources,
@@ -83,6 +91,36 @@ describe('ledger core contract', () => {
   test('the committed vectors are what the generator writes', () => {
     assert.equal(readFileSync(VECTORS_FILE, 'utf8'), renderVectors(),
       `${path.relative(repositoryRoot, VECTORS_FILE)} is stale: node ${CRATE_DIR}/tests/generate-vectors.mjs`);
+  });
+
+  // The JavaScript-semantics vectors record what this Node does: a stale file,
+  // or a Node whose JSON, number layout, base64 or ICU collation differs from
+  // the one that wrote them, fails here (the runtime header line is ignored).
+  test('the JavaScript-semantics vectors and collation table are what this Node writes', () => {
+    const generators = [['json.tsv', renderJson, JSON_TRACKED, 'generate-json.mjs'], ['numbers.tsv', renderNumbers, NUMBERS_TRACKED, 'generate-numbers.mjs'],
+      ['strings.tsv', renderStrings, STRINGS_TRACKED, 'generate-strings.mjs'], ['sort.tsv', renderSort, SORT_TRACKED, 'generate-sort.mjs'],
+      ['base64.tsv', renderBase64, BASE64_TRACKED, 'generate-base64.mjs'], ['collate.tsv', renderCollate, COLLATE_TRACKED, 'generate-collate.mjs']];
+    for (const [file, render, count, generator] of generators) {
+      assert.equal(stripRuntime(read(`${CRATE_DIR}/tests/${file}`).toString('utf8')), stripRuntime(render(count)),
+        `${CRATE_DIR}/tests/${file} is not what Node ${process.version} writes: node ${CRATE_DIR}/tests/${generator}`);
+    }
+    for (const [file, render] of [[COLLATE_TABLE_FILE, renderTable], [KEY_SAMPLE_RS, renderKeySampleRust], [KEY_SAMPLE_FILE, renderKeySampleText]]) {
+      assert.equal(stripRuntime(readFileSync(file, 'utf8')), stripRuntime(render()),
+        `${path.relative(repositoryRoot, file)} is not what Node ${process.version} (ICU ${process.versions.icu}, collation locale en) writes: node ${CRATE_DIR}/tests/generate-collate.mjs, then rebuild`);
+    }
+  });
+
+  // The documented list of default locales under which the native ledger is
+  // not used must be the tracked survey's (generated under Electron's Node;
+  // regenerate it there with tests/survey-locales.mjs).
+  test('the locales the documentation says refuse the native ledger are the tracked survey\'s', () => {
+    const survey = read(`${CRATE_DIR}/tests/${SURVEY_FILE}`).toString('utf8');
+    const documentation = read('packages/harness-runtime/DOCUMENTATION.md').toString('utf8');
+    const match = /Under\s+these\s+default\s+locales\s+the\s+native\s+ledger\s+is\s+not\s+used\s+\(ICU\s+([\d.]+)[^)]*\):([^.]*)\./.exec(documentation);
+    assert.ok(match, 'DOCUMENTATION.md lacks the sentence "Under these default locales the native ledger is not used (ICU <version> ...): `xx`, ... ."');
+    assert.equal(match[1], surveyIcu(survey), 'the documented ICU version is not the survey\'s');
+    const documented = [...match[2].matchAll(/`([^`]+)`/g)].map((entry) => entry[1]);
+    assert.deepEqual(documented, refusedLocales(survey), `DOCUMENTATION.md lists ${documented.join(' ')}; ${SURVEY_FILE} refuses ${refusedLocales(survey).join(' ')}`);
   });
 });
 

@@ -12,6 +12,14 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 path = "src/lib.rs"
 
+# Needs a record corpus (LEDGER_CORE_CORPUS), so a plain `cargo test` leaves
+# it out and fails nothing; tests/run-extended.mjs runs it with `--test corpus`,
+# and scripts/build-ledger-core.mjs --verify lints it.
+[[test]]
+name = "corpus"
+path = "tests/corpus.rs"
+test = false
+
 [dependencies]
 
 [profile.release]

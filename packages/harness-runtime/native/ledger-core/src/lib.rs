@@ -15,7 +15,14 @@
 //! integer of at most 2^53 - 1 in magnitude (the loader never sends one).
 //! A failed allocation inside the diff aborts, which is a trap in
 //! WebAssembly; the loader then drops the instance and uses JavaScript.
+//!
+//! `js`, `base64` and `collate` (JavaScript values and JSON, Node's base64,
+//! ICU root collation for ASCII) are the native ledger's foundations; no
+//! export calls them yet, so they are not part of the module's code.
+pub mod base64;
+pub mod collate;
 pub mod diff;
+pub mod js;
 
 use std::alloc::{Layout, alloc, dealloc};
 
