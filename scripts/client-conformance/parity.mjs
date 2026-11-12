@@ -35,11 +35,18 @@ const RECORDER = path.join(REPOSITORY_ROOT, 'scripts/client-conformance/recorder
 // are dropped here; a duration inside a message a test prints is untouched.
 const RESULT_LINE = /^(\((?:pass|fail|skip|todo)\) .*) \[[0-9]+(?:\.[0-9]+)?(?:ms|s)\]$/;
 const RUNNER_MARKER = /^::(?:group|endgroup)::/;
-/** Output lines, without colour, without the harness's own notes ([run-root], [client-conformance]) and without the runner's own timing and group markers. */
+// The runner heads each burst of a file's output with the file's path and a
+// colon. With parallel workers a file's output can arrive in one burst or in
+// several, so the heading is printed once or more, by scheduling alone: each
+// file's heading is kept once per run.
+const FILE_HEADING = /^\S+\.[cm]?[jt]sx?:$/;
+/** Output lines, without colour, without the harness's own notes ([run-root], [client-conformance]) and without the runner's own timing, group markers and repeated file headings. */
 export function outputLines(output) {
+  const headings = new Set();
   return String(output).replace(/\u001b\[[0-9;]*m/g, '').split('\n')
     .map((line) => line.trimEnd().replace(RESULT_LINE, '$1'))
-    .filter((line) => line && !/^\[run-root\]/.test(line) && !/^\[client-conformance\]/.test(line) && !RUNNER_MARKER.test(line));
+    .filter((line) => line && !/^\[run-root\]/.test(line) && !/^\[client-conformance\]/.test(line) && !RUNNER_MARKER.test(line))
+    .filter((line) => { if (!FILE_HEADING.test(line)) return true; if (headings.has(line)) return false; headings.add(line); return true; });
 }
 /** A line's shape: its digit runs as #. */
 export const lineShape = (line) => line.replace(/[0-9]+/g, '#');

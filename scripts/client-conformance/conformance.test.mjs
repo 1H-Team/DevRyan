@@ -107,7 +107,8 @@ test('the recorder reproduces the toy corpus completely and byte for byte, twice
 
 test('pass-set parity holds on the toys', async (t) => {
   const scratch = scratchFor(t, 'client-conformance-self-test');
-  const toys = await passSetParity({ targets: toyFiles(), cwd: REPOSITORY_ROOT, portMap: path.join(HARNESS_DIR, 'toy/port-map.json'), workDir: path.join(scratch.dir, 'toys'), parallel: TOY_FILES.length });
+  const toys = await passSetParity({ targets: toyFiles(), cwd: REPOSITORY_ROOT, portMap: path.join(HARNESS_DIR, 'toy/port-map.json'), workDir: path.join(scratch.dir, 'toys'), parallel: 1 });
+  // One worker: what the runner prints is then in one order on every machine, so this test cannot turn on scheduling.
   assert.deepEqual([...toys.differences, ...toys.incomplete], []);
   assert.equal(toys.runs[0].recordedPassed, 68);
   assert.equal(toys.runs[0].baselinePassed, 68);

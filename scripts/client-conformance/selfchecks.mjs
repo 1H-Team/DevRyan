@@ -83,6 +83,13 @@ export const TOOL_CHECKS = Object.freeze([
       baselineOutput: '::group::a.test.ts\n(pass) t [0.04ms]\n::endgroup::\n', secondBaselineOutput: '(pass) t [0.04ms]\n', recordedOutput: '(pass) t [1.25s]\n::endgroup::\n::endgroup::\n' });
     return judged.differences.length === 0;
   }],
+  // A file's heading printed once or several times is the runner's scheduling; a file that printed in one run only is not.
+  ['parity-output-file-heading', () => {
+    const base = { baseline: [junitTest('a.test.ts', 1, 't')], recorded: [junitTest('a.test.ts', 1, 't')], raws: [rawOf('a.test.ts', ['test'])] };
+    const repeated = judgeParity({ ...base, baselineOutput: 'src/a.test.ts:\n(pass) t\n', secondBaselineOutput: 'src/a.test.ts:\n(pass) t\n', recordedOutput: 'src/a.test.ts:\nsrc/a.test.ts:\n(pass) t\nsrc/a.test.ts:\n' });
+    const missing = judgeParity({ ...base, baselineOutput: 'src/a.test.ts:\nsrc/b.test.ts:\n(pass) t\n', secondBaselineOutput: 'src/a.test.ts:\nsrc/b.test.ts:\n(pass) t\n', recordedOutput: 'src/a.test.ts:\n(pass) t\n' });
+    return repeated.differences.length === 0 && hasCheck(missing.differences, 'output');
+  }],
   ['parity-output-result-name', () => hasCheck(judgeParity({ baseline: [junitTest('a.test.ts', 1, 't')], recorded: [junitTest('a.test.ts', 1, 't')], raws: [rawOf('a.test.ts', ['test'])],
     baselineOutput: '(pass) waits 500ms [0.04ms]\n', secondBaselineOutput: '(pass) waits 500ms [0.04ms]\n', recordedOutput: '(pass) waits 900ms [0.04ms]\n' }).differences, 'output')],
   ['parity-output-learned', () => {
