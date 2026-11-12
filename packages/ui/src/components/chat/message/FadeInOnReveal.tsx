@@ -10,8 +10,6 @@ interface FadeInOnRevealProps {
     respectReducedMotion?: boolean;
 }
 
-const FADE_ANIMATION_ENABLED = false;
-
 // Context to allow parent components (like VirtualMessageList) to disable animations
 // for items entering the viewport due to scrolling rather than new content
 const FadeInDisabledContext = React.createContext(false);
@@ -37,7 +35,7 @@ export const FadeInOnReveal: React.FC<FadeInOnRevealProps> = ({
         typeof window.matchMedia === 'function' &&
         window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const shouldSkip = Boolean(skipAnimation) || (!ignoreContextDisabled && contextDisabled) || reducedMotion;
-    const animationEnabled = FADE_ANIMATION_ENABLED || forceAnimation;
+    const animationEnabled = forceAnimation;
     const [visible, setVisible] = React.useState(shouldSkip);
 
     React.useEffect(() => {
