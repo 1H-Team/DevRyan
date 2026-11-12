@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { git, gitRecords, gitTokens, changeError, persistentGitReaders, readGitObject } from './session-changes-git.js';
 import { syncPendingObjectDirectory } from './object-durability.js';
-import { commitTreeChanges, writeLooseObject } from './session-changes-trees.js';
+import { commitTreeChanges, inGitOrder, listTreeRows, parseTree, writeLooseObject } from './session-changes-trees.js';
 
 export const changeKey = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const STATE_REF = 'refs/devryan/state';
@@ -25,6 +25,8 @@ const remember = (key, data) => {
     blobBytes -= Buffer.byteLength(blobs.get(oldest)); blobs.delete(oldest);
   }
 };
+// The order staged writes are merged in after the tree's rows.
+const byKey = ([a], [b]) => a.localeCompare(b);
 const validKey = (key) => typeof key === 'string' && /^[a-zA-Z0-9/_-]+\.json$/.test(key)
   && !key.split('/').some((part) => !part || part === '..');
 
@@ -70,6 +72,47 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
   const parseRow = (row) => {
     const tab = row.indexOf('\t'), fields = row.slice(0, tab).trim().split(/\s+/);
     return { key: row.slice(tab + 1), oid: fields[2], size: Number(fields[3]) };
+  };
+  // Paged listings (one prefix of a ledger past the listing bound) are read
+  // through the persistent object reader: the same rows, in the same order,
+  // and Git answers whenever they might differ. Whole-tree listings stay with
+  // `git ls-tree`: read object by object, with nothing remembered between
+  // listings, they cost a read per tree and blob of the whole ledger.
+  // Kill switch, read per use: DEVRYAN_LEDGER_DIRECT_LISTINGS=0 pages with
+  // `git ls-tree` as before.
+  const directListings = () => reader !== null && process.env.DEVRYAN_LEDGER_DIRECT_LISTINGS !== '0';
+  const readListedTree = async (oid) => {
+    const found = await readObject(oid);
+    return found?.type === 'tree' ? found.data : null;
+  };
+  const listDirect = (snapshot, { prefix } = {}) => listTreeRows({ tree: snapshot, oidLength, prefix, readTree: readListedTree,
+    sizeOf: async (oid) => {
+      const found = await readObject(oid, { check: true });
+      return found?.type === 'blob' ? found.size : null;
+    } });
+  // `ls-tree -r -l -z <snapshot> -- <prefix>/` (literal). The prefix is
+  // resolved one tree at a time: no rows only when a component is absent from
+  // a tree that was read; a component that is not a tree, any object on the
+  // path that is missing or unreadable, or a tree on the path that is not in
+  // Git's order or repeats a name (Git's walk then stops early or matches
+  // twice), is left to Git, which fails or answers exactly as before. So is a
+  // prefix Git's pathspec rules could read differently ('.', '..', '//', a
+  // trailing '/').
+  const listDirectPrefix = async (snapshot, prefix) => {
+    if (!/^[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(prefix)) return null;
+    let oid = snapshot;
+    for (const part of prefix.split('/')) {
+      const data = await readListedTree(oid);
+      if (!data) return null;
+      let entries;
+      try { entries = parseTree(data, oidLength); } catch { return null; }
+      if (!inGitOrder(entries)) return null;
+      const entry = entries.find((candidate) => candidate.name === part);
+      if (!entry) return [];
+      if (entry.mode !== '40000') return null;
+      oid = entry.oid;
+    }
+    return listDirect(oid, { prefix: `${prefix}/` });
   };
   const indexed = async (snapshot) => {
     // Once this store's full listing exceeded the bound, listing each new tree
@@ -120,6 +163,11 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
       for (let at = lowerBound(rows, start); at < rows.length && rows[at].key.startsWith(start); at++) yield rows[at];
       return;
     }
+    const direct = directListings() ? await listDirectPrefix(snapshot, prefix).catch(() => null) : null;
+    if (direct) {
+      for (const row of direct) yield { key: row.key, oid: row.oid, size: Number(row.size) };
+      return;
+    }
     for await (const row of runTokens(cwd, [...args, '--literal-pathspecs', 'ls-tree', '-r', '-l', '-z', snapshot, '--', start])) {
       yield parseRow(row);
     }
@@ -168,6 +216,12 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
     if (!pending.has(key) && baseline.has(key) && baseline.get(key) === null) return;
     pending.set(key, null);
   };
+  // Staged [key, data] pairs under `prefix`, in insertion order (a snapshot).
+  const pendingUnder = (prefix) => {
+    const start = `${prefix}/`, selected = [];
+    for (const entry of pending) if (entry[0].startsWith(start)) selected.push(entry);
+    return selected;
+  };
   const entries = async function* (prefix) {
     if (tree) {
       const rows = async function* () {
@@ -183,8 +237,10 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
     }
     // Pending entries are normally a handful of mutated entities. Disk entries
     // stay streamed; do not collect all historical keys just to merge writes.
-    for (const [key, data] of [...pending].sort(([a], [b]) => a.localeCompare(b))) {
-      if (key.startsWith(`${prefix}/`) && data !== null) yield { key, value: typeof data === 'object' ? await get(key) : JSON.parse(data) };
+    // Only the writes under the prefix are sorted, with the same stable
+    // comparison, so they come out in the order a sort of every key gave.
+    for (const [key, data] of pendingUnder(prefix).sort(byKey)) {
+      if (data !== null) yield { key, value: typeof data === 'object' ? await get(key) : JSON.parse(data) };
     }
   };
   // Whole snapshot without a capped stdout buffer: the listing is drained first
@@ -392,8 +448,8 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
   const staged = async (prefix) => {
     if (!validKey(`${prefix}/page.json`)) throw changeError('invalid_change_record');
     const result = new Map();
-    for (const [key, data] of [...pending].sort(([a], [b]) => a.localeCompare(b))) {
-      if (key.startsWith(`${prefix}/`)) result.set(key, data === null ? null : typeof data === 'object' ? await get(key) : JSON.parse(data));
+    for (const [key, data] of pendingUnder(prefix).sort(byKey)) {
+      result.set(key, data === null ? null : typeof data === 'object' ? await get(key) : JSON.parse(data));
     }
     return result;
   };

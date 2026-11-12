@@ -911,6 +911,38 @@ content mismatch does not identify an author or authorize restoration. See
 
 For a provider-free preparation benchmark, run `DEVRYAN_VIEW_PREWARM_BENCHMARK=1 node scripts/test-isolation-guard.mjs bun test packages/harness-runtime/lib/session-mutations-view-reuse.test.js -t "prewarm benchmark"`. The isolated 243-file fixture compares cold, prewarmed and two concurrently prewarmed first leases plus a subsequent lease in the same session, reports elapsed times without timing assertions, checks adopted-file counts, and verifies separate private views. The symlink is intentionally copied during the first preparation; the subsequent lease adopts all 243 unchanged entries and verifies the complete view's content. These measurements exclude provider, SDK startup, network and native process latency.
 
+## Direct ledger listings
+
+Once a ledger's whole listing has passed the 1 MiB bound, its store lists one
+prefix at a time (`ls-tree -r -l -z <tree> -- <prefix>/`). That paged listing
+no longer starts a Git process: `listTreeRows` in
+`lib/session-changes-trees.js` walks the prefix's tree objects through the
+store's persistent object reader, parses them with `parseTree` and asks the
+reader's `--batch-check` mode for blob sizes. The rows and their order are
+exactly Git's. It is on by default wherever the persistent reader is (not on
+Windows, nor with `DEVRYAN_LEDGER_PERSISTENT_READER=0` or a runner without
+`readObject`).
+
+Git still answers whenever its answer could differ: any missing, corrupt or
+unreadable object on the path or below it (Git then fails as before,
+`capture_git_failed`), a mode Git would print otherwise, a tree on the path or
+below it that is not strictly in Git's order or repeats a name (`inGitOrder`;
+Git's walk stops early or matches twice there), a prefix component that names
+a file, or a prefix outside `[a-zA-Z0-9_-]` path components. A
+prefix is resolved one tree at a time, and an empty answer is given only when
+a component is absent from a tree that was read. Nothing is remembered between
+listings, and a listing keeps at most 256 reads queued on the shared reader.
+Whole-tree listings stay with `git ls-tree`: read object by object without a
+cache, they cost a read per tree and blob of the ledger, which the harness
+budget (`session-mutations.latency-budget.test.js`) forbids.
+
+Kill switch, read per use: `DEVRYAN_LEDGER_DIRECT_LISTINGS=0` pages with
+`git ls-tree` as before. The switch is recorded in run fingerprints. Measured
+on 2026-11-12 on a shared, loaded machine (ratios between interleaved arms): a
+first warm of a 7,324-file repository starts 28 instead of about 3,018 Git
+processes (2,988 of them were paged listings) and takes about half the time;
+a publication in a ledger under the bound is unchanged.
+
 ## Rust ledger core
 
 A first-party Rust port of the ledger's text diff (`mutationDiff` in
