@@ -6,9 +6,10 @@ import path from 'node:path';
 import process from 'node:process';
 
 export const WORKSPACE_DIR = 'packages/harness-runtime/native/ledger';
-/** The variable that hands the differential tests a built probe. */
+/** The variables that hand the differential tests the built probes (lock and atomic writes; object database). */
 export const PROBE_VARIABLE = 'LEDGER_NATIVE_PROBE';
-export const PROBE_BUILD_ARGS = Object.freeze(['build', '--locked', '--offline', '--package', 'ledger-io', '--features', 'probe', '--bin', 'atomic-probe']);
+export const ODB_PROBE_VARIABLE = 'LEDGER_NATIVE_ODB_PROBE';
+export const PROBE_BUILD_ARGS = Object.freeze(['build', '--locked', '--offline', '--package', 'ledger-io', '--features', 'probe', '--bin', 'atomic-probe', '--bin', 'odb-probe']);
 export const VERIFY_COMMANDS = Object.freeze([
   Object.freeze(['fmt', '--all', '--check']),
   Object.freeze(['clippy', '--locked', '--offline', '--workspace', '--all-targets', '--all-features', '--', '-D', 'warnings']),

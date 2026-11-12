@@ -8,13 +8,19 @@ publish.workspace = true
 path = "src/lib.rs"
 
 [features]
-# Builds the test-only `atomic-probe` binary, which the Node differential
-# tests drive (scripts/ledger-native/). Never packaged, never shipped.
+# Builds the test-only `atomic-probe` and `odb-probe` binaries, which the
+# Node differential tests drive (scripts/ledger-native/). Never packaged,
+# never shipped.
 probe = []
 
 [[bin]]
 name = "atomic-probe"
 path = "src/bin/atomic-probe.rs"
+required-features = ["probe"]
+
+[[bin]]
+name = "odb-probe"
+path = "src/bin/odb-probe.rs"
 required-features = ["probe"]
 
 [dependencies]
@@ -23,3 +29,9 @@ required-features = ["probe"]
 libc = "=0.2.191"
 # JavaScript strings, numbers and JSON, for the lock file's bytes.
 ledger-core = { path = "../../ledger-core" }
+# Git's object ids (sha1 and sha256 repositories) and zlib (loose and packed
+# objects), for `git::odb` (research file 28, section 6). Exactly pinned,
+# default features off where they add crates the reader does not use.
+sha1 = { version = "=0.11.0", default-features = false }
+sha2 = { version = "=0.11.1", default-features = false }
+miniz_oxide = { version = "=0.9.1", default-features = false, features = ["with-alloc"] }

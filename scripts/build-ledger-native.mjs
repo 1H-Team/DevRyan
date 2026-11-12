@@ -9,12 +9,17 @@
 // run with `cargo fetch --locked` (checksums from the tracked Cargo.lock);
 // everything after that is --offline.
 //
-//   node scripts/build-ledger-native.mjs            build the library and the test-only probe
+//   node scripts/build-ledger-native.mjs            build the library and the test-only probes
 //   node scripts/build-ledger-native.mjs --verify   cargo fmt --check, clippy -D warnings, cargo test,
 //                                                   cargo check and clippy for x86_64 Linux when that
 //                                                   target is installed, then the Node differential
-//                                                   tests against the probe (JavaScript on the Node
+//                                                   tests against the probes (JavaScript on the Node
 //                                                   inside Electron where its binary exists)
+//   node scripts/build-ledger-native.mjs --extended the verify, then the long run outside the gate:
+//                                                   all the fuzz rounds and the ledgers the product
+//                                                   writes (the aged-profile corpus and every dual-run
+//                                                   scenario); it fails, never skips, without Electron's
+//                                                   Node, the Linux target or a scenario
 //
 // packages/harness-runtime/DOCUMENTATION.md ("Native ledger I/O") describes
 // the workspace; the Rust-free contract is this script's test.
@@ -26,11 +31,16 @@ import { fileURLToPath } from 'node:url';
 import { CRATE_DIR as CORE_DIR, ancestorCargoConfigs, locateToolchain, readToolchainFile } from './build-ledger-core.mjs';
 import { keepArtifactsRequested, scratchParent } from './qa/run-root.mjs';
 import { referenceRuntime } from './ledger-native/reference-runtime.mjs';
-import { LINUX_LINT_COMMANDS, PROBE_BUILD_ARGS, PROBE_VARIABLE, VERIFY_COMMANDS, WORKSPACE_DIR, cargoEnvironment, linuxLintPlan, treeFiles } from './ledger-native/workspace.mjs';
+import { LINUX_LINT_COMMANDS, ODB_PROBE_VARIABLE, PROBE_BUILD_ARGS, PROBE_VARIABLE, VERIFY_COMMANDS, WORKSPACE_DIR, cargoEnvironment, linuxLintPlan, treeFiles } from './ledger-native/workspace.mjs';
 
-export { PROBE_VARIABLE };
-/** The Node differential tests the verify runs against the probe. */
-export const DIFFERENTIAL_TESTS = Object.freeze(['scripts/ledger-native/atomic-differential.mjs']);
+export { ODB_PROBE_VARIABLE, PROBE_VARIABLE };
+/** The Node differential tests the verify runs against the probes. */
+export const DIFFERENTIAL_TESTS = Object.freeze(['scripts/ledger-native/atomic-differential.mjs', 'scripts/ledger-native/odb-differential.mjs']);
+/** The tests only the extended run adds, and the variable that gives the differential tests their full rounds. */
+export const EXTENDED_TESTS = Object.freeze(['scripts/ledger-native/odb-real-ledgers.mjs']);
+export const EXTENDED_VARIABLE = 'LEDGER_NATIVE_ODB_EXTENDED';
+/** Variables that would narrow the extended run; it refuses to start with one set. */
+export const EXTENDED_NARROWING = Object.freeze(['LEDGER_NATIVE_ODB_SCENARIOS']);
 
 export const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 /** Copies the workspace and the ledger-core crate to `<scratch>/native/` with their relative layout. */
@@ -85,23 +95,43 @@ function prepare({ root, scratch }) {
   const env = cargoEnvironment({ located, toolchain, scratch });
   const cargo = path.join(located.bin, 'cargo');
   runChecked(cargo, ['fetch', '--locked'], { cwd: workspace, env });
-  return { cargo, workspace, env, located, toolchain, probe: path.join(scratch, 'target', 'debug', 'atomic-probe') };
+  const debug = path.join(scratch, 'target', 'debug');
+  return { cargo, workspace, env, located, toolchain, probe: path.join(debug, 'atomic-probe'), odbProbe: path.join(debug, 'odb-probe') };
 }
 
 function buildProbeIn(context) {
   runChecked(context.cargo, PROBE_BUILD_ARGS, { cwd: context.workspace, env: context.env });
-  if (!existsSync(context.probe)) throw new Error(`cargo did not produce ${context.probe}`);
+  for (const binary of [context.probe, context.odbProbe]) if (!existsSync(binary)) throw new Error(`cargo did not produce ${binary}`);
   return context.probe;
 }
 
 /**
- * Builds the test-only probe for a test that was started without one
- * (`LEDGER_NATIVE_PROBE` unset). The caller disposes of the build directory.
+ * Builds the test-only probes for a test that was started without them
+ * (`LEDGER_NATIVE_PROBE` or `LEDGER_NATIVE_ODB_PROBE` unset). The caller
+ * disposes of the build directory.
  */
 export function buildProbe({ root = repositoryRoot, keep = keepArtifactsRequested() } = {}) {
   const { scratch, dispose } = createScratch(keep);
   try {
-    return { probe: buildProbeIn(prepare({ root, scratch })), dispose: () => dispose(false) };
+    const context = prepare({ root, scratch });
+    buildProbeIn(context);
+    return { probe: context.probe, odbProbe: context.odbProbe, dispose: () => dispose(false) };
+  } catch (error) {
+    dispose(true);
+    throw error;
+  }
+}
+
+/**
+ * The sources copied and the dependencies fetched once, for a caller that
+ * builds variants of them (the planted-bug runner): `{ cargo, workspace, env,
+ * odbProbe, build(), dispose(failed) }`.
+ */
+export function workspaceCopy({ root = repositoryRoot, keep = keepArtifactsRequested() } = {}) {
+  const { scratch, dispose } = createScratch(keep);
+  try {
+    const context = prepare({ root, scratch });
+    return { ...context, build: () => buildProbeIn(context), dispose };
   } catch (error) {
     dispose(true);
     throw error;
@@ -109,27 +139,39 @@ export function buildProbe({ root = repositoryRoot, keep = keepArtifactsRequeste
 }
 
 export function main(argv = process.argv.slice(2), root = repositoryRoot) {
-  const unknown = argv.filter((arg) => !['--verify', '--keep-artifacts'].includes(arg));
-  if (unknown.length) throw new Error(`Unknown argument: ${unknown.join(' ')} (use --verify or --keep-artifacts)`);
+  const unknown = argv.filter((arg) => !['--verify', '--extended', '--keep-artifacts'].includes(arg));
+  if (unknown.length) throw new Error(`Unknown argument: ${unknown.join(' ')} (use --verify, --extended or --keep-artifacts)`);
+  const extended = argv.includes('--extended');
+  const verify = extended || argv.includes('--verify');
+  if (extended) {
+    const narrowing = EXTENDED_NARROWING.filter((name) => process.env[name]);
+    if (narrowing.length) throw new Error(`The extended run reads every scenario; unset ${narrowing.join(', ')}`);
+  }
   const { scratch, dispose } = createScratch(keepArtifactsRequested({ argv }));
   let failed = true;
   try {
     const context = prepare({ root, scratch });
-    if (argv.includes('--verify')) {
+    if (verify) {
       for (const args of VERIFY_COMMANDS) runChecked(context.cargo, args, { cwd: context.workspace, env: context.env });
       const linux = linuxLintPlan({ toolchainHome: context.located.home, channel: context.toolchain.channel, exists: existsSync });
       console.log(`\n${linux.line}`);
+      if (extended && linux.action === 'missing') throw new Error(`The extended run needs the Linux lint: ${linux.line}`);
       if (linux.action === 'lint') for (const args of LINUX_LINT_COMMANDS) runChecked(context.cargo, args, { cwd: context.workspace, env: context.env });
     } else {
       runChecked(context.cargo, ['build', '--locked', '--offline', '--workspace'], { cwd: context.workspace, env: context.env });
     }
     const probe = buildProbeIn(context);
-    if (argv.includes('--verify')) {
-      console.log(`\nJavaScript reference runtime: ${referenceRuntime().description}`);
-      runChecked(process.execPath, ['--import=./scripts/test-isolation-preload.mjs', '--test', ...DIFFERENTIAL_TESTS],
-        { cwd: root, env: { ...process.env, [PROBE_VARIABLE]: probe } }, `node --test ${DIFFERENTIAL_TESTS.join(' ')}`);
+    if (verify) {
+      const reference = referenceRuntime();
+      console.log(`\nJavaScript reference runtime: ${reference.description}`);
+      if (extended && !reference.electron) throw new Error(`The extended run needs Electron's Node as the JavaScript reference: ${reference.description}`);
+      const tests = extended ? [...DIFFERENTIAL_TESTS, ...EXTENDED_TESTS] : DIFFERENTIAL_TESTS;
+      const env = { ...process.env, [PROBE_VARIABLE]: probe, [ODB_PROBE_VARIABLE]: context.odbProbe };
+      if (extended) env[EXTENDED_VARIABLE] = '1';
+      else delete env[EXTENDED_VARIABLE];
+      runChecked(process.execPath, ['--import=./scripts/test-isolation-preload.mjs', '--test', ...tests], { cwd: root, env }, `node --test ${tests.join(' ')}`);
     }
-    console.log(`\nThe native ledger workspace ${argv.includes('--verify') ? 'passed its checks' : 'builds'}.`);
+    console.log(`\nThe native ledger workspace ${extended ? 'passed its extended run' : verify ? 'passed its checks' : 'builds'}.`);
     failed = false;
   } finally {
     dispose(failed);

@@ -18,3 +18,19 @@ opt-level = 3
 codegen-units = 1
 debug = false
 incremental = false
+
+# The test probes inflate and hash in debug builds: these crates are built
+# optimized there, and ledger-io lightly (overflow checks and debug
+# assertions stay on), so the differential tests stay short. Release builds
+# are unaffected.
+[profile.dev.package.ledger-io]
+opt-level = 1
+
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+
+[profile.dev.package.sha1]
+opt-level = 3
+
+[profile.dev.package.sha2]
+opt-level = 3

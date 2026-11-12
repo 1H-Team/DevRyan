@@ -8,6 +8,11 @@
 //!   `cleanupStaleAtomicFiles` of `lib/atomic-file.js`, with an injectable
 //!   file system and environment.
 //! - `path`: the `path.posix` functions those use.
+//! - `git::odb`: the ledger repository's object database, refs and tree
+//!   listings read in-process, and loose objects written as the JavaScript
+//!   writes them (plan package L3a); anything it does not fully understand is
+//!   answered "ask Git".
 pub mod atomic;
 pub mod fs;
+pub mod git;
 pub mod path;

@@ -16,6 +16,7 @@ import { NOT_RESTATED, RESTATED, SCENARIOS, runJavaScript, scenarioRoot } from '
 import { LEDGER_NATIVE_INPUTS, isLedgerNativeInput } from './ledger-native/inputs.mjs';
 import { electronBinary } from './ledger-native/reference-runtime.mjs';
 import { buildPlan } from './validate.mjs';
+import { DIFFERENTIAL_TESTS, EXTENDED_TESTS } from './build-ledger-native.mjs';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const workspace = path.join(repositoryRoot, WORKSPACE_DIR);
@@ -27,9 +28,11 @@ after(() => rmSync(scratch, { recursive: true, force: true }));
 
 /**
  * Repository-relative files a module loads: static imports, `--import=./…`
- * arguments it passes on, and literal dynamic imports of scripts. A product
- * module behind a dynamic import is left out: in this closure only the
- * isolation guard has those, in a canary the verify never calls.
+ * arguments it passes on, literal dynamic imports of scripts, and the files
+ * it starts or reads by path (`path.join(here, '…', 'x.mjs')`, the arms, the
+ * workers and the interposer source). A product module behind a dynamic
+ * import is left out: in this closure only the isolation guard has those, in
+ * a canary the verify never calls.
  */
 function localLoads(file) {
   const text = readFileSync(path.join(repositoryRoot, file), 'utf8');
@@ -41,6 +44,9 @@ function localLoads(file) {
     if (!target.startsWith('packages/')) loads.push(target);
   }
   for (const match of text.matchAll(/--import=\.\/([^'"\s]+)/g)) loads.push(path.posix.normalize(match[1]));
+  for (const match of text.matchAll(/\bpath\.(?:join|resolve)\(\s*here\s*,\s*((?:'[^']*'\s*,\s*)*'[^']*\.(?:mjs|cjs|js|c)')\s*\)/g)) {
+    loads.push(resolve([...match[1].matchAll(/'([^']*)'/g)].map((part) => part[1]).join('/')));
+  }
   return loads;
 }
 
@@ -71,21 +77,29 @@ describe('native ledger workspace contract', () => {
     assert.ok(treeFiles(workspace).includes('Cargo.lock'), 'the lockfile is tracked');
   });
 
-  test('locks exactly ledger-io, ledger-core and the pinned libc, with a checksum for the registry crate', () => {
+  test('locks exactly ledger-io, ledger-core, the pinned crates and their dependencies, each registry crate with a checksum', () => {
     const packages = lockedPackages(read('Cargo.lock'));
-    assert.deepEqual(packages.map((entry) => entry.name).sort(), ['ledger-core', 'ledger-io', 'libc']);
-    const pin = /^libc = "=([0-9.]+)"$/m.exec(read('ledger-io/Cargo.toml'))?.[1];
-    assert.ok(pin, 'ledger-io pins libc exactly (libc = "=x.y.z")');
-    const libc = packages.find((entry) => entry.name === 'libc');
-    assert.equal(libc.version, pin);
-    assert.equal(libc.source, 'registry+https://github.com/rust-lang/crates.io-index');
-    assert.match(libc.checksum ?? '', /^[0-9a-f]{64}$/);
+    // libc for the system calls; sha1, sha2 and miniz_oxide for the object
+    // database (research file 28, section 6), with their own dependencies.
+    assert.deepEqual(packages.map((entry) => entry.name).sort(), ['adler2', 'block-buffer', 'cfg-if', 'cpufeatures', 'crypto-common', 'digest', 'hybrid-array',
+      'ledger-core', 'ledger-io', 'libc', 'miniz_oxide', 'sha1', 'sha2', 'typenum']);
+    for (const crate of ['libc', 'sha1', 'sha2', 'miniz_oxide']) {
+      const pin = new RegExp(`^${crate} = (?:"=([0-9.]+)"|\\{ version = "=([0-9.]+)"[^}]*\\})$`, 'm').exec(read('ledger-io/Cargo.toml'));
+      assert.ok(pin, `ledger-io pins ${crate} exactly (${crate} = "=x.y.z")`);
+      assert.equal(packages.find((entry) => entry.name === crate).version, pin[1] ?? pin[2]);
+    }
+    for (const entry of packages.filter((item) => !item.name.startsWith('ledger-'))) {
+      assert.equal(entry.source, 'registry+https://github.com/rust-lang/crates.io-index', entry.name);
+      assert.match(entry.checksum ?? '', /^[0-9a-f]{64}$/, entry.name);
+    }
     assert.match(read('ledger-io/Cargo.toml'), /^ledger-core = \{ path = "\.\.\/\.\.\/ledger-core" \}$/m);
   });
 
   test('the probe is test-only: built only with the probe feature, which the library never reads', () => {
     const manifest = read('ledger-io/Cargo.toml');
-    assert.match(manifest, /\[\[bin\]\]\nname = "atomic-probe"\npath = "src\/bin\/atomic-probe\.rs"\nrequired-features = \["probe"\]/);
+    for (const probe of ['atomic-probe', 'odb-probe']) {
+      assert.match(manifest, new RegExp(`\\[\\[bin\\]\\]\\nname = "${probe}"\\npath = "src\\/bin\\/${probe}\\.rs"\\nrequired-features = \\["probe"\\]`));
+    }
     for (const file of treeFiles(workspace).filter((name) => name.startsWith('ledger-io/src/') && !name.includes('/bin/'))) {
       assert.doesNotMatch(read(file), /feature\s*=\s*"probe"/, `${file} reads the probe feature`);
     }
@@ -98,7 +112,9 @@ describe('native ledger workspace contract', () => {
       if (/\bunsafe\b/.test(code)) offenders.push(file);
     }
     assert.deepEqual(offenders, []);
-    for (const module of ['atomic', 'path']) assert.match(read(`ledger-io/src/${module}.rs`), /^#!\[forbid\(unsafe_code\)\]$/m);
+    for (const module of ['atomic', 'path', 'git/mod', 'git/odb/mod', 'git/odb/config', 'git/odb/delta', 'git/odb/inflate', 'git/odb/loose', 'git/odb/pack', 'git/odb/refs', 'git/odb/repo', 'git/odb/walk', 'git/odb/write']) {
+      assert.match(read(`ledger-io/src/${module}.rs`), /^#!\[forbid\(unsafe_code\)\]$/m, module);
+    }
   });
 
   test('cargo runs locked, with a private home and target directory and no inherited cargo settings', () => {
@@ -121,14 +137,18 @@ describe('native ledger workspace contract', () => {
   });
 
   test('every local file the verify and its differential tests load reruns them in validate and in both CI steps', () => {
-    // The build script and every module beside the differential tests (the arms and workers are started by path).
-    const entries = ['scripts/build-ledger-native.mjs', ...treeFiles(path.join(repositoryRoot, 'scripts/ledger-native')).filter((file) => file.endsWith('.mjs')).map((file) => `scripts/ledger-native/${file}`)];
+    // What the verify runs: the build script and the differential tests it starts, which start their arms, workers and fixtures by path.
+    // The extended run's own files are not entries: a change to them, or to what only they load, does not rerun the gate.
+    const entries = ['scripts/build-ledger-native.mjs', ...DIFFERENTIAL_TESTS];
     const closure = verifyClosure(entries);
+    for (const started of ['scripts/ledger-native/atomic-js-arm.mjs', 'scripts/ledger-native/atomic-js-worker.mjs', 'scripts/ledger-native/odb-js-arm.mjs']) assert.ok(closure.includes(started), `the closure misses ${started}, started by path`);
+    for (const extended of EXTENDED_TESTS) assert.ok(!closure.includes(extended), `${extended} is the extended run's, not the gate's`);
     for (const file of closure) assert.ok(existsSync(path.join(repositoryRoot, file)), `${file} is loaded but missing`);
     for (const required of ['packages/harness-runtime/lib/atomic-file.js', 'scripts/qa/run-root.mjs', 'scripts/test-isolation-preload.mjs', 'scripts/build-ledger-core.mjs']) assert.ok(closure.includes(required), `the closure misses ${required}`);
     assert.deepEqual(closure.filter((file) => !isLedgerNativeInput(file)), [], 'loaded by the verify but not in LEDGER_NATIVE_INPUTS (scripts/ledger-native/inputs.mjs)');
-    // No input is stale: each names a file or directory that exists.
+    // No input is stale: each names a file or directory that exists, and each single file is one the verify loads.
     for (const input of LEDGER_NATIVE_INPUTS) assert.ok(existsSync(path.join(repositoryRoot, input)), `${input} is listed but missing`);
+    assert.deepEqual(LEDGER_NATIVE_INPUTS.filter((input) => !input.endsWith('/') && !closure.includes(input)), [], 'listed in LEDGER_NATIVE_INPUTS but not loaded by the verify');
     for (const file of [...closure, `${WORKSPACE_DIR}/ledger-io/src/new.rs`, 'packages/harness-runtime/native/ledger-core/src/lib.rs']) {
       assert.ok(buildPlan('fast', [file]).commands.some((command) => command.label === 'ledger-native'), `fast validate does not run the native ledger verify for ${file}`);
     }

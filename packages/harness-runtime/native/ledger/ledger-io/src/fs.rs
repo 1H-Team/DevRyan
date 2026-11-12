@@ -909,6 +909,23 @@ pub fn getpid() -> i64 {
     (unsafe { libc::getpid() }) as i64
 }
 
+/// The process's peak resident memory in bytes (`getrusage`'s `ru_maxrss`:
+/// bytes on macOS, KiB on Linux), for the test probes' memory bounds.
+pub fn peak_resident_bytes() -> u64 {
+    // SAFETY: an all-zero `rusage` is valid; getrusage writes the whole struct.
+    let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
+    // SAFETY: `usage` is a valid, writable `struct rusage`.
+    if unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) } != 0 {
+        return 0;
+    }
+    let peak = usage.ru_maxrss.max(0) as u64;
+    if cfg!(target_os = "macos") {
+        peak
+    } else {
+        peak * 1024
+    }
+}
+
 /// `process.kill(pid, 0)` for a pid JavaScript accepts (a 32-bit integer):
 /// `Ok(())` when the signal could be sent, or the error's code.
 pub fn kill_zero(pid: i32) -> std::result::Result<(), String> {

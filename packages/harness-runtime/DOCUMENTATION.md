@@ -1441,9 +1441,11 @@ no switch, no binary in the package and no change to any JavaScript.
 - **Where.** `native/ledger/` is a cargo workspace (tracked `Cargo.lock`) with
   one library crate, `ledger-io`. It has no toolchain file of its own: the
   build script selects ledger-core's pin through `RUSTUP_TOOLCHAIN`. Its
-  dependencies are `libc` (exactly pinned, MIT or Apache-2.0) and
+  dependencies are `libc` (exactly pinned, MIT or Apache-2.0),
   `../ledger-core` by path (JavaScript strings, numbers and JSON for the lock
-  file's bytes).
+  file's bytes) and, for the object database below, `sha1`, `sha2` and
+  `miniz_oxide` (exactly pinned, default features off; see "The object
+  database").
   - `ledger-io/src/fs.rs` reproduces the primitives as the libuv inside
     Electron's Node makes them (`process.versions.uv`, 1.52.1 when this was
     written), and holds every `unsafe` block of the workspace. It covers bigint
@@ -1576,6 +1578,96 @@ no switch, no binary in the package and no change to any JavaScript.
   `native/ledger`, and the packaged-app check forbids it.
 - **The native acceptance digest** hashes this package's `.rs` files, so every
   workspace edit changes it, as for ledger-core.
+
+### The object database
+
+`ledger-io/src/git/odb/` (plan package L3a) reads the ledger repository
+in-process and writes its loose objects as `lib/session-changes-trees.js`
+writes them. Nothing in the product calls it yet; `update-ref`, `init`,
+`repack`, `prune`, `count-objects` and every Git command on a user's project
+keep spawning Git (research file 28, section 5).
+
+- **What it reads.** Loose objects (zlib, the `<type> <size>\0` header checked
+  as Git's `parse_loose_header` checks it: a known type, no leading zeros, the
+  stream ending at the declared size with nothing after it); packs of
+  version 2 with indexes of version 2 (fan-out, binary search, the 64-bit
+  offset table, OFS and REF deltas, chains followed without recursion, every
+  base looked up only in its delta's own pack, as Git resolves it: a REF base
+  elsewhere, loose or in another pack, asks Git (`corrupt_pack`), since Git
+  reports such an object missing), sha1 and sha256
+  repositories. Type and size come from headers alone: a loose header, a pack
+  entry header, a delta's own header and its chain's entry headers. An object
+  not found makes it list `objects/pack` again before it says "absent", and
+  packs already open stay readable after `repack` deletes them.
+- **Refs.** A loose ref file holding exactly one lowercase id (and a newline),
+  otherwise `packed-refs` (a directory at the ref's path reads past to it, as
+  Git does); `for-each-ref` with and without a plain pattern.
+- **Names and listings.** `<id>` and `<tree>:<path>` as `cat-file --batch`
+  resolves them (`<id> submodule` for a gitlink whose commit is absent), and
+  the rows of `ls-tree -r -l -z <tree> [-- <prefix>/]` in Git's order: the
+  JavaScript's `listTreeRows` and paged `listDirectPrefix`, with its rule
+  that a tree not strictly in Git's order, or repeating a name, is not
+  answered here. It is stricter in one place: any mode outside Git's five
+  (`40000`, `100644`, `100755`, `120000`, `160000`) in a tree it reads asks
+  Git.
+- **Fail closed.** Every answer is found, absent (only when every object
+  source was read and understood) or "ask Git" with a reason
+  (`odb::Reason`): `repository_format` (not a directory, no `objects`, a
+  linked worktree's `commondir`, a format version other than 0 or 1, a
+  configuration it cannot parse), `extension` (any `extensions.*` but
+  `objectFormat` sha1 or sha256 in version 1: reftable, partial clone, a
+  compatibility format, anything in version 0), `alternates`, `promisor`,
+  `replace_refs` (checked on every read), `multi_pack_index`,
+  `unindexed_pack`, `unstable_packs`, `pack_version`, `index_version`
+  (version 1 included), `corrupt_index`, `corrupt_pack`, `corrupt_object`,
+  `too_large`, `delta_depth`, `delta_cycle`, `delta_budget`, `id_mismatch`
+  (when ids are checked), `io`, `ref_format`, `ref_name`, `tree_order`,
+  `tree_mode`, `tree_missing`, `tree_format`, `tree_limit`, `name_syntax` and
+  `peel` (`<commit>:<path>`). The bounds (`OdbOptions`) default to 256 MiB per
+  object, 10,000 deltas per chain, 1 GiB produced per chain, 4,096 tree levels
+  and ten million rows; output buffers are never larger than a declared size
+  plus one byte.
+- **Not seen by the reader.** Inputs that change what Git answers but that
+  the reader does not read: the environment variables `GIT_REPLACE_REF_BASE`
+  and `GIT_NO_REPLACE_OBJECTS`, a `remote.*.promisor` set in global or
+  included configuration, and `safe.directory` (where Git refuses a
+  repository another user owns, the reader answers). None can make it say
+  "absent" for a private ledger the product created; they are out of scope
+  here, and the caller that replaces a Git spawn with the reader decides
+  whether to clear or check them, as `gitEnvironment` in
+  `lib/session-changes-git.js` clears others today.
+- **Errors are not yet the ledger's.** The reader returns `odb::AskGit` with
+  its `Reason`, and the writer returns the system error with its Node errno
+  code (`ENOENT`, `EACCES`, …), as `writeLooseObject` throws it. Turning them
+  into the ledger's own codes (`invalid_change_record`, `storage_unavailable`,
+  `capture_git_failed` and the rest), and deciding which "ask Git" answers
+  fall back to a Git spawn, is left to the store package that will call this
+  one.
+- **Writes.** `write_loose_object` is `writeLooseObject` call for call:
+  freshen with `utimes`, else up to five attempts of recursive `mkdir`,
+  `stat`, `tmp_obj_<uuid>` written `wx` with mode 0o444, `link` (`EEXIST`
+  is success), and always `unlink` of the temporary; `ENOENT`, or `EINVAL`
+  when the fan-out directory was removed or replaced, retries. Never synced.
+  The zlib bytes are `miniz_oxide` at level 6 and differ from Node's zlib for
+  most objects; **identity is the object id**, and the tests compare objects
+  by content and id, never as files.
+- **Dependencies.** `sha1` 0.11.0 and `sha2` 0.11.1 (MIT or Apache-2.0; with
+  `digest`, `block-buffer`, `crypto-common`, `hybrid-array`, `typenum`,
+  `cfg-if`, `cpufeatures`, all MIT or Apache-2.0), `miniz_oxide` 0.9.1 (MIT,
+  Zlib or Apache-2.0; with `adler2`, 0BSD, MIT or Apache-2.0). The workspace
+  builds these three optimized in its development profile, so the debug probe
+  inflates and hashes at release speed; release builds are unaffected.
+- **Tests.** Unit tests in `git/odb/tests.rs` (handcrafted packs for delta
+  cycles, huge declared sizes, external bases and large offsets; seeded
+  fuzzing of the delta, index, pack, tree and configuration parsers; the
+  writer's call sequence). The differential tests,
+  `scripts/ledger-native/odb-differential.mjs`, drive the test-only
+  `odb-probe` with Git as the oracle ([testing](../../docs/TESTING.md#native-ledger-module-tests)).
+  The extended run, `node scripts/build-ledger-native.mjs --verify --extended`,
+  adds the full fuzz rounds and `scripts/ledger-native/odb-real-ledgers.mjs`,
+  which reads the aged-profile corpus and every ledger the dual-run scenarios
+  write; `scripts/ledger-native/odb-planted.mjs` checks that twenty-one
+  planted bugs are each caught.
 
 ## Registered host-dependent operations
 
