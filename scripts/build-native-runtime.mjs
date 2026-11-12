@@ -46,7 +46,7 @@ const lockBytes=await fs.readFile(path.join(repository,'bun.lock')),lock=parseJs
 const loaded=new Map(),transforms=[];
 const coreRoot=await fs.realpath(path.join(repository,'node_modules/@opencode/core'));
 let coreDigest=hash(await fs.readFile(path.join(coreRoot,'package.json')));
-const reviewed=await prepareReviewedNativeInputs(repository,{target});
+const reviewed=await prepareReviewedNativeInputs(repository);
 let windowsGitResource;
 if(windowsCandidate){
   windowsGitResource=await hydrateWindowsGit({repository,arch:process.arch,fetchImpl:async()=>{throw new Error('Pinned Windows Git must be qualified before compilation');}});
