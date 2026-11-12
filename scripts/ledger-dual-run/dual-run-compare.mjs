@@ -18,6 +18,7 @@
 // itself observed in the same run (the call window a time falls in; the file
 // and the moment a stamp describes), and those are compared.
 import { createHash } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { decodeValue } from './dual-run-codec.mjs';
@@ -61,65 +62,108 @@ export function createMasker({ timeline = [], observations = [], mapPath = (text
   const timeLabel = (number) => {
     if (!(number >= first && number <= last)) return null;
     for (let index = 0; index < windows.length; index += 1) {
-      if (number >= windows[index].start && number <= windows[index].end) return `<time in window ${index}>`;
-      if (number > windows[index].end && number < (windows[index + 1]?.start ?? Infinity)) return `<time after window ${index}>`;
+      const window = windows[index];
+      if (number >= window.start && number <= window.end) {
+        // Calls issued together share their group's window: which call's own
+        // window (posted to returned) a time falls in races with when results
+        // are delivered (seen: a lock taken by one session just before or just
+        // after the other's result arrived), so it is not compared.
+        return `<time in window ${index}>`;
+      }
+      if (number > window.end && number < (windows[index + 1]?.start ?? Infinity)) return `<time after window ${index}>`;
     }
     return '<time outside every window>';
+  };
+  /** Labels for every time of one record, with each time's rank among that record's times of the same window (equal times share a rank), so order and equality inside a window are compared too. */
+  const rankedLabels = (numbers) => {
+    const labels = new Map();
+    const byLabel = new Map();
+    for (const number of numbers) { const label = timeLabel(number); if (label) { labels.set(number, label); (byLabel.get(label) ?? byLabel.set(label, new Set()).get(label)).add(number); } }
+    const ranked = new Map();
+    for (const [label, set] of byLabel) [...set].sort((x, y) => x - y).forEach((number, rank) => ranked.set(number, set.size > 1 ? `${label.slice(0, -1)} #${rank + 1} of ${set.size}>` : label));
+    return ranked;
   };
   const fives = new Map();
   const fiveOf = (index) => {
     if (!fives.has(index)) fives.set(index, new Map([...observations[index].stamps].map(([key, file]) => [key.split(':').slice(0, 5).join(':'), file])));
     return fives.get(index);
   };
+  /** Stamps no observation accounts for, by where they were stored (`at` sets the location). */
+  const unaccounted = [];
+  let location = '';
+  const at = (where) => { location = where; };
+  const nsLabel = (ns) => timeLabel(Math.floor(Number(ns) / 1e6)) ?? `${ns}`;
   /** A stamp replaced by what the harness observed: the path and the first observation it equals. */
   const stampToken = (text) => {
     const parts = text.split(':');
     const identity = parts.slice(0, 2).join(':');
     if (parts.length === 2) {
       const index = observations.findIndex((observation) => observation.inodes.has(identity));
-      return index === -1 ? '<identity unobserved>' : `<identity ${mapPath(observations[index].inodes.get(identity))}@${index}>`;
+      if (index !== -1) return `<identity ${mapPath(observations[index].inodes.get(identity))}@${index}>`;
+      unaccounted.push({ where: location, token: '<identity unobserved>' });
+      return '<identity unobserved>';
     }
     for (let index = 0; index < observations.length; index += 1) {
       const file = parts.length === 6 ? observations[index].stamps.get(text) : fiveOf(index).get(text);
       if (file !== undefined) return `<stamp ${mapPath(file)}@${index}>`;
     }
+    // No observation equals it: kept with every value that does not differ by run (size, mode, and its times by window).
     const index = observations.findIndex((observation) => observation.inodes.has(identity));
-    if (index === -1) return `<stamp unobserved size ${parts[2]}${parts[5] ? ` mode ${parts[5]}` : ''}>`;
-    const file = observations[index].inodes.get(identity);
-    const seen = [...observations[index].stamps].find(([, other]) => other === file)?.[0].split(':') ?? [];
-    const fields = ['dev', 'ino', 'size', 'mtime', 'ctime', 'mode'].filter((_, position) => position < parts.length && parts[position] !== seen[position]);
-    return `<stamp ${mapPath(file)}@${index} differs in ${fields.join(',')}>`;
+    let token;
+    if (index === -1) token = `<stamp unobserved size ${parts[2]}${parts[5] ? ` mode ${parts[5]}` : ''} mtime ${nsLabel(parts[3])} ctime ${nsLabel(parts[4])}>`;
+    else {
+      const file = observations[index].inodes.get(identity);
+      const seen = [...observations[index].stamps].find(([, other]) => other === file)?.[0].split(':') ?? [];
+      const fields = ['dev', 'ino', 'size', 'mtime', 'ctime', 'mode'].filter((_, position) => position < parts.length && parts[position] !== seen[position]);
+      token = `<stamp ${mapPath(file)}@${index} differs in ${fields.join(',')} size ${parts[2]} mtime ${nsLabel(parts[3])} ctime ${nsLabel(parts[4])}>`;
+    }
+    unaccounted.push({ where: location, token });
+    return token;
   };
   const durationKeys = new Set(VOLATILE.durationKeys), timeKeys = new Set(VOLATILE.timeKeys), stampKeys = new Set(VOLATILE.stampKeys);
   const STAMP = /^\d+:\d+(?::\d+:\d+:\d+(?::\d+)?)?$/;
+  const timesIn = (item, key = null, found = []) => {
+    if (typeof item === 'number' && key !== null && timeKeys.has(key)) found.push(item);
+    else if (Array.isArray(item)) for (const entry of item) timesIn(entry, null, found);
+    else if (item && typeof item === 'object' && !Buffer.isBuffer(item)) for (const [name, entry] of Object.entries(item)) timesIn(entry, name, found);
+    return found;
+  };
   /** A JSON-shaped value with volatile members replaced (structure and keys kept). */
-  const value = (item, key = null) => {
-    if (typeof item === 'number' && key !== null) {
-      if (durationKeys.has(key)) return '<duration>';
-      if (timeKeys.has(key)) return timeLabel(item) ?? item;
+  const value = (root) => {
+    const ranked = rankedLabels(timesIn(root));
+    const visit = (item, key = null) => {
+      if (typeof item === 'number' && key !== null) {
+        if (durationKeys.has(key)) return '<duration>';
+        if (timeKeys.has(key)) return ranked.get(item) ?? item;
+        return item;
+      }
+      if (typeof item === 'string' && key !== null && stampKeys.has(key) && STAMP.test(item)) return stampToken(item);
+      if (Array.isArray(item)) return item.map((entry) => visit(entry, null));
+      if (item && typeof item === 'object' && !Buffer.isBuffer(item)) {
+        const out = {};
+        for (const [name, entry] of Object.entries(item)) out[name] = name === 'steps' && typeof entry === 'string' ? maskSteps(entry) : visit(entry, name);
+        return out;
+      }
       return item;
-    }
-    if (typeof item === 'string' && key !== null && stampKeys.has(key) && STAMP.test(item)) return stampToken(item);
-    if (Array.isArray(item)) return item.map((entry) => value(entry, null));
-    if (item && typeof item === 'object' && !Buffer.isBuffer(item)) {
-      const out = {};
-      for (const [name, entry] of Object.entries(item)) out[name] = name === 'steps' && typeof entry === 'string' ? maskSteps(entry) : value(entry, name);
-      return out;
-    }
-    return item;
+    };
+    return visit(root);
   };
   /** JSON text with the same rules applied in place, so key order and spelling still compare byte for byte. */
-  const text = (source) => source
-    .replace(/"([A-Za-z]+)":(-?\d+(?:\.\d+)?)/g, (match, key, number) => {
-      if (durationKeys.has(key)) return `"${key}":"<duration>"`;
-      if (timeKeys.has(key)) { const label = timeLabel(Number(number)); return label ? `"${key}":"${label}"` : match; }
-      return match;
-    })
-    .replace(/"([A-Za-z]+)":"(\d+:\d+(?::\d+:\d+:\d+(?::\d+)?)?)"/g, (match, key, stamp) => (stampKeys.has(key) ? `"${key}":"${stampToken(stamp)}"` : match));
+  const NUMBER = /"([A-Za-z]+)":(-?\d+(?:\.\d+)?)/g;
+  const text = (source) => {
+    const ranked = rankedLabels([...source.matchAll(NUMBER)].filter(([, key]) => timeKeys.has(key)).map(([, , number]) => Number(number)));
+    return source
+      .replace(NUMBER, (match, key, number) => {
+        if (durationKeys.has(key)) return `"${key}":"<duration>"`;
+        if (timeKeys.has(key)) { const label = ranked.get(Number(number)); return label ? `"${key}":"${label}"` : match; }
+        return match;
+      })
+      .replace(/"([A-Za-z]+)":"(\d+:\d+(?::\d+:\d+:\d+(?::\d+)?)?)"/g, (match, key, stamp) => (stampKeys.has(key) ? `"${key}":"${stampToken(stamp)}"` : match));
+  };
   /** `verified-objects.v1`: `<sha256> <dev:ino:size:mtimeNs:ctimeNs>` per line. */
   const verifiedLine = (line) => line.replace(/ (\d+:\d+:\d+:\d+:\d+)$/, (_, stamp) => ` ${stampToken(stamp)}`);
   const maskSteps = (steps) => steps.replace(/:(\d+)\/(\d+)/g, ':$1/<duration>');
-  return { value, text, steps: maskSteps, verifiedLine, timeLabel, stampToken };
+  return { value, text, steps: maskSteps, verifiedLine, timeLabel, stampToken, unaccounted, at };
 }
 
 // ---------------------------------------------------------------- differences
@@ -176,6 +220,7 @@ const errorShape = (error) => {
 /** The comparable content of one call's trace, in one run's own terms (identities not yet substituted). */
 function callView(trace, masker, method, seeded) {
   const view = { result: null, steps: [], reports: [], slowReports: 0, progress: [], callbacks: [], observed: {}, streams: [] };
+  masker.at(`call ${method}`);
   const streamBytes = new Map();
   for (const { dir, message } of trace) {
     const decoded = decodeValue(message);
@@ -381,6 +426,8 @@ const RECEIPT_PAGE = /\/publications\/[^/]+\/files\/\d{10}\.json$/;
 function compareBlob({ path: objectPath, objectA, objectB, identities, maskers, differences, where, idA, idB, seeded }) {
   if (idA === idB) return true;
   const textA = objectA.data.toString('latin1'), textB = objectB.data.toString('latin1');
+  const location = `blob ${maskedName(objectPath.replace(/@\{\d+\}/, ''))}`;
+  maskers.a.at(location); maskers.b.at(location);
   let jsonA, jsonB;
   try { jsonA = JSON.parse(objectA.data.toString('utf8')); jsonB = JSON.parse(objectB.data.toString('utf8')); } catch { jsonA = jsonB = undefined; }
   if (jsonA !== undefined) identities.align(jsonA, jsonB, objectPath);
@@ -583,6 +630,7 @@ function compareFile(relative, entryA, entryB, { identities, maskers, difference
   }
   if (!entryA.data || !entryB.data) { differences.add('file', relative, `bytes differ (${entryA.size} / ${entryB.size} bytes)`); return; }
   const textA = entryA.data.toString('latin1'), textB = entryB.data.toString('latin1');
+  maskers.a.at(`file ${maskedName(relative)}`); maskers.b.at(`file ${maskedName(relative)}`);
   if (/(^|\/)verified-objects\.v1$/.test(relative)) {
     // `<sha256> <dev:ino:size:mtimeNs:ctimeNs>` per verified content object,
     // appended as concurrent installs (8 per project) complete: compared as a
@@ -624,7 +672,7 @@ export function refMoves(events, storageDir) {
   for (const event of events) {
     if (!event.ref?.startsWith('refs/devryan/') || !event.gitDir) continue;
     const root = path.basename(path.dirname(event.gitDir));
-    if (storageDir && path.dirname(path.dirname(event.gitDir)) !== storageDir) continue;
+    if (storageDir && real(path.dirname(path.dirname(event.gitDir))) !== real(storageDir)) continue;
     const key = `${event.pid} ${event.args}`;
     if (event.phase === 'before') { open.set(key, event); continue; }
     const before = open.get(key);
@@ -640,6 +688,32 @@ export function refMoves(events, storageDir) {
   }
   return roots;
 }
+const real = (file) => { try { return realpathSync(file); } catch { return path.resolve(file); } };
+
+/**
+ * The owner.lock format (file 26 §3b, shared with the updater and every other
+ * holder of a cross-process lock): exactly these bytes, keys in this order,
+ * `createdAt` in milliseconds, one trailing newline.
+ */
+export const LOCK_FORMAT = /^\{"ownerToken":"([0-9a-f]{32})","pid":(\d+),"createdAt":(\d+)\}\n$/;
+/** One lock file seen by the shim, checked on its own: the format, the mover's pid, and a creation time inside the run (when a masker knows the run). */
+export function lockProblems(lock, pid, masker) {
+  if (lock === null) return [];
+  const match = LOCK_FORMAT.exec(lock.raw ?? '');
+  if (!match) return [`owner.lock bytes do not follow the format: ${JSON.stringify(lock.raw)}`];
+  const problems = [];
+  if (Number(match[2]) !== pid) problems.push(`owner.lock names pid ${match[2]}, the mover is ${pid}`);
+  const label = masker?.timeLabel(Number(match[3]));
+  if (masker && !(label ?? '').startsWith('<time in window')) problems.push(`owner.lock createdAt ${match[3]} is not a time inside one of the run's call windows (${label ?? 'outside the run'})`);
+  return problems;
+}
+/** A lock's bytes with only what legitimately differs replaced: the token, the pid, and the time by its window. */
+const lockShape = (lock, masker) => {
+  if (lock === null) return 'absent';
+  return (lock.raw ?? '').replace(/"ownerToken":"[0-9a-f]{32}"/, '"ownerToken":"<token>"').replace(/"pid":\d+/, '"pid":"<pid>"')
+    .replace(/"createdAt":(\d+)/, (_, ms) => `"createdAt":"${masker?.timeLabel(Number(ms)) ?? `<${ms.length} digits>`}"`);
+};
+
 const lockState = (lock, pid) => (lock === null ? 'absent' : lock.unparseable !== undefined ? 'unreadable' : lock.pid === pid ? 'held' : 'other');
 
 /**
@@ -661,7 +735,18 @@ export function compareRefMoves({ movesA, movesB, a, b, identities, maskers, dif
     for (const [root, { state }] of Object.entries(moves)) {
       const bad = state.filter((move) => move.code === 0 && (lockState(move.lockBefore, move.pid) !== 'held' || lockState(move.lockAfter, move.pid) !== 'held'));
       if (bad.length) differences.add('lock', `run ${name} ledger ${root.slice(0, 12)}…`, `${bad.length} of ${state.length} moves of refs/devryan/state not under owner.lock held by the moving process (before/after: ${[...new Set(bad.map((move) => `${lockState(move.lockBefore, move.pid)}/${lockState(move.lockAfter, move.pid)}`))].join(', ')})`);
+      // The lock file's bytes, each on its own against the documented format.
+      const masker = maskers?.[name === 'A' ? 'a' : 'b'];
+      const problems = [...new Set(state.flatMap((move) => [...lockProblems(move.lockBefore, move.pid, masker), ...lockProblems(move.lockAfter, move.pid, masker)]))];
+      if (problems.length) differences.add('lock', `run ${name} ledger ${root.slice(0, 12)}… owner.lock bytes`, problems.slice(0, 4).join('; '));
     }
+  }
+  // The lock bytes of each state move, A against B, field for field.
+  for (const root of new Set([...Object.keys(movesA), ...Object.keys(movesB)])) {
+    if (!maskers) break;
+    const shapes = (moves, masker) => (moves[root]?.state ?? []).filter((move) => move.code === 0).map((move) => `${lockShape(move.lockBefore, masker)} | ${lockShape(move.lockAfter, masker)}`);
+    const found = firstDifference(shapes(movesA, maskers.a), shapes(movesB, maskers.b), 'owner.lock at each state move');
+    if (found) differences.add('lock', `ledger ${root.slice(0, 12)}… owner.lock bytes`, found);
   }
   for (const root of new Set([...Object.keys(movesA), ...Object.keys(movesB)])) {
     const where = `ledger ${root.slice(0, 12)}…`;
@@ -695,6 +780,12 @@ export function compareRefMoves({ movesA, movesB, a, b, identities, maskers, dif
     };
     const found = firstDifference(leases(movesA), leases(movesB), 'lease refs');
     if (found) differences.add('history', `${where} lease refs`, found);
+    // M7: in concurrent scenarios a lease's snapshot ref is advanced outside the
+    // owner lock a varying number of times (today's ledger): characterised, not compared.
+    if (concurrent) {
+      const advances = (moves) => (moves[root]?.leases ?? []).filter((move) => move.code === 0 && !move.deleting && !/^0+$/.test(move.values[1] ?? '')).length;
+      differences.note(`${where} lease-ref advances outside owner.lock (characterisation)`, { a: advances(movesA), b: advances(movesB) });
+    }
   }
 }
 
@@ -743,4 +834,20 @@ export function auditNotes({ auditA, auditB, differences }) {
   const found = firstDifference(a, b, 'points');
   if (found) differences.note('JavaScript audit points (not compared)', found);
   return { census: a };
+}
+
+/**
+ * Stored stamps the harness's observations cannot account for, in each run,
+ * by where they were stored: counted and compared. A location where run B
+ * stores more of them than run A is a finding; one where run A has them is
+ * listed in the notes with its count (the waiver is explicit, never silent).
+ */
+export function compareUnaccounted({ maskers, differences }) {
+  const count = (list) => { const counts = {}; for (const { where } of list) counts[where] = (counts[where] ?? 0) + 1; return counts; };
+  const a = count(maskers.a.unaccounted), b = count(maskers.b.unaccounted);
+  for (const where of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    if ((b[where] ?? 0) > (a[where] ?? 0)) differences.add('stamp', where, `${b[where]} stored stamps match no observation of the harness in run B, ${a[where] ?? 0} in run A`);
+  }
+  if (maskers.a.unaccounted.length || maskers.b.unaccounted.length) differences.note('stamps no observation accounts for (counted waiver)', { a: a, b: b });
+  return { a: maskers.a.unaccounted.length, b: maskers.b.unaccounted.length };
 }

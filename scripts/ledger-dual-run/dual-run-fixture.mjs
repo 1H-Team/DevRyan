@@ -29,7 +29,9 @@ const GIT_IDENTITY = { GIT_AUTHOR_NAME: 'Dual Run', GIT_AUTHOR_EMAIL: 'dual-run@
   GIT_COMMITTER_EMAIL: 'dual-run@example.invalid', GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z' };
 // Fixture Git reads no configuration, hooks or templates of the machine's
 // owner (dual-run-snapshot.mjs isolatedGitEnvironment), whatever process builds it.
-export const gitIn = (directory, args) => execFileSync('git', ['-C', directory, '-c', 'commit.gpgsign=false', '-c', 'core.autocrlf=false', '-c', 'core.hooksPath=/dev/null', ...args],
+export const gitIn = (directory, args) => execFileSync('git', ['-C', directory, '-c', 'commit.gpgsign=false', '-c', 'core.autocrlf=false', '-c', 'core.hooksPath=/dev/null',
+  // No background maintenance (git's auto maintenance would detach and write into the fixture while it is cloned).
+  '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...args],
   { env: { ...isolatedGitEnvironment(), ...GIT_IDENTITY }, stdio: ['ignore', 'pipe', 'pipe'] });
 
 export const NON_ASCII_TEXT = 'Grüße aus Zürich: café, naïve, 漢字かな交じり, emoji 🚀✨, combining é, RTL שלום.\n';

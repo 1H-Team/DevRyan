@@ -94,6 +94,8 @@ if (idSeed && ledgerThread) {
     const kind = `${call}:${name}`;
     const n = (counters.get(kind) ?? 0) + 1;
     counters.set(kind, n);
+    // Optional census of every draw (site, call, n): what the protocol's per-site order rules are measured from.
+    if (process.env.LEDGER_DUAL_RUN_ID_CENSUS) { try { fs.appendFileSync(process.env.LEDGER_DUAL_RUN_ID_CENSUS, `${name}\t${call}\t${n}\n`); } catch { /* census only */ } }
     return protocolUUID(idSeed, call, name, n);
   };
   syncBuiltinESMExports();

@@ -82,7 +82,7 @@ export const MUTANTS = Object.freeze([
     name: 'stamp-microseconds', kind: 'stored file stamps cut to microseconds (mtimeNs and ctimeNs end in 000)',
     edits: [{ file: 'session-mutation-files.js', anchor: 'const stamp = (stat) => stat ? [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs, stat.mode].join(\':\') : null;',
       replacement: (name) => `const stamp = (stat) => stat ? (${reached(name)}, [stat.dev, stat.ino, stat.size, stat.mtimeNs / 1000n * 1000n, stat.ctimeNs / 1000n * 1000n, stat.mode].join(':')) : null;` }],
-    scenario: 'smoke', expect: { category: 'git', where: /blob refs\/devryan\/state\/files\/[0-9a-f]{64}\.json$/, detail: /<stamp project\/[^@]+@\d+>.*<stamp project\/[^@]+@\d+ differs in mtime,ctime>/ },
+    scenario: 'smoke', expect: { category: 'git', where: /blob refs\/devryan\/state\/files\/[0-9a-f]{64}\.json$/, detail: /<stamp project\/[^@]+@\d+>.*<stamp project\/[^@]+@\d+ differs in mtime,ctime size \d+ / },
   },
   {
     name: 'stamp-other-inode', kind: 'a stored file identity naming another file\'s inode (the next inode number)',
@@ -101,6 +101,25 @@ export const MUTANTS = Object.freeze([
     edits: [{ file: 'session-mutation-worker.js', anchor: "port.postMessage({ type: 'ready', methods: [...methods] });",
       replacement: (name) => `port.postMessage({ type: 'ready', methods: [...methods] });\nif (observers.onChange) { ${reached(name)}; callHost({ observer: 'onChange' }, [{ planted: true }]).catch(() => {}); }` }],
     scenario: 'smoke', expect: { category: 'journal', where: /^generation 0$/, detail: /background observers and callbacks/ },
+  },
+  // The second review's planted lock bytes (L0-review N1): the same protocol, other bytes.
+  {
+    name: 'lock-bytes', kind: 'owner.lock written with other bytes: keys reordered, createdAt in seconds, no trailing newline (written and released consistently)',
+    edits: [
+      { file: 'atomic-file.js', anchor: '  const owner = { ownerToken, pid: process.pid, createdAt: startedAt };',
+        replacement: (name) => `  const owner = { pid: process.pid, createdAt: Math.floor(startedAt / 1000), ownerToken }; ${reached(name)};` },
+      { file: 'atomic-file.js', anchor: '  const raw = `${JSON.stringify(owner)}\\n`;', replacement: () => '  const raw = `${JSON.stringify(owner)}`;' },
+      { file: 'atomic-file.js', anchor: '    await removeObservedLock(fsApi, lockPath, `${JSON.stringify(owner)}\\n`, ownerToken);\n  }',
+        replacement: () => '    await removeObservedLock(fsApi, lockPath, `${JSON.stringify(owner)}`, ownerToken);\n  }' },
+    ],
+    // The git shim's bytes of the lock, checked against the format in run B.
+    scenario: 'smoke', expect: { category: 'lock', where: /^run B ledger .* owner\.lock bytes$/, detail: /do not follow the format/ },
+  },
+  {
+    name: 'stamp-unaccountable', kind: 'a stored file identity no observation of the harness accounts for (an inode no file of the stage has)',
+    edits: [{ file: 'session-mutation-files.js', anchor: "...(stat.isFile() ? { permissions: mode & 0o7777 } : {}), identity: `${stat.dev}:${stat.ino}`,",
+      replacement: (name) => `...(stat.isFile() ? { permissions: mode & 0o7777 } : {}), identity: (${reached(name)}, \`\${stat.dev}:\${stat.ino + 1000000000n}\`),` }],
+    scenario: 'smoke', expect: { category: 'stamp', where: /^blob refs\/devryan\/state\/files\/<h>\.json$/, detail: /match no observation of the harness in run B, 0 in run A/ },
   },
   // Planted differences aimed at the comparer's remaining tolerances.
   {

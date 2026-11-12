@@ -38,6 +38,8 @@ export const MESSAGE_TYPES = Object.freeze(['init', 'ready', 'call', 'abort', 'r
  */
 export const COVERAGE_WAIVERS = Object.freeze({
   methods: Object.freeze({}),
+  // Methods driven only by calls the ledger refuses: their refusals are compared, never a success.
+  refusedOnly: Object.freeze({}),
   messages: Object.freeze({
     // The stdio transport's first line (ledger-process.mjs, a native ledger); the worker transport passes workerData instead. Seen by the harness, never logged as a seam message.
     init: 'transport framing of the process implementations, not a seam message: every js-process and native run starts with it, and a ledger that mishandles it never sends `ready`',
@@ -47,24 +49,30 @@ const hostMethods = async () => (await import(path.join(PRODUCT_LIB, 'session-mu
 
 function coverageRows({ recordings, methods }) {
   const byMethod = new Map(methods.map((method) => [method, new Set()])), byMessage = new Map(MESSAGE_TYPES.map((type) => [type, new Set()]));
+  // Per method, the scenarios where a call that succeeded was replayed and its result and the disk after it compared.
+  const compared = new Map(methods.map((method) => [method, new Set()]));
   for (const { name, recording, runs } of recordings) {
-    for (const call of Object.values(recording.calls)) byMethod.get(call.method)?.add(name);
+    for (const call of Object.values(recording.calls)) {
+      byMethod.get(call.method)?.add(name);
+      if (call.ok && runs.length) compared.get(call.method)?.add(name);
+    }
     for (const generations of [recording.generations, ...runs.map((run) => run.generations)]) {
       for (const generation of generations) for (const { message } of generation.entries) if (message?.type) byMessage.get(message.type)?.add(name);
     }
   }
-  return { byMethod, byMessage };
+  return { byMethod, byMessage, compared };
 }
 
 export async function coverageReport({ recordings, full }) {
   const methods = await hostMethods();
-  const { byMethod, byMessage } = coverageRows({ recordings, methods });
+  const { byMethod, byMessage, compared } = coverageRows({ recordings, methods });
   const rows = [];
   const missing = [];
   for (const [method, scenarios] of byMethod) {
     const waiver = COVERAGE_WAIVERS.methods[method];
-    rows.push({ kind: 'method', name: method, scenarios: [...scenarios], waiver: waiver ?? null, note: COVERAGE_NOTES[method] ?? null });
+    rows.push({ kind: 'method', name: method, scenarios: [...scenarios], compared: [...compared.get(method)], waiver: waiver ?? null, note: COVERAGE_NOTES[method] ?? null });
     if (!scenarios.size && !waiver) missing.push(`method ${method}`);
+    else if (scenarios.size && !compared.get(method).size && !COVERAGE_WAIVERS.refusedOnly[method]) missing.push(`method ${method} (called, but never a successful call compared)`);
   }
   for (const [type, scenarios] of byMessage) {
     const waiver = COVERAGE_WAIVERS.messages[type];
@@ -72,7 +80,8 @@ export async function coverageReport({ recordings, full }) {
     if (!scenarios.size && !waiver) missing.push(`message ${type}`);
   }
   const exercised = rows.filter((row) => row.scenarios.length);
-  return { rows, missing, full, summary: `methods ${exercised.filter((row) => row.kind === 'method').length}/${methods.length} exercised, ${rows.filter((row) => row.kind === 'method' && !row.scenarios.length && row.waiver).length} waived; message types ${exercised.filter((row) => row.kind === 'message').length}/${MESSAGE_TYPES.length} seen, ${rows.filter((row) => row.kind === 'message' && !row.scenarios.length && row.waiver).length} waived` };
+  const refusedOnly = rows.filter((row) => row.kind === 'method' && row.scenarios.length && !row.compared.length).map((row) => row.name);
+  return { rows, missing, full, refusedOnly, summary: `methods ${exercised.filter((row) => row.kind === 'method').length}/${methods.length} called, ${rows.filter((row) => row.kind === 'method' && row.compared.length).length} with a successful call compared${refusedOnly.length ? ` (only called or refused: ${refusedOnly.join(', ')})` : ''}, ${rows.filter((row) => row.kind === 'method' && !row.scenarios.length && row.waiver).length} waived; message types ${exercised.filter((row) => row.kind === 'message').length}/${MESSAGE_TYPES.length} seen, ${rows.filter((row) => row.kind === 'message' && !row.scenarios.length && row.waiver).length} waived` };
 }
 
 // ---------------------------------------------------------------- suites
@@ -97,13 +106,22 @@ export async function runSuites({ workspace, suites = SUITES, scenarios, impleme
   if (suites.includes('scenarios')) {
     for (const scenario of selected) {
       let outcome;
-      try { outcome = await dualRun({ workspace, scenario, implementations: withLib }); }
-      catch (error) { note('scenarios', { name: scenario.name, scenario: scenario.name, outcome: 'failed', summary: `harness error: ${error.stack ?? error}` }); continue; }
+      let recordings = 0;
+      try {
+        // The recording's own commit order may be the rare one of a race: a
+        // concurrent scenario whose replays never met it is recorded again
+        // (at most twice more), and stays inconclusive if that never helps.
+        for (;;) {
+          recordings += 1;
+          outcome = await dualRun({ workspace, scenario, label: recordings > 1 ? `${scenario.name}-r${recordings}` : scenario.name, implementations: withLib });
+          if (!scenario.concurrent || recordings >= 3 || !outcome.outcomes.some((row) => row.outcome === 'inconclusive')) break;
+        }
+      } catch (error) { note('scenarios', { name: scenario.name, scenario: scenario.name, outcome: 'failed', summary: `harness error: ${error.stack ?? error}` }); continue; }
       parked.set(scenario.name, outcome);
       keep(scenario.name, outcome);
       for (const row of outcome.outcomes) {
         note('scenarios', { name: `${scenario.name} / ${row.implementation}`, scenario: scenario.name, outcome: row.outcome,
-          summary: `${row.differences.length} differences; record ${outcome.msA} ms, replay ${row.ms} ms; ${Object.keys(outcome.recording.calls).length} calls; payload types ${JSON.stringify(outcome.recording.census)}${scenario.concurrent ? `; commit order (from each run's Git history) ${row.orderMatched ? 'matched' : row.orderMatched === null ? 'NOT A REORDERING' : 'NEVER MATCHED'} after ${row.attempts} replay(s)` : ''}`,
+          summary: `${row.differences.length} differences; record ${outcome.msA} ms, replay ${row.ms} ms; ${Object.keys(outcome.recording.calls).length} calls; payload types ${JSON.stringify(outcome.recording.census)}${scenario.concurrent ? `; commit order (from each run's Git history) ${row.orderMatched ? 'matched' : row.orderMatched === null ? 'NOT A REORDERING' : 'NEVER MATCHED'} after ${row.attempts} replay(s) of recording ${recordings}` : ''}`,
           differences: summarize(row.differences), notes: row.notes });
       }
     }
@@ -118,7 +136,7 @@ export async function runSuites({ workspace, suites = SUITES, scenarios, impleme
       const outcome = await dualRun({ workspace, scenario: probe, implementations: withLib });
       keep(probe.name, outcome);
       for (const row of outcome.outcomes) note('cross-read', { name: `ledger written by ${writer}, read by product (A) and ${row.implementation}`, outcome: row.outcome,
-        summary: `${row.differences.length} differences`, differences: summarize(row.differences) });
+        summary: `${row.differences.length} differences`, differences: summarize(row.differences), notes: row.notes });
     }
   }
 
@@ -135,12 +153,12 @@ export async function runSuites({ workspace, suites = SUITES, scenarios, impleme
     const outcome = await dualRun({ workspace, scenario: read, implementations: withLib });
     keep('aged-profile', outcome);
     for (const row of outcome.outcomes) note('aged', { name: `aged-profile corpus read back and warmed / ${row.implementation}`, outcome: row.outcome,
-      summary: `${row.differences.length} differences, ${Object.keys(outcome.recording.calls).length} calls`, differences: summarize(row.differences) });
+      summary: `${row.differences.length} differences, ${Object.keys(outcome.recording.calls).length} calls`, differences: summarize(row.differences), notes: row.notes });
     const mutate = { ...AGED_MUTATIONS, fixture: agedFixture, ...agedOptions };
     const mutated = await dualRun({ workspace, scenario: mutate, implementations: withLib, fixture: outcome.fixture });
     keep(mutate.name, mutated);
     for (const row of mutated.outcomes) note('aged', { name: `aged-profile corpus mutated (${AGED_MUTATIONS.name}) / ${row.implementation}`, outcome: row.outcome,
-      summary: `${row.differences.length} differences, ${Object.keys(mutated.recording.calls).length} calls`, differences: summarize(row.differences) });
+      summary: `${row.differences.length} differences, ${Object.keys(mutated.recording.calls).length} calls`, differences: summarize(row.differences), notes: row.notes });
   }
 
   if (suites.includes('mutants')) await mutantSuite({ workspace, note });
@@ -148,7 +166,7 @@ export async function runSuites({ workspace, suites = SUITES, scenarios, impleme
   if (suites.includes('contention')) await contentionSuite({ workspace, note, withLib });
   report.coverage = await coverageReport({ recordings, full });
   log(`[coverage] ${report.coverage.summary}`);
-  for (const row of report.coverage.rows) log(`    ${row.kind} ${row.name}: ${row.scenarios.length ? row.scenarios.join(', ') : `WAIVED: ${row.waiver ?? 'NOT EXERCISED'}`}`);
+  for (const row of report.coverage.rows) log(`    ${row.kind} ${row.name}: ${row.scenarios.length ? `${row.kind === 'method' ? `compared on success in ${row.compared.length ? row.compared.join(', ') : 'NONE (only called or refused)'}; called in ` : ''}${row.scenarios.join(', ')}` : `WAIVED: ${row.waiver ?? 'NOT EXERCISED'}`}`);
   if (full && report.coverage.missing.length) {
     note('coverage', { name: 'every method and message type exercised or waived', outcome: 'failed', summary: `not exercised and not waived: ${report.coverage.missing.join(', ')}` });
   } else if (full) note('coverage', { name: 'every method and message type exercised or waived', outcome: 'passed', summary: report.coverage.summary });

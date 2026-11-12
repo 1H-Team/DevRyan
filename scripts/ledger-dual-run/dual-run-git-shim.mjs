@@ -5,7 +5,7 @@
 // `update-ref` the shim appends one line before and one after the real Git
 // runs, naming the calling process ($PPID: the ledger's process), the bytes of
 // the ledger's owner.lock at that moment (or `-`), Git's exit code and the
-// arguments; and it can kill or hold the caller at the Nth such move, so a
+// arguments (the lock bytes base64-encoded, exactly as on disk); and it can kill or hold the caller at the Nth such move, so a
 // crash point exists for any implementation that moves its refs through Git.
 //
 //   LEDGER_DUAL_RUN_GIT_LOG=<file>      where the lines go
@@ -26,13 +26,15 @@ esac
 gitdir=''; prev=''; ref=''; seen=''
 for arg in "$@"; do
   if [ "$prev" = '--git-dir' ]; then gitdir="$arg"; fi
+  case "$arg" in --git-dir=*) gitdir="@STRIP@" ;; esac
   if [ -n "$seen" ] && [ -z "$ref" ]; then case "$arg" in -*) ;; *) ref="$arg" ;; esac; fi
   if [ "$arg" = 'update-ref' ]; then seen=1; fi
   prev="$arg"
 done
 lock=''
 if [ -n "$gitdir" ]; then lock="$(dirname "$gitdir")/owner.lock"; fi
-state() { if [ -n "$lock" ] && [ -f "$lock" ]; then tr -d '\n\t' < "$lock"; else printf -- '-'; fi; }
+# The lock's exact bytes, base64 (newlines and all), or - when there is none.
+state() { if [ -n "$lock" ] && [ -f "$lock" ]; then base64 < "$lock" | tr -d '\n'; else printf -- '-'; fi; }
 act() {
   [ -n "$LEDGER_DUAL_RUN_GIT_CRASH" ] || return 0
   set -- $LEDGER_DUAL_RUN_GIT_CRASH "$1"
@@ -64,12 +66,16 @@ export function resolveRealGit() {
 export function installGitShim(runRoot) {
   const bin = path.join(runRoot, 'bin');
   mkdirSync(bin, { recursive: true, mode: 0o700 });
-  writeFileSync(path.join(bin, 'git'), SCRIPT.replace('@REAL@', resolveRealGit()), { mode: 0o700 });
+  writeFileSync(path.join(bin, 'git'), SCRIPT.replace('@REAL@', resolveRealGit()).replace('@STRIP@', '${arg#--git-dir=}'), { mode: 0o700 });
   chmodSync(path.join(bin, 'git'), 0o700);
   return bin;
 }
 
-const parseLock = (text) => { if (text === '-') return null; try { return JSON.parse(text); } catch { return { unparseable: text }; } };
+const parseLock = (encoded) => {
+  if (encoded === '-' || encoded === undefined) return null;
+  const raw = Buffer.from(encoded, 'base64').toString('utf8');
+  try { return { ...JSON.parse(raw), raw }; } catch { return { unparseable: raw, raw }; }
+};
 /**
  * The shim's lines as events: { phase, pid, lock (parsed owner.lock or null),
  * code (after only), args, gitDir, ref, values (the arguments after the ref) }.
@@ -80,7 +86,7 @@ export function readGitLog(file) {
   return text.split('\n').filter(Boolean).map((line) => {
     const [phase, pid, lock, code, args = ''] = line.split('\t');
     const words = args.split(' ');
-    const gitDir = words.includes('--git-dir') ? words[words.indexOf('--git-dir') + 1] : null;
+    const gitDir = words.includes('--git-dir') ? words[words.indexOf('--git-dir') + 1] : words.find((word) => word.startsWith('--git-dir='))?.slice(10) ?? null;
     const rest = words.slice(words.indexOf('update-ref') + 1);
     const deleting = rest.includes('-d');
     const operands = rest.filter((word) => !word.startsWith('-'));

@@ -11,7 +11,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
-import { compareTraces, createDifferences, createMasker } from './dual-run-compare.mjs';
+import { compareTraces, createDifferences, createMasker, lockProblems } from './dual-run-compare.mjs';
 import { createWorkspace, dualRun } from './dual-run.mjs';
 import { createIdentityMap } from './dual-run-identity.mjs';
 import { MUTANTS, buildMutant, catching } from './dual-run-mutants.mjs';
@@ -45,14 +45,28 @@ test('a stored stamp is judged by the harness\'s own observation of the file', (
     inodes: new Map([['1:100', 'project/a.js'], ['1:101', 'project/b.js']]) }];
   const masker = createMasker({ observations });
   assert.equal(masker.stampToken('1:100:5:1700000000123456789:1700000000123456789:33188'), '<stamp project/a.js@0>');
-  assert.equal(masker.stampToken('1:100:5:1700000000123456000:1700000000123456000:33188'), '<stamp project/a.js@0 differs in mtime,ctime>');
-  assert.equal(masker.stampToken('1:101:5:1700000000123456789:1700000000123456789:33188'), '<stamp project/b.js@0 differs in mtime,ctime>');
+  assert.match(masker.stampToken('1:100:5:1700000000123456000:1700000000123456000:33188'), /^<stamp project\/a\.js@0 differs in mtime,ctime size 5 /);
+  assert.match(masker.stampToken('1:101:5:1700000000123456789:1700000000123456789:33188'), /^<stamp project\/b\.js@0 differs in mtime,ctime size 5 /);
+  // A stamp no observation accounts for keeps its run-independent values and is counted.
+  assert.notEqual(masker.stampToken('1:999:5:1:1:33188'), masker.stampToken('1:998:6:1:1:33188'));
+  assert.equal(masker.unaccounted.length, 4);
   assert.equal(masker.stampToken('1:100'), '<identity project/a.js@0>');
   const timeline = createMasker({ timeline: [{ start: 1000, end: 1010 }, { start: 1012, end: 1020 }] });
   assert.equal(timeline.timeLabel(1005), '<time in window 0>');
   assert.equal(timeline.timeLabel(1011), '<time after window 0>');
   assert.equal(timeline.timeLabel(1015), '<time in window 1>');
   assert.equal(timeline.timeLabel(999), null);
+  // Order and equality of the times one record stores in one window.
+  assert.notEqual(timeline.text('{"createdAt":1001,"updatedAt":1009}'), timeline.text('{"createdAt":1009,"updatedAt":1001}'));
+  assert.notEqual(timeline.text('{"createdAt":1003,"updatedAt":1003}'), timeline.text('{"createdAt":1003,"updatedAt":1004}'));
+  assert.equal(timeline.text('{"createdAt":1001,"updatedAt":1009}'), timeline.text('{"createdAt":1002,"updatedAt":1008}'));
+});
+
+test('owner.lock bytes are held to the documented format', () => {
+  const lock = (raw) => ({ raw });
+  assert.deepEqual(lockProblems(lock(`{"ownerToken":"${'a'.repeat(32)}","pid":7,"createdAt":1700000000123}\n`), 7), []);
+  assert.match(lockProblems(lock(`{"pid":7,"createdAt":1700000000,"ownerToken":"${'a'.repeat(32)}"}`), 7)[0], /do not follow the format/);
+  assert.match(lockProblems(lock(`{"ownerToken":"${'a'.repeat(32)}","pid":8,"createdAt":1700000000123}\n`), 7)[0], /names pid 8/);
 });
 
 test('a JavaScript replay matches its recording, and planted differences are reported by their own checks', async (t) => {

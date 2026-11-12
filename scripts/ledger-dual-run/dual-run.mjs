@@ -12,7 +12,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createRunRoot, scratchParent } from '../qa/run-root.mjs';
-import { auditNotes, commitSignature, compareIndexes, compareRefMoves, compareSnapshots, compareTraces, createDifferences, createMasker, refMoves } from './dual-run-compare.mjs';
+import { auditNotes, commitSignature, compareUnaccounted, compareIndexes, compareRefMoves, compareSnapshots, compareTraces, createDifferences, createMasker, refMoves } from './dual-run-compare.mjs';
 import { cloneDirectory } from './dual-run-fixture.mjs';
 import { installGitShim, readGitLog } from './dual-run-git-shim.mjs';
 import { createIdentityMap } from './dual-run-identity.mjs';
@@ -80,10 +80,11 @@ export async function compareRuns({ recording, run, dirA, dirB, storage = 'ledge
   }
   await compareIndexes({ a, b, readIndex, identities, differences, objectPairs });
   compareTraces({ recording, run, identities, maskers, differences, seeded });
+  const unaccounted = compareUnaccounted({ maskers, differences });
   let census = null;
   if (auditA && auditB && existsSync(auditA) && existsSync(auditB)) census = auditNotes({ auditA: readFileSync(auditA, 'utf8'), auditB: readFileSync(auditB, 'utf8'), differences }).census;
   for (const conflict of [...run.identities.conflicts, ...identities.conflicts]) differences.add('identity', conflict.where, `${conflict.a} cannot pair with ${conflict.b} (already ${conflict.had ?? conflict.hadBack})`);
-  return { differences: differences.list, notes: differences.notes, identities: identities.size, census, snapshots: { a, b } };
+  return { differences: differences.list, notes: differences.notes, identities: identities.size, census, unaccounted, snapshots: { a, b } };
 }
 
 export const SERIAL_ATTEMPTS = 20;

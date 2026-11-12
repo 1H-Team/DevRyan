@@ -41,7 +41,8 @@ export function armEnvironment(stage, extra = {}) {
   const home = path.join(stage, 'home');
   const env = {};
   for (const [name, value] of Object.entries(process.env)) {
-    if (/^(DEVRYAN|OPENCHAMBER|OPENCODE|LEDGER_DUAL_RUN)_/.test(name) || /^GIT_/.test(name) || /^XDG_/.test(name)) continue;
+    // The draw census (ledger-preload.cjs) is the only harness variable an arm inherits.
+    if ((/^(DEVRYAN|OPENCHAMBER|OPENCODE|LEDGER_DUAL_RUN)_/.test(name) && name !== 'LEDGER_DUAL_RUN_ID_CENSUS') || /^GIT_/.test(name) || /^XDG_/.test(name)) continue;
     if (['HOME', 'TMPDIR', 'NODE_OPTIONS', 'SSH_AUTH_SOCK'].includes(name)) continue;
     env[name] = value;
   }
@@ -230,11 +231,13 @@ export async function recordScenario({ stage, scenario, crash, audit, ids = DEFA
     if (pendingLabels.has(label) || recording.steps.some((step) => step.op === 'call' && step.label === label)) throw new Error(`duplicate call label ${label}`);
     const encoded = encodeValue(args);
     armCrash(crash, label);
-    if (!group) { group = { labels: [], start: Date.now(), end: null }; recording.timeline.push(group); }
+    if (!group) { group = { labels: [], start: Date.now(), end: null, calls: {} }; recording.timeline.push(group); }
     group.labels.push(label);
+    const own = group.calls[label] = { start: Date.now(), end: null };
     recording.steps.push({ op: 'call', label, method, generation });
     const issuedAt = Date.now();
     const promise = arm.call(label, method, encoded, how).then((reply) => {
+      own.end = Date.now();
       recording.calls[label] = { generation, seamID: reply.seamID, method, ok: reply.ok, value: reply.value ?? null, error: reply.error ?? null, issuedAt };
       return reply;
     });
@@ -386,10 +389,13 @@ export async function replayRecording({ stage, recording, libDir = PRODUCT_LIB, 
       if (!batch.length) return;
       for (const { label } of batch) { armCrash(crash, label); armCrash(shim?.crash, label); }
       const calls = batch.splice(0);
-      group = { labels: calls.map(({ label }) => label), start: Date.now(), end: null };
+      group = { labels: calls.map(({ label }) => label), start: Date.now(), end: null, calls: {} };
+      for (const { label } of calls) group.calls[label] = { start: group.start, end: null };
       run.timeline.push(group);
+      const owned = group.calls;
       const replies = arm.replayGroup(calls.map(({ label, message, answers, conduct, deadlineOffset }) => ({ label, message, answers, conduct, deadlineOffset })));
       calls.forEach(({ label, seamID }, index) => pending.set(label, replies[index].then((reply) => {
+        owned[label].end = Date.now();
         run.calls[label] = { generation, seamID: reply.seamID, exited: reply.exited };
         if (reply.exited) run.crashed ??= { label };
         return reply;
