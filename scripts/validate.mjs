@@ -69,7 +69,6 @@ const sharedConfigFiles = new Set([
   'bun.lock',
   '.oxlintrc.json',
   'tsconfig.json',
-  'vite-theme-plugin.ts',
   '.opencode/opencode.json',
 ]);
 
