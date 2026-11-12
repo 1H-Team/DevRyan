@@ -1,4 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
+import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from '../../test-supertest.js';
 import {
@@ -8,7 +12,8 @@ import {
   resolveHealthOpenCodeGeneration,
   resolveSharedJsonBodyLimit,
 } from './core-routes.js';
-import { createTunnelAuth } from './tunnel-auth.js';
+import { createSupabaseConnection } from '../multi-user/supabase-connection.js';
+import { createTunnelAccessControl } from '../tunnels/access-control.js';
 
 describe('core-routes', () => {
   const createApp = ({ uiAuthController = null } = {}) => {
@@ -329,6 +334,52 @@ describe('common request middleware', () => {
 });
 
 describe('managed tunnel and invitation links', () => {
+  const roots = []; const disposers = [];
+  afterEach(async () => {
+    for (const close of disposers.splice(0).reverse()) await close();
+    for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true });
+  });
+  // The tunnel controller application.js uses, bound to the local owner as
+  // with Supabase Off, with an active tunnel on the given public hostname.
+  const createActiveTunnelController = async (mode) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-core-routes-tunnel-')); roots.push(root);
+    const connection = await createSupabaseConnection({
+      config: { dataDirectory: root, configured: false, enabled: false },
+      fetchImpl: () => { throw new Error('Cloud calls forbidden in this test'); },
+    });
+    disposers.push(() => connection.dispose());
+    await connection.bootstrapLocalOwner();
+    const controller = createTunnelAccessControl();
+    await controller.initialize({ connection }); disposers.push(() => controller.dispose());
+    await controller.setActiveTunnel({ publicUrl: 'https://tunnel.example.com', mode });
+    return controller;
+  };
+  // These routes only map a link exchange result to a response. The tunnel
+  // controller itself exchanges links by POST through
+  // registerTunnelAccessBoundary (covered in tunnels/access-control.test.js),
+  // so this stub keeps to its contract: a link is used once, stays
+  // recognizable after use, and a failed precondition leaves it unused.
+  const createLinkController = () => {
+    const unused = new Set(); const used = new Set();
+    return {
+      classifyRequestScope: () => 'local',
+      getActiveTunnelMode: () => 'managed-remote',
+      issueBootstrapToken: () => {
+        const token = crypto.randomBytes(32).toString('base64url');
+        unused.add(token);
+        return { token };
+      },
+      getBootstrapStatus: () => ({ hasBootstrapToken: unused.size > 0 }),
+      recognizesBootstrapToken: (token) => unused.has(token) || used.has(token),
+      exchangeBootstrapToken: async ({ res, token, beforeCommit }) => {
+        if (!unused.has(token)) return { ok: false, reason: 'expired' };
+        try { await beforeCommit(); } catch (error) { return { ok: false, reason: 'precondition-failed', code: error?.code }; }
+        unused.delete(token); used.add(token);
+        res.append('Set-Cookie', 'oc_tunnel_session=fixture; Path=/; HttpOnly; Secure; SameSite=Strict');
+        return { ok: true, redirectUrl: '/' };
+      },
+    };
+  };
   it('preserves authentication middleware errors while instrumenting selection requests', async () => {
     const app = express();
     registerAuthAndAccessRoutes(app, {
@@ -356,7 +407,7 @@ describe('managed tunnel and invitation links', () => {
   });
   const createAuthApp = ({ multiUser = true, prepareFreshTunnelLogin, getRuntimeReady } = {}) => {
     const app = express();
-    const tunnelAuthController = createTunnelAuth();
+    const tunnelAuthController = createLinkController();
     const handleConnect = vi.fn((_req, res) => res.status(200).type('text/plain').send('invite'));
     const uiAuthController = {
       multiUser,
@@ -375,24 +426,13 @@ describe('managed tunnel and invitation links', () => {
       getRuntimeReady: getRuntimeReady ?? vi.fn(() => true),
     });
 
-    tunnelAuthController.setActiveTunnel({
-      tunnelId: 'tunnel-1',
-      publicUrl: 'https://tunnel.example.com',
-      mode: 'managed-remote',
-    });
-
     return { app, tunnelAuthController, handleConnect, prepareFreshTunnelLogin: uiAuthController.prepareFreshTunnelLogin };
   };
 
   it('rejects shared-password auth and API access on a managed-remote hostname', async () => {
     const app = express();
     app.use(express.json());
-    const tunnelAuthController = createTunnelAuth();
-    tunnelAuthController.setActiveTunnel({
-      tunnelId: 'tunnel-1',
-      publicUrl: 'https://tunnel.example.com',
-      mode: 'managed-remote',
-    });
+    const tunnelAuthController = await createActiveTunnelController('managed-remote');
     const handleSessionStatus = vi.fn((_req, res) => (
       res.status(401).json({ authenticated: false, locked: true })
     ));
@@ -444,12 +484,7 @@ describe('managed tunnel and invitation links', () => {
   it('uses managed-account login directly on a managed-remote hostname', async () => {
     const app = express();
     app.use(express.json());
-    const tunnelAuthController = createTunnelAuth();
-    tunnelAuthController.setActiveTunnel({
-      tunnelId: 'tunnel-1',
-      publicUrl: 'https://tunnel.example.com',
-      mode: 'managed-remote',
-    });
+    const tunnelAuthController = await createActiveTunnelController('managed-remote');
     const handleSessionStatus = vi.fn((_req, res) => (
       res.status(401).json({ authenticated: false, locked: true, mode: 'multi-user' })
     ));
@@ -592,11 +627,7 @@ describe('managed tunnel and invitation links', () => {
     // reports req.hostname from the client-supplied X-Forwarded-Host header, so
     // this is the configuration the spoof would be mounted against.
     app.set('trust proxy', true);
-    const tunnelAuthController = createTunnelAuth();
-    tunnelAuthController.setActiveTunnel({
-      tunnelId: 'tunnel-1',
-      publicUrl: 'https://tunnel.example.com',
-    });
+    const tunnelAuthController = await createActiveTunnelController('quick');
     const handleSessionStatus = vi.fn((_req, res) => res.json({ authenticated: true }));
 
     registerAuthAndAccessRoutes(app, {
