@@ -238,7 +238,7 @@ test('a transient cancellation failure stays retryable instead of pinning the jo
 
 // A stalled host (its event loop blocked for 30, 61 or 110 s, as on
 // 2026-09-29) cannot answer a poll. That time must not make the poller "lost".
-import { afterEach, describe, vi } from 'vitest';
+import { describe } from 'vitest';
 import { resetHostStallClock } from '@devryan/harness-runtime/lib/host-stall-clock.js';
 
 describe('a lost poller is measured in time the host could run', () => {

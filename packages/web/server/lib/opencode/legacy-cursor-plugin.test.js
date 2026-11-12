@@ -170,6 +170,22 @@ test('a failed backup write is retryable without removing source or changing con
   expect(migrate().ok).toBe(true);
 });
 
+test.each(['linkSync', 'renameSync'])('a %s failure followed by a failed temporary removal stays a retryable migration failure', operation => {
+  const file = write('plugin/cursor-acp.js', fixture);
+  const config = write('opencode.json', '{"plugin":["./plugin/cursor-acp.js"]}');
+  const before = fs.readFileSync(config);
+  const result = migrate({ ...fs,
+    [operation]: () => { throw Object.assign(new Error('disk full'), { code: 'ENOSPC' }); },
+    unlinkSync: target => {
+      if (target.endsWith('.tmp')) throw Object.assign(new Error('temporary removal denied'), { code: 'EACCES' });
+      return fs.unlinkSync(target);
+    } });
+  expect(result).toMatchObject({ ok: false, removed: [], error: expect.stringContaining('DEVRYAN_CURSOR_PLUGIN_MIGRATION_FAILED') });
+  expect(fs.readFileSync(file)).toEqual(fixture);
+  expect(fs.readFileSync(config)).toEqual(before);
+  expect(migrate()).toMatchObject({ ok: true, removed: [file] });
+});
+
 test('invalid configuration blocks retirement without destroying either file', () => {
   const file = write('plugin/cursor-acp.js', fixture);
   const config = write('opencode.jsonc', '{ invalid');
