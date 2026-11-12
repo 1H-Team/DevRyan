@@ -40,11 +40,17 @@ const RUNNER_MARKER = /^::(?:group|endgroup)::/;
 // several, so the heading is printed once or more, by scheduling alone: each
 // file's heading is kept once per run.
 const FILE_HEADING = /^\S+\.[cm]?[jt]sx?:$/;
-/** Output lines, without colour, without the harness's own notes ([run-root], [client-conformance]) and without the runner's own timing, group markers and repeated file headings. */
+// The runner closes a run with its counts and the wall time the whole run took
+// ("Ran 12 tests across 3 files. [1.91s]"). The counts are compared; the time
+// is the runner's, changes its unit at one second, and can be equal in two
+// plain runs and differ in the third, so it is dropped at that fixed place.
+const RUN_SUMMARY = /^(Ran [0-9]+ tests? across [0-9]+ files?\.) \[[0-9]+(?:\.[0-9]+)?(?:ms|s)\]$/;
+/** Output lines, without colour, without the harness's own notes ([run-root], [client-conformance]) and without the runner's own timing (per test and for the run), group markers and repeated file headings. */
 export function outputLines(output) {
   const headings = new Set();
   return String(output).replace(/\u001b\[[0-9;]*m/g, '').split('\n')
     .map((line) => line.trimEnd().replace(RESULT_LINE, '$1'))
+    .map((line) => line.replace(RUN_SUMMARY, '$1'))
     .filter((line) => line && !/^\[run-root\]/.test(line) && !/^\[client-conformance\]/.test(line) && !RUNNER_MARKER.test(line))
     .filter((line) => { if (!FILE_HEADING.test(line)) return true; if (headings.has(line)) return false; headings.add(line); return true; });
 }

@@ -92,6 +92,15 @@ export const TOOL_CHECKS = Object.freeze([
   }],
   ['parity-output-result-name', () => hasCheck(judgeParity({ baseline: [junitTest('a.test.ts', 1, 't')], recorded: [junitTest('a.test.ts', 1, 't')], raws: [rawOf('a.test.ts', ['test'])],
     baselineOutput: '(pass) waits 500ms [0.04ms]\n', secondBaselineOutput: '(pass) waits 500ms [0.04ms]\n', recordedOutput: '(pass) waits 900ms [0.04ms]\n' }).differences, 'output')],
+  // The run's closing line: its counts are compared, its wall time is not (two plain runs can agree on it).
+  ['parity-output-run-summary', () => {
+    const base = { baseline: [junitTest('a.test.ts', 1, 't')], recorded: [junitTest('a.test.ts', 1, 't')], raws: [rawOf('a.test.ts', ['test'])] };
+    const timed = judgeParity({ ...base, baselineOutput: '(pass) t\nRan 1 test across 1 file. [912.00ms]\n', secondBaselineOutput: '(pass) t\nRan 1 test across 1 file. [912.00ms]\n',
+      recordedOutput: '(pass) t\nRan 1 test across 1 file. [1.91s]\n' });
+    const counted = judgeParity({ ...base, baselineOutput: '(pass) t\nRan 2 tests across 1 file. [912.00ms]\n', secondBaselineOutput: '(pass) t\nRan 2 tests across 1 file. [912.00ms]\n',
+      recordedOutput: '(pass) t\nRan 1 test across 1 file. [912.00ms]\n' });
+    return timed.differences.length === 0 && hasCheck(counted.differences, 'output');
+  }],
   ['parity-output-learned', () => {
     const judged = judgeParity({ baseline: [junitTest('a.test.ts', 1, 't')], recorded: [junitTest('a.test.ts', 1, 't')], raws: [rawOf('a.test.ts', ['test'])], baselineOutput: 'took 3 ms\nsame\n', secondBaselineOutput: 'took 5 ms\nsame\n', recordedOutput: 'took 9 ms\nsame\n' });
     return judged.differences.length === 0 && judged.masked === 2;
