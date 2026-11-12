@@ -11,6 +11,14 @@ import { CRATE_DIR, readToolchainFile } from './build-ledger-core.mjs';
 import { CARGO_DENY_VERSION, NATIVE_DIR, advisorySteps, cargoDenyInstallCommand, locateNativeToolchain, nativeInstallCommand, nativeSteps, readNativeToolchain, repositoryRoot }
   from './check-native.mjs';
 import { parseExpression, readAllowList, satisfied, violations } from './check-native-licenses.mjs';
+import { PACKAGE_VERSIONS } from '../packages/native/crates/config-text/tests/config-text-format.mjs';
+import { renderVectors, stripVersion } from '../packages/native/crates/config-text/tests/config-text-tools.mjs';
+import { PLANTED_BUGS, plantingProblems } from '../packages/native/crates/config-text/tests/config-text-planted-bugs.mjs';
+import { GENERATOR as jsoncVectors } from '../packages/native/crates/config-text/tests/generate-config-jsonc.mjs';
+import { GENERATOR as jsoncEditVectors } from '../packages/native/crates/config-text/tests/generate-config-jsonc-edits.mjs';
+import { GENERATOR as yamlParseVectors } from '../packages/native/crates/config-text/tests/generate-config-yaml-parse.mjs';
+import { GENERATOR as yamlStringifyVectors } from '../packages/native/crates/config-text/tests/generate-config-yaml-stringify.mjs';
+import { GENERATOR as frontMatterVectors } from '../packages/native/crates/config-text/tests/generate-config-front-matter.mjs';
 
 const read = file => readFileSync(path.join(repositoryRoot, NATIVE_DIR, file), 'utf8');
 const tracked = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '--', NATIVE_DIR], { cwd: repositoryRoot, encoding: 'utf8' }).split('\n').filter(Boolean);
@@ -171,6 +179,23 @@ describe('packages/native Cargo workspace', () => {
     assert.throws(() => ignoredAdvisories(policy('  { id = "RUSTSEC-2026-0001" },')), /RUSTSEC-2026-0001 has no reason/);
     assert.throws(() => ignoredAdvisories(policy('  { id = "RUSTSEC-2026-0001", reason = " " },')), /has no reason/);
     assert.throws(() => ignoredAdvisories(policy('  { reason = "x" },')), /without a RUSTSEC id/);
+  });
+
+  test('the config-text vectors are what the installed jsonc-parser and yaml give the generators', () => {
+    // The crate is held to these files byte for byte (its cargo tests read
+    // them); a package update that changes behaviour fails here, without Rust.
+    for (const generator of [jsoncVectors, jsoncEditVectors, yamlParseVectors, yamlStringifyVectors, frontMatterVectors]) {
+      const file = `crates/config-text/tests/${generator.file}`;
+      assert.ok(tracked.includes(`${NATIVE_DIR}/${file}`), `${file} is tracked`);
+      const current = stripVersion(read(file)) === stripVersion(renderVectors(generator));
+      assert.ok(current, `${file} is not what jsonc-parser ${PACKAGE_VERSIONS.jsonc} and yaml ${PACKAGE_VERSIONS.yaml} give; if the change is intended, regenerate it with:\n  node ${NATIVE_DIR}/crates/config-text/tests/${generator.script}\nand make the crate match (cargo test -p devryan-config-text).`);
+    }
+  });
+
+  test('every planted config-text bug still has its one planting site', () => {
+    assert.ok(PLANTED_BUGS.length >= 15, 'at least fifteen planted bugs');
+    assert.equal(new Set(PLANTED_BUGS.map(([id]) => id)).size, PLANTED_BUGS.length, 'planted bug ids are unique');
+    assert.deepEqual(plantingProblems(), []);
   });
 
   test('builds stay out of git and nothing here is a workspace package', () => {

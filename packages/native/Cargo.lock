@@ -3,6 +3,10 @@
 version = 4
 
 [[package]]
+name = "devryan-config-text"
+version = "0.1.0"
+
+[[package]]
 name = "devryan-front"
 version = "0.1.0"
 dependencies = [
