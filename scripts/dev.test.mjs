@@ -151,13 +151,13 @@ describe('affected validation planning', () => {
 
   test('runs Cursor tests and dependent host validation for Cursor runtime code', () => {
     const plan = buildPlan('fast', ['packages/cursor-sdk-runtime/persistent-worker.mjs']);
-    assert.deepEqual(plan.commands.map((entry) => entry.label), ['docs:validate', 'typeCheck:web', 'import-boundaries', 'browser-graph', 'unreached-files', 'declarations', 'test:cursor', 'test:web', 'test:startup']);
+    assert.deepEqual(plan.commands.map((entry) => entry.label), ['docs:validate', 'lint:js', 'typeCheck:web', 'import-boundaries', 'browser-graph', 'unreached-files', 'declarations', 'test:cursor', 'test:web', 'test:startup']);
     const cursor = testUnitsForPlan([plan.commands.find((entry) => entry.label === 'test:cursor')]);
     assert.deepEqual(cursor.map((unit) => [unit.command, unit.args]), [['bun', ['run', '--cwd', 'packages/cursor-sdk-runtime', 'test']]]);
   });
 
   test('runs the Electron suite for shell code', () => {
-    assert.deepEqual(labels(['packages/electron/scripts/native-module-paths.mjs']), ['docs:validate', 'typeCheck:electron', 'import-boundaries', 'browser-graph', 'unreached-files', 'declarations', 'test:electron', 'test:startup']);
+    assert.deepEqual(labels(['packages/electron/scripts/native-module-paths.mjs']), ['docs:validate', 'lint:js', 'typeCheck:electron', 'import-boundaries', 'browser-graph', 'unreached-files', 'declarations', 'test:electron', 'test:startup']);
   });
 
   test('type-checks the frozen legacy Tauri package without running its cargo tests', () => {
@@ -168,7 +168,7 @@ describe('affected validation planning', () => {
 
   test('runs orchestration tests and every dependent runtime for orchestration core changes', () => {
     assert.deepEqual(labels(['packages/orchestration-runtime/scheduler.js']), [
-      'docs:validate', 'typeCheck:ui', 'typeCheck:web', 'import-boundaries', 'browser-graph', 'unreached-files', 'declarations', 'test:orchestration', 'test:ui', 'test:web', 'test:startup',
+      'docs:validate', 'lint:js', 'typeCheck:ui', 'typeCheck:web', 'import-boundaries', 'browser-graph', 'unreached-files', 'declarations', 'test:orchestration', 'test:ui', 'test:web', 'test:startup',
     ]);
   });
 });

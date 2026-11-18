@@ -5,7 +5,7 @@
 | Command | Use |
 | --- | --- |
 | `bun run validate` | The local gate before every push and release tag. Diffs against the upstream branch (override with `VALIDATE_BASE`) and runs only what the change touches. |
-| `bun run validate:full` | Lint, import boundaries, the browser graph, unreached browser files, declaration parity, type-check, `docs:validate`, build (once), `bundle:check` and `test:full`. CI runs these same checks across its build and test lanes. |
+| `bun run validate:full` | Lint (TypeScript and JavaScript), import boundaries, the browser graph, unreached browser files, declaration parity, type-check, `docs:validate`, build (once), `bundle:check` and `test:full`. CI runs these same checks across its build and test lanes. |
 | `bun run test:startup` | Curated startup and user-data contract. |
 | `bun run test:full` | Scripts and every package suite, as one bounded concurrent pool (`node scripts/test-full.mjs [--suite=web,ui]`). |
 | `bun run docs:validate` | Markdown links and inline-code paths, and drift against package manifests, source exports and environment-variable names. |
@@ -13,6 +13,7 @@
 `bun run validate` runs:
 
 - oxlint on changed `.ts`/`.tsx` files inside the directories `bun run lint` covers (the targets of each workspace's oxlint `lint` script, today `packages/ui/src` and `packages/web/src`), so fast and full lint check the same files (everything when shared configuration changes);
+- the JavaScript lint (`node scripts/check-js-lint.mjs --files <changed>`, see [JavaScript lint](#javascript-lint)) on the changed `.js`, `.mjs`, `.cjs` and `.jsx` files, deleted ones included so their baseline entries are found stale; every JavaScript file when `.oxlintrc.javascript.json`, `scripts/js-lint-baseline.json` or the checker changes, and through `bun run lint` when shared configuration changes;
 - type-check of changed packages and their dependents (everything when root `package.json`, `bun.lock`, `patches/`, `.oxlintrc.json`, `tsconfig.json` or `.opencode/opencode.json` change). Any `packages/ui/src` change also type-checks web, whose tsconfig includes the UI source, and a `scripts/opencode-v2-native/*.ts` change type-checks web, whose runtime-host tsconfig includes those files;
 - tests of changed packages and their dependents: any file under `packages/ui/src` runs the UI suite, any `packages/web` file (server, bin, src, the Vite and Vitest configuration, test setup) the web suite, any `packages/agents-core` file the agents-core suite and its web dependent;
 - every suite in `FULL_TEST_SUITES` when root `package.json`, `bun.lock`, `patches/`, `.nvmrc` or `bunfig.toml` change (so a patch edit runs `scripts/opencode-v2-native/mcp-client-patch.test.mjs`);
@@ -109,6 +110,12 @@ What stays real, on purpose: `PATH` and the tools on it (Git, Xcode command-line
 ## Policies enforced by lint
 
 Module-graph rules that used to be source-text tests (a component must not import an eager dialog, a removed surface, or a heavy renderer; a file must not own timers) live in `.oxlintrc.json` `overrides` as path-scoped `no-restricted-imports` and `no-restricted-globals` rules, so `bun run lint` enforces them once instead of a test reading the source. Tests assert behaviour: rendered markup, calls and state, not the text of the implementation. Keep a source read only for a genuine text contract (CSS rules, generated assets, documentation).
+
+## JavaScript lint
+
+`bun run lint` runs each workspace's `lint` script (oxlint with `.oxlintrc.json` on `packages/ui/src` and `packages/web/src`, whose configuration ignores JavaScript), then `bun run lint:js`: `scripts/check-js-lint.mjs` lints every other first-party `.js`, `.mjs`, `.cjs` and `.jsx` file in the repository, tracked or new (the web backend, Electron's main process, the runtime packages, the scripts, the frozen desktop package and the root tests), with `.oxlintrc.javascript.json`. That configuration extends `.oxlintrc.json`, so both run one rule set, and states beside each JavaScript-only change its reason: `no-control-regex` and `require-yield` are off, `no-empty` allows an empty `catch`, `no-unused-expressions` allows ternary and short-circuit statements, `typescript/no-require-imports` is off for `.cjs`, `react/only-export-components` for `tests/`, and three vector rules for the conformance and fuzz vector generators. It never lints the vendored `packages/web/runtime/reviewed-inputs/` or the generated `routes.generated.js`. Packages have no JavaScript `lint` script of their own; the root check covers them and prints its counts per package. Fast `validate` runs it on the changed files; `validate:full` and CI's `static` job run it on all of them.
+
+The findings that existed when JavaScript came under the linter are in `scripts/js-lint-baseline.json`, one `{ file, rule, count }` per line, sorted by file and rule in code-unit order, without line numbers so an unrelated edit does not churn it. The check fails on a finding the baseline does not cover (a new rule in a file, or more findings of a rule in a file than recorded; it prints each location), on an entry that no longer matches (fewer findings, none, or the file deleted or no longer linted), on a baseline not in that canonical form, and on any file oxlint cannot parse, which is never baselined because no rule ran on it. To shrink it, fix findings and run `node scripts/check-js-lint.mjs --prune`, which lowers or removes the stale entries and never adds one. A new finding is fixed; one that must stay (a deliberate idiom) is added or raised only by hand in the reviewed change, with the line the failure prints. `scripts/check-js-lint.test.mjs` plants a new finding, an increase, a stale entry and an unparsable file, and passes on the tree as it is.
 
 ## Test-suite contract
 

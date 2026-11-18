@@ -604,6 +604,20 @@ describe('maintenance validation selection', () => {
     assert.deepEqual(buildPlan('full').commands.find(c => c.label === 'lint:full').args, ['run', 'lint']);
   });
 
+  test('lints changed JavaScript in fast mode against its baseline, and all of it when the checker or its inputs change', () => {
+    const jsLint = files => buildPlan('fast', files).commands.find(c => c.label === 'lint:js')?.args;
+    assert.deepEqual(jsLint(['packages/web/server/index.js', 'packages/ui/src/App.tsx', 'scripts/qa/browser-shell.cjs']),
+      ['scripts/check-js-lint.mjs', '--files', 'packages/web/server/index.js', 'scripts/qa/browser-shell.cjs']);
+    assert.equal(jsLint(['packages/ui/src/App.tsx']), undefined);
+    for (const input of ['scripts/check-js-lint.mjs', '.oxlintrc.javascript.json', 'scripts/js-lint-baseline.json']) {
+      assert.deepEqual(jsLint([input, 'packages/electron/main.mjs']), ['scripts/check-js-lint.mjs'], input);
+    }
+    // Full mode and CI lint every JavaScript file through `bun run lint`.
+    const manifest = JSON.parse(readFileSync(new URL('package.json', repoRoot), 'utf8'));
+    assert.match(manifest.scripts.lint, /&& bun run lint:js$/);
+    assert.equal(manifest.scripts['lint:js'], 'node scripts/check-js-lint.mjs');
+  });
+
   test('runs every check in full mode and refuses unknown modes', () => {
     assert.deepEqual(buildPlan('full').commands.map(c => c.label), ['lint:full', 'import-boundaries', 'browser-graph', 'unreached-files', 'declarations', 'type-check:full', 'docs:validate', 'build', 'bundle:check', 'test:full']);
     // CI's static job runs the same static checks.

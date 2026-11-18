@@ -35,8 +35,8 @@ const packages = {
     typeCheck: ['bun', ['run', 'type-check:web']],
   },
   electron: {
+    // Its JavaScript is linted by scripts/check-js-lint.mjs, with every other package's.
     prefix: 'packages/electron/',
-    lint: ['bun', ['run', 'lint:electron']],
     typeCheck: ['bun', ['run', 'type-check:electron']],
   },
   desktop: {
@@ -414,6 +414,17 @@ function changedLintCommand(files) {
   ])];
 }
 
+// JavaScript lint (scripts/check-js-lint.mjs, `bun run lint:js`): the changed
+// JavaScript files against their baseline entries, deleted ones included so
+// their entries are found stale. A change to the checker, its configuration or
+// its baseline checks every file, as full mode and CI always do.
+const javaScriptLintInputs = new Set(['scripts/check-js-lint.mjs', '.oxlintrc.javascript.json', 'scripts/js-lint-baseline.json']);
+function changedJavaScriptLintCommand(files) {
+  if (files.some((file) => javaScriptLintInputs.has(file))) return [command('lint:js', 'node', ['scripts/check-js-lint.mjs'])];
+  const javaScript = files.filter((file) => /\.(?:[cm]?js|jsx)$/.test(file));
+  return javaScript.length ? [command('lint:js', 'node', ['scripts/check-js-lint.mjs', '--files', ...javaScript])] : [];
+}
+
 function fullCommands() {
   return [
     command('lint:full', 'bun', ['run', 'lint']),
@@ -509,7 +520,7 @@ export function buildPlan(requestedMode, providedFiles, { versionOnly } = {}) {
   if (shared) {
     commands.push(command('lint:full', 'bun', ['run', 'lint']), command('type-check:full', 'bun', ['run', 'type-check']));
   } else {
-    commands.push(...changedLintCommand(codeFiles));
+    commands.push(...changedLintCommand(codeFiles), ...changedJavaScriptLintCommand(codeFiles));
     const typeChecked = affectedTypeCheckPackages(changedPackages, true);
     if (codeFiles.some(isWebTypeCheckedScript)) typeChecked.add('web');
     commands.push(...packageCommands(typeChecked, 'typeCheck'));
