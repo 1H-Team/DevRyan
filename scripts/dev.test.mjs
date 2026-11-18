@@ -16,7 +16,8 @@ function waitForOutput(child, expected) {
     const timeout = setTimeout(() => {
       cleanup();
       reject(new Error(`Timed out waiting for child output: ${expected}`));
-    }, 2000);
+    // A hang guard, not a measurement: two nested node processes take longer than 2 s to start on a busy machine.
+    }, 30_000);
 
     const onData = (chunk) => {
       output += chunk.toString();
