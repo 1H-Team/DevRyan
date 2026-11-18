@@ -261,7 +261,7 @@ export function loadCensus(file) {
 export function functionBody(source, name) {
   const start = new RegExp(`export\\s+(?:async\\s+)?function\\s+${name}\\s*[<(]|export\\s+const\\s+${name}\\s*=`).exec(source);
   if (!start) return null;
-  let index = source.indexOf('{', source.indexOf(')', start.index));
+  const index = source.indexOf('{', source.indexOf(')', start.index));
   if (index < 0) return null;
   let depth = 0;
   for (let at = index; at < source.length; at += 1) {
@@ -414,7 +414,7 @@ export function runCensus({ portMap, census, containers, moduleExports, readSour
   const byFamily = new Map(portMap.families.map((family) => [family.name, family]));
   const inScope = (name) => scope === null || scope.includes(name);
   const usage = new Map(); // family -> { exports: Map(name -> {called, recorded, returned}), events: Map, ports: Map, cases, steps, outcomes }
-  const use = (family) => {
+  const usageOf = (family) => {
     if (!usage.has(family)) usage.set(family, { exports: new Map(), events: new Map(), ports: new Map(), cases: 0, steps: 0, outcomes: { recorded: 0, unrecordable: 0, inconclusive: 0 } });
     return usage.get(family);
   };
@@ -427,7 +427,7 @@ export function runCensus({ portMap, census, containers, moduleExports, readSour
   for (const container of containers) {
     const read = readContainer(container.text);
     const family = read.header.family;
-    const record = use(family);
+    const record = usageOf(family);
     for (const kase of read.cases) {
       record.cases += 1;
       record.outcomes[kase.outcome] = (record.outcomes[kase.outcome] ?? 0) + 1;
@@ -462,7 +462,7 @@ export function runCensus({ portMap, census, containers, moduleExports, readSour
   const waived = (list, family, key, value) => census[list].filter((waiver) => waiver.family === family && waiver[key] === value);
   const usedWaivers = new Set();
   for (const family of portMap.families.filter((item) => inScope(item.name))) {
-    const record = use(family.name);
+    const record = usageOf(family.name);
     const relModule = family.relModule;
     const kinds = moduleExports[relModule];
     const summary = { module: relModule, cases: record.cases, steps: record.steps, outcomes: record.outcomes, exports: { total: 0, exercised: 0, waived: 0, inlined: 0, state: 0, failed: 0 }, events: null, ports: { total: 0, exercised: 0, waived: 0, failed: 0 }, grades: {} };
@@ -527,7 +527,7 @@ export function runCensus({ portMap, census, containers, moduleExports, readSour
     if (read === null || read.types.length === 0) { problems.push({ check: 'census-events', family: source.family, detail: `no event types found in ${source.entry} of ${family.relModule}` }); continue; }
     for (const detail of read.unseen) problems.push({ check: 'census-events-unseen', family: source.family, detail: `${source.entry} of ${family.relModule}: ${detail}` });
     const types = read.types;
-    const record = use(source.family);
+    const record = usageOf(source.family);
     const summary = families[source.family];
     summary.events ??= { total: 0, exercised: 0, waived: 0, failed: 0, types: {} };
     for (const type of types) {
