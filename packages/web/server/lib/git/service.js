@@ -1789,7 +1789,7 @@ export async function getStatus(directory, options = {}) {
       return null;
     };
 
-    let tracking = status.tracking || null;
+    const tracking = status.tracking || null;
     let ahead = status.ahead;
     let behind = status.behind;
 

@@ -1357,7 +1357,7 @@ export const registerFsRoutes = (app, dependencies) => {
       }
 
       const dirents = await fsPromises.readdir(resolvedPath, { withFileTypes: true });
-      let ignoredPaths = new Set();
+      const ignoredPaths = new Set();
       if (respectGitignore) {
         try {
           const pathsToCheck = dirents.map((d) => d.name);

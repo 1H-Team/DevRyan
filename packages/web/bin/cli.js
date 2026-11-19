@@ -4325,7 +4325,7 @@ const commands = {
         let mode = typeof options.mode === 'string' && options.mode.trim().length > 0
           ? options.mode.trim().toLowerCase()
           : '';
-        let resolvedTokenValue = resolveToken(options);
+        const resolvedTokenValue = resolveToken(options);
         let token = typeof resolvedTokenValue === 'string' ? resolvedTokenValue : undefined;
         let hostname = typeof options.hostname === 'string' ? options.hostname : undefined;
         let originPort = options.explicitOriginPort ? options.originPort : undefined;

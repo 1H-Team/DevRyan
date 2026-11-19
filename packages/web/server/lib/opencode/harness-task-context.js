@@ -165,7 +165,7 @@ export const createHarnessTaskContextHost = (options) => {
   const readNativePlanPolicy = async (input, readNativeUserMessage) => {
     const context = await readScope(input);
     if (context.session.parentID) {
-      let root = context.session, seen = new Set();
+      let root = context.session; const seen = new Set();
       while (root.parentID) {
         if (seen.has(root.id) || seen.size > 256) throw fault('native_plan_policy_unavailable');
         const parentID=root.parentID;

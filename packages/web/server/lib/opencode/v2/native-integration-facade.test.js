@@ -25,7 +25,7 @@ const expectNoSecretFields = (value, path = '$') => {
 async function setup() {
   const context = new AsyncLocalStorage();
   const original = { active: true, directories: new Set(['/owned']) }, replacement = { active: true, directories: new Set(['/owned']) };
-  let epoch = 1, ready = true, revokeBeforeMutation = false, starts = 0;
+  let epoch = 1; const ready = true; let revokeBeforeMutation = false, starts = 0;
   const nativeCalls = [], nativeLocations = [], mutations = [], attempts = new Map(), oauthBodies = [];
   let releaseStart, startEntered;
   const startBarrier = new Promise(resolve => { startEntered = resolve; });
