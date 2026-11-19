@@ -39,6 +39,19 @@
 //                                                recorder's default `now`), performance (a hidden read, named by site)
 //   in  draw     {site, source, value}           an identifier: source option | default (the three factories) | hidden (randomUUID, named by site)
 //   in  env      {site, name, value}             an environment variable the scheduler read (hidden, named by site)
+//   in  step     {step, now, inputs}             written only by the scripted driver (driver.mjs): input group `step`
+//                                                (numbered per case from 1) begins here, at virtual time `now`; `inputs`
+//                                                lists the inputs it delivers in one macrotask, in delivery order, each
+//                                                {kind, label, construction, ...}: call {member, call}, control {method,
+//                                                of: port, call}, fire {timer, call}, answer {port, outcome: resolve |
+//                                                reject, by: auto | hold (who settled it: the driver after quiescence, or
+//                                                the scenario)}, abort {signal}; the numbers are this recorder's. The events
+//                                                an input causes need not follow in this order (a resolve is written by a
+//                                                reaction, a microtask later than the calls of the same group): deliver from
+//                                                the marker, not from the events. The group then drains to quiescence before
+//                                                the next marker. Plain data, no slots; in the latest construction of the case.
+//                                                A driver's `timer.clear {timer: null}` is a cancelTimeout of a handle the
+//                                                scheduler never set (it clears unconditionally), not an error
 //   out port     {port, name, args, ledger?}     a call to an option (executor.start, persistence.save, publishEvent, a hook,
 //                                                logger.warn) or to a function the caller passed a member (submit#3.arg1.authorize);
 //                                                ledger: for the target's save port, "sha256:<hex>" of the saved state's bytes as the
@@ -75,7 +88,7 @@ export const FORMAT = 'devryan-scheduler-conformance';
 export const FORMAT_VERSION = 1;
 export const RAW_VERSION = 1;
 // What a recording says: bumped by hand whenever the events, their attribution or the flags change.
-export const RECORDING_VERSION = 3;
+export const RECORDING_VERSION = 4;
 // Date.now() returning one nominal time this many times in a row, with no event between, throws (recorder.mjs).
 export const SPIN_LIMIT = 1_000_000;
 export const EPOCH = 1700000000000;

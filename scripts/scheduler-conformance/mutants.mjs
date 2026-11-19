@@ -145,7 +145,7 @@ const modulesOf = async (copy) => ({
   record: await import(pathToFileURL(path.join(copy, 'record.mjs')).href),
 });
 const EMPTY_FILE = 'scripts/scheduler-conformance/toy/toy-empty.toy.mjs';
-const rawOf = (fields = {}) => ({ version: 1, file: EMPTY_FILE, codec: 3, recording: 3, recorder: 'sha256:0', modules: {}, target: 'toy', clock: 'nominal', bun: '0', cases: [{ kind: 'test', ordinal: 1, flags: [], constructions: [{ n: 1, defaulted: [], events: [] }] }], values: {}, errors: [], unplaced: 0, lateCases: [], ...fields });
+const rawOf = (fields = {}) => ({ version: 1, file: EMPTY_FILE, codec: 3, recording: 4, recorder: 'sha256:0', modules: {}, target: 'toy', clock: 'nominal', bun: '0', cases: [{ kind: 'test', ordinal: 1, flags: [], constructions: [{ n: 1, defaulted: [], events: [] }] }], values: {}, errors: [], unplaced: 0, lateCases: [], ...fields });
 const testOf = (name, status = 'passed', line = 5) => ({ file: EMPTY_FILE, line, describe: [], name, status, assertions: 1 });
 const recordingOf = (trace, raws, junit, run = 1) => ({ run, status: 0, junit, ...trace.buildContainers({ raws, junit, root: '/', expectedFiles: [EMPTY_FILE] }) });
 

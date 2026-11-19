@@ -878,6 +878,51 @@ defineProperty(globalThis, API, {
     wrap(real) {
       return function createManagedTaskScheduler(...args) { return construct(real, this, args); };
     },
+    // The scripted driver (driver.mjs) marks where each input group begins: an `in step` event in the latest
+    // construction of the running case, with plain data only (the step's number, the virtual time). The driver then
+    // lists each input of the group with `stepInput`, in delivery order, just before it delivers it: structured
+    // (`kind`, `label`, the construction it reaches and this recorder's own numbers for it, which the driver reads
+    // with the four lookups below). A marker or input with no construction to hold it, or that is not plain data,
+    // is a recorder error.
+    step({ step, now, inputs }) {
+      const record = ownerNow();
+      const inst = record.constructions[record.constructions.length - 1];
+      if (!inst) { noteError(`a driver step marker (step ${step}) in ${keyOf(record)}, which built no scheduler`); return; }
+      if (!Number.isSafeInteger(step) || !Number.isFinite(now) || !Array.isArray(inputs) || inputs.length !== 0) {
+        noteError(`a driver step marker that is not plain data (step ${step})`);
+        return;
+      }
+      const marker = { step, now, inputs: [] };
+      input(inst, 'step', marker);
+      record.stepMarker = marker;
+    },
+    stepInput(described) {
+      const record = ownerNow();
+      const marker = record.stepMarker;
+      const plain = described !== null && typeof described === 'object' && typeof described.kind === 'string' && typeof described.label === 'string'
+        && Object.values(described).every((value) => value === null || typeof value === 'string' || Number.isSafeInteger(value))
+        && !Object.values(described).some((value) => typeof value === 'string' && /^=[0-9a-f]{16}$/.test(value));
+      if (!marker) { noteError(`a driver step input (${described?.label}) in ${keyOf(record)} with no step marker`); return; }
+      if (!plain) { noteError(`a driver step input that is not plain data (step ${marker.step})`); return; }
+      marker.inputs.push({ ...described });
+    },
+    // The driver's lookups: the port call now on a construction's stack, its next input call number, its latest timer, a signal's number.
+    portOnStack(construction) {
+      const inst = ownerNow().constructions[construction - 1];
+      return inst && inst.portStack.length ? inst.portStack[inst.portStack.length - 1] : null;
+    },
+    nextCall(construction) {
+      const inst = ownerNow().constructions[construction - 1];
+      return inst ? inst.calls + 1 : null;
+    },
+    lastTimer(construction) {
+      const inst = ownerNow().constructions[construction - 1];
+      return inst ? inst.timers : null;
+    },
+    signalNumber(construction, signal) {
+      const inst = ownerNow().constructions[construction - 1];
+      return inst?.signals.get(signal) ?? null;
+    },
   }),
 });
 const MODULE = realpathSync(TARGET.module);
