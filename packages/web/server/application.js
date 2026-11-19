@@ -1888,7 +1888,6 @@ async function constructWebHost(options = {}) {
     closeFeatureRoutes: () => featureRoutesRuntime.close(),
     getSessionTitleRuntime: () => standardSessionTitleRuntime,
     shouldSkipOpenCodeStop: () => ENV_SKIP_OPENCODE_START || isExternalOpenCode,
-    getOpenCodePort: () => openCodePort,
     getOpenCodeProcess: () => openCodeProcess,
     setOpenCodeProcess: (value) => {
       openCodeProcess = value;
