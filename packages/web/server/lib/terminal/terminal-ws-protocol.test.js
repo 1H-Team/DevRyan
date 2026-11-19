@@ -4,7 +4,6 @@ import {
   TERMINAL_WS_PATH,
   TERMINAL_WS_CONTROL_TAG_JSON,
   createTerminalWsControlFrame,
-  isTerminalWsPathname,
   isRebindRateLimited,
   normalizeTerminalWsMessageToBuffer,
   normalizeTerminalWsMessageToText,
@@ -16,12 +15,6 @@ import {
 describe('terminal websocket protocol', () => {
   it('uses fixed websocket paths', () => {
     expect(TERMINAL_WS_PATH).toBe('/api/terminal/ws');
-  });
-
-  it('matches supported websocket pathnames', () => {
-    expect(isTerminalWsPathname('/api/terminal/ws')).toBe(true);
-    expect(isTerminalWsPathname('/api/terminal/input-ws')).toBe(false);
-    expect(isTerminalWsPathname('/api/terminal/other')).toBe(false);
   });
 
   it('encodes control frames with control tag prefix', () => {

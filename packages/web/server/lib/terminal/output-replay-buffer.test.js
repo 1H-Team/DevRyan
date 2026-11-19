@@ -4,7 +4,6 @@ import {
   TERMINAL_OUTPUT_REPLAY_MAX_BYTES,
   appendTerminalOutputReplayChunk,
   createTerminalOutputReplayBuffer,
-  getLatestTerminalOutputReplayChunkId,
   listTerminalOutputReplayChunksSince,
 } from './output-replay-buffer.js';
 
@@ -12,7 +11,6 @@ describe('terminal output replay buffer', () => {
   it('starts empty', () => {
     const bufferState = createTerminalOutputReplayBuffer();
     expect(bufferState).toEqual({ chunks: [], totalBytes: 0, nextId: 1 });
-    expect(getLatestTerminalOutputReplayChunkId(bufferState)).toBe(0);
   });
 
   it('appends chunks with incrementing ids', () => {
@@ -22,7 +20,6 @@ describe('terminal output replay buffer', () => {
 
     expect(first).toEqual({ id: 1, data: 'prompt> ', bytes: 8 });
     expect(second).toEqual({ id: 2, data: 'ls\r\n', bytes: 4 });
-    expect(getLatestTerminalOutputReplayChunkId(bufferState)).toBe(2);
   });
 
   it('lists chunks after a replay cursor', () => {

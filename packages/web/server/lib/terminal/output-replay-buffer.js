@@ -70,11 +70,3 @@ export const listTerminalOutputReplayChunksSince = (bufferState, lastSeenId = 0)
 
   return bufferState.chunks.filter((chunk) => chunk.id > lastSeenId);
 };
-
-export const getLatestTerminalOutputReplayChunkId = (bufferState) => {
-  if (!bufferState || typeof bufferState !== 'object' || !Array.isArray(bufferState.chunks) || bufferState.chunks.length === 0) {
-    return 0;
-  }
-
-  return bufferState.chunks[bufferState.chunks.length - 1]?.id ?? 0;
-};

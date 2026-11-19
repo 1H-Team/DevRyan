@@ -14,8 +14,6 @@ export const parseRequestPathname = (requestUrl) => {
   }
 };
 
-export const isTerminalWsPathname = (pathname) => pathname === TERMINAL_WS_PATH;
-
 export const normalizeTerminalWsMessageToBuffer = (rawData) => {
   if (Buffer.isBuffer(rawData)) {
     return rawData;
