@@ -49,7 +49,11 @@ jobs:
             echo "No ledger core change in this pull request: skipped."
             exit 0
           fi
-          rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy --target wasm32-unknown-unknown
+          # The download fails now and then on a hosted runner: three tries.
+          install_rust() {
+            rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy --target wasm32-unknown-unknown
+          }
+          install_rust || { sleep 20; install_rust; } || { sleep 60; install_rust; }
           node scripts/build-ledger-core.mjs --verify
       # The native ledger's Rust workspace (packages/harness-runtime/DOCUMENTATION.md,
       # "Native ledger I/O"): fmt, clippy and cargo test, then the JavaScript
@@ -66,7 +70,11 @@ jobs:
             echo "No native ledger change in this pull request: skipped."
             exit 0
           fi
-          rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy --target wasm32-unknown-unknown
+          # The download fails now and then on a hosted runner: three tries.
+          install_rust() {
+            rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy --target wasm32-unknown-unknown
+          }
+          install_rust || { sleep 20; install_rust; } || { sleep 60; install_rust; }
           node scripts/build-ledger-native.mjs --verify
       # The product's Cargo workspace (packages/native/DOCUMENTATION.md): the
       # licence check (every package of the locked graph against the allow list
@@ -90,7 +98,11 @@ jobs:
       - name: Rust workspace packages/native (licences, fmt, clippy, cargo test)
         if: steps.native.outputs.run == 'true'
         run: |
-          rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy
+          # The download fails now and then on a hosted runner: three tries.
+          install_rust() {
+            rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy
+          }
+          install_rust || { sleep 20; install_rust; } || { sleep 60; install_rust; }
           node scripts/check-native.mjs
       # cargo-deny, built once with the pinned Rust and kept in GitHub's cache:
       # a hit restores the binary in seconds, a miss builds it (minutes) and the
@@ -234,5 +246,9 @@ jobs:
             echo "No native ledger change in this pull request: skipped."
             exit 0
           fi
-          rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy --target wasm32-unknown-unknown
+          # The download fails now and then on a hosted runner: three tries.
+          install_rust() {
+            rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy --target wasm32-unknown-unknown
+          }
+          install_rust || { sleep 20; install_rust; } || { sleep 60; install_rust; }
           node scripts/build-ledger-native.mjs --verify
