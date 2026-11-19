@@ -674,7 +674,6 @@ const SHARED_JSON_50MB_PREFIXES = Object.freeze([
   '/api/session/',
   '/api/session-folders',
   '/api/text',
-  '/api/voice',
   '/api/tts',
   '/api/devryan/tunnel',
 ]);

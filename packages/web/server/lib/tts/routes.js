@@ -11,36 +11,6 @@ export function registerTtsRoutes(app, { resolveZenModel, sayTTSCapability }) {
     return ttsModulePromise;
   };
 
-  app.post('/api/voice/token', async (req, res) => {
-    console.log('[Voice] Token request received:', {
-      contentType: req.headers['content-type'] || null,
-    });
-    try {
-      const openaiApiKey = process.env.OPENAI_API_KEY;
-      console.log('[Voice] OpenAI API Key present:', !!openaiApiKey);
-
-      if (!openaiApiKey) {
-        return res.status(503).json({
-          allowed: false,
-          error: 'OpenAI voice service not configured. Set OPENAI_API_KEY environment variable.'
-        });
-      }
-
-      // Return success - OpenAI TTS is available
-      res.json({
-        allowed: true,
-        provider: 'openai',
-        message: 'OpenAI TTS is available'
-      });
-    } catch (error) {
-      console.error('[Voice] Token generation error:', error);
-      res.status(500).json({
-        allowed: false,
-        error: 'Voice service error'
-      });
-    }
-  });
-
   // Server-side TTS endpoint - streams audio from OpenAI TTS API
   app.post('/api/tts/speak', async (req, res) => {
     try {

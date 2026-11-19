@@ -287,7 +287,6 @@ const CLASSES = [
       'POST /api/tts/say/speak',
       'POST /api/stt/transcribe',
       'POST /api/text/summarize',
-      'POST /api/voice/token',
       // OpenCode's host paths (home, config, state).
       'GET /api/path',
     ],
