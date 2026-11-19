@@ -2204,7 +2204,6 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
   const useSaved = saved && typeof saved.width === 'number' && typeof saved.height === 'number';
   const desktopLocalOrigin = state.localOrigin || '';
   const desktopServerOrigin = state.sidecarUrl || state.localOrigin || '';
-  os.homedir();
   const desktopMacosMajor = String(macosMajorVersion());
   const startupSplashPalette = currentStartupSplashPalette();
   const options = createStartupWindowOptions({ app, isPreview, palette: startupSplashPalette,
