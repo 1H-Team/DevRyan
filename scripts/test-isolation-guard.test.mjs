@@ -104,7 +104,7 @@ describe('test isolation environment', () => {
   });
 
   test('a synchronous runner removes its root after its children stop', () => {
-    const { directory, home, cleanup } = scratch();
+    const { home, cleanup } = scratch();
     try {
       let seen = null;
       const status = withTestIsolationSync((env) => { seen = env[ISOLATION_ROOT_VARIABLE]; return 3; }, { environment: shellEnvironment(home) });

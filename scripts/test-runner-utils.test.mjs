@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { bunTestArgs, bunTestWorkers, discoverTestFiles, isBunTestSource } from './test-runner-utils.mjs';
 import { discoverElectronTestFiles, planElectronTests } from './test-electron.mjs';
 import { discoverScriptTestFiles } from './test-scripts.mjs';
-import { FULL_TEST_COMMANDS, FULL_TEST_SUITES } from './test-full.mjs';
+import { FULL_TEST_SUITES } from './test-full.mjs';
 import { buildPlan, describeScriptSelection, isVersionOnlyChange, lintRoots, testUnitsForPlan } from './validate.mjs';
 import { STARTUP_CONTRACT_GROUPS } from './test-startup-contract.mjs';
 import { FULL_SUITE_ONLY } from './test-select.mjs';

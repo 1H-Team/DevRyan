@@ -16,7 +16,7 @@ import { Global } from '@opencode/util/global';
 import { LocationActivity } from '@opencode/core/location-activity';
 import { LocationServiceMap } from '@opencode/core/location-service-map';
 import { Integration } from '@opencode/core/integration';
-import { Location } from '@opencode/core/location';
+import '@opencode/core/location';
 import { Database } from '@opencode/core/database/database';
 import { createControllerIntegrations } from '../../packages/web/server/lib/opencode/runtime-host/controller-integrations.ts';
 import { createNativeIntegrationOwner } from '../../packages/web/server/lib/opencode/runtime-host/native-integration-owner.js';

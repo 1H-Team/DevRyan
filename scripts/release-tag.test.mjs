@@ -12,7 +12,6 @@ import { MODEL_CATALOG_URL, modelCatalogFreshness } from './model-catalog-refres
 const version = '9.8.7', tag = `v${version}`;
 const source = 'a'.repeat(40), other = 'b'.repeat(40);
 const repository = '1H-Team/DevRyan';
-const quiet = () => {};
 
 async function checkout(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-release-tag-'));

@@ -13,7 +13,6 @@ const preservedProviders = [...managedSpecialistProviders, 'opencode-go', 'curso
 const homeShim = fileURLToPath(new URL('./isolated-home.mjs', import.meta.url));
 const providerObserver = fileURLToPath(new URL('./provider-observer.mjs', import.meta.url));
 
-const writePrivateJson = async (file, value) => writeFile(file, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
 const isInside = (parent, child) => child.startsWith(`${parent}${path.sep}`);
 const isRecord = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 

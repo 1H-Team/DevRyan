@@ -240,7 +240,7 @@ test('checkpoint-aware source snapshot ignores only a WAL drain and still detect
       writer.pragma('wal_checkpoint(TRUNCATE)');
       const after = await snapshotCheckpointedBundleSource(a);
       assert.equal(after.walBytes, 0); assert.notDeepEqual(after.physical, before.physical);
-      const strip = ({ physical, walBytes, ...data }) => data;
+      const strip = ({ physical: _physical, walBytes: _walBytes, ...data }) => data;
       assert.deepEqual(strip(after), strip(before));
       writer.prepare('INSERT INTO session_message VALUES (?,?,?,?)').run('msg_new', 'ses_original', 2, 'changed data');
       assert.notDeepEqual(strip(await snapshotCheckpointedBundleSource(a)).database, strip(before).database);

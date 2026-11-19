@@ -115,8 +115,6 @@ const hashText = (text, normalize) => {
 };
 
 export function summarizeHealth(health) {
-  const version = stringOrNull(health?.openCodeVersion);
-  const base = version ? openCodeBaseVersion(version) : null;
   return canonicalize({
     status: stringOrNull(health?.status),
     isOpenCodeReady: health?.isOpenCodeReady === true,
