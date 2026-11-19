@@ -6,6 +6,8 @@ import {
   utimesSync,
   writeFileSync,
 } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { routerHeadAnnouncement } from '../deepwork';
 import { BACKGROUND_JOB_BOARD_METADATA_KEY } from '../task-session-manager/board-injection';
 import type { MessageWithParts } from '../types';
@@ -271,7 +273,7 @@ describe('createDeepworkHeadGate', () => {
   let dir: string;
 
   test('gate follows the head file lifecycle (fail open on doubt)', () => {
-    dir = mkdtempSync('deepwork-goal-gate-');
+    dir = mkdtempSync(path.join(os.tmpdir(), 'deepwork-goal-gate-'));
     try {
       const gate = createDeepworkHeadGate(dir);
       const head = `${dir}/.slim/deepwork/${SESSION}.md`;
