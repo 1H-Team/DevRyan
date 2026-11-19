@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Builds, lints and tests the native ledger's Rust workspace
-// (packages/harness-runtime/native/ledger, crate ledger-io), which nothing in
-// the product calls yet. The toolchain is the ledger core's pin, selected
+// (packages/harness-runtime/native/ledger: the crates ledger-io and
+// ledger-native, whose binary is devryan-ledger), which nothing in the
+// product calls yet. The toolchain is the ledger core's pin, selected
 // through RUSTUP_TOOLCHAIN; every cargo command runs with --locked on a copy
 // of the workspace and of the ledger-core crate it depends on, under the OS
 // temp dir, with a private CARGO_HOME and target directory there (removed
@@ -9,12 +10,14 @@
 // run with `cargo fetch --locked` (checksums from the tracked Cargo.lock);
 // everything after that is --offline.
 //
-//   node scripts/build-ledger-native.mjs            build the library and the test-only probes
+//   node scripts/build-ledger-native.mjs            build the workspace, the test-only probes and devryan-ledger
 //   node scripts/build-ledger-native.mjs --verify   cargo fmt --check, clippy -D warnings, cargo test,
 //                                                   cargo check and clippy for x86_64 Linux when that
-//                                                   target is installed, then the Node differential
-//                                                   tests against the probes (JavaScript on the Node
-//                                                   inside Electron where its binary exists)
+//                                                   target is installed, the licence gate (and RustSec
+//                                                   advisories when cargo-deny is on PATH), then the Node
+//                                                   differential tests against the probes and the two
+//                                                   devryan-ledger builds (JavaScript on the Node inside
+//                                                   Electron where its binary exists)
 //   node scripts/build-ledger-native.mjs --extended the verify, then the long run outside the gate:
 //                                                   all the fuzz rounds and the ledgers the product
 //                                                   writes (the aged-profile corpus and every dual-run
@@ -24,18 +27,31 @@
 // packages/harness-runtime/DOCUMENTATION.md ("Native ledger I/O") describes
 // the workspace; the Rust-free contract is this script's test.
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { CRATE_DIR as CORE_DIR, ancestorCargoConfigs, locateToolchain, readToolchainFile } from './build-ledger-core.mjs';
 import { keepArtifactsRequested, scratchParent } from './qa/run-root.mjs';
+import { checkLicences } from './ledger-native/licences.mjs';
 import { referenceRuntime } from './ledger-native/reference-runtime.mjs';
-import { LINUX_LINT_COMMANDS, ODB_PROBE_VARIABLE, PROBE_BUILD_ARGS, PROBE_VARIABLE, VERIFY_COMMANDS, WORKSPACE_DIR, cargoEnvironment, linuxLintPlan, treeFiles } from './ledger-native/workspace.mjs';
+import {
+  LEDGER_BUILD_ARGS, LEDGER_HOOKS_BUILD_ARGS, LEDGER_HOOKS_VARIABLE, LEDGER_PROBE_VARIABLE, LEDGER_VARIABLE, LINUX_LINT_COMMANDS,
+  ODB_PROBE_VARIABLE, PROBE_BUILD_ARGS, PROBE_VARIABLE, VERIFY_COMMANDS, WORKSPACE_DIR, cargoEnvironment, linuxLintPlan, treeFiles,
+} from './ledger-native/workspace.mjs';
 
-export { ODB_PROBE_VARIABLE, PROBE_VARIABLE };
-/** The Node differential tests the verify runs against the probes. */
-export const DIFFERENTIAL_TESTS = Object.freeze(['scripts/ledger-native/atomic-differential.mjs', 'scripts/ledger-native/odb-differential.mjs']);
+export { LEDGER_HOOKS_VARIABLE, LEDGER_PROBE_VARIABLE, LEDGER_VARIABLE, ODB_PROBE_VARIABLE, PROBE_VARIABLE };
+/** The Node differential tests the verify runs against the probes and devryan-ledger, and the porting lint. */
+export const DIFFERENTIAL_TESTS = Object.freeze([
+  'scripts/ledger-native/atomic-differential.mjs',
+  'scripts/ledger-native/odb-differential.mjs',
+  'scripts/ledger-native/codec-differential.mjs',
+  'scripts/ledger-native/ctx-differential.mjs',
+  'scripts/ledger-native/jobs-differential.mjs',
+  'scripts/ledger-native/porting-lint.mjs',
+  'scripts/ledger-native/proto-differential.mjs',
+]);
 /** The tests only the extended run adds, and the variable that gives the differential tests their full rounds. */
 export const EXTENDED_TESTS = Object.freeze(['scripts/ledger-native/odb-real-ledgers.mjs']);
 export const EXTENDED_VARIABLE = 'LEDGER_NATIVE_ODB_EXTENDED';
@@ -56,6 +72,19 @@ function copySources(root, scratch) {
   const outside = ancestorCargoConfigs(workspace);
   if (outside.length) throw new Error(`Cargo configuration above the build copy would change the build: ${outside.join(', ')}`);
   return workspace;
+}
+
+/** SHA-256 of the sources the build reads (both crate trees, paths and bytes), for `ready.build`. */
+export function sourceDigest(root = repositoryRoot) {
+  const hash = createHash('sha256');
+  for (const [from, to] of [[WORKSPACE_DIR, 'ledger'], [CORE_DIR, 'ledger-core']]) {
+    for (const file of treeFiles(path.join(root, from))) {
+      hash.update(`${to}/${file}\0`);
+      hash.update(readFileSync(path.join(root, from, file)));
+      hash.update('\0');
+    }
+  }
+  return hash.digest('hex');
 }
 
 function runChecked(command, args, options, label = `${path.basename(command)} ${args.join(' ')}`) {
@@ -92,11 +121,42 @@ function prepare({ root, scratch }) {
   const toolchain = readToolchainFile(root);
   const located = locateToolchain(toolchain);
   const workspace = copySources(root, scratch);
-  const env = cargoEnvironment({ located, toolchain, scratch });
+  const env = { ...cargoEnvironment({ located, toolchain, scratch }), DEVRYAN_LEDGER_SOURCE_DIGEST: sourceDigest(root) };
   const cargo = path.join(located.bin, 'cargo');
   runChecked(cargo, ['fetch', '--locked'], { cwd: workspace, env });
   const debug = path.join(scratch, 'target', 'debug');
-  return { cargo, workspace, env, located, toolchain, probe: path.join(debug, 'atomic-probe'), odbProbe: path.join(debug, 'odb-probe') };
+  return { cargo, workspace, env, located, toolchain, scratch, probe: path.join(debug, 'atomic-probe'), odbProbe: path.join(debug, 'odb-probe') };
+}
+
+/**
+ * devryan-ledger without features (the product's shape), then with
+ * test-hooks, and the ledger probe; each copied out of the target directory
+ * the next build overwrites. Returns their paths.
+ */
+function buildLedgerIn(context) {
+  const out = path.join(context.scratch, 'bin');
+  mkdirSync(out, { recursive: true });
+  const built = (name) => path.join(context.scratch, 'target', 'debug', name);
+  runChecked(context.cargo, LEDGER_BUILD_ARGS, { cwd: context.workspace, env: context.env });
+  copyFileSync(built('devryan-ledger'), path.join(out, 'devryan-ledger'));
+  runChecked(context.cargo, LEDGER_HOOKS_BUILD_ARGS, { cwd: context.workspace, env: context.env });
+  copyFileSync(built('devryan-ledger'), path.join(out, 'devryan-ledger-test-hooks'));
+  copyFileSync(built('ledger-native-probe'), path.join(out, 'ledger-native-probe'));
+  for (const name of ['devryan-ledger', 'devryan-ledger-test-hooks', 'ledger-native-probe']) spawnSync('chmod', ['755', path.join(out, name)]);
+  return { plain: path.join(out, 'devryan-ledger'), hooks: path.join(out, 'devryan-ledger-test-hooks'), probe: path.join(out, 'ledger-native-probe') };
+}
+
+/** The interim licence gate over `cargo metadata --locked`, and RustSec advisories when cargo-deny is installed. */
+function checkDependencies(context) {
+  console.log('\n$ cargo metadata --locked --offline --format-version 1');
+  const metadata = spawnSync(context.cargo, ['metadata', '--locked', '--offline', '--format-version', '1'], { cwd: context.workspace, env: context.env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  if (metadata.status !== 0) throw new Error(`cargo metadata failed: ${metadata.stderr}`);
+  const { packages, refused } = checkLicences(JSON.parse(metadata.stdout), { ownRoots: [context.workspace, path.join(path.dirname(context.workspace), 'ledger-core')] });
+  for (const entry of packages) console.log(`  ${entry.name} ${entry.version}: ${entry.licence ?? '(this repository)'}`);
+  if (refused.length) throw new Error(`Licences outside scripts/ledger-native/licences.mjs: ${refused.map((entry) => `${entry.name} ${entry.version} (${entry.licence})`).join(', ')}`);
+  const deny = spawnSync(context.cargo, ['deny', '--version'], { cwd: context.workspace, env: context.env, encoding: 'utf8' });
+  if (deny.status === 0) runChecked(context.cargo, ['deny', 'check', 'advisories'], { cwd: context.workspace, env: context.env });
+  else console.log('RustSec advisories not checked: cargo-deny is not on PATH (install it with: cargo install --locked cargo-deny).');
 }
 
 function buildProbeIn(context) {
@@ -138,6 +198,20 @@ export function workspaceCopy({ root = repositoryRoot, keep = keepArtifactsReque
   }
 }
 
+/**
+ * Builds devryan-ledger (plain and test-hooks) and the ledger probe for a
+ * test started without them. The caller disposes of the build directory.
+ */
+export function buildLedgerBinaries({ root = repositoryRoot, keep = keepArtifactsRequested() } = {}) {
+  const { scratch, dispose } = createScratch(keep);
+  try {
+    return { binaries: buildLedgerIn(prepare({ root, scratch })), dispose: () => dispose(false) };
+  } catch (error) {
+    dispose(true);
+    throw error;
+  }
+}
+
 export function main(argv = process.argv.slice(2), root = repositoryRoot) {
   const unknown = argv.filter((arg) => !['--verify', '--extended', '--keep-artifacts'].includes(arg));
   if (unknown.length) throw new Error(`Unknown argument: ${unknown.join(' ')} (use --verify, --extended or --keep-artifacts)`);
@@ -157,19 +231,24 @@ export function main(argv = process.argv.slice(2), root = repositoryRoot) {
       console.log(`\n${linux.line}`);
       if (extended && linux.action === 'missing') throw new Error(`The extended run needs the Linux lint: ${linux.line}`);
       if (linux.action === 'lint') for (const args of LINUX_LINT_COMMANDS) runChecked(context.cargo, args, { cwd: context.workspace, env: context.env });
+      checkDependencies(context);
     } else {
       runChecked(context.cargo, ['build', '--locked', '--offline', '--workspace'], { cwd: context.workspace, env: context.env });
     }
     const probe = buildProbeIn(context);
+    const ledger = buildLedgerIn(context);
     if (verify) {
       const reference = referenceRuntime();
       console.log(`\nJavaScript reference runtime: ${reference.description}`);
       if (extended && !reference.electron) throw new Error(`The extended run needs Electron's Node as the JavaScript reference: ${reference.description}`);
       const tests = extended ? [...DIFFERENTIAL_TESTS, ...EXTENDED_TESTS] : DIFFERENTIAL_TESTS;
-      const env = { ...process.env, [PROBE_VARIABLE]: probe, [ODB_PROBE_VARIABLE]: context.odbProbe };
+      const env = { ...process.env, [PROBE_VARIABLE]: probe, [ODB_PROBE_VARIABLE]: context.odbProbe,
+        [LEDGER_VARIABLE]: ledger.plain, [LEDGER_HOOKS_VARIABLE]: ledger.hooks, [LEDGER_PROBE_VARIABLE]: ledger.probe };
       if (extended) env[EXTENDED_VARIABLE] = '1';
       else delete env[EXTENDED_VARIABLE];
+      const started = Date.now();
       runChecked(process.execPath, ['--import=./scripts/test-isolation-preload.mjs', '--test', ...tests], { cwd: root, env }, `node --test ${tests.join(' ')}`);
+      console.log(`Differential tests took ${((Date.now() - started) / 1000).toFixed(1)} s.`);
     }
     console.log(`\nThe native ledger workspace ${extended ? 'passed its extended run' : verify ? 'passed its checks' : 'builds'}.`);
     failed = false;

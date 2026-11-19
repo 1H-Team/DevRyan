@@ -76,6 +76,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ledger-native"
+version = "0.1.0"
+dependencies = [
+ "ledger-core",
+ "ledger-io",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"

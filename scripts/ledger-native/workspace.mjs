@@ -10,6 +10,13 @@ export const WORKSPACE_DIR = 'packages/harness-runtime/native/ledger';
 export const PROBE_VARIABLE = 'LEDGER_NATIVE_PROBE';
 export const ODB_PROBE_VARIABLE = 'LEDGER_NATIVE_ODB_PROBE';
 export const PROBE_BUILD_ARGS = Object.freeze(['build', '--locked', '--offline', '--package', 'ledger-io', '--features', 'probe', '--bin', 'atomic-probe', '--bin', 'odb-probe']);
+/** The variables that hand the differential tests the ledger process builds and its probe. */
+export const LEDGER_VARIABLE = 'LEDGER_NATIVE_LEDGER';
+export const LEDGER_HOOKS_VARIABLE = 'LEDGER_NATIVE_LEDGER_HOOKS';
+export const LEDGER_PROBE_VARIABLE = 'LEDGER_NATIVE_LEDGER_PROBE';
+/** devryan-ledger as the product would have it (no feature), then with test-hooks and its probe. */
+export const LEDGER_BUILD_ARGS = Object.freeze(['build', '--locked', '--offline', '--package', 'ledger-native', '--bin', 'devryan-ledger']);
+export const LEDGER_HOOKS_BUILD_ARGS = Object.freeze(['build', '--locked', '--offline', '--package', 'ledger-native', '--features', 'test-hooks', '--bins']);
 export const VERIFY_COMMANDS = Object.freeze([
   Object.freeze(['fmt', '--all', '--check']),
   Object.freeze(['clippy', '--locked', '--offline', '--workspace', '--all-targets', '--all-features', '--', '-D', 'warnings']),

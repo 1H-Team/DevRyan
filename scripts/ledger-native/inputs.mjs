@@ -9,7 +9,9 @@
 // A product module the tests load is listed itself; its own imports are the
 // product's and are gated by its package's tests, and the product modules the
 // isolation guard imports for its canary (which the verify never runs) are not
-// inputs. The extended run (the build script's --extended) is not the gate:
+// inputs. Files a test starts by path rather than imports (the product's
+// worker under the stdio process, that process's module hooks) are listed
+// too. The extended run (the build script's --extended) is not the gate:
 // what only it loads, such as the aged-profile corpus and the dual-run
 // scenarios, is not listed, and the contract test fails on a listed file the
 // verify does not load.
@@ -24,9 +26,15 @@ export const LEDGER_NATIVE_INPUTS = Object.freeze([
   'packages/harness-runtime/native/ledger/',
   'packages/harness-runtime/native/ledger-core/',
   'packages/harness-runtime/lib/atomic-file.js',
+  'packages/harness-runtime/lib/execution-admission.js',
+  'packages/harness-runtime/lib/execution-io-pool.js',
+  'packages/harness-runtime/lib/host-stall-clock.js',
   'packages/harness-runtime/lib/session-changes-git.js',
   'packages/harness-runtime/lib/session-changes-store.js',
   'packages/harness-runtime/lib/session-changes-trees.js',
+  'packages/harness-runtime/lib/session-mutation-wire.js',
+  'packages/harness-runtime/lib/session-mutation-worker.js',
+  'packages/harness-runtime/lib/session-mutations.js',
   'scripts/build-ledger-native.mjs',
   'scripts/ledger-native/',
   'scripts/build-ledger-core.mjs',
@@ -37,7 +45,9 @@ export const LEDGER_NATIVE_INPUTS = Object.freeze([
   'scripts/ledger-dual-run/dual-run-runner.mjs',
   'scripts/ledger-dual-run/dual-run-snapshot.mjs',
   'scripts/ledger-dual-run/ledger-preload.cjs',
+  'scripts/ledger-dual-run/ledger-process-hooks.mjs',
   'scripts/ledger-dual-run/ledger-process.mjs',
+  'scripts/ledger-dual-run/worker-threads-shim.mjs',
   'scripts/qa/run-root.mjs',
   'scripts/test-isolation-check.mjs',
   'scripts/test-isolation-guard.mjs',

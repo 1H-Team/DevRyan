@@ -6,18 +6,26 @@
 # the build script selects through RUSTUP_TOOLCHAIN.
 [workspace]
 resolver = "3"
-members = ["ledger-io"]
+members = ["ledger-io", "ledger-native"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 publish = false
 
+# A panic ends the process at once, as an uncaught error ends the worker
+# thread (the process's panic hook exits 70 first). No stripping: the
+# pinned toolchain's rust-objcopy cannot run here.
+[profile.dev]
+panic = "abort"
+
 [profile.release]
 opt-level = 3
 codegen-units = 1
 debug = false
 incremental = false
+panic = "abort"
+strip = "none"
 
 # The test probes inflate and hash in debug builds: these crates are built
 # optimized there, and ledger-io lightly (overflow checks and debug

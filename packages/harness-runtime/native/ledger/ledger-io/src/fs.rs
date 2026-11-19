@@ -1500,3 +1500,128 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
+
+/// Node's start-up `PlatformInit`: raises the soft limit on open files to
+/// the hard limit, or, when the hard limit is infinite, to the highest
+/// value up to 2^20 the kernel accepts (a binary search, as Node does it).
+/// Failures leave the limit as it was, as in Node.
+pub fn raise_open_file_limit() {
+    let mut limit = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: `limit` is a valid `rlimit` for the kernel to fill.
+    if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) } != 0 {
+        return;
+    }
+    let hard = limit.rlim_max;
+    search_open_file_limit(limit.rlim_cur, hard, libc::RLIM_INFINITY, |soft| {
+        let wanted = libc::rlimit {
+            rlim_cur: soft,
+            rlim_max: hard,
+        };
+        // SAFETY: `wanted` is a valid `rlimit`; the kernel only reads it.
+        unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &wanted) == 0 }
+    });
+}
+
+/// The search of Node's `PlatformInit`, line for line, over `set` (whether
+/// the kernel took a soft limit). Nothing when soft equals hard; with a
+/// finite hard limit one attempt at it; with an infinite one a binary search
+/// up to 2^20. Returns every soft limit tried, in order.
+fn search_open_file_limit(
+    soft: libc::rlim_t,
+    hard: libc::rlim_t,
+    infinity: libc::rlim_t,
+    mut set: impl FnMut(libc::rlim_t) -> bool,
+) -> Vec<libc::rlim_t> {
+    let mut tried = Vec::new();
+    if soft == hard {
+        return tried;
+    }
+    let (mut min, mut max): (libc::rlim_t, libc::rlim_t) = (soft, 1 << 20);
+    if hard != infinity {
+        min = hard;
+        max = hard;
+    }
+    loop {
+        let attempt = min + (max - min) / 2;
+        tried.push(attempt);
+        if set(attempt) {
+            min = attempt;
+        } else {
+            max = attempt;
+        }
+        if min + 1 >= max {
+            break;
+        }
+    }
+    tried
+}
+
+/// The soft and hard limits on open files (`getrlimit(RLIMIT_NOFILE)`).
+pub fn open_file_limit() -> Option<(libc::rlim_t, libc::rlim_t)> {
+    let mut limit = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: `limit` is a valid `rlimit` for the kernel to fill.
+    (unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) } == 0)
+        .then_some((limit.rlim_cur, limit.rlim_max))
+}
+
+#[cfg(test)]
+mod open_file_limit_tests {
+    use super::*;
+
+    const INFINITY: libc::rlim_t = libc::rlim_t::MAX;
+
+    /// The kernel's state under the search: the soft limit it holds and the
+    /// highest it accepts.
+    fn simulate(
+        soft: libc::rlim_t,
+        hard: libc::rlim_t,
+        accepts: libc::rlim_t,
+    ) -> (libc::rlim_t, Vec<libc::rlim_t>) {
+        let mut held = soft;
+        let tried = search_open_file_limit(soft, hard, INFINITY, |attempt| {
+            let taken = attempt <= accepts && attempt <= hard;
+            if taken {
+                held = attempt;
+            }
+            taken
+        });
+        (held, tried)
+    }
+
+    #[test]
+    fn the_search_is_nodes_platform_init() {
+        // Soft already the hard limit: no call.
+        assert_eq!(simulate(1024, 1024, INFINITY), (1024, vec![]));
+        // A finite hard limit: one attempt at it, which sets it.
+        assert_eq!(simulate(256, 10_240, INFINITY), (10_240, vec![10_240]));
+        // A finite hard limit the kernel refuses (macOS above OPEN_MAX): one
+        // attempt, and the soft limit stays.
+        assert_eq!(simulate(256, 20_000, 10_240), (256, vec![20_000]));
+        // An infinite hard limit: the highest accepted value below 2^20.
+        let (held, tried) = simulate(256, INFINITY, 10_240);
+        assert_eq!(held, 10_240);
+        assert_eq!(tried[0], 256 + ((1 << 20) - 256) / 2);
+        assert!(tried.len() <= 20, "{tried:?}");
+        // Everything accepted: it stops one short of 2^20, as Node does.
+        assert_eq!(simulate(256, INFINITY, INFINITY).0, (1 << 20) - 1);
+    }
+
+    #[test]
+    fn the_soft_limit_rises_and_never_past_the_hard_limit() {
+        let (before, hard) = open_file_limit().expect("getrlimit");
+        raise_open_file_limit();
+        let (after, hard_after) = open_file_limit().expect("getrlimit");
+        assert!(after >= before, "{after} < {before}");
+        assert_eq!(hard_after, hard);
+        assert!(after <= hard);
+        // A second raise finds nothing more to do.
+        raise_open_file_limit();
+        assert_eq!(open_file_limit().expect("getrlimit").0, after);
+    }
+}

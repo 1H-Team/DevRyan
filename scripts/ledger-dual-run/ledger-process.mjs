@@ -17,6 +17,7 @@
 import * as nodeModule from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { MessageChannel } from 'node:worker_threads';
 import { decodeLine, encodeLine, lineReader } from './dual-run-codec.mjs';
 
 const libDirectory = path.resolve(process.argv[2] ?? '');
@@ -35,20 +36,22 @@ const writeProtocol = process.stdout.write.bind(process.stdout);
 for (const name of ['log', 'info', 'debug']) console[name] = (...args) => console.error(...args);
 process.stdout.write = (chunk, ...rest) => process.stderr.write(chunk, ...rest);
 
-const listeners = new Set();
-const queued = [];
-// The harness preload (when loaded) scopes each call's work to its seam call.
-const dispatch = (message) => {
-  const run = () => { for (const fn of listeners) fn(message); };
+// The worker's parent port delivers host messages as a real MessagePort does,
+// because it is one: each line goes through a MessageChannel, so the worker
+// gets one message per callback with every continuation it made runnable run
+// before the next (Node's microtask checkpoint), the messages of one chunk
+// included, values structured-cloned as postMessage clones them, and messages
+// that arrive before the worker listens wait for it.
+const channel = new MessageChannel();
+const scoped = (listener) => (message) => {
+  // The harness preload (when loaded) scopes each call's work to its seam call.
   const scope = globalThis.__ledgerDualRunCallScope;
-  return scope ? scope(message, run) : run();
+  return scope ? scope(message, () => listener(message)) : listener(message);
 };
 const port = {
   postMessage: (message) => { writeProtocol(encodeLine(message)); },
   on(event, listener) {
-    if (event !== 'message') return port;
-    listeners.add(listener);
-    if (queued.length) setImmediate(() => { for (const message of queued.splice(0)) dispatch(message); });
+    if (event === 'message') channel.port2.on('message', scoped(listener));
     return port;
   },
 };
@@ -62,8 +65,7 @@ const onLine = (line) => {
     started.catch((cause) => { console.error(cause); process.exit(70); });
     return;
   }
-  if (!listeners.size) { queued.push(message); return; }
-  dispatch(message);
+  channel.port1.postMessage(message);
 };
 process.stdin.on('data', lineReader(onLine));
 process.stdin.on('end', () => process.exit(0));

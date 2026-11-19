@@ -1669,6 +1669,305 @@ keep spawning Git (research file 28, section 5).
   write; `scripts/ledger-native/odb-planted.mjs` checks that twenty-one
   planted bugs are each caught.
 
+## Native ledger process
+
+The second crate of the native ledger workspace (research file 28, plan
+package L3d), `native/ledger/ledger-native`, builds the binary
+`devryan-ledger`: the ledger worker's stdio protocol, its execution context
+and its I/O pool, with **no ledger method implemented**. Nothing starts it:
+there is no switch, the binary is built only in the verify's scratch, and
+`native/ledger` is excluded from packaging (above).
+
+- **What it is.** One process speaking the protocol of
+  `lib/session-mutation-worker.js` over stdin and stdout (stderr is free
+  text), with the line codec of `scripts/ledger-dual-run/dual-run-codec.mjs`
+  and the markers of `lib/session-mutation-wire.js` (`src/codec.rs`,
+  `src/wire.rs`, `src/proto.rs`). The first message is
+  `init {protocol?, workerData}`; a `protocol` other than 1 is refused. It
+  answers `ready {methods, protocol: 1, build}`, where `methods` is the
+  product runtime's method list (`src/methods.rs`, generated from the
+  product by `scripts/ledger-native/generate-methods.mjs` and checked by the
+  build script's contract test) and `build` is `unported+<source digest>`
+  (`unported+hooks+<source digest>` for a test-hooks build, so a host can
+  refuse either by identity).
+  Every method fails with `mutation_method_unimplemented`, so this build
+  cannot serve the product. The options in `workerData` are checked as
+  `createSessionMutationRuntime` checks them (an absolute `directory`,
+  positive integer batches, ordered complexity limits; a `stallClock` that
+  injects a clock or timer), and a refusal exits 70 before `ready`, as the
+  worker's failed import does.
+- **Calls.** Each call starts at once as its own task and runs in place up
+  to its first suspension, as the worker's handler does; there is no queue,
+  cap, throttle or delay. Inputs, callbacks (`callback`, `callback-result`),
+  observers (`observe`, observer callbacks with their cause), aborts, result
+  streams (`pull`, `chunk`, `stream-return`), reports, summary steps and
+  progress have the worker's shapes and key order. Natively an error carries
+  no `stack` (the host keeps its own). Tags for `Map`, `Set`, `Date` and
+  `BigInt` are refused with `mutation_wire_type`; the JavaScript would take
+  them, and no recording ever saw one.
+- **Execution context** (`src/ctx.rs`, `src/stall.rs`, `src/iopool.rs`):
+  `runInRemoteExecutionContext` and what the ledger calls of
+  `lib/execution-admission.js` (deadline, cancellation, reports, the meter
+  and the meters it follows, summaries of at most 32 steps, `executionPhase`,
+  `quietExecutionPhase`, `timedExecutionStep`, `withExecutionMeter`,
+  `withoutExecutionDeadline`, `waitForExecutionQueue`, `executionCleanup`),
+  the stall clock of `lib/host-stall-clock.js` (a shared 250 ms ticker
+  started on first use, 1 s stalls, `DEVRYAN_STALL_AWARE_DEADLINES`), and the
+  per-root pool of `lib/execution-io-pool.js` (8, or
+  `DEVRYAN_EXECUTION_IO_CAP` from 1 to 64, read per use). The context is
+  passed explicitly instead of through `AsyncLocalStorage`. Timers are the
+  event loop's (below); the slow-phase timer, the cleanup and progress
+  tickers and the stall clock's ticker are unrefed, as in the JavaScript.
+- **JavaScript's job order** (`src/js.rs`, `src/host.rs`; the contract
+  every later ledger package runs on). The process replaces a worker thread
+  with no JavaScript to fall back to, and the identifiers a call draws and
+  the order of what it reports reach disk and the host, which the dual-run
+  harness compares exactly. So it reproduces JavaScript's job order exactly
+  for everything the language and Node's loop define; only the arrival
+  order of independent outside events (input lines, I/O completions,
+  signals) is left free, as JavaScript leaves it.
+  - *Jobs* (`src/js.rs`, no ledger type in it). A promise is
+    single-threaded: pending with its reactions in registration order, or
+    settled; settling queues the reactions as jobs, reacting to a settled
+    promise queues the job at once. Resolving with a plain value fulfils at
+    once; resolving with a promise takes the specification's two jobs more
+    (the thenable job, then the reaction). One microtask queue and Node's
+    tick queue, drained at every checkpoint as `processTicksAndRejections`
+    drains them: every tick, then every microtask, again until both are
+    empty, then the unhandled rejections. An async function call
+    (`js::async_fn`) runs its body at once up to its first `await`; what it
+    returns resolves its promise by those steps (`return promise` is two
+    jobs later than `return await promise`). `await` (`promise.await`,
+    `js::value(v).await`) always suspends: one job for a settled promise or
+    a plain value. `then`, `catch`, `finally`, `Promise.all`, `allSettled`,
+    `race`, `resolve`, `reject`, `new Promise`, `queueMicrotask` and
+    `process.nextTick` follow the specification's and Node's steps.
+  - *Unhandled rejections.* As the worker: reported, not fatal. A rejection
+    nothing handled by the end of a checkpoint's ticks and microtasks is
+    reported (`observe onDiagnostic {phase: 'ledger_worker', state:
+    'failed', code}`, when the host has that observer) in the async context
+    of the code that rejected, so its `cause` is that call's id.
+  - *Units of work.* One inbound message (a stdin line, `init` included);
+    one timer callback; one immediate; one completion of blocking work
+    (`host::blocking`, on four threads as libuv's pool) or, from L3b, of a
+    child process. Another thread reaches the loop only by posting a unit
+    to its inbox; a promise, a task or a job never leaves the loop's
+    thread. After each unit comes the checkpoint; only then does the next
+    unit start. Two lines of one write are two units, so a callback's
+    answer and an abort right behind it end the call as the worker ends it.
+  - *Iterations.* libuv's (`EventLoop::iterate`): poll (inbound units, at
+    most the larger of those queued and 1,000 per pass, as a `MessagePort`
+    delivers them; a unit that arrives during the pass is part of it),
+    check (`processImmediate`: the immediates queued before the phase),
+    timers (`processTimers`), with a checkpoint between any two callbacks
+    of a phase and after it.
+  - *Timers.* Node's `lib/internal/timers.js` and `lib/timers.js`, ported
+    by object identity with synchronous callbacks: the delay coerced
+    (`after *= 1`; outside [1, 2^31 - 1], NaN included, it is 1 ms) and
+    truncated for its list (2.5 ms is in the 2 ms list); timers of one
+    duration in one list in creation order; lists by expiry, then list id;
+    a list visited before its head is due re-arms with a new id; a timer
+    starts at the loop time read when it is created, an interval re-arms
+    from the time read just before its callback; a timer the checkpoint
+    between two timers cleared is skipped, the next one still runs;
+    clearing the last timer of a list deletes the list only for a refed
+    timer. The loop time is a monotonic millisecond clock; `Date.now()` is
+    the epoch clock.
+  - *Left free:* which of two ready units from different sources runs
+    first: a line and a pool completion, a line and a timer that falls due
+    while the loop waits. In Node that depends on when the loop wakes and,
+    when both are pending at once, on the order libuv registered their
+    handles (a `MessagePort` and the thread pool's async handle are separate
+    handles of one poll phase), not on which arrived first; here both come
+    through one inbox in arrival order, which is one of the orders Node can
+    give, and no ledger code depends on it. Also free: how many timers fall
+    due together, so how many progress ticks or stall observations a
+    stretch of wall time holds.
+- **The porting rule.** One JavaScript async function is one
+  `js::async_fn`; one `await` is one `.await` of a `js::Promise` (a plain
+  value through `js::value`); a function that returns a promise without
+  being async returns it as it is (`Resolution::Promise`), and one that
+  returns a value returns `Resolution::Value`; a throw is `Err`, before any
+  await when the JavaScript throws synchronously. A ported function contains
+  no `join!`, no `select!`, no `.await` on a plain Rust future across which
+  another task could run, and no hand-written poll; an inline `async` block
+  or helper is allowed only when its awaits are the function's own (the
+  JavaScript awaits at those points, no more and no fewer). Callbacks
+  (`then` handlers, timers, immediates, abort listeners) are synchronous
+  closures run where Node runs them. `AsyncLocalStorage` is a
+  `static S: js::Store<T>` (`S.run(v, f)`, `S.exit(f)`, `S.get()`),
+  `AsyncLocalStorage.snapshot()` is `js::snapshot()` replayed with
+  `js::run_in_frame`; an abort listener is `signal.add_listener(f)` (`once`)
+  or `add_listener_with(once, f)`, removed with `remove_listener(id)`;
+  `AbortSignal.any` is `Signal::any` (`AbortSignal.timeout` has no site and
+  is not built). The layer enforces what it can: a task that suspends on
+  anything but an await, or on two at once, panics. Four mistakes change the
+  order without any panic, so the rule names them and a check refuses them:
+  - *A JavaScript async helper ported as a Rust `async fn`*, as in
+    `async fn read(p) -> Result<W, W> { open(p).await }` awaited by its
+    caller: the helper's own promise and the jobs of its resolution vanish
+    (Node: `j0 j1 after:x`, the Rust: `j0 after:x j1`). Write it as
+    `fn read(p) -> WPromise { async_fn(async move { … }) }`.
+  - *`std::future::ready(x).await` for `await x`*: no suspension at all
+    (Node: `j0 after:x j1`, the Rust: `after:x j0 j1`). Write
+    `js::value(x).await`.
+  - *A `Drop` guard used as `finally`*: a task whose await never settles is
+    dropped when the last reference to that promise goes, and its
+    destructors run there; JavaScript never runs that `finally`. Write every
+    `finally` as code after the awaited result, on both paths.
+  - *An await that never settles, held in a cycle with its own task* (an
+    async function awaiting a promise only it, or another such task, can
+    settle): JavaScript's collector frees both, `Rc` never does. Drop the
+    references to a promise no one will settle; where the JavaScript keeps
+    one in a cycle, the port keeps a `Weak`.
+  The first three are refused by `scripts/ledger-native/porting-lint.mjs`
+  (run by the verify; also `node --test` on it alone), a search over every
+  ported module (all of the crate's Rust but `js.rs` and `host.rs`): an
+  `async fn` without the comment `// port: inline await` on the line above
+  (allowed only for a helper that is one JavaScript await, or a coroutine's
+  body), an `async` block that is neither an `async_fn`/`Coroutine::new` body
+  nor awaited where it stands, `ready(`, `std::future::`, `futures::`,
+  `poll_fn`, `join!`/`select!`, a hand-written `impl Future`, and any
+  `impl Drop`. The fourth is no text pattern: `js::live_tasks()` counts
+  live tasks, and the job differential prints a census of the tasks each
+  program leaves alive in such cycles (reported, not compared: the random
+  programs make them on purpose). A `RefCell` borrow held across an await
+  is loud only when another task borrows meanwhile: never hold one across
+  an `.await`. Every rejection type registers its `TypeError` and
+  `RangeError` maker with `js::register_errors` before use (`host::install`
+  does it for `W`).
+  - *Depth.* The loop runs on a thread of 64 MiB of stack
+    (`process::LOOP_STACK`); an async function started with all but 8 MiB
+    of it in use returns a promise rejected with JavaScript's `RangeError`
+    ("Maximum call stack size exceeded"), which each caller's await
+    rethrows (JavaScript throws it at the call, one job sooner). That is
+    37,835 nested starts on the debug build and 159,566 on the release
+    build, against Node's 5,000 to 10,000 and the ledger's own recursions,
+    which go a directory tree deep. A pending chain of any length is freed
+    without recursion (a dropped promise's reactions are freed one list at
+    a time), and settles one job per link.
+  Async generators, `for await`, event emitters, streams and child
+  processes are not in the layer yet (`reports/L3d-fix-2.md` lists their
+  sites); the package that ports the first of them adds it to the layer
+  with its proof.
+- **Process.** A reader thread splits stdin into lines and posts each to the
+  loop; a writer thread drains an unbounded queue to stdout (one line on
+  stderr past 64 MiB queued); a watchdog thread checks every 250 ms that
+  the parent is the one it started with and is not init, outside the timer
+  lists so it cannot change their order. At start it raises its soft limit
+  on open files as Node does (`ledger_io::fs::raise_open_file_limit`). It
+  exits without unwinding: 0 when stdin closes (from the moment the reader
+  sees the end, nothing more runs, not even lines already read, as a
+  terminated worker runs nothing more) and when its parent is gone; 70 for
+  a line that is not JSON or a known tag, deeper than 512 levels or longer
+  than 256 MiB, for a refused `init`, a failed write, and a panic. A panic
+  is a broken invariant of the process, not one call's error (a method's
+  failure is a `result`, as a rejection is in the worker): like an uncaught
+  error in the worker thread, it ends the process, and the host fails every
+  call in flight with `worker_exit`; answering only the panicking call would
+  leave shared state (the lock queue, the pools) half-changed. The profiles
+  set `panic = "abort"` and the process's hook exits 70 first. Lines
+  already emitted get up to 2 s to reach stdout on the way out.
+- **Dependencies** (tracked `Cargo.lock`): none outside the repository's
+  crates (`ledger-core`, and `ledger-io` with what it locks: `libc`, and the
+  object database's `sha1`, `sha2`, `miniz_oxide` and their dependencies).
+  tokio,
+  which the design named for the loop, was removed: its scheduler queues
+  woken tasks behind the next message and timer, so reproducing Node's order
+  meant replacing it, and stdin, stdout, the blocking pool and (from L3b)
+  child processes are threads that post units, which needs no reactor.
+  `--verify` refuses any package
+  whose licence expression is not, as a whole, in
+  `scripts/ledger-native/licences.mjs`, and checks RustSec advisories with
+  `cargo deny check advisories` when `cargo-deny` is on `PATH` (it prints one
+  line when it is not).
+- **Test hooks.** The `test-hooks` feature adds the stub methods
+  `stubRun` and `stubEcho` (`src/stub.rs`, a program interpreter that is the
+  twin of `scripts/ledger-native/stub-interpreter.mjs`), a virtual clock
+  (`src/virtual_host.rs`), a test line limit (`LEDGER_NATIVE_TEST_MAX_LINE`)
+  and the `ledger-native-probe` binary. The verify builds `devryan-ledger`
+  without it (the product's shape) and with it.
+- **Tests** (run by `node scripts/build-ledger-native.mjs --verify`;
+  [testing](../../docs/TESTING.md#native-ledger-module-tests)):
+  - `scripts/ledger-native/jobs-differential.mjs`: the job layer against
+    JavaScript. Programs (`jobs-programs.mjs`: async functions, awaits,
+    `return` against `return await`, the combinators, ticks and microtasks,
+    timers that make and clear timers, immediates, try and catch, unhandled
+    rejections, messages in the poll phase, two `AsyncLocalStorage` stores
+    tagging every entry with its frame, `run`/`exit`/`snapshot`, abort
+    controllers, listeners added and removed during a dispatch,
+    `AbortSignal.any`, `throwIfAborted`) run on V8 with Node's own task
+    queue, timers and immediates under a virtual libuv clock
+    (`jobs-js-arm.mjs`, on Electron's Node and on the Node running the
+    test) and on the Rust (`ledger-native-probe jobs`); every trace must be
+    equal entry for entry. The gate runs 58 named programs (one per rule,
+    the second review's B1 and B2 cases, the third review's abort and frame
+    cases and its escaped promise bugs) and 400 seeded random ones;
+    `--extended` runs 20,000 over five seeds.
+  - `scripts/ledger-native/porting-lint.mjs`: the porting rule's silent
+    mistakes, refused in the ported modules (above).
+  - `scripts/ledger-native/proto-differential.mjs`: 33 scripted host
+    transcripts on three arms, the product's worker on a real worker thread
+    driven through `postMessage` (the true reference for ordering), the same
+    worker as a stdio process (both with the stub runtime put in by a module
+    hook), and the test-hooks build; 17 against the worker with its real
+    runtime and the plain build (only what needs no method: `ready`, unknown
+    methods, `init` refusals); 5 timed scripts under one virtual clock, the
+    worker on Node's own timers against the Rust's event loop, every message
+    compared with its time (progress cadence exactly, call start order,
+    truncated delays and list order, an unrefed list kept, slow phases and
+    the cleanup ticker); a
+    lower bound on progress messages under real time on all three arms;
+    then what only the native process does (epoch time included) and its
+    lifecycle (SIGTERM, SIGINT, SIGHUP, stdin EOF mid-call with nothing
+    written after, EOF with large calls queued, a panic after and before a
+    call's first suspension, the parent's death with stdin still open, no
+    child process).
+  - `scripts/ledger-native/codec-differential.mjs`: 8,000 seeded values
+    encoded by one side and decoded and re-encoded by the other, 3,000
+    random and mutated lines, malformed tags and the decoder's quirks.
+  - `scripts/ledger-native/ctx-differential.mjs`: 49 scenarios of the
+    context, the pool and the stall clock under one virtual clock: the
+    JavaScript on Node's own timer code with only libuv's loop time replaced
+    (`scripts/ledger-native/node-virtual-clock.mjs`, `--expose-internals`),
+    the Rust on the binary's event loop with only its clock replaced
+    (`src/virtual_host.rs`), so no rule of either is restated by the test,
+    every event compared in order with its time;
+    18 of the 23 tests of the three JavaScript modules are restated, the
+    other 5 test host-side functions the worker never runs.
+  - `cargo test`: the codec, wire, value and signal units (the EventTarget
+    dispatch, `any`, kept composites); the event loop's timer lists,
+    immediates, blocking completions, one iteration's phase order, the poll
+    phase's batch (above 1,000 units too), an interval cleared in its own
+    callback, the second review's B1 programs, and the porting rule's
+    panics; the depth bound and chains of a million links; a queue wait's
+    listener removed, an idle pool forgotten, an abort between a slot's
+    grant and its turn, the stall clock's start; and 20,000 random or
+    mutated lines that must never panic.
+- **What the comparison leaves free**, and why each is fair. Every message
+  of one call (reports, callbacks, observations, its result) is compared in
+  order; a transcript's `ordered` messages are compared in order across
+  calls on all three arms; under the virtual clock every message is compared
+  with its time. Left loose: the interleaving of different calls' messages
+  in a real-time run (each waits for the message it depends on, and what
+  falls between is wall time); how many `progress` ticks a real-time call
+  sends (wall time decides how many ticks fall due; the sequence of states
+  is compared with repeats collapsed, the last one must precede the result,
+  and a lower bound holds on every arm, while the virtual clock compares the
+  exact count); how many worker stalls are observed (machine load);
+  and background observations, as a multiset (no call orders them). Under
+  the virtual clock nothing is loose: every message is compared in order
+  with its time, across calls too.
+- **Codec quirk not reproduced:** a `bytes` tag whose `base64` is an
+  `{type:'Buffer',data}` or `{length}` object decodes in JavaScript
+  (`Buffer.from`) and is a corrupt line natively; no host sends one.
+- **Known JavaScript behaviour carried over** (not fixed here): a callback
+  whose arguments cannot be encoded consumes its id and leaves its entry
+  behind; a result that fails to encode after a stream was met still
+  registers that stream; old stalls are pruned only when a new one is kept,
+  so a stall older than 30 minutes keeps counting until then; an I/O cap
+  raised while callers queue admits new callers ahead of them.
+
 ## Registered host-dependent operations
 
 `lib/registered-host-operations.js` loads the private administrator file
