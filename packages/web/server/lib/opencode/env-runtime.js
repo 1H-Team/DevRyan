@@ -1,6 +1,5 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { mergePathValues } from './path-utils.js';
 import { isPackagedDesktopEnv, isUnsupportedLoginShellValue } from './login-shell-env-filter.js';
@@ -12,7 +11,6 @@ const DISCOVERY_PROBE_BUDGET_MS = 10_000;
 export const createOpenCodeEnvRuntime = (deps) => {
   const {
     state,
-    homeDirectory = os.homedir(),
     environmentPath = process.env.PATH || '',
     executeProbe = spawnSync,
     probeNow = () => performance.now(),

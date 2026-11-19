@@ -1073,7 +1073,6 @@ async function constructWebHost(options = {}) {
   });
 
   const openCodeEnvRuntime = createOpenCodeEnvRuntime({
-    homeDirectory: getRuntimeHome(),
     state: openCodeEnvState,
   });
 

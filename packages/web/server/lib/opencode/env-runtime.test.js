@@ -1,5 +1,3 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createOpenCodeEnvRuntime } from './env-runtime.js';
@@ -7,7 +5,6 @@ import { createOpenCodeEnvRuntime } from './env-runtime.js';
 const originalOpencodeBinary = process.env.OPENCODE_BINARY;
 const originalPlatform = process.platform;
 const originalPath = process.env.PATH;
-const tempDirs = [];
 
 const setPlatform = (platform) => {
   Object.defineProperty(process, 'platform', {
@@ -21,10 +18,6 @@ afterEach(() => {
     value: originalPlatform,
   });
 
-  for (const dir of tempDirs.splice(0)) {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-
   if (typeof originalOpencodeBinary === 'string') {
     process.env.OPENCODE_BINARY = originalOpencodeBinary;
     return;
@@ -32,16 +25,13 @@ afterEach(() => {
   delete process.env.OPENCODE_BINARY;
 });
 
-const createRuntime = (settings, overrides = {}) => {
+const createRuntime = (overrides = {}) => {
   const state = {
     cachedLoginShellEnvSnapshot: null,
-    managedOpenCodeShellEnvSnapshot: null,
   };
 
   const runtime = createOpenCodeEnvRuntime({
     state,
-    normalizeDirectoryPath: (value) => value,
-    readSettingsFromDiskMigrated: async () => settings,
     ...overrides,
   });
 
@@ -49,8 +39,8 @@ const createRuntime = (settings, overrides = {}) => {
 };
 
 describe('bounded discovery probes', () => {
-  const fixture = (overrides = {}) => createRuntime({}, {
-    homeDirectory: '/fixture/home', environmentPath: '',
+  const fixture = (overrides = {}) => createRuntime({
+    environmentPath: '',
     shellCandidates: ['/fixture/a', '/fixture/a', '/fixture/b', '/fixture/c', '/fixture/d'],
     isExecutable: (file) => file.startsWith('/fixture/'),
     ...overrides,
@@ -153,7 +143,7 @@ describe('applyLoginShellEnvSnapshot filter', () => {
     Object.assign(process.env, launch);
     if (packaged) process.env.DEVRYAN_PACKAGED_DESKTOP = '1';
     const info = [];
-    const { runtime, state } = createRuntime({}, { shellCandidates: ['/fixture/zsh'], isExecutable: (file) => file === '/fixture/zsh',
+    const { runtime, state } = createRuntime({ shellCandidates: ['/fixture/zsh'], isExecutable: (file) => file === '/fixture/zsh',
       executeProbe: () => ({ status: 0, stdout: `${Object.entries(shell).map(([key, value]) => `${key}=${value}`).join('\0')}\0` }),
       logger: { info: (message) => info.push(message) } });
     state.cachedLoginShellEnvSnapshot = undefined;
