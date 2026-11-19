@@ -27,11 +27,45 @@ export const RECORDS_DIRECTORY = 'process-groups';
 const alive = (target) => { try { process.kill(target, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
 const sleepSync = (ms) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); };
 
-/** `{ start, command }` of each of `pids` that exists (start: the kernel's start time as `ps` prints it). */
+/**
+ * `{ start, command }` from the text of Linux's `/proc/<pid>/stat` and
+ * `/proc/<pid>/cmdline`, or null when the text is not a stat line. The start is
+ * field 22, the start time in clock ticks since boot: exact, and the same on
+ * every read. The command name (field 2) is in parentheses and may itself hold
+ * spaces and parentheses, so the fields are counted from the last `)`. A zombie
+ * has no command line: it is named as `ps` names it, so callers treat it alike.
+ */
+export function linuxProcessFacts(statText, cmdlineText) {
+  const close = statText.lastIndexOf(')');
+  if (close < 0) return null;
+  const fields = statText.slice(close + 1).trim().split(/\s+/);
+  const state = fields[0];
+  const start = fields[19];
+  if (!state || !/^\d+$/.test(start ?? '')) return null;
+  const command = cmdlineText.split('\0').filter(Boolean).join(' ');
+  return { start: `ticks ${start}`, command: state === 'Z' || command === '' ? '<defunct>' : command };
+}
+
+/**
+ * `{ start, command }` of each of `pids` that exists. The start identifies the
+ * process together with its pid. On Linux it is read from `/proc`: the start
+ * time `ps -o lstart` prints there is computed from the boot time on every
+ * call and can differ by a second between two calls for the same process,
+ * which made a run refuse to signal a group of its own. Elsewhere it is the
+ * start time as `ps` prints it.
+ */
 export function processFacts(pids) {
   const facts = new Map();
   const wanted = [...new Set(pids)].filter((pid) => Number.isInteger(pid) && pid > 0);
   if (wanted.length === 0) return facts;
+  if (process.platform === 'linux') {
+    for (const pid of wanted) {
+      let found = null;
+      try { found = linuxProcessFacts(fs.readFileSync(`/proc/${pid}/stat`, 'utf8'), fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8')); } catch { /* gone */ }
+      if (found) facts.set(pid, found);
+    }
+    return facts;
+  }
   let text = '';
   try { text = execFileSync('ps', ['-ww', '-o', 'pid=,lstart=,command=', '-p', wanted.join(',')], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }); } catch (error) {
     text = typeof error.stdout === 'string' ? error.stdout : ''; // ps exits 1 when a pid is gone
