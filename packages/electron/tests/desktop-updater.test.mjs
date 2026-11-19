@@ -56,11 +56,11 @@ test('resumes an interrupted download and verifies all bytes before marking it d
 }));
 
 test('a server ignoring Range resets the prefix and corrupt or oversized bodies never finish', async () => fixture(async root => {
-  let response = bytes.subarray(0, 1000), downloaded;
+  let response = bytes.subarray(0, 1000);
   const updater = createDesktopUpdater({ ...options, cacheDirectory: root, fetchImpl: async request => request.endsWith('/latest')
     ? Response.json(release()) : new Response(response) });
   await updater.check();await assert.rejects(updater.download(), { code: 'update_download_incomplete' });
-  response = bytes;await updater.download();downloaded = await updater.getDownloaded();
+  response = bytes;await updater.download();const downloaded = await updater.getDownloaded();
   assert.deepEqual(await fs.readFile(downloaded.file), bytes);
   await fs.unlink(downloaded.file);
   response = Buffer.alloc(bytes.length);await assert.rejects(updater.download(), { code: 'update_integrity_failed' });

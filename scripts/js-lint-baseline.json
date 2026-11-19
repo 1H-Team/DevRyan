@@ -14,7 +14,6 @@
     {"file":"packages/electron/desktop-update-install-windows.mjs","rule":"prefer-const","count":1},
     {"file":"packages/electron/main.mjs","rule":"no-unused-vars","count":1},
     {"file":"packages/electron/tests/browser-inspection/upgrade-run.mjs","rule":"prefer-const","count":1},
-    {"file":"packages/electron/tests/desktop-updater.test.mjs","rule":"prefer-const","count":1},
     {"file":"packages/electron/tests/startup-retry.test.mjs","rule":"no-regex-spaces","count":1},
     {"file":"packages/harness-runtime/lib/provider-recovery.test.js","rule":"no-unexpected-multiline","count":1},
     {"file":"packages/harness-runtime/lib/provider-recovery.test.js","rule":"prefer-const","count":4},
