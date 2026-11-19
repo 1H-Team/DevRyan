@@ -1195,35 +1195,6 @@ describe('OpenCode provider routes', () => {
     fetchSpy.mockRestore();
   });
 
-  it('treats Cursor workspace repair as an SDK-managed compatibility no-op', async () => {
-    const restartOpenCode = vi.fn(async () => undefined);
-    const setOpenCodeWorkingDirectory = vi.fn();
-    const { app } = createApp({
-      getOpenCodeWorkingDirectory: vi.fn(() => '/tmp/project'),
-      setOpenCodeWorkingDirectory,
-      restartOpenCode,
-      fetchCursorAcpProxyHealth: vi.fn(async () => ({
-        ok: true,
-        workspaceDirectory: '/tmp/project',
-      })),
-    });
-
-    const response = await request(app)
-      .post('/api/provider/cursor-acp/workspace')
-      .send({ directory: '/tmp/project' })
-      .expect(200);
-
-    expect(response.body).toMatchObject({
-      success: true,
-      sdkManaged: true,
-      changed: false,
-      restarted: false,
-      path: '/tmp/project',
-    });
-    expect(setOpenCodeWorkingDirectory).not.toHaveBeenCalled();
-    expect(restartOpenCode).not.toHaveBeenCalled();
-  });
-
   it('saves, reports, and clears Cursor usage auth without exposing the token', async () => {
     readAuthFile.mockReturnValue({ 'cursor-acp': { key: 'sdk-key' } });
     const { app } = createApp();

@@ -116,7 +116,6 @@ const CLASSES = [
       'POST /api/browser/agent-leases/:leaseId/views',
       'DELETE /api/browser/agent-leases/:leaseId/views/:viewId',
       'POST /api/provider/cursor-acp/session-prewarm',
-      'POST /api/provider/cursor-acp/workspace',
     ],
   },
   {

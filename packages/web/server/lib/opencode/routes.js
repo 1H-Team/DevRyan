@@ -493,36 +493,6 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     }
   });
 
-  app.post('/api/provider/cursor-acp/workspace', async (req, res) => {
-    try {
-      const requestedDirectory = typeof req.body?.directory === 'string'
-        ? req.body.directory.trim()
-        : typeof req.body?.path === 'string'
-          ? req.body.path.trim()
-          : '';
-      if (!requestedDirectory) {
-        return res.status(400).json({ success: false, error: 'Directory is required.' });
-      }
-
-      const validated = await validateDirectoryPath(requestedDirectory);
-      if (!validated.ok) {
-        return res.status(400).json({ success: false, error: validated.error });
-      }
-
-      const targetDirectory = normalizeWorkspaceDirectory(validated.directory);
-      return res.json({
-        success: true,
-        sdkManaged: true,
-        changed: false,
-        restarted: false,
-        path: targetDirectory,
-      });
-    } catch (error) {
-      console.error('Failed to repair Cursor workspace:', error);
-      return res.status(500).json({ success: false, error: error.message || 'Failed to repair Cursor workspace' });
-    }
-  });
-
   app.post('/api/provider/cursor-acp/session-prewarm', async (req, res) => {
     try {
       if (!cursorSdkRuntime || typeof cursorSdkRuntime.prewarmSession !== 'function') {
