@@ -33,13 +33,16 @@
 // harness): 0 pass; 1 a failed check (census, change set, a stale waiver); 2
 // unstable (two recordings differ); 3 inconclusive; 64 usage, and a port map
 // or census file that cannot be read or is invalid. Precedence: inconclusive,
-// then unstable, then fail.
+// then unstable, then fail. With `--out` the containers are written there with
+// the recording's manifest (manifest.mjs), which every reader of the directory
+// requires.
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import path from 'node:path';
 import { applyExclusions, checkChangeSets, judgeUnrecordable, judgeUnstable, loadCensus, mergeExports, passedThrough, runCensus, staleNoFrame, unclassifiedCallers } from './census.mjs';
 import { stringifyTree } from './codec.mjs';
 import { createContainerWriter, readContainer } from './container.mjs';
+import { writeManifest } from './manifest.mjs';
 import { loadPortMap } from './port-map.mjs';
 import { compareRecordings } from './stability.mjs';
 import { createScratch, discoverLoading, discoverTestFiles, EXIT, formatDifference, formatIncomplete, parseOptions, recordOnce, REPOSITORY_ROOT } from './record.mjs';
@@ -210,7 +213,10 @@ export async function recordFamilies({ setup, targets = [], runs = 2, families =
   for (const family of Object.values(censusResult.families)) for (const [outcome, count] of Object.entries(family.outcomes)) report.outcomes[outcome] = (report.outcomes[outcome] ?? 0) + count;
   if (out) {
     mkdirSync(out, { recursive: true });
-    for (const container of markUnstable(first.containers, stability.unstable, waivedReasons)) writeFileSync(path.join(out, container.name), container.text);
+    const written = markUnstable(first.containers, stability.unstable, waivedReasons);
+    for (const container of written) writeFileSync(path.join(out, container.name), container.text);
+    // What the directory holds, so a reader sees a container that went missing or changed (manifest.mjs).
+    writeManifest(out, written, { portMap: portMap.digest, families: scope ?? all, scope });
   }
   const code = incomplete.length ? EXIT.inconclusive : unstableJudged.remaining.length ? EXIT.unstable : failures.length ? EXIT.fail : EXIT.pass;
   return { code, report, unstable: stability.unstable };

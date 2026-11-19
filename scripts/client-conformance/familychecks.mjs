@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { stringifyTree } from './codec.mjs';
 import { createContainerWriter, readContainer } from './container.mjs';
 import { familyCommand, recordFamilies } from './family-run.mjs';
+import { checkManifest, MANIFEST_FILE, readManifestText } from './manifest.mjs';
 import { EXIT, REPOSITORY_ROOT } from './record.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -149,10 +150,15 @@ export const FAMILY_CHECKS = Object.freeze([
     const out = dir('out-written');
     const census = censusWith(dir('out'), 'unstable', (value) => { value.unstable = [{ file: recordings[0].containers[0].testFile, reason: 'planted waiver' }]; });
     const code = await familyCommand([`--out=${out}`], toySetup(recordings, { census, reachableFixtures: true, change: (recording, index) => { if (index === 2) perturb(recording); } }), { log: () => {}, error: () => {} });
-    const names = readdirSync(out).sort();
+    // Beside the containers, the recording's manifest (manifest.mjs): it lists each of them as written.
+    const names = readdirSync(out).filter((name) => name !== MANIFEST_FILE).sort();
+    const written = names.map((name) => ({ name, text: readFileSync(path.join(out, name), 'utf8') }));
+    const listed = checkManifest(readManifestText(out), written);
     const [marked, ...kept] = readContainer(readFileSync(path.join(out, recordings[0].containers[0].name), 'utf8')).cases;
     const refused = await familyCommand([`--out=${path.join(REPOSITORY_ROOT, 'never-written')}`], toySetup(recordings), { log: () => {}, error: () => {} });
-    return code === EXIT.pass && names.length === recordings[0].containers.length && marked.outcome === 'unstable' && marked.reason.includes('planted waiver')
+    return code === EXIT.pass && names.length === recordings[0].containers.length && names.every((name) => name.endsWith('.ndjson')) && listed.problems.length === 0
+      && Object.keys(listed.manifest.containers).length === names.length && listed.manifest.containers[recordings[0].containers[0].name].outcomes.unstable >= 1
+      && marked.outcome === 'unstable' && marked.reason.includes('planted waiver')
       && kept.every((record) => record.outcome !== 'unstable') && refused === EXIT.usage;
   }],
   ['family-usage', async ({ recordings, dir }) => {

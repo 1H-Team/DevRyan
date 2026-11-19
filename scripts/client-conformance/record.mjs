@@ -16,8 +16,9 @@
 // first), bun crashing part-way), and the message names what is missing; 64 a
 // usage error (an unknown option included), and then nothing is written.
 // Scratch lives in <os tmpdir>/devryan-client-conformance and is removed on
-// pass, failure and interruption (--keep-artifacts keeps it).
-import { spawn } from 'node:child_process';
+// pass, failure and interruption (--keep-artifacts keeps it): SIGINT, SIGTERM
+// or SIGHUP first stops every child process the tool started (children.mjs),
+// then removes the run root, then exits 130, 143 or 129.
 import { constants as osConstants } from 'node:os';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -30,6 +31,7 @@ import { createContainerWriter, pathStem } from './container.mjs';
 import { parseJunit, testKeys } from './junit.mjs';
 import { loadPortMap } from './port-map.mjs';
 import { createRunRoot, scratchParent } from '../qa/run-root.mjs';
+import { spawnTracked, stopChildren } from './children.mjs';
 
 export const HARNESS_DIR = path.dirname(fileURLToPath(import.meta.url));
 export const REPOSITORY_ROOT = path.resolve(HARNESS_DIR, '../..');
@@ -135,9 +137,47 @@ export function parseOptions(argv, { flags = [], values = [] } = {}) {
 
 export const sha256 = (bytes) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 
-/** A scratch run root for one tool run (scripts/qa/run-root.mjs lifecycle). */
+const INTERRUPTS = Object.freeze({ SIGINT: 130, SIGTERM: 143, SIGHUP: 129 });
+/** The file in a run root that names the process owning it (an interrupt test finds the root by it). */
+export const SCRATCH_OWNER_FILE = 'owner.pid';
+const liveScratches = new Set();
+let interrupting = null;
+function onInterrupt(signal) {
+  if (interrupting) return;
+  interrupting = signal;
+  // Kept alive until the children are stopped and the roots removed, whatever the tool's own code does meanwhile.
+  const alive = setTimeout(() => {}, 60000);
+  stopChildren().catch(() => {}).then(() => {
+    for (const run of [...liveScratches]) { try { run.finish('interrupted', { interrupt: true }); } catch { /* the prune tool retries */ } }
+    clearTimeout(alive);
+    process.exit(INTERRUPTS[signal]);
+  });
+}
+
+/**
+ * A scratch run root for one tool run (scripts/qa/run-root.mjs lifecycle).
+ * An interrupt (SIGINT, SIGTERM, SIGHUP) stops every child the process
+ * started (the `bun test` runs and engines, children.mjs) before any root is
+ * removed, so no child writes into a removed root and recreates it; while
+ * that runs, a tool's own `finish` waits for it.
+ */
 export function createScratch(owner, options = {}) {
-  return createRunRoot({ parent: scratchParent('client-conformance'), prefix: 'run-', owner, ...options });
+  const run = createRunRoot({ parent: scratchParent('client-conformance'), prefix: 'run-', owner, ...options, signals: 'exit' });
+  writeFileSync(path.join(run.dir, SCRATCH_OWNER_FILE), `${process.pid}\n`);
+  const finish = run.finish;
+  run.finish = (status, { interrupt = false } = {}) => {
+    if (interrupting && !interrupt) return run.status;
+    liveScratches.delete(run);
+    return finish(status);
+  };
+  liveScratches.add(run);
+  stopOnInterrupt();
+  return run;
+}
+
+/** Makes SIGINT, SIGTERM and SIGHUP stop every child this process started (and remove its run roots) before it exits; idempotent. */
+export function stopOnInterrupt() {
+  for (const signal of Object.keys(INTERRUPTS)) if (!process.listeners(signal).includes(onInterrupt)) process.on(signal, onInterrupt);
 }
 
 // Bun's default test-file pattern: name.test.ext, name_test.ext, name.spec.ext, name_spec.ext.
@@ -182,7 +222,8 @@ export function runBunTests({ files, cwd, preload = [], env = {}, junitFile, par
   return new Promise((resolve, reject) => {
     // A hosted runner's variable makes the test runner print group markers and annotations: not part of what a test prints.
     const { GITHUB_ACTIONS: _hosted, ...inherited } = process.env;
-    const child = spawn(process.execPath, args, { cwd, env: { ...inherited, TZ: 'UTC', LANG: 'C', LC_ALL: 'C', DEVRYAN_CONFORMANCE_BASE: root, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+    // Tracked, in a process group of its own: an interrupted tool stops it before its run root goes (children.mjs).
+    const child = spawnTracked(process.execPath, args, { cwd, env: { ...inherited, TZ: 'UTC', LANG: 'C', LC_ALL: 'C', DEVRYAN_CONFORMANCE_BASE: root, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     child.stdout.on('data', (chunk) => { output += chunk; });
     child.stderr.on('data', (chunk) => { output += chunk; });
