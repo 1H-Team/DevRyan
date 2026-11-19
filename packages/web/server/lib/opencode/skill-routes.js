@@ -414,7 +414,7 @@ export const registerSkillRoutes = (app, dependencies) => {
       }));
 
       const sources = [...curatedSources, ...customSources];
-      const sourcesForUi = sources.map(({ gitIdentityId, ...rest }) => rest);
+      const sourcesForUi = sources.map(({ gitIdentityId: _gitIdentityId, ...rest }) => rest);
 
       sendHarness(res, { ok: true, sources: sourcesForUi, itemsBySource: {}, pageInfoBySource: {} }, createHarnessSuccess({
         summary: 'Skills catalog loaded',

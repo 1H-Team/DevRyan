@@ -307,7 +307,7 @@ const resolveOutsideMkdirPath = async ({ dirPath, path, normalizeDirectoryPath, 
   try {
     const canonical = await resolveCanonicalPathUnchecked(resolved, fsPromises, path);
     return { ok: true, resolved: canonical };
-  } catch (error) {
+  } catch {
     return { ok: false, status: 403, error: CANONICAL_ESCAPE_ERROR };
   }
 };

@@ -117,8 +117,6 @@ const collectCommitContextWithinDeadline = async ({ promise, selectedFiles, stag
 };
 
 export function registerGitRoutes(app, {
-  // Global UI event broadcaster (`devryan:*` events, filtered per directory).
-  broadcastEvent = null,
   generateCommitMessage = generateCommitMessageDirect,
   generatePullRequestDescription = generatePullRequestDescriptionDirect,
   generateTextWithSessionModel = generateTextWithSessionModelDefault,

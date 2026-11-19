@@ -335,12 +335,6 @@ const normalizeTaskForStorage = (value, options) => {
   };
 };
 
-const createEmptyProjectConfig = () => ({
-  version: PROJECT_CONFIG_VERSION,
-  scheduledTasks: [],
-  evidenceCheckpoints: { enabled: false },
-});
-
 const normalizeEvidenceCheckpoints = (value) => ({
   enabled: value?.enabled === true,
 });

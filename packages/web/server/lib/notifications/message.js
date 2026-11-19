@@ -42,7 +42,7 @@ export const truncateNotificationText = (text, maxLength = DEFAULT_NOTIFICATION_
   return `${text.slice(0, safeMaxLength)}...`;
 };
 
-export const prepareNotificationLastMessage = async ({ message, settings, summarize }) => {
+export const prepareNotificationLastMessage = async ({ message, summarize }) => {
   const originalMessage = typeof message === 'string' ? message : '';
   if (!originalMessage) {
     return '';

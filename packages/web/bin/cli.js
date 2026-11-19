@@ -564,10 +564,6 @@ function assertAuthenticatedNetworkExposure({ host, uiPassword }) {
 
 const BUN_BIN = getBunBinary();
 
-function isBunRuntime() {
-  return typeof globalThis.Bun !== 'undefined';
-}
-
 function isBunInstalled() {
   try {
     const result = spawnSync(BUN_BIN, ['--version'], {
@@ -1691,14 +1687,6 @@ function rotateLogFile(logPath) {
   } catch {
   }
 }
-
-const WINDOWS_EXTENSIONS = process.platform === 'win32'
-  ? (process.env.PATHEXT || '.EXE;.CMD;.BAT;.COM')
-      .split(';')
-      .map((ext) => ext.trim().toLowerCase())
-      .filter(Boolean)
-      .map((ext) => (ext.startsWith('.') ? ext : `.${ext}`))
-  : [''];
 
 async function isPortAvailable(port, host) {
   if (!Number.isFinite(port) || port <= 0) {

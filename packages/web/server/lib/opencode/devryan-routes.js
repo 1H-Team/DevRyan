@@ -9,7 +9,6 @@ export const registerDevRyanRoutes = (app, dependencies) => {
   const {
     modelsDevApiUrl,
     modelsMetadataCacheTtl,
-    readSettingsFromDiskMigrated,
     fetchFreeZenModels,
     getCachedZenModels,
   } = dependencies;

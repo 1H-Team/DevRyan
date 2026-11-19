@@ -586,7 +586,7 @@ export const enumerateServerRoutes = ({ multiUserRuntime, dataDirectory }) => wi
     ['staticRoutesRuntime.registerStaticRoutes(app', () => createStaticRoutesRuntime(deps({ __dirname: hostFixture.serverDirectory })).registerStaticRoutes(app)],
   ];
   try {
-    for (const [token, run] of [...steps, ...pipelineSteps]) await run();
+    for (const [, run] of [...steps, ...pipelineSteps]) await run();
   } finally {
     hostFixture.dispose();
   }
@@ -624,7 +624,7 @@ export const concretePath = (pattern, principal) => pattern
   .replace(/:([A-Za-z0-9_]+)\??/g, (_match, name) => parameterValue(name, principal))
   .replace(/[{}]/g, '');
 
-export const probeManagedDecision = async ({ harness, gate, method, routePath, principal }) => {
+export const probeManagedDecision = async ({ gate, method, routePath, principal }) => {
   const stateChanging = !['GET', 'HEAD', 'OPTIONS'].includes(method);
   const fullPath = concretePath(routePath, principal);
   const request = makeRequest({ method, url: fullPath, cookie: principal.cookie, csrf: stateChanging, body: {} });

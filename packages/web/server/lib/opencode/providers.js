@@ -7,7 +7,6 @@ import {
   readConfigFile,
   isPlainObject,
   removeConfigKeyPaths,
-  writeConfig,
 } from './shared.js';
 import { collapseRemovalKeyPaths } from './jsonc-config.js';
 import { getAntigravityPluginGoogleModelKeyPaths } from './antigravity-retirement.js';

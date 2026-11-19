@@ -3,9 +3,7 @@ import {
   getAuthEntry,
   normalizeAuthEntry,
   buildResult,
-  toUsageWindow,
-  toNumber,
-  toTimestamp
+  toUsageWindow
 } from '../utils/index.js';
 
 export const providerId = 'openai';

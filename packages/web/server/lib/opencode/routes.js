@@ -10,7 +10,6 @@ import {
   GITHUB_COPILOT_PROVIDER_ID,
   getProviderIntegrationLookupIds,
   hasGitHubCopilotProviderModels,
-  isGitHubCopilotProviderId,
   listProviderCredentialEnvKeys,
   mergeGitHubCopilotProvider,
 } from './provider-integrations.js';
@@ -73,8 +72,6 @@ const removeAntigravityAccounts = async (listAccountsPaths) => {
 export const registerOpenCodeRoutes = (app, dependencies) => {
   const recordDiagnostic = dependencies.recordDiagnostic ?? (() => {});
   const {
-    crypto,
-    clientReloadDelayMs,
     getOpenCodeResolutionSnapshot,
     // Injected in tests; defaults to global fetch for the fixed npm registry lookup.
     openCodeUpdateCheckFetch,
@@ -108,8 +105,6 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     standardSessionTitleRuntime: injectedStandardSessionTitleRuntime = null,
     xaiToolCatalogRuntime = null,
     globalAgentsMdRuntime: injectedGlobalAgentsMdRuntime = null,
-    resolveZenModel = async () => undefined,
-    resolveZenModelNonBlocking = () => ({}),
     authLibrary: injectedAuthLibrary = null,
   } = dependencies;
 

@@ -132,7 +132,7 @@ export function createTerminalRuntime({
           const bunPty = await import('bun-pty');
           console.log('Using bun-pty for terminal sessions');
           return { spawn: bunPty.spawn, backend: 'bun-pty' };
-        } catch (error) {
+        } catch {
           console.warn('bun-pty unavailable, falling back to node-pty');
         }
       }
@@ -751,7 +751,7 @@ export function createTerminalRuntime({
       try {
         res.write(`data: ${JSON.stringify({ type: 'exit', exitCode, signal })}\n\n`);
         res.end();
-      } catch (error) {
+      } catch {
 
       }
       cleanup();
@@ -773,7 +773,7 @@ export function createTerminalRuntime({
 
       try {
         res.end();
-      } catch (error) {
+      } catch {
 
       }
 
@@ -879,7 +879,7 @@ export function createTerminalRuntime({
         if (!stats.isDirectory()) {
           return res.status(400).json({ error: 'Invalid working directory: not a directory' });
         }
-      } catch (error) {
+      } catch {
         return res.status(400).json({ error: 'Invalid working directory: not accessible' });
       }
 

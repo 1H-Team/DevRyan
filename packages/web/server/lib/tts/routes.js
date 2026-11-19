@@ -14,7 +14,7 @@ export function registerTtsRoutes(app, { resolveZenModel, sayTTSCapability }) {
   // Server-side TTS endpoint - streams audio from OpenAI TTS API
   app.post('/api/tts/speak', async (req, res) => {
     try {
-      const { text, voice = 'nova', model = 'gpt-4o-mini-tts', speed = 0.9, instructions, summarize = false, providerId, modelId, threshold = 200, maxLength = 500, apiKey, baseURL } = req.body || {};
+      const { text, voice = 'nova', model = 'gpt-4o-mini-tts', speed = 0.9, instructions, summarize = false, threshold = 200, maxLength = 500, apiKey, baseURL } = req.body || {};
       const clientApiKey = req.principal?.scope === 'managed' ? undefined : apiKey;
 
       const normalizedBaseURLResult = normalizeCustomOpenAIBaseURL(baseURL);
@@ -149,7 +149,7 @@ export function registerTtsRoutes(app, { resolveZenModel, sayTTSCapability }) {
           'nova', 'onyx', 'sage', 'shimmer', 'verse', 'marin', 'cedar'
         ]
       });
-    } catch (error) {
+    } catch {
       res.status(500).json({ error: 'Failed to check TTS status' });
     }
   });
