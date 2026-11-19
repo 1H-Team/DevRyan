@@ -10,7 +10,7 @@ import {
   registerAuthAndAccessRoutes,
   registerCommonRequestMiddleware,
 } from './core-routes.js';
-import { createTunnelAuth } from './tunnel-auth.js';
+import { createTunnelAccessControl } from '../tunnels/access-control.js';
 
 const PRIVATE_TOKEN = 'private-browser-token';
 const LEASE_SCOPE = {
@@ -79,17 +79,11 @@ const createTestApp = ({ desktopCallbacks = true } = {}) => {
   });
 
   bootstrapRuntime.setupBaseRoutes(app, {
-    tunnelAuthController: createTunnelAuth(),
+    tunnelAuthController: createTunnelAccessControl(),
     readSettingsFromDiskMigrated: vi.fn(async () => ({})),
     normalizeTunnelSessionTtlMs: (value) => value,
     sessionRuntime: {
       getSessionActivitySnapshot: vi.fn(),
-      getSessionStateSnapshot: vi.fn(),
-      getSessionAttentionSnapshot: vi.fn(),
-      getSessionState: vi.fn(),
-      getSessionAttentionState: vi.fn(),
-      markSessionViewed: vi.fn(),
-      markSessionUnviewed: vi.fn(),
       markUserMessageSent: vi.fn(),
     },
     multiUserRuntime,

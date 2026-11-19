@@ -57,8 +57,9 @@ export function rewriteNativePhotonWorker(source) {
 }
 export const REVIEWED_AST_FILENAME='DevRyan-ast-grep-darwin-arm64';
 
-/** Build-only original closure; none of these paths are runtime search roots. */
-export async function prepareReviewedNativeInputs(repository,{target='darwin-arm64'}={}) {
+/** Build-only original closure; none of these paths are runtime search roots.
+ * Target-independent: `ast` is the darwin-arm64 asset, and a Windows build replaces it with its hydrated executable. */
+export async function prepareReviewedNativeInputs(repository) {
  const root=path.join(repository,'packages/web/runtime/reviewed-inputs');
  const inputFiles=new Map();
  // Resolve declared workspace roots before entering Bun.build's callback.

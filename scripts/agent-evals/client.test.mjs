@@ -1068,11 +1068,10 @@ describe('DevRyan loopback evaluation client', () => {
     assert.deepEqual(aborts, ['ses_grandchild', 'ses_child', 'ses_parent']);
   });
 
-  test('enforces the host-timer turn deadline when the server never answers', async () => {
-    let requests = 0;
-    const { baseUrl } = await startServer(() => {
-      requests += 1;
-    });
+  test('enforces the default host-timer turn deadline when the server never answers', async () => {
+    // No injected timers: the real evaluation deadline (HOST_TIMERS) must end the turn. Only what
+    // holds under any load is asserted here, not how many requests arrived before it fired.
+    const { baseUrl } = await startServer(() => {});
 
     await assert.rejects(
       runSessionTurn({
@@ -1086,6 +1085,53 @@ describe('DevRyan loopback evaluation client', () => {
         assert.ok(error instanceof EvaluationTimeoutError);
         assert.equal(error.code, 'evaluation_timeout');
         assert.equal(error.timeoutMs, 50);
+        assert.equal(error.rootSessionId, undefined);
+        assert.deepEqual(error.cleanup, { abortedSessionIds: [], abortFailureCount: 0 });
+        return true;
+      },
+    );
+  });
+
+  // The deadline is armed only after the first request; the budget fails a client that never sends one.
+  test('a turn deadline armed after the first request reaches the server ends the turn with no session to clean up', { timeout: 10_000 }, async () => {
+    let requests = 0;
+    const firstRequest = Promise.withResolvers();
+    const { baseUrl } = await startServer(() => {
+      requests += 1;
+      firstRequest.resolve();
+    });
+    // The host timer runs the 50 ms deadline, but it is armed only once the server has the
+    // turn's first request, so a busy host cannot expire it before any request has left.
+    const armed = [];
+    const timers = {
+      setTimeout(callback, delayMs) {
+        const handle = { timer: null, cleared: false };
+        void firstRequest.promise.then(() => {
+          if (handle.cleared) return;
+          armed.push(delayMs);
+          handle.timer = setTimeout(callback, delayMs);
+        });
+        return handle;
+      },
+      clearTimeout(handle) {
+        handle.cleared = true;
+        clearTimeout(handle.timer);
+      },
+    };
+
+    await assert.rejects(
+      runSessionTurn({
+        client: createEvaluationClient({ baseUrl, pollIntervalMs: 1 }),
+        directory: '/tmp/fixture',
+        selection: { providerId: 'p', modelId: 'm', agent: 'builder', variant: null },
+        prompt: 'in-memory prompt',
+        timeoutMs: 50,
+        timers,
+      }),
+      (error) => {
+        assert.ok(error instanceof EvaluationTimeoutError);
+        assert.equal(error.code, 'evaluation_timeout');
+        assert.equal(error.timeoutMs, 50);
         // No session was ever created, so there is nothing to clean up.
         assert.equal(error.rootSessionId, undefined);
         assert.deepEqual(error.cleanup, { abortedSessionIds: [], abortFailureCount: 0 });
@@ -1093,6 +1139,7 @@ describe('DevRyan loopback evaluation client', () => {
       },
     );
     assert.ok(requests >= 1);
+    assert.deepEqual(armed, [50]);
   });
 
   test('does not fabricate idle from missing status entries before later busy and idle', async () => {

@@ -130,7 +130,7 @@ export async function createRuntimeUiProvider({ generation, directory, packetDel
       response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
       const cut = truncateFixtureReply?.(JSON.parse(Buffer.concat(chunks).toString('utf8')), output) === true;
       for (const packet of output.split('\n\n').filter(Boolean)) {
-        if (cut && (packet.includes('\"finish_reason\":\"stop\"') || packet === 'data: [DONE]')) continue;
+        if (cut && (packet.includes('"finish_reason":"stop"') || packet === 'data: [DONE]')) continue;
         if (controller.signal.aborted) break;
         response.write(packet + '\n\n');
         if (packetDelayMs) await pause(packetDelayMs);

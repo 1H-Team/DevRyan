@@ -179,9 +179,6 @@ export function createGlobalUiEventBroadcaster({
   wsClients,
   writeSseEvent,
   globalEventHub = null,
-  openCodeClient = null,
-  getOpenCodeRuntime = null,
-  registerRetentionConnection = null,
 }) {
   const filteredQueues = new WeakMap();
   return (payload, options = {}) => {

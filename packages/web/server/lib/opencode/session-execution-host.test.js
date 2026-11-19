@@ -1839,7 +1839,7 @@ test('a finish refused after the tool permit retired cancels and cleans the exac
 });
 
 test.each([
-  ['another token', f => ({ token: 'control_other' })], ['a published lease', () => ({ state: 'published' })],
+  ['another token', _f => ({ token: 'control_other' })], ['a published lease', () => ({ state: 'published' })],
   ['a process lease', () => ({ executionKind: 'process', preparation: undefined })],
   ['another message', f => ({ scope: { ...f.lease.scope, messageID: 'msg_other' } })],
 ])('a failed finish leaves %s untouched', async (_label, change) => {

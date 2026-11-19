@@ -76,12 +76,15 @@ async function fetchLiveCatalog(fetchImpl) {
   return { bytes, status: response.status, catalog: JSON.parse(bytes.toString('utf8')) };
 }
 
+/** The `code` of the error modelCatalogFreshness throws when the snapshot is stale (any other rejection means no verdict). */
+export const MODEL_CATALOG_STALE = 'model_catalog_stale';
+
 /** Live models of the tracked providers that the reviewed snapshot lacks. Throws when stale. */
 export async function modelCatalogFreshness({ directory = MODEL_CATALOG_DIRECTORY, fetchImpl = fetch } = {}) {
   const [reviewed, live] = await Promise.all([readReviewedCatalog(directory), fetchLiveCatalog(fetchImpl)]);
   const missing = catalogDiff(reviewed, live.catalog, TRACKED_PROVIDER_IDS).filter(change => change.added.length)
     .map(change => ({ ...change, removed: [] }));
-  if (missing.length) throw new Error(`reviewed model catalog lacks live models (${formatCatalogDiff(missing).join('; ')}); run \`bun run catalog:refresh\` and commit it`);
+  if (missing.length) throw Object.assign(new Error(`reviewed model catalog lacks live models (${formatCatalogDiff(missing).join('; ')}); run \`bun run catalog:refresh\` and commit it`), { code: MODEL_CATALOG_STALE });
   return `covers every live ${TRACKED_PROVIDER_IDS.join(', ')} model`;
 }
 

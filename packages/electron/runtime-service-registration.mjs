@@ -31,42 +31,8 @@ const fail = (message, code) => {
   throw new RuntimeServiceRegistrationError(message, code);
 };
 
-const escapeXml = (value) => String(value)
-  .replaceAll('&', '&amp;')
-  .replaceAll('<', '&lt;')
-  .replaceAll('>', '&gt;')
-  .replaceAll('"', '&quot;')
-  .replaceAll("'", '&apos;');
-
-const atomicWrite = async (target, contents, fsPromises) => {
-  const directory = path.dirname(target);
-  await fsPromises.mkdir(directory, { recursive: true, mode: 0o700 });
-  const temporary = `${target}.${process.pid}.tmp`;
-  try {
-    await fsPromises.writeFile(temporary, contents, { mode: 0o600, flag: 'wx' });
-    await fsPromises.rename(temporary, target);
-    await fsPromises.chmod(target, 0o600);
-  } finally {
-    await fsPromises.unlink(temporary).catch(() => undefined);
-  }
-};
-
-const legacyPlist = ({ executablePath, dataDirectory }) => `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>${LABEL}</string>
-  <key>ProgramArguments</key>
-  <array><string>${escapeXml(executablePath)}</string><string>--runtime-service</string></array>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
-  <key>ProcessType</key><string>Background</string>
-  <key>StandardOutPath</key><string>${escapeXml(path.join(dataDirectory, 'runtime-service', 'stdout.log'))}</string>
-  <key>StandardErrorPath</key><string>${escapeXml(path.join(dataDirectory, 'runtime-service', 'stderr.log'))}</string>
-</dict>
-</plist>
-`;
-
+// Reads and withdraws a registration that an earlier version left; nothing
+// registers the retired background runtime service any more.
 export const createRuntimeServiceRegistration = ({
   platform = process.platform,
   macosMajor,
@@ -85,7 +51,6 @@ export const createRuntimeServiceRegistration = ({
   if (platform !== 'darwin') {
     return Object.freeze({
       status: async () => ({ ok: false, state: 'unsupported', code: 'runtime_service_platform_unsupported' }),
-      register: async () => fail('The background runtime service requires macOS', 'runtime_service_platform_unsupported'),
       unregister: async () => ({ ok: true, state: 'not_registered', code: null }),
       settingsUrl: null,
       mode: 'unsupported',
@@ -112,10 +77,6 @@ export const createRuntimeServiceRegistration = ({
         state: 'unavailable',
         code: 'runtime_service_packaged_build_required',
       }),
-      register: async () => fail(
-        'The background runtime service requires an installed packaged DevRyan build',
-        'runtime_service_packaged_build_required',
-      ),
       unregister: async () => ({ ok: true, state: 'not_registered', code: null }),
       settingsUrl: null,
       mode: 'unavailable',
@@ -168,17 +129,6 @@ export const createRuntimeServiceRegistration = ({
     }
   };
 
-  const registerModern = async () => {
-    const result = await callNativeControl('register');
-    if (!result.ok && result.state !== 'not_found') {
-      fail(
-        'macOS could not register the signed background runtime',
-        result.code || 'smappservice_registration_failed',
-      );
-    }
-    return result;
-  };
-
   const legacyStatus = async () => {
     const exists = await Promise.all([legacyPath, previousLegacyPath].map(file =>
       fsPromises.stat(file).then((entry) => entry.isFile(), () => false))).then(values => values.some(Boolean));
@@ -215,30 +165,6 @@ export const createRuntimeServiceRegistration = ({
     return Object.freeze({ mode: activeMode, status: current });
   };
 
-  const registerLegacy = async ({ allowLegacy = false } = {}) => {
-    if (!allowLegacy) {
-      fail(
-        'Legacy LaunchAgent registration requires explicit consent',
-        'runtime_service_legacy_consent_required',
-      );
-    }
-    if (!Number.isSafeInteger(uid) || uid < 0) {
-      fail('The current macOS user could not be identified', 'runtime_service_registration_invalid');
-    }
-    await atomicWrite(legacyPath, legacyPlist({ executablePath, dataDirectory }), fsPromises);
-    try {
-      await execFile('/bin/launchctl', ['bootstrap', `gui/${uid}`, legacyPath], {
-        encoding: 'utf8',
-        maxBuffer: MAX_OUTPUT_BYTES,
-        timeout: 15_000,
-      });
-    } catch {
-      await fsPromises.unlink(legacyPath).catch(() => undefined);
-      fail('Legacy LaunchAgent registration failed', 'runtime_service_registration_failed');
-    }
-    return Object.freeze({ ok: true, state: 'enabled', code: null });
-  };
-
   const unregisterLegacy = async () => {
     for (const file of [legacyPath, previousLegacyPath]) {
       const exists = await fsPromises.lstat(file).then((entry) => entry.isFile(), (error) => {
@@ -261,21 +187,6 @@ export const createRuntimeServiceRegistration = ({
     status: async () => {
       if (!modern) return legacyStatus();
       return (await selectModernMode()).status;
-    },
-    register: async (options) => {
-      if (!modern) return registerLegacy(options);
-      const selected = await selectModernMode();
-      // An older private LaunchAgent already owns the runtime after upgrade.
-      // Bootstrapping the new label beside it would start a second owner.
-      if (selected.mode === 'legacy') return selected.status.state === 'enabled'
-        ? selected.status : registerLegacy(options);
-      if (selected.mode === 'legacy-smappservice') return selected.status;
-      const registered = await registerModern();
-      if (registered.state === 'not_found' && await bundledDefinitionExists()) {
-        activeMode = 'legacy';
-        return registerLegacy(options);
-      }
-      return registered;
     },
     unregister: async () => {
       if (!modern) return unregisterLegacy();

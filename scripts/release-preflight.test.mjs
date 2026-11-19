@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 import { scratchParent } from './qa/run-root.mjs';
 import { BACKEND_DEPLOY_INPUTS, backendDeployDecision, changedPipelinePaths, isPipelinePath, pipelineChangeGate, preflight, preflightInCleanCheckout } from './release-preflight.mjs';
 import { DRY_RUN_GATES } from './release-candidate.mjs';
+import { createFakeGitHub } from './release-github-fake.mjs';
 
 const execute = promisify(execFile);
 
@@ -45,6 +46,43 @@ test('local preflight reports every check and fails on any of them', async () =>
   assert.match(reported.find(line => line.includes('shipped installer candidate pins')), pinned.length
     ? /^\[preflight\] pass shipped installer candidate pins: informational: in-app updates from older installs would be refused: .*the tags pin/
     : /^\[preflight\] pass shipped installer candidate pins: no supported pinned installer accept/);
+});
+
+// The GitHub checks against the in-memory GitHub with an injected catalog verdict: no network.
+async function githubPreflight({ dryRun, catalogFreshness }) {
+  const shipped = JSON.parse(readFileSync(new URL('./fixtures/shipped-updater/shipped.json', import.meta.url), 'utf8'));
+  const run = async (command, args) => {
+    if (command === 'git' && args[0] === 'rev-parse' && args[1].includes(':')) {
+      const [tag, file] = args[1].split(':');
+      return { stdout: `${shipped[tag]?.[file] ?? ''}\n` };
+    }
+    if (command === 'git' && args[0] === 'tag') return { stdout: '' };
+    if (command === 'git' && args[0] === 'show') return { stdout: readFileSync(new URL(`../${args[1].split(':')[1]}`, import.meta.url), 'utf8') };
+    return { stdout: 'a'.repeat(40) };
+  };
+  const fake = createFakeGitHub();
+  const lines = [];
+  const environment = { GITHUB_TOKEN: 'fixture-token', GITHUB_SHA: 'a'.repeat(40), ...(dryRun ? { RELEASE_DRY_RUN: 'true' } : {}) };
+  const result = await preflight({ environment, fetchImpl: fake.fetchImpl, run, log: line => lines.push(line), catalogFreshness }).catch(error => error);
+  return { result, catalog: lines.find(line => line.includes('reviewed model catalog')) };
+}
+
+test('dry runs and tag runs apply the same catalog verdict: stale or unreadable fails both, fresh passes both', async () => {
+  const stale = async () => { throw new Error('reviewed model catalog lacks live models (opencode: +new-free); run `bun run catalog:refresh` and commit it'); };
+  const unreadable = async () => { throw new TypeError('fetch failed'); };
+  const fresh = async ({ fetchImpl }) => { assert.equal(typeof fetchImpl, 'function'); return 'covers every live openai model'; };
+  for (const dryRun of [true, false]) {
+    const label = dryRun ? 'dry run' : 'tag run';
+    const failed = await githubPreflight({ dryRun, catalogFreshness: stale });
+    assert.ok(failed.result instanceof Error, `${label}: a stale catalog fails preflight`);
+    assert.match(failed.result.message, /Release preflight failed: .*reviewed model catalog/, label);
+    assert.equal(failed.catalog, '[preflight] FAIL reviewed model catalog: reviewed model catalog lacks live models (opencode: +new-free); run `bun run catalog:refresh` and commit it', label);
+    const offline = await githubPreflight({ dryRun, catalogFreshness: unreadable });
+    assert.match(offline.result?.message ?? '', /Release preflight failed: .*reviewed model catalog/, `${label}: no verdict fails too`);
+    assert.equal(offline.catalog, '[preflight] FAIL reviewed model catalog: fetch failed', label);
+    const passed = await githubPreflight({ dryRun, catalogFreshness: fresh });
+    assert.equal(passed.catalog, '[preflight] pass reviewed model catalog: covers every live openai model', label);
+  }
 });
 
 const git = (cwd, ...args) => execute('git', ['-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', '-c', 'commit.gpgsign=false', ...args], { cwd });

@@ -307,7 +307,7 @@ const resolveOutsideMkdirPath = async ({ dirPath, path, normalizeDirectoryPath, 
   try {
     const canonical = await resolveCanonicalPathUnchecked(resolved, fsPromises, path);
     return { ok: true, resolved: canonical };
-  } catch (error) {
+  } catch {
     return { ok: false, status: 403, error: CANONICAL_ESCAPE_ERROR };
   }
 };
@@ -1357,7 +1357,7 @@ export const registerFsRoutes = (app, dependencies) => {
       }
 
       const dirents = await fsPromises.readdir(resolvedPath, { withFileTypes: true });
-      let ignoredPaths = new Set();
+      const ignoredPaths = new Set();
       if (respectGitignore) {
         try {
           const pathsToCheck = dirents.map((d) => d.name);

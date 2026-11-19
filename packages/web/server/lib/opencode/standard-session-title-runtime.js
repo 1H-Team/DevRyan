@@ -412,14 +412,12 @@ export const createStandardSessionTitleRuntime = ({
       projectedKeys.add(job.key);
       emitDiagnostic({ ...job, stage: 'projection', outcome: 'complete' });
       return true;
-    } catch (error) {
+    } catch {
       logger.warn?.('[SessionTitle] Failed to project generated session title:');
       emitDiagnostic({ ...job, stage: 'projection', outcome: 'failed' });
       return false;
     }
   };
-
-  const deleteSession = async (sessionID, directory) => (await deleteSessionResult(sessionID, directory)).ok;
 
   // Bound the operation even when a transport ignores AbortSignal. Late results
   // have no mutation path; callers only consume the winner of this race.
@@ -780,7 +778,7 @@ export const createStandardSessionTitleRuntime = ({
     try {
       job = await persistJob(candidate);
       emitDiagnostic({ ...job, stage: 'outbox', outcome: 'complete' });
-    } catch (error) {
+    } catch {
       logger.warn?.('[SessionTitle] Refused to project an unpersisted title:');
       emitDiagnostic({ ...candidate, stage: 'outbox', outcome: 'failed' });
       return 'unpersisted';
@@ -998,7 +996,7 @@ export const createStandardSessionTitleRuntime = ({
       modelID: trimString(input.modelID),
       variant: trimString(input.variant),
     })
-      .catch((error) => {
+      .catch((_error) => {
         logger.warn?.('[SessionTitle] Failed to schedule title generation:');
         return false;
       })
@@ -1071,7 +1069,7 @@ export const createStandardSessionTitleRuntime = ({
       ensureWatchdog();
       return results.some(Boolean);
     })()
-      .catch((error) => {
+      .catch((_error) => {
         logger.warn?.('[SessionTitle] Placeholder recovery failed:');
         return false;
       })
@@ -1183,7 +1181,7 @@ export const createStandardSessionTitleRuntime = ({
     await outboxStore.dispose();
   };
 
-  void ensureLoaded().then(() => ensureWatchdog()).catch((error) => {
+  void ensureLoaded().then(() => ensureWatchdog()).catch((_error) => {
     logger.warn?.('[SessionTitle] Failed to load the title outbox:');
   });
   return { schedule, schedulePlaceholderRecovery, cleanupStaleHelpers, processOpenCodeEvent, dispose };

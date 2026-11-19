@@ -1,0 +1,16 @@
+{
+  "module": "toy-refused.mjs",
+  "export": "createManagedTaskScheduler",
+  "defaults": {},
+  "env": [
+    "DEVRYAN_SCHEDULER_CONFORMANCE_REFUSED"
+  ],
+  "sites": [],
+  "unreached": [],
+  "direct": [
+    {
+      "anchor": "const id = globalThis.crypto.randomUUID(); // a helper tests may call",
+      "reason": "the refused corpus's direct helper: a test calls it, and so does a product listener (refused)"
+    }
+  ]
+}

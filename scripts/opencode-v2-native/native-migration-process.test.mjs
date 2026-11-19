@@ -4,7 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { test } from 'node:test';
 import { runNativeMigrationProcess } from '../../packages/web/server/lib/opencode/runtime-host/native-migration-process.js';
-import { repositoryRoot } from './artifacts.mjs';
+import './artifacts.mjs';
 import { createQaHostLaunchEnvironment } from '../qa/launch-environment.mjs';
 
 const temporaryRoot = await fs.realpath(os.tmpdir());

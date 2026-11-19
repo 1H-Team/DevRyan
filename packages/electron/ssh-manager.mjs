@@ -86,8 +86,6 @@ const writeJsonRoot = async (settingsFilePath, root) => {
   }
 };
 
-const defaultTrue = () => true;
-
 const sanitizeBindHost = (raw) => {
   const trimmed = typeof raw === 'string' ? raw.trim() : '';
   if (!trimmed) return DEFAULT_LOCAL_BIND_HOST;

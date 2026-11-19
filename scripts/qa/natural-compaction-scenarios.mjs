@@ -18,7 +18,6 @@ import { createQaCompactionSnapshotRecorder, createQaCompactionActionSnapshotRec
 
 const digest = value => createHash('sha256').update(value).digest('hex');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-const textOf = row => (row.parts ?? []).filter(part => part.type === 'text').map(part => part.text ?? '').join('\n');
 export const qaVisibleUserText = row => (row.parts ?? []).filter(part => part.type === 'text' && part.synthetic !== true).map(part => part.text ?? '').join('\n');
 const numeric = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 const MAX_BATCH_BYTES = 256 * 1024;
@@ -163,7 +162,7 @@ export function projectQaEarlyNaturalBoundary(rows, { previousPartIds, previousN
 }
 
 export async function runQaNaturalCompaction({ cell, projectFixture, ui, api, check, screenshot, sendTurn,
-  messages, getSessionID, captureSavedPlan, readSavedRevision, readProviderObservation, nativeOutputTokenMax, nativeAgent, nativeObservationScope }) {
+  messages, getSessionID, captureSavedPlan, readSavedRevision, readProviderObservation, nativeAgent, nativeObservationScope }) {
   if (cell?.transport !== 'live' || !['web', 'electron'].includes(cell.runtime) || cell.scenarioId !== 'compaction-natural') {
     throw new Error('Natural compaction requires a live web or Electron natural matrix cell');
   }

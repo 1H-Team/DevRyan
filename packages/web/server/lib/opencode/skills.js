@@ -10,7 +10,6 @@ import {
   ensureDirs,
   parseMdFile,
   writeMdFile,
-  readConfigLayers,
   walkSkillMdFiles,
   addSkillFromMdFile,
   resolveSkillSearchDirectories,

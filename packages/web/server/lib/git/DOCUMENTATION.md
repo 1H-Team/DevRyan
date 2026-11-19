@@ -1,7 +1,7 @@
 # Git Module Documentation
 
 ## Purpose
-This module provides Git repository operations for the web server runtime, including repository management, branch/worktree operations, status/diff queries, commit handling, direct commit-message generation, conventional commit template setup, and merge/rebase workflows.
+This module provides Git repository operations for the web server runtime, including repository management, branch/worktree operations, status/diff queries, commit handling, direct commit-message generation, and merge/rebase workflows.
 
 Managed callers are additionally constrained by the multi-user layer: worktree creation and commit reintegration must target a logical assigned branch, while durable chat/schedule targets use the shared branch-target resolver to reuse or create the correct checkout without switching the repository root. User-triggered worktree creation and retries require `createWorktrees`; direct branch creation and new-branch worktrees additionally require `createBranches`. Automatic assigned-branch target preparation remains available.
 
@@ -9,7 +9,6 @@ Managed callers are additionally constrained by the multi-user layer: worktree c
 - `packages/web/server/lib/git/`: Git module directory containing all Git-related functionality.
   - `index.js`: Public API entry point imported by `packages/web/server/index.js`.
   - `routes.js`: Express route registration for `/api/git/*` endpoints.
-  - `template-routes.js`: Conventional commit template and global `commit-msg` hook setup routes.
   - `operation-state.js`: Shared per-worktree Git operation and HEAD state reader, plus remote-operation preconditions.
   - `service.js`: Core Git operations (repository, branch, worktree, commit, merge/rebase, status/diff, log).
   - `@devryan/harness-runtime/lib/git-post-checkout-hook.js`: Shared bounded post-checkout hook execution used by web/Electron.
@@ -130,12 +129,6 @@ host's SSH agent and keys (see [Git child environment](#git-child-environment)).
 - After actual settlement, the authorized canonical active model may use the existing isolated `devryan-pr` purpose and 60-second bound with that session's own reasoning variant. The UI sends only the active session ID; the server resolves the model and current grants. Missing active selection returns `HELPER_ACTIVE_MODEL_REQUIRED`; revoked access retains its authorization refusal; an unusable authorized fallback returns `SESSION_MODEL_FAILED`. Sanitized model attempt evidence remains available. Generation does not publish a PR.
 - `removeRemote(directory, options)`: Remove a configured remote (except `origin`).
 - `deleteRemoteBranch(directory, options)`: Delete a remote branch.
-
-### Conventional Commit Template Routes
-- `GET /api/git/commit-template/status`: Report whether the managed global commit template and hook are installed and configured.
-- `POST /api/git/commit-template/install`: Write the managed template/hook under `~/.config/git` and configure global `commit.template` / `core.hooksPath`.
-- `POST /api/git/commit-template/uninstall`: Remove the global git config pointers while leaving user-owned files on disk.
-- `GET /api/git/commit-template/content`: Return the installed template content or the built-in template fallback.
 
 ### Log Operations
 - `getLog(directory, options)`: Get commit history with stats (supports maxCount, from, to, file filters). The default current-branch log includes both local `HEAD` and the tracked upstream tip when upstream exists, so behind/ahead histories can show both positions.

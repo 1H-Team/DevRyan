@@ -24,7 +24,7 @@ const temporaryDirectory = async () => {
 };
 
 describe('background runtime registration', () => {
-  test('replaces a registered 2.0 SMAppService only after explicit unregister', async () => {
+  test('withdraws a registered 2.0 SMAppService through its legacy lookup', async () => {
     const root = await temporaryDirectory();
     let previousEnabled = true;
     const calls = [];
@@ -35,13 +35,11 @@ describe('background runtime registration', () => {
         unregisterLegacy: async () => { calls.push('unregisterLegacy'); previousEnabled = false; return { ok: true, state: 'not_registered' }; },
         unregister: async () => { calls.push('unregister'); return { ok: true, state: 'not_registered' }; },
         status: async () => { calls.push('status'); return { ok: true, state: 'not_registered' }; },
-        register: async () => { calls.push('register'); return { ok: true, state: 'enabled' }; },
       } });
     assert.equal((await registration.status()).state, 'enabled');
     assert.equal(registration.mode, 'legacy-smappservice');
     assert.equal((await registration.unregister()).state, 'not_registered');
-    assert.equal((await registration.register()).state, 'enabled');
-    assert.ok(calls.indexOf('unregisterLegacy') < calls.indexOf('register'));
+    assert.deepEqual(calls, ['statusLegacy', 'unregisterLegacy', 'unregister']);
   });
   for (const state of ['not_found', 'not_registered', 'enabled', 'requires_approval', 'unknown', 'unavailable']) {
     test(`unregister is idempotent only for absent registrations: ${state}`, async () => {
@@ -79,38 +77,11 @@ describe('background runtime registration', () => {
     await assert.rejects(registration.unregister(), { code: 'runtime_service_native_bridge_invalid' });
   });
 
-  test('uses the in-process SMAppService bridge on macOS 13+ and reports approval state', async () => {
-    const calls = [];
-    const registration = createRuntimeServiceRegistration({
-      platform: 'darwin',
-      macosMajor: 15,
-      isPackaged: true,
-      executablePath: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
-      resourcesPath: '/Applications/DevRyan.app/Contents/Resources',
-      dataDirectory: '/Users/test/.config/openchamber',
-      nativeControl: {
-        status: async () => {
-          calls.push('status');
-          return { ok: true, state: 'not_registered', code: null };
-        },
-        register: async () => {
-          calls.push('register');
-          return { ok: true, state: 'requires_approval', code: null };
-        },
-      },
-    });
-    const result = await registration.register();
-    assert.equal(result.state, 'requires_approval');
-    assert.deepEqual(calls, ['status', 'register']);
-    assert.match(registration.settingsUrl, /LoginItems/);
-  });
-
   test('accepts native bridge success payloads that omit the optional code field', async () => {
     const root = await temporaryDirectory();
     const calls = [];
     const states = {
       status: 'not_found',
-      register: 'requires_approval',
       unregister: 'not_registered',
     };
     const registration = createRuntimeServiceRegistration({
@@ -120,7 +91,7 @@ describe('background runtime registration', () => {
       executablePath: path.join(root, 'DevRyan.app', 'Contents', 'MacOS', 'DevRyan'),
       resourcesPath: path.join(root, 'DevRyan.app', 'Contents', 'Resources'),
       dataDirectory: path.join(root, 'data'),
-      nativeControl: Object.fromEntries(['status', 'register', 'unregister'].map((command) => [
+      nativeControl: Object.fromEntries(['status', 'unregister'].map((command) => [
         command,
         async () => {
           calls.push(command);
@@ -130,20 +101,15 @@ describe('background runtime registration', () => {
     });
 
     assert.deepEqual(await registration.status(), { ok: true, state: 'not_found', code: null });
-    assert.deepEqual(await registration.register(), {
-      ok: true,
-      state: 'requires_approval',
-      code: null,
-    });
     assert.deepEqual(await registration.unregister(), {
       ok: true,
       state: 'not_registered',
       code: null,
     });
-    assert.deepEqual(calls, ['status', 'status', 'register', 'unregister']);
+    assert.deepEqual(calls, ['status', 'unregister']);
   });
 
-  test('falls back to the private LaunchAgent when SMAppService cannot find a bundled definition', async () => {
+  test('reads the private LaunchAgent when SMAppService cannot find a bundled definition', async () => {
     const root = await temporaryDirectory();
     const resourcesPath = path.join(root, 'DevRyan.app', 'Contents', 'Resources');
     const bundledPlistPath = path.join(
@@ -156,7 +122,6 @@ describe('background runtime registration', () => {
     );
     await fs.mkdir(path.dirname(bundledPlistPath), { recursive: true });
     await fs.writeFile(bundledPlistPath, 'bundled');
-    const calls = [];
     const registration = createRuntimeServiceRegistration({
       platform: 'darwin',
       macosMajor: 15,
@@ -165,16 +130,8 @@ describe('background runtime registration', () => {
       resourcesPath,
       dataDirectory: path.join(root, 'data'),
       homeDirectory: root,
-      uid: 501,
-      execFile: async (file, args) => {
-        calls.push([file, args]);
-        return { stdout: '', stderr: '' };
-      },
       nativeControl: {
         status: async () => ({ ok: true, state: 'not_found', code: null }),
-        register: async () => {
-          throw new Error('SMAppService registration must not be attempted');
-        },
       },
     });
 
@@ -185,48 +142,6 @@ describe('background runtime registration', () => {
     });
     assert.equal(registration.mode, 'legacy');
     assert.equal(registration.settingsUrl, null);
-    const result = await registration.register({ allowLegacy: true });
-    assert.equal(result.state, 'enabled');
-    assert.equal((await fs.stat(registration.legacyPath)).mode & 0o777, 0o600);
-    assert.deepEqual(calls[0].slice(0, 1), ['/bin/launchctl']);
-  });
-
-  test('falls back when SMAppService becomes not_found during registration', async () => {
-    const root = await temporaryDirectory();
-    const resourcesPath = path.join(root, 'DevRyan.app', 'Contents', 'Resources');
-    const bundledPlistPath = path.join(
-      root,
-      'DevRyan.app',
-      'Contents',
-      'Library',
-      'LaunchAgents',
-      'dev.devryan.desktop.runtime-service.plist',
-    );
-    await fs.mkdir(path.dirname(bundledPlistPath), { recursive: true });
-    await fs.writeFile(bundledPlistPath, 'bundled');
-    const registration = createRuntimeServiceRegistration({
-      platform: 'darwin',
-      macosMajor: 15,
-      isPackaged: true,
-      executablePath: path.join(root, 'DevRyan.app', 'Contents', 'MacOS', 'DevRyan'),
-      resourcesPath,
-      dataDirectory: path.join(root, 'data'),
-      homeDirectory: root,
-      uid: 501,
-      execFile: async () => ({ stdout: '', stderr: '' }),
-      nativeControl: {
-        status: async () => ({ ok: true, state: 'not_registered', code: null }),
-        register: async () => ({
-          ok: false,
-          state: 'not_found',
-          code: 'smappservice_registration_failed',
-        }),
-      },
-    });
-
-    assert.equal((await registration.register({ allowLegacy: true })).state, 'enabled');
-    assert.equal(registration.mode, 'legacy');
-    assert.equal((await fs.stat(registration.legacyPath)).mode & 0o777, 0o600);
   });
 
   test('preserves not_found when the bundled LaunchAgent is genuinely missing', async () => {
@@ -282,9 +197,7 @@ describe('background runtime registration', () => {
     assert.deepEqual(await registration.status(), { ok: true, state: 'enabled', code: null });
     assert.equal(registration.mode, 'legacy');
     assert.equal(nativeStatusCalls, 0);
-    assert.deepEqual(await registration.register({ allowLegacy: true }), { ok: true, state: 'enabled', code: null });
     assert.deepEqual(launchctlCalls, []);
-    await assert.rejects(fs.stat(registration.legacyPath), (error) => error.code === 'ENOENT');
     await registration.unregister();
     assert.deepEqual(launchctlCalls, [['bootout', 'gui/501', legacyPath]]);
     await assert.rejects(fs.stat(legacyPath), (error) => error.code === 'ENOENT');
@@ -300,7 +213,6 @@ describe('background runtime registration', () => {
       dataDirectory: '/Users/test/.config/openchamber',
       nativeControl: {
         status: async () => ({ ok: true, state: 'not_found', code: 7 }),
-        register: async () => ({ ok: true, state: 'not_found', code: 7 }),
       },
     });
 
@@ -309,10 +221,6 @@ describe('background runtime registration', () => {
       state: 'unavailable',
       code: 'runtime_service_native_bridge_invalid',
     });
-    await assert.rejects(
-      registration.register(),
-      (error) => error.code === 'runtime_service_native_bridge_invalid',
-    );
   });
 
   test('reports a missing packaged native bridge without collapsing the status request', async () => {
@@ -331,7 +239,7 @@ describe('background runtime registration', () => {
       code: 'runtime_service_native_bridge_missing',
     });
     await assert.rejects(
-      registration.register(),
+      registration.unregister(),
       (error) => error.code === 'runtime_service_native_bridge_missing'
         && !error.message.includes('RuntimeServiceRegistrationError'),
     );
@@ -353,18 +261,18 @@ describe('background runtime registration', () => {
     const callFailureRegistration = createRuntimeServiceRegistration({
       ...baseOptions,
       nativeControl: {
-        register: async () => {
+        unregister: async () => {
           throw Object.assign(new Error('failed'), { code: 'runtime_service_native_bridge_failed' });
         },
       },
     });
 
     await assert.rejects(
-      loadFailureRegistration.register(),
+      loadFailureRegistration.unregister(),
       (error) => error.code === 'runtime_service_native_bridge_load_failed',
     );
     await assert.rejects(
-      callFailureRegistration.register(),
+      callFailureRegistration.unregister(),
       (error) => error.code === 'runtime_service_native_bridge_failed',
     );
   });
@@ -382,13 +290,10 @@ describe('background runtime registration', () => {
 
     assert.equal(registration.mode, 'unavailable');
     assert.equal((await registration.status()).code, 'runtime_service_packaged_build_required');
-    await assert.rejects(
-      registration.register(),
-      (error) => error.code === 'runtime_service_packaged_build_required',
-    );
+    assert.deepEqual(await registration.unregister(), { ok: true, state: 'not_registered', code: null });
   });
 
-  test('requires explicit consent for older-macOS LaunchAgent registration', async () => {
+  test('withdraws an older-macOS LaunchAgent registration', async () => {
     const root = await temporaryDirectory();
     const calls = [];
     const registration = createRuntimeServiceRegistration({
@@ -405,18 +310,12 @@ describe('background runtime registration', () => {
         return { stdout: '', stderr: '' };
       },
     });
-    await assert.rejects(
-      registration.register(),
-      (error) => error.code === 'runtime_service_legacy_consent_required',
-    );
-    const result = await registration.register({ allowLegacy: true });
-    assert.equal(result.state, 'enabled');
-    const contents = await fs.readFile(registration.legacyPath, 'utf8');
-    assert.match(contents, /--runtime-service/);
-    assert.match(contents, /DevRyan/);
-    assert.equal((await fs.stat(registration.legacyPath)).mode & 0o777, 0o600);
-    assert.deepEqual(calls[0].slice(0, 1), ['/bin/launchctl']);
-    await registration.unregister();
+    assert.deepEqual(await registration.status(), { ok: true, state: 'not_registered', code: null });
+    await fs.mkdir(path.dirname(registration.legacyPath), { recursive: true });
+    await fs.writeFile(registration.legacyPath, 'legacy', { mode: 0o600 });
+    assert.deepEqual(await registration.status(), { ok: true, state: 'enabled', code: null });
+    assert.deepEqual(await registration.unregister(), { ok: true, state: 'not_registered', code: null });
+    assert.deepEqual(calls, [['/bin/launchctl', ['bootout', 'gui/501', registration.legacyPath]]]);
     await assert.rejects(fs.stat(registration.legacyPath), (error) => error.code === 'ENOENT');
   });
 });

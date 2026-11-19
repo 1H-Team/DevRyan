@@ -252,13 +252,3 @@ export function updateStreamingState(state: State) {
     })
   }
 }
-
-// Selectors
-export const selectStreamingMessageId = (sessionID: string) =>
-  (state: StreamingStore) => state.streamingMessageIds.get(sessionID) ?? null
-
-export const selectMessageStreamState = (messageID: string) =>
-  (state: StreamingStore) => state.messageStreamStates.get(messageID) ?? null
-
-export const selectIsStreaming = (sessionID: string) =>
-  (state: StreamingStore) => state.streamingMessageIds.get(sessionID) != null

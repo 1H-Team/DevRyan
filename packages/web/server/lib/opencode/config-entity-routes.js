@@ -327,22 +327,6 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     }
   });
 
-  app.get('/api/config/agents/:name/config', async (req, res) => {
-    try {
-      const agentName = req.params.name;
-      const { directory, error } = await resolveProjectDirectory(req);
-      if (!directory) {
-        return res.status(400).json({ error });
-      }
-
-      const configInfo = getAgentConfig(agentName, directory);
-      res.json(configInfo);
-    } catch (error) {
-      console.error('Failed to get agent config:', error);
-      res.status(500).json({ error: 'Failed to get agent configuration' });
-    }
-  });
-
   app.put('/api/config/agents/:name/override', async (req, res) => {
     try {
       const agentName = req.params.name;

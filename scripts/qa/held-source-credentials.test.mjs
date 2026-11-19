@@ -12,7 +12,7 @@ import {createCredentialLeakProbe} from './credential-leak-probe.mjs';
 // Constructor contracts only. Real compiled projection/host startup is exercised
 // by live-credential-rehearsal; these dummy files never confer native admission.
 async function fixture(t){
-  const root=await fs.mkdtemp(path.resolve('.cache/held-source-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+  const root=await fs.mkdtemp(path.resolve('.cache/qa/held-source-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
   const workspace=path.join(root,'workspace');await fs.mkdir(workspace);
   const bindingFor=async id=>{
     const controlRoot=path.join(root,id),bundleRoot=path.join(controlRoot,'bundles',id);await fs.mkdir(bundleRoot,{recursive:true,mode:0o700});
@@ -85,7 +85,7 @@ test('dedicated Claude enrollment and insufficient OAuth lifetime refuse the def
   await assert.rejects(f.owner.verify({requiredProviders:['xai'],timeoutMs:1000}),{code:'qa_native_credential_expiry'});
 });
 test('keyed leakage windows detect raw, encoded and unaligned fragments across chunk boundaries with counts only',async t=>{
-  const root=await fs.mkdtemp(path.resolve('.cache/leak-probe-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+  const root=await fs.mkdtemp(path.resolve('.cache/qa/leak-probe-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
   const value='secret-canary-+/=?'+ 'Q'.repeat(40),probe=createCredentialLeakProbe();probe.record(value);
   const file=path.join(root,'evidence.json');await fs.writeFile(file,JSON.stringify({safe:'admission only'}));
   assert.deepEqual(await probe.scan(root),{files:1,bytes:(await fs.stat(file)).size,hits:0});

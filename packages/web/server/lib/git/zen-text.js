@@ -7,17 +7,16 @@ export const GIT_GENERATION_ZEN_MODEL = 'deepseek-v4.1-flash';
 
 /** Each draft attempt uses the admitted native helper and awaits its actual
  * settlement before repair or another model can start. */
-export const createGitZenTextTransport = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, openCodeClient, generateHelperText, cursorRuntime, directory, sessionID, selection, agent }) => {
+export const createGitZenTextTransport = ({ openCodeClient, generateHelperText, cursorRuntime, directory, sessionID, selection, agent }) => {
   let pending;
   const operationID = randomUUID();
   return {
     requestText({ prompt, zenModel, timeoutMs, signal }) {
       pending = generateTextWithSessionModel({
-        buildOpenCodeUrl, getOpenCodeAuthHeaders, generateHelperText, cursorRuntime, directory, operationID,
+        generateHelperText, cursorRuntime, directory, operationID,
         ...(openCodeClient ? { openCodeClient } : {}),
         selection: selection ?? { providerID: 'opencode', modelID: zenModel },
         ...(sessionID ? { sessionID } : {}), agent, prompt, timeoutMs, signal,
-        recoverOnError: false, denyTools: true,
       }).then((result) => {
         if (result.ok) return result.text;
         // Bounded identifiers only: never the prompt, diff or provider text.

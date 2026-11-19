@@ -2,12 +2,16 @@ import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { scratchParent } from '../../../../../scripts/qa/run-root.mjs';
 import { createFfmpegInstaller } from './ffmpeg.js';
 
+// Scratch lives in the OS temp dir, so an interrupted run leaves nothing in the repository.
 const roots = [];
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
 const fixture = async () => {
-  const root = await fs.mkdtemp(path.join(process.cwd(), '.ffmpeg-test-'));
+  const parent = scratchParent('web-test');
+  await fs.mkdir(parent, { recursive: true, mode: 0o700 });
+  const root = await fs.mkdtemp(path.join(parent, 'ffmpeg-'));
   roots.push(root);
   const contents = { binary: 'fixture executable', license: 'license', readme: 'source/build instructions' };
   const manifest = { release: 'b6.1.1', source: 'https://fixture.invalid/source', platforms: { 'darwin-arm64':

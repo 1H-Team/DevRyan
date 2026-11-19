@@ -88,7 +88,9 @@ The following functions are internal helpers used by exported functions:
 
 ### ClawdHub API Helpers (`clawdhub/api.js`)
 - `rateLimitedFetch(url, options)`: Fetch with rate limiting (120 req/min limit, 100ms delay between requests, exponential backoff on 429/500 errors).
-- `mapClawdHubItem(item)`: Transform ClawdHub API response to SkillsCatalogItem format.
+
+### ClawdHub Scan Helpers (`clawdhub/scan.js`)
+- `mapClawdHubItem(item)`: Transform a ClawdHub API item to the SkillsCatalogItem format; `scanClawdHub` and `scanClawdHubPage` map every item through it.
 
 ## Response Contracts
 

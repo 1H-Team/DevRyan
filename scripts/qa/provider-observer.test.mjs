@@ -16,8 +16,8 @@ test('confined tool workers do not open provider evidence or emit false gaps', a
 });
 
 test('observer records reasoning controls without mutating options or recording unrelated provider data', async () => {
-  const cacheRoot = fileURLToPath(new URL('../../.cache/', import.meta.url));
-  await mkdir(cacheRoot, { recursive: true });
+  const cacheRoot = fileURLToPath(new URL('../../.cache/qa/', import.meta.url));
+  await mkdir(cacheRoot, { recursive: true, mode: 0o700 });
   const root = await mkdtemp(path.join(cacheRoot, 'observer-test-'));
   const home = path.join(root, 'home');
   await mkdir(home);

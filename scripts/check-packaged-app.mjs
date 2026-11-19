@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_CONFIG_PATH = path.join(repositoryRoot, 'scripts', 'packaged-app.config.mjs');
 const DEFAULT_APP_PATH = path.join(repositoryRoot, 'packages', 'electron', 'dist', 'mac-arm64', 'DevRyan.app');
-const SIZE_KEYS = Object.freeze(['resourcesBytes', 'asarBytes', 'unpackedBytes']);
+export const SIZE_KEYS = Object.freeze(['resourcesBytes', 'asarBytes', 'unpackedBytes']);
 const ARCHES = Object.freeze(['arm64', 'x64']);
 const LISTED_VIOLATIONS = 10;
 // The report suggests lowering a ceiling once the app is this far below it.
@@ -96,6 +96,17 @@ const resolveRulePattern = (rule, arch) => {
   return pattern;
 };
 
+/**
+ * The config's forbidden rules that match any of `checkedPaths` (Resources-relative,
+ * asar entries as `app.asar/<path>`), each with its sorted matching paths.
+ */
+export function findForbiddenPaths(checkedPaths, config, arch) {
+  return config.forbidden.map((rule) => {
+    const pattern = resolveRulePattern(rule, arch);
+    return { id: rule.id, paths: checkedPaths.filter((checkedPath) => pattern.test(checkedPath)).sort() };
+  }).filter((violation) => violation.paths.length > 0);
+}
+
 export function checkPackagedApp({ appPath = DEFAULT_APP_PATH, config, arch = 'arm64' }) {
   validatePackagedAppConfig(config);
   if (!ARCHES.includes(arch)) throw new Error(`Unsupported packaged app arch: ${String(arch)}`);
@@ -113,17 +124,14 @@ export function checkPackagedApp({ appPath = DEFAULT_APP_PATH, config, arch = 'a
   };
 
   const checkedPaths = [...resourceFiles.map((file) => file.path), ...asarEntries.map((entry) => `app.asar/${entry.path}`)];
-  const violations = config.forbidden.map((rule) => {
-    const pattern = resolveRulePattern(rule, arch);
-    return { id: rule.id, paths: checkedPaths.filter((checkedPath) => pattern.test(checkedPath)).sort() };
-  }).filter((violation) => violation.paths.length > 0);
+  const violations = findForbiddenPaths(checkedPaths, config, arch);
   const oversized = SIZE_KEYS.filter((key) => sizes[key] > config.ceiling[key]);
   const lowerable = SIZE_KEYS.filter((key) => sizes[key] < config.ceiling[key] * (1 - RATCHET_SLACK));
 
   return { ok: violations.length === 0 && oversized.length === 0, appPath, arch, sizes, ceiling: { ...config.ceiling }, violations, oversized, lowerable };
 }
 
-const megabytes = (bytes) => `${(bytes / 1_000_000).toFixed(1)} MB`;
+export const megabytes = (bytes) => `${(bytes / 1_000_000).toFixed(1)} MB`;
 
 export function formatPackagedAppReport(report) {
   const lines = [`${report.ok ? 'PASS' : 'FAIL'} packaged ${report.arch} app ${report.appPath}`];

@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "note": "Census of the product families (plan file 29 §4.4, package C0c): the event types the reducer switches on, read from its source at run time, and the waivers, each with its reason. Exports are read from the modules when the recorder loads them; nothing here lists them, so deleting an export needs no edit here unless a waiver names it (a waiver of something that no longer exists fails the census).",
+  "events": [
+    {
+      "family": "reducer",
+      "entry": "applyDirectoryEvent",
+      "arg": 1
+    },
+    {
+      "family": "reducer",
+      "entry": "reduceGlobalEvent",
+      "arg": 0
+    }
+  ],
+  "exports": [],
+  "eventTypes": [],
+  "ports": [],
+  "unrecordable": [
+    {
+      "file": "packages/ui/src/sync/__tests__/event-reducer.test.ts",
+      "test": "performs one revert lookup for session-less streaming parts",
+      "flag": "accessor",
+      "family": "reducer",
+      "reason": "the test counts reads of a revert_transaction accessor and expects exactly one: a performance assertion, not behaviour; the recorder never calls a getter, so the case cannot carry the value (design §2.7)"
+    },
+    {
+      "file": "packages/ui/src/sync/abort-retry-guard.test.ts",
+      "tests": [
+        "passes statuses through when no guard is registered",
+        "coerces retry to idle while guard is active",
+        "does not affect other sessions",
+        "passes busy through unchanged while guard is active",
+        "schedules a re-abort when retry arrives while guard is active",
+        "debounces re-aborts and caps total attempts",
+        "idle clears the guard so later retry statuses are authoritative",
+        "clearAbortGuard restores authoritative statuses (new local send)",
+        "guard expires after TTL so live state wins again",
+        "keeps a stopped long-backoff retry guarded through its advertised deadline",
+        "does not slide a relative retry deadline when the same status is repeated",
+        "skips deferred re-abort when guard cleared before the timer fires",
+        "re-registering after a re-abort resets the budget"
+      ],
+      "flag": "port-no-line",
+      "family": "reducer",
+      "reason": "the abort guard's own tests call clearAbortGuard and filterSessionStatusThroughAbortGuard themselves, which are ports of the reducer; the reducer hands out no closure (its results are data), so no reducer code can hide behind these calls, and the reducer has no step here"
+    },
+    {
+      "file": "packages/ui/src/sync/revert-transactions.test.ts",
+      "test": "clears only resend markers owned by released sessions",
+      "flag": "port-no-line",
+      "family": "reducer",
+      "reason": "the test calls isCommittedRevertResendInFlight itself, a port of the reducer; the reducer hands out no closure (its results are data), so no reducer code can hide behind the call"
+    },
+    {
+      "file": "packages/ui/src/sync/session-actions.test.ts",
+      "test": "the abort guard never re-aborts a session that is waiting on a question",
+      "flag": "port-no-line",
+      "family": "reducer",
+      "reason": "the test calls filterSessionStatusThroughAbortGuard itself, a port of the reducer; the reducer hands out no closure (its results are data), so no reducer code can hide behind the call"
+    },
+    {
+      "file": "packages/ui/src/sync/__tests__/event-reducer.test.ts",
+      "tests": [
+        "session.idle clears the guard before it writes the idle status",
+        "session.idle clears the guard even when the status is already idle and nothing is written",
+        "session.error clears the guard before it writes the idle status",
+        "a user message that advances the turn writes user activity before it clears the guard, and the message list after",
+        "a replayed older user message writes the list and leaves the guard active"
+      ],
+      "flag": "proxy",
+      "family": "reducer",
+      "reason": "the test wraps the draft in a Proxy of its own to observe the order in which the reducer writes; the recorder never runs a foreign Proxy's traps, so the case cannot carry the value (design §2.7)"
+    },
+    {
+      "file": "packages/ui/src/sync/revert-transactions.test.ts",
+      "tests": [
+        "a begun resend is in flight until it ends, for that session and message only",
+        "beginning the same resend twice needs only one end",
+        "ending a resend that was never begun, or another message's, changes nothing",
+        "never reports a resend with an empty session id or a missing or empty message id as in flight, and an end with such ids leaves a real resend in flight",
+        "clearing a session removes all of its resends and none of a session whose id it prefixes",
+        "clearing takes any iterable, skips empty ids, and clears several sessions at once",
+        "a message id holding the key separator collides with a session id holding it, so both read as in flight",
+        "clearing a session whose id holds the key separator also clears another session's resend that shares the prefix",
+        "clearing a session leaves another session's resend in flight and does not stop the cleared session from beginning a new one"
+      ],
+      "flag": "port-no-line",
+      "family": "reducer",
+      "reason": "the test calls the committed-revert resend functions itself (begin, end, lookup, clear), which are ports of the reducer; the reducer hands out no closure (its results are data), so no reducer code can hide behind the call"
+    }
+  ],
+  "excludedFiles": [
+    {
+      "file": "packages/ui/src/components/chat/ModelControls.hydration.test.tsx",
+      "reason": "the mock-module layer is harmless on it since package C0c2 (17/17 and 114 assertions with the layer alone, as plain), but it cannot be recorded cleanly, for two reasons of the test itself (C0c2 report, shown by recording it alone twice with product.mjs --runs=2, twice): every one of its 11 cases is unrecordable as global-defined:document and global-defined:window (its DOM helper defines both as data properties the recorder did not wrap); and every one of its 11 cases hands the engine a directory named after the process id (devryan-model-controls-hydration-<pid>: in 10 cases as the input's directory, in one inside a message's path), so their inputs differ between recordings. Its only family use is optimistic's applyOptimisticAdd and applyOptimisticRemove, which sync tests also exercise"
+    }
+  ],
+  "families": [],
+  "unstable": [],
+  "noFrame": [
+    {
+      "family": "message-fetch",
+      "export": "unwrapMessageRecordsResult",
+      "reason": "sync-context.tsx hands the entry itself to a promise, scopedClient.session.messages(...).then(unwrapMessageRecordsResult), where it materializes a session and where it reconnects, so the job that calls it has no frame; a test that does the same is not told apart (docs/TESTING.md)"
+    }
+  ]
+}

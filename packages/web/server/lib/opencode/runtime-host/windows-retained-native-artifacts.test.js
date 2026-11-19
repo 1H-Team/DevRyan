@@ -25,6 +25,12 @@ test('Windows retention refuses changed source bytes without publishing or adopt
  await fs.writeFile(path.join(source,'DevRyan-writer'),'edited');await expect(retainNativeArtifacts(options)).rejects.toMatchObject({code:'fixture_source_changed'});
  expect(calls.some(row=>row[0]==='renameTree')).toBe(false);expect(await fs.readdir(path.join(controlRoot,'artifacts'))).toEqual([]);expect(calls.some(row=>row[0]==='removeTree')).toBe(true);
 }));
+test('a failed stage removal never replaces the Windows retention failure',()=>fixture(async({options,source,controlRoot,calls})=>{
+ await fs.writeFile(path.join(source,'DevRyan-writer'),'edited');
+ const windowsOwner={...options.windowsOwner,removeTree:async()=>{throw Object.assign(new Error('stage removal denied'),{code:'EPERM'});}};
+ await expect(retainNativeArtifacts({...options,windowsOwner})).rejects.toMatchObject({code:'fixture_source_changed'});
+ expect(calls.some(row=>row[0]==='renameTree')).toBe(false);expect((await fs.readdir(path.join(controlRoot,'artifacts'))).every(name=>name.startsWith('.retaining-'))).toBe(true);
+}));
 test('Windows prune reads private references and removes only exact unreferenced SDKtrees',()=>fixture(async({options,owner,controlRoot,manifestSha256,calls})=>{
  await retainNativeArtifacts(options);const artifacts=path.join(controlRoot,'artifacts'),orphan=hash('orphan'),orphanRoot=path.join(artifacts,orphan);await owner.ensureDirectory(orphanRoot);await owner.write(path.join(orphanRoot,'owned.txt'),Buffer.from('old'));
  const bundle=path.join(controlRoot,'bundles','selected');await owner.ensureDirectory(bundle);await owner.write(path.join(bundle,'descriptor.json'),Buffer.from(JSON.stringify({bundleID:'selected',createdAt:100,launch:{artifactManifestSha256:manifestSha256,artifactManifestPath:path.join(artifacts,manifestSha256,'native-bundle.json')}})));

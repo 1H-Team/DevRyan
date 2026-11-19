@@ -1,5 +1,0 @@
-{
-  "extends": "../../packages/ui/tsconfig.json",
-  "compilerOptions": { "paths": { "@/*": ["../../packages/ui/src/*"], "@devryan/ui/*": ["../../packages/ui/src/*"] } },
-  "include": ["*.ts", "*.tsx", "../../packages/ui/src/**/*.d.ts"]
-}

@@ -1,0 +1,22 @@
+[package]
+name = "devryan-config-text"
+version = "0.1.0"
+description = "Byte-exact JSONC and YAML text operations the server performs with jsonc-parser 3.3.1 and yaml 2.9.0 (tests only; nothing calls it yet)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+# Test-only: reads requests on stdin and writes the same rows the vector
+# generators write, so tests/differential.mjs can run any input through both.
+[[bin]]
+name = "config-text-probe"
+path = "src/bin/config-text-probe.rs"
+
+[dependencies]
+
+[lints]
+workspace = true

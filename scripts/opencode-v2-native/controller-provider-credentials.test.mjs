@@ -416,7 +416,6 @@ for(const status of [400,401,429,503])test('usage renewal HTTP '+status+' retain
 test('usage renewal traverses the original caller grant, reverse mutation queue and native xAI owner',async()=>{
   const config={locations:[{directory:path.resolve('.cache/v2-validation/controller-integrations'),configuration:{},compatibility:{}}]},directory=config.locations[0].directory,location=Schema.decodeUnknownSync(Location.Info)({directory,project:{id:'global',directory,canonical:directory}}),state=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-xai-usage-')));
   const origin={kind:'native',id:'opencode.provider.xai',manifestDigest:'c'.repeat(64),capabilities:['provider']};
-const copilotOrigin={kind:'native',id:'opencode.provider.github-copilot',manifestDigest:'c'.repeat(64),capabilities:['provider']};
   let queue=Promise.resolve(),fetches=0,commits=0,allowed=true;
   const originalFetch=globalThis.fetch;
   globalThis.fetch=async input=>{

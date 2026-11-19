@@ -23,6 +23,7 @@ import { spawnSync } from 'node:child_process';
 import { FileAccess } from '@opencode/core/file-access';
 import { Permission } from '@opencode/core/permission';
 import { createRemoteNativeAdmissionBridge } from '../../packages/web/server/lib/opencode/runtime-host/native-admission-bridge.ts';
+import { createTestIsolation } from '../test-isolation-guard.mjs';
 import { createNativeReadGuard } from '../../packages/web/server/lib/opencode/runtime-host/execution-read-guard.ts';
 import { captureReviewedSkill } from '../../packages/web/server/lib/opencode/runtime-host/reviewed-skills.js';
 
@@ -663,14 +664,13 @@ if (process.env.DEVRYAN_SHELL_FIXTURE === '1') test('real native shell retains h
 });
 
 if (process.env.DEVRYAN_SHELL_FIXTURE !== '1') test('real native shell settlement scenarios run in an isolated home', async () => {
-  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-shell-home-')));
+  // Only PATH is inherited; the test isolation guard builds the private HOME and
+  // XDG folders the nested `bun test` requires (its preload refuses any other).
+  const isolation = createTestIsolation({ environment: { PATH: process.env.PATH, DEVRYAN_SHELL_FIXTURE: '1' } });
   try {
     const child = Bun.spawn([process.execPath, 'test', import.meta.path, '--test-name-pattern', 'real native shell retains host settlement'], {
-      cwd: path.resolve(import.meta.dirname, '../..'),
-      env: { PATH: process.env.PATH, HOME: root, XDG_CONFIG_HOME: path.join(root, 'config'), XDG_DATA_HOME: path.join(root, 'data'),
-        XDG_STATE_HOME: path.join(root, 'state'), XDG_CACHE_HOME: path.join(root, 'cache'), DEVRYAN_SHELL_FIXTURE: '1' },
-      stdout: 'pipe', stderr: 'pipe' });
+      cwd: path.resolve(import.meta.dirname, '../..'), env: isolation.env, stdout: 'pipe', stderr: 'pipe' });
     const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
     expect({ code, output: code === 0 ? '' : stdout + stderr }).toEqual({ code: 0, output: '' });
-  } finally { await fs.rm(root, { recursive: true, force: true }); }
+  } finally { isolation.cleanup(); }
 }, 20_000);

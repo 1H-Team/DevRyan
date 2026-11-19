@@ -745,7 +745,6 @@ export const createNotificationTriggerRuntime = (deps) => {
       prompt: buildSummarizationInput(text, summaryLength, 'notification'),
       // One retry when the first answer is empty: a plainer ask, same text.
       repairPrompt: `Reply with one plain sentence under ${summaryLength} characters that summarizes the text below. Output only that sentence.\n\nText:\n${text}`,
-      denyTools: true,
       timeoutMs: NOTIFICATION_SUMMARY_TIMEOUT_MS,
       maxOutputTokens: NOTIFICATION_SUMMARY_MAX_OUTPUT_TOKENS,
     });
@@ -759,10 +758,9 @@ export const createNotificationTriggerRuntime = (deps) => {
     return result.value;
   };
 
-  const prepareLastMessageForNotification = ({ message, settings, sessionId }) => {
+  const prepareLastMessageForNotification = ({ message, sessionId }) => {
     return prepareNotificationLastMessage({
       message,
-      settings,
       summarize: sessionId
         ? (text, summaryLength) => summarizeViaHelper(text, summaryLength, sessionId)
         : undefined,
@@ -887,7 +885,6 @@ export const createNotificationTriggerRuntime = (deps) => {
         variables.last_message = await prepareLastMessageForNotification({
           sessionId,
           message: planRevision.planText,
-          settings,
         });
 
         const resolvedTitle = resolveNotificationTemplate(planTemplate.title, variables);
@@ -965,7 +962,6 @@ export const createNotificationTriggerRuntime = (deps) => {
       variables.last_message = await prepareLastMessageForNotification({
         sessionId,
         message: lastMessage,
-        settings,
       });
 
       const resolvedTitle = resolveNotificationTemplate(completionTemplate.title, variables);
@@ -1212,7 +1208,6 @@ export const createNotificationTriggerRuntime = (deps) => {
           variables.last_message = await prepareLastMessageForNotification({
             sessionId,
             message: lastMessage,
-            settings,
           });
 
           const errorTemplate = (settings.notificationTemplates || {}).error || { title: 'Tool error', message: '{last_message}' };

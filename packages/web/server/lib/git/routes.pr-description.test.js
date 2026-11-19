@@ -36,8 +36,6 @@ const makeApp = ({
   generateTextWithSessionModel = vi.fn(async () => ({ ok: false, value: null, reason: 'timeout', attempts: 1, durationMs: 60_000 })),
   listConfigAgents = vi.fn(() => []),
   resolveHelperSelection,
-  buildOpenCodeUrl = (requestPath) => `http://opencode.test${requestPath}`,
-  getOpenCodeAuthHeaders = () => ({}),
   recordCommitTiming = vi.fn(),
   loadGitLibraries = async () => ({
     getRangeDiff: vi.fn(async () => ''),
@@ -51,8 +49,6 @@ const makeApp = ({
     generateTextWithSessionModel,
     listConfigAgents,
     resolveHelperSelection,
-    buildOpenCodeUrl,
-    getOpenCodeAuthHeaders,
     recordCommitTiming,
     loadGitLibraries,
   });
@@ -153,7 +149,6 @@ describe('POST /api/git/pr-description', () => {
       repairPrompt: expect.stringContaining('{"title": string, "body": string}'),
       timeoutMs: 60_000,
       accept: expect.any(Function),
-      buildOpenCodeUrl: expect.any(Function),
     }));
     // One journal record per attempt, including tier and outcome.
     const journal = recordCommitTiming.mock.calls.map(([, payload]) => [payload.tier, payload.model, payload.outcome, payload.providerOutcome]);

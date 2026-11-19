@@ -1,8 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Worker } from 'node:worker_threads';
+import { MessageChannel, receiveMessageOnPort, Worker } from 'node:worker_threads';
 import { captureExecutionContext, remoteExecutionTarget } from './execution-admission.js';
 import { createSessionMutationRuntime } from './session-mutations.js';
 import { decodeWireError, decodeWireValue, encodeWireError, encodeWireValue } from './session-mutation-wire.js';
@@ -25,7 +25,19 @@ import { decodeWireError, decodeWireValue, encodeWireError, encodeWireValue } fr
 //
 // If the worker exits, pending calls fail with `mutation_runtime_unavailable`
 // and the next call starts a new worker; durable recovery runs under the next
-// lock, as after a host crash. Inline (no worker): DEVRYAN_LEDGER_WORKER=0,
+// lock, as after a host crash. A lock file names a process, and this process
+// lives on, so no one would ever remove an owner lock the dead worker held:
+// the worker names each owner lock's token on a port of its own before the
+// file can exist and settles it after release, and on its exit the host
+// removes every unsettled lock whose file still holds exactly that token and
+// this process's pid (any other bytes are someone else's lock and stay), and
+// journals `worker_lock_released`. This runs once the thread has ended, before
+// pending calls fail; after an uncaught error they fail on `error` instead,
+// just before `exit`, and a new worker already waiting for the lock takes it
+// at its next retry. A Git child the dead worker started can outlive it and
+// still run under the next owner; the state ref moves only by compare-and-swap,
+// so a late child makes one call fail and cannot corrupt the ledger, the same
+// exposure as after a process crash. Inline (no worker): DEVRYAN_LEDGER_WORKER=0,
 // Windows, a Windows owner or launcher, or an injected Git runner (tests).
 // Under Bun (development servers and `bun test`) the runtime stays inline
 // unless DEVRYAN_LEDGER_WORKER=1: the packaged host is Electron's Node, and
@@ -66,6 +78,22 @@ const entryFlag = (arg) => arg.startsWith('--input-type') || ENTRY_FLAGS.has(arg
 export const workerExecArgv = (argv = process.execArgv) => (argv.some(entryFlag)
   ? argv.filter((arg, index) => !entryFlag(arg) && !ENTRY_FLAGS.has(argv[index - 1]))
   : undefined);
+
+// Owner locks a dead worker still held: removed only when the file holds that
+// worker's token and this process's pid. Nothing else in this process or any
+// other removes a lock naming a live process under another token, so the read
+// and the removal cannot race with a new owner. Returns how many were removed.
+const releaseWorkerLocks = (claims) => {
+  let released = 0;
+  for (const [ownerToken, lockPath] of claims) {
+    let owner = null;
+    try { owner = JSON.parse(readFileSync(lockPath, 'utf8')); } catch { continue; }
+    if (owner?.ownerToken !== ownerToken || owner?.pid !== process.pid) continue;
+    try { unlinkSync(lockPath); released += 1; } catch { /* Gone already, or left as before. */ }
+  }
+  claims.clear();
+  return released;
+};
 
 const unavailable = (cause) => Object.assign(new Error('mutation_runtime_unavailable', cause ? { cause } : undefined),
   { code: 'mutation_runtime_unavailable', status: 503 });
@@ -134,8 +162,17 @@ export function createSessionMutationHost(options = {}) {
   const start = () => {
     if (worker) return worker;
     if (closed) throw unavailable();
-    const current = new Worker(workerScript(), { ...(workerExecArgv() ? { execArgv: workerExecArgv() } : {}), workerData: {
+    // Owner-lock token -> lock path, for every lock this worker may hold.
+    const claims = new Map(), locks = new MessageChannel();
+    const claim = (message) => {
+      if (typeof message?.settle === 'string') claims.delete(message.settle);
+      else if (typeof message?.claim === 'string' && typeof message.lockPath === 'string') claims.set(message.claim, message.lockPath);
+    };
+    locks.port1.on('message', claim);
+    locks.port1.unref();
+    const current = new Worker(workerScript(), { ...(workerExecArgv() ? { execArgv: workerExecArgv() } : {}), transferList: [locks.port2], workerData: {
       directory: options.directory,
+      lockPort: locks.port2,
       ...(options.maintenance ? { maintenance: options.maintenance } : {}),
       ...(options.batching ? { batching: options.batching } : {}),
       ...(options.complexity ? { complexity: options.complexity } : {}),
@@ -146,7 +183,16 @@ export function createSessionMutationHost(options = {}) {
     current.on('message', onMessage);
     const stop = (cause) => { if (worker !== current) return; worker = null; fail(cause); };
     current.on('error', stop);
-    current.on('exit', (code) => stop(code ? Object.assign(new Error(`worker exited with ${code}`), { code: 'worker_exit' }) : undefined));
+    current.on('exit', (code) => {
+      // Claims the thread posted that have not been delivered yet are queued.
+      for (let next = receiveMessageOnPort(locks.port1); next; next = receiveMessageOnPort(locks.port1)) claim(next.message);
+      locks.port1.close();
+      const released = releaseWorkerLocks(claims);
+      if (released) {
+        try { observers.onDiagnostic?.({ phase: 'ledger_worker', state: 'completed', code: 'worker_lock_released' }); } catch { /* Observer only. */ }
+      }
+      stop(code ? Object.assign(new Error(`worker exited with ${code}`), { code: 'worker_exit' }) : undefined);
+    });
     current.unref();
     return current;
   };

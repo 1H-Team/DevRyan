@@ -84,10 +84,13 @@ skills agents see.
 
 ## Tests
 
-`bun test` runs the upstream algorithm tests that apply plus DevRyan's owner
-tests. `test/preload.ts` installs filesystem/fetch test owners and points the
-XDG and OpenCode directories at a temporary root, so no test touches the real
-user configuration. `bun run validate` type-checks and tests the package when it
+`bun run --cwd packages/agents-core test` runs the upstream algorithm tests that
+apply plus DevRyan's owner tests, inside the private environment of
+`scripts/test-isolation-guard.mjs` (a bare `bun test` here refuses to start
+without it: the guard's preload runs first). `test/preload.ts` then installs
+filesystem/fetch test owners and points the XDG and OpenCode directories at a
+per-process folder inside that private root, so no test touches the real user
+configuration. `bun run validate` type-checks and tests the package when it
 changes and re-checks the web package that depends on it.
 
 ## Porting upstream fixes

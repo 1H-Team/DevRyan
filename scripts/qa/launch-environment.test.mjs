@@ -53,3 +53,13 @@ test('isolated runtime environment owns the private home and carries fixture fla
   assert.equal(fixture.OPENCODE_SKIP_START, 'true');
   assert.equal(fixture.FIXTURE_TOKEN, 'synthetic', 'fixture runtime variables are applied after the secret-name filter');
 });
+
+test('a packaged app profile keeps HOME, XDG, temp and the Electron profile inside the run root', async () => {
+  const { qaPackagedAppProfileEnvironment } = await import('./launch-environment.mjs');
+  const env = qaPackagedAppProfileEnvironment({ home: '/synthetic/root/home', root: '/synthetic/root' }, hostile);
+  assert.deepEqual(env, { PATH: hostile.PATH, LANG: 'C', TERM: 'xterm', HOME: '/synthetic/root/home',
+    XDG_CONFIG_HOME: '/synthetic/root/home/.config', XDG_DATA_HOME: '/synthetic/root/home/.local/share',
+    XDG_STATE_HOME: '/synthetic/root/home/.local/state', XDG_CACHE_HOME: '/synthetic/root/home/.cache', TMPDIR: '/synthetic/root',
+    GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', GIT_CEILING_DIRECTORIES: '/synthetic/root',
+    DEVRYAN_ELECTRON_USER_DATA_DIR: '/synthetic/root/home/electron-profile' });
+});

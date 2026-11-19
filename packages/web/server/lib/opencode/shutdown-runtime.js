@@ -24,7 +24,6 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     getSessionExecutionHost,
     getSessionTitleRuntime,
     shouldSkipOpenCodeStop,
-    getOpenCodePort,
     getOpenCodeProcess,
     setOpenCodeProcess,
     getServer,

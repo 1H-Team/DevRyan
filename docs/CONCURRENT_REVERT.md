@@ -53,8 +53,10 @@ Each implementation was audited to read only:
 
 Publication renames each file atomically, so a read never observes a partial
 write. The exemption is keyed by built-in object identity: a plugin or file tool
-reusing one of those ids stays confined. `DEVRYAN_NATIVE_READ_TOOLS=0` confines
-them again. Workers for built-in tools boot without plugins, because plugin
+reusing one of those ids stays confined. No switch confines them again: in the
+native runtime, `packages/web/server/lib/opencode/runtime-host/execution-routing.ts` runs `read`, `glob` and
+`grep` as direct reads, each target checked by `createNativeReadGuard`
+(`execution-read-guard.ts` beside it). Workers for built-in tools boot without plugins, because plugin
 hooks run in the control process and only plugin-defined tools need their
 plugin inside the worker.
 
@@ -251,8 +253,12 @@ ships them under `Resources/revert-runtime`. An explicit
 `DEVRYAN_EXECUTION_ARTIFACTS` directory supports isolated verification. Electron
 packaging verifies artifacts before signing, refreshes digests after its owned
 ad-hoc signing operation, and reseals/verifies the application. Releases ship
-Apple silicon only (`supportedArtifacts: ["darwin-arm64"]`), built and tested on
-a native macOS arm64 runner. The npm package includes those same artifacts.
+Apple silicon only (`SUPPORTED_NATIVE_RUNTIME_TARGETS` in
+`scripts/verify-revert-runtime-artifacts.mjs` is `darwin-arm64`), built and tested on
+a native macOS arm64 runner. No npm package is published
+([release pipeline](RELEASE_PIPELINE.md)); `scripts/pack-web-release.mjs` refuses a
+universal web package until verified artifacts exist for every target in
+`REQUIRED_WEB_NATIVE_RUNTIME_TARGETS`.
 Packing verifies every declared supported architecture before staging and
 verifies the staged copies. Intel Macs are no longer a supported artifact
 target, so the host there runs managed sessions without native capture, as on

@@ -23,13 +23,21 @@ async function acquireCandidate(root, environment, attempt = 1, deadline = Date.
   return target;
 }
 
+// A cleanup failure after a failed run is reported with, never instead of, the
+// run's own failure: the qualification failure comes first and keeps its class.
+function withCleanupFailures(failure, cleanupErrors) {
+  const { command, exitCode, stderr } = failure ?? {};
+  return Object.assign(new AggregateError([failure, ...cleanupErrors], `${failure?.message ?? failure}; profile cleanup also failed`, { cause: failure }),
+    { qualificationClass: classifyQualificationFailure(failure), command, exitCode, stderr });
+}
+
 export async function runPreagedUpgrades({ reportDirectory, environment = process.env,
   prepare = prepareReleaseUpgradeLane, acquire = acquireCandidate, digest = treeDigest, log = console.log } = {}) {
   const timings = createPhaseTimings();
   const producerDeadline = Date.now() + CANDIDATE_PRODUCER_TIMEOUT_MS;
   const root = createRunRoot({ parent: scratchParent('release-upgrade'), owner: 'release-preaged-upgrades', onInterrupt: stopUpgradeChildren });
   const prepared = [], results = [];
-  let passed = false;
+  let passed = false, failed = false, failure;
   try {
     const prepareInput = createBaselineInputs(root.dir);
     for (const lane of REQUIRED_UPGRADE_LANES) {
@@ -46,13 +54,17 @@ export async function runPreagedUpgrades({ reportDirectory, environment = proces
     passed = results.every(result => result.passed);
     for (const result of results.filter(row => !row.passed)) log(`[qualification] product failure: ${(result.failures ?? []).join('; ')}`);
     return { passed, results };
+  } catch (error) {
+    failed = true; failure = error;
+    throw error;
   } finally {
     const cleanup = await Promise.allSettled(prepared.map(profile => profile.cleanup()));
     timings.measureSync('shared-input-scratch-cleanup', () => finishUpgradeScratch(root, passed ? 'passed' : 'failed'));
     await writeMissingReports(reportDirectory, { environment });
     await writeFile(path.join(reportDirectory, 'qualification-timings.json'), JSON.stringify({ passed: passed && cleanup.every(result => result.status === 'fulfilled'),
       sourceRevision: environment.GITHUB_SHA ?? null, runID: environment.GITHUB_RUN_ID ?? null, phases: timings.phases }) + '\n');
-    if (cleanup.some(result => result.status === 'rejected')) throw new Error('Profile cleanup failed');
+    const cleanupErrors = cleanup.filter(result => result.status === 'rejected').map(result => result.reason);
+    if (cleanupErrors.length) throw failed ? withCleanupFailures(failure, cleanupErrors) : new Error('Profile cleanup failed');
   }
 }
 

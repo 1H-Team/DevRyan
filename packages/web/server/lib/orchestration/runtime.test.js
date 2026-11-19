@@ -739,7 +739,7 @@ describe('web managed orchestration runtime', () => {
     const { resolveSessionPlanRevision } = await import('../plans/routes.js');
     const dataDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-native-plan-barrier-'));
     const scope = { rootSessionId: 'ses_root', directory: '/project' };
-    let generation = 1, revoked = false;
+    const generation = 1; let revoked = false;
     const primary = { sessionID: 'ses_root', directory: '/project', anchorID: 'msg_plan_user', objectiveID: 'msg_plan_user',
       stepID: 'msg_plan', state: 'completed', cancellationGeneration: 0 };
     const plan = { info: { id: 'msg_plan', sessionID: 'ses_root', role: 'assistant', parentID: 'msg_plan_user', finish: 'stop', time: { completed: 10 } },

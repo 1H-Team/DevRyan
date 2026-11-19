@@ -7,7 +7,6 @@ import { createSessionExecutionHost } from '../../packages/web/server/lib/openco
 
 // Diagnostic of the actual host contract, not a simulated process receipt.
 test('terminal host drain permanently fences context assets even with a fresh controller grant', async () => {
-  const repository = path.resolve(import.meta.dirname, '../..');
   const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-host-lifetime-')));
   let captures = 0, generation = 1;
   const marker = Object.assign(Error('captured_current_controller'), { code: 'captured_current_controller' });

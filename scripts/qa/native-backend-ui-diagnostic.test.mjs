@@ -128,7 +128,7 @@ test('publication oracle refuses prose, stale scope, failed tool and unconfirmed
 });
 
 test('publication reader uses only the committed workspace tree and refuses incomplete evidence without writes', async t => {
-  const fixture = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/qa-ui-ledger-')));
+  const fixture = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/qa/qa-ui-ledger-')));
   t.after(() => fs.rm(fixture, { recursive: true, force: true }));
   const gitConfig = path.join(fixture, 'gitconfig'); await fs.writeFile(gitConfig, '');
   const previous = { GIT_CONFIG_GLOBAL: process.env.GIT_CONFIG_GLOBAL, GIT_CONFIG_NOSYSTEM: process.env.GIT_CONFIG_NOSYSTEM };
@@ -171,7 +171,7 @@ test('publication reader uses only the committed workspace tree and refuses inco
 });
 
 test('profile refuses unknown generation and escaped source before any provider or migration starts', async t => {
-  const root = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/qa-ui-path-')));
+  const root = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/qa/qa-ui-path-')));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const outside = path.join(root, 'outside'), artifactRoot = path.join(root, 'artifacts'); await fs.mkdir(outside); await fs.mkdir(artifactRoot);
   await fs.symlink(outside, path.join(root, 'link'));

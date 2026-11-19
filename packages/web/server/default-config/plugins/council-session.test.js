@@ -159,7 +159,7 @@ describe('CouncilSessionPlugin', () => {
     tempDirs.push(configDir);
     await writeCouncilConfig(configDir, [{ model: 'openai/gpt-5.5', variant: 'high' }], { legacy: true });
     process.env.OPENCODE_CONFIG_DIR = configDir;
-    const { client, createdSessions } = createClient([{
+    const { client } = createClient([{
       status: { type: 'idle' },
       messages: (sessionID) => [assistantMessage(sessionID, 'legacy answer', {
         finish: 'stop',

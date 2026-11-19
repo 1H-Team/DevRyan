@@ -230,7 +230,7 @@ export const createQaProjectPrompts = ({ agent = 'builder', planMode = false } =
   });
 };
 
-export const createQaProjectFixture = ({ outputRoot = path.join(REPO_ROOT, '.cache/qa/projects'), runId = 'project', agent = 'builder', planMode = false } = {}) => {
+export const createQaProjectFixture = ({ outputRoot = path.join(REPO_ROOT, '.cache/qa'), runId = 'project', agent = 'builder', planMode = false } = {}) => {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,119}$/.test(runId)) throw new Error('Invalid QA project runId');
   const prompts = createQaProjectPrompts({ agent, planMode });
   const root = path.resolve(outputRoot);

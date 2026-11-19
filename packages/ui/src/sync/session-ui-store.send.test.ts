@@ -798,7 +798,6 @@ describe("session-ui-store send routing", () => {
       draftsById: {},
       draftOrder: [],
       newSessionDraft: { open: false, directoryOverride: null, parentID: null },
-      pendingChangesBarDismissed: new Map(),
       worktreeMetadata: new Map(),
       sessionDirectoryHints: new Map(),
       webUICreatedSessions: new Set(),
@@ -2005,10 +2004,6 @@ describe("session-ui-store send routing", () => {
         }],
         ["session-b", retainedStarter],
       ]),
-      pendingChangesBarDismissed: new Map([
-        ["session-a", "sig-a"],
-        ["session-b", "sig-b"],
-      ]),
     })
     useSessionWorktreeStore.setState({
       attachments: new Map([
@@ -2101,7 +2096,6 @@ describe("session-ui-store send routing", () => {
     ]))
     expect(state.starterAssistantMessages.has("session-a")).toBe(false)
     expect(state.starterAssistantMessages.get("session-b")).toBe(retainedStarter)
-    expect(state.pendingChangesBarDismissed).toEqual(new Map([["session-b", "sig-b"]]))
     expect(useSessionWorktreeStore.getState().attachments.has("session-a")).toBe(false)
     expect(useSessionWorktreeStore.getState().attachments.has("session-b")).toBe(true)
     expect(useSessionPlanFileStore.getState().recordsBySession["session-a"]).toBe(undefined)
@@ -2142,7 +2136,6 @@ describe("session-ui-store send routing", () => {
       planModeUserMessagesBySession: before.planModeUserMessagesBySession,
       implementedPlanRequests: before.implementedPlanRequests,
       starterAssistantMessages: before.starterAssistantMessages,
-      pendingChangesBarDismissed: before.pendingChangesBarDismissed,
     }
 
     type SessionUIStateWithRetirement = ReturnType<typeof useSessionUIStore.getState> & {

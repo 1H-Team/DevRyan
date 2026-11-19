@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import os from 'node:os';
 
 import { bunTestArgs, bunTestWorkers, discoverTestFiles } from './test-runner-utils.mjs';
+import { NODE_ISOLATION_ARGS, spawnStatus, withTestIsolationSync } from './test-isolation-guard.mjs';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const electronRoot = path.join(repositoryRoot, 'packages/electron');
@@ -41,7 +42,7 @@ export function runElectronTests(root = electronRoot) {
   }
   // Node-hosted main-process code runs on node:test; Bun files run isolated per file.
   const commands = [
-    ...(plan.node.length ? [[process.execPath, ['--test', `--test-concurrency=${Math.min(bunTestWorkers(), os.availableParallelism())}`, ...plan.node]]] : []),
+    ...(plan.node.length ? [[process.execPath, [...NODE_ISOLATION_ARGS, '--test', `--test-concurrency=${Math.min(bunTestWorkers(), os.availableParallelism())}`, ...plan.node]]] : []),
     ...(plan.bun.length ? [['bun', bunTestArgs(plan.bun.map((file) => `./${file}`))]] : []),
   ];
   if (commands.length === 0) {
@@ -49,14 +50,17 @@ export function runElectronTests(root = electronRoot) {
     return 0;
   }
 
-  // Every tier runs; the result fails if any tier failed.
-  let status = 0;
-  for (const [command, args] of commands) {
-    console.log(`\n$ ${command} ${args.join(' ')}`);
-    const result = spawnSync(command, args, { cwd: root, stdio: 'inherit', env: process.env });
-    if (result.status !== 0) status = result.status ?? 1;
-  }
-  return status;
+  // Every tier runs, in the private environment of scripts/test-isolation-guard.mjs
+  // (reused when already isolated); the result fails if any tier failed.
+  return withTestIsolationSync((env) => {
+    let status = 0;
+    for (const [command, args] of commands) {
+      console.log(`\n$ ${command} ${args.join(' ')}`);
+      const result = spawnSync(command, args, { cwd: root, stdio: 'inherit', env });
+      if (spawnStatus(result) !== 0) status = spawnStatus(result);
+    }
+    return status;
+  });
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {

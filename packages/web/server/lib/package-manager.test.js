@@ -1,14 +1,21 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('node:child_process', () => ({
-  spawn: vi.fn(),
-  spawnSync: vi.fn(() => ({ status: 0, stdout: '/usr/local/bin', stderr: '' })),
-  execFile: vi.fn((_command, _args, _options, callback) => callback(null, '/usr/local/bin', '')),
+const processes = vi.hoisted(() => ({
+  spawn: vi.fn(), spawnSync: vi.fn(), exec: vi.fn(), execSync: vi.fn(), execFile: vi.fn(), execFileSync: vi.fn(), fork: vi.fn(),
 }));
+vi.mock('child_process', async (original) => ({ ...await original(), ...processes }));
+vi.mock('node:child_process', async (original) => ({ ...await original(), ...processes }));
 
 const previousUpdateApiUrl = process.env.DEVRYAN_UPDATE_API_URL;
 delete process.env.DEVRYAN_UPDATE_API_URL;
-const { checkForUpdates } = await import('./package-manager.js');
+const packageManager = await import('./package-manager.js');
+const { checkForUpdates } = packageManager;
+const RELEASE_PAGE = 'https://github.com/1H-Team/DevRyan/releases/latest';
+
+const expectNoPackageManagerOrRegistry = (fetchMock) => {
+  for (const spawned of Object.values(processes)) expect(spawned).not.toHaveBeenCalled();
+  for (const [url] of fetchMock.mock.calls) expect(String(url)).not.toContain('registry.npmjs.org');
+};
 
 function createFetchMock() {
   const handlers = new Map();
@@ -42,6 +49,7 @@ describe('checkForUpdates', () => {
   let fetchMock;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     fetchMock = createFetchMock();
     vi.stubGlobal('fetch', fetchMock);
   });
@@ -59,15 +67,10 @@ describe('checkForUpdates', () => {
   });
 
   it('uses the DevRyan GitHub release as the latest-version authority', async () => {
-    fetchMock
-      .when('api.github.com/repos/1H-Team/DevRyan/releases/latest', {
-        ok: true,
-        json: async () => githubRelease(),
-      })
-      .when('registry.npmjs.org', {
-        ok: true,
-        json: async () => ({ 'dist-tags': { latest: '1.10.0' } }),
-      });
+    fetchMock.when('api.github.com/repos/1H-Team/DevRyan/releases/latest', {
+      ok: true,
+      json: async () => githubRelease(),
+    });
 
     const result = await checkForUpdates({ currentVersion: '1.9.10' });
 
@@ -78,7 +81,12 @@ describe('checkForUpdates', () => {
       body: '## DevRyan 1.10.0\n\n- Great new feature',
       date: '2026-05-01T12:00:00Z',
       nextSuggestedCheckInSec: 21_600,
+      releaseUrl: RELEASE_PAGE,
     });
+    expect(result).not.toHaveProperty('packageManager');
+    expect(result).not.toHaveProperty('updateCommand');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expectNoPackageManagerOrRegistry(fetchMock);
     expect(fetchMock.mock.calls[0][1]).toMatchObject({
       method: 'GET',
       headers: {
@@ -88,21 +96,19 @@ describe('checkForUpdates', () => {
     });
   });
 
-  it('keeps web updates unavailable until the matching compatibility package is published', async () => {
-    fetchMock
-      .when('api.github.com/repos/1H-Team/DevRyan/releases/latest', {
-        ok: true,
-        json: async () => githubRelease(),
-      })
-      .when('registry.npmjs.org', {
-        ok: true,
-        json: async () => ({ 'dist-tags': { latest: '1.9.10' } }),
-      });
+  it('reports a newer web release from GitHub without gating it on an npm package', async () => {
+    fetchMock.when('api.github.com/repos/1H-Team/DevRyan/releases/latest', {
+      ok: true,
+      json: async () => githubRelease(),
+    });
 
-    const result = await checkForUpdates({ currentVersion: '1.9.10' });
+    const result = await checkForUpdates({ appType: 'web', currentVersion: '1.9.10' });
 
-    expect(result.available).toBe(false);
+    expect(result.available).toBe(true);
     expect(result.version).toBe('1.10.0');
+    expect(result.releaseUrl).toBe(RELEASE_PAGE);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expectNoPackageManagerOrRegistry(fetchMock);
   });
 
   it.each(['desktop-tauri', 'desktop-electron'])(
@@ -162,8 +168,10 @@ describe('checkForUpdates', () => {
       available: false,
       currentVersion: '1.9.10',
       error: 'Unable to check DevRyan releases',
+      releaseUrl: RELEASE_PAGE,
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expectNoPackageManagerOrRegistry(fetchMock);
   });
 
   it('fails closed for invalid GitHub release metadata', async () => {
@@ -177,5 +185,15 @@ describe('checkForUpdates', () => {
     expect(result.available).toBe(false);
     expect(result.error).toBe('Unable to check DevRyan releases');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('exports no package-manager install, registry or detection entry point', () => {
+    for (const removed of ['executeUpdate', 'getUpdateCommand', 'getLatestVersion', 'detectPackageManager',
+      'detectPackageManagerAsync', 'detectPackageManagerDetails']) {
+      expect(packageManager).not.toHaveProperty(removed);
+    }
+    expect(packageManager.RELEASE_PAGE_URL).toBe(RELEASE_PAGE);
+    expect(packageManager.RELEASE_INSTALL_HINT).toContain('DMG');
+    expect(packageManager.RELEASE_INSTALL_HINT).toContain(RELEASE_PAGE);
   });
 });

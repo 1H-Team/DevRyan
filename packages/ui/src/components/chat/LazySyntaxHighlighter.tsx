@@ -61,5 +61,3 @@ export const LazySyntaxHighlighter: React.FC<SyntaxHighlighterProps> = (props) =
     <PrismSyntaxHighlighter {...props} />
   </React.Suspense>
 );
-
-export default LazySyntaxHighlighter;

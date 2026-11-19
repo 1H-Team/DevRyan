@@ -112,8 +112,6 @@ async function checkForWebUpdates(runtime: ClientRuntime, currentVersion?: strin
         typeof data.nextSuggestedCheckInSec === 'number' && Number.isFinite(data.nextSuggestedCheckInSec)
           ? data.nextSuggestedCheckInSec
           : undefined,
-      packageManager: data.packageManager,
-      updateCommand: data.updateCommand,
     };
   } catch (error) {
     console.warn('Failed to check for updates:', error);
@@ -217,7 +215,7 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
   downloadUpdate: async () => {
     const { available, runtimeType } = get();
 
-    // For web runtime, there's no download - user uses in-app update or CLI
+    // Web runtime has no download: the update dialog points to the DMG release page.
     if (runtimeType !== 'desktop' || !available) {
       return;
     }

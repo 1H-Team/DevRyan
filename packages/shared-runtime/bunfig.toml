@@ -1,0 +1,5 @@
+# Every `bun test` run here first loads the test isolation guard
+# (scripts/test-isolation-guard.mjs): it refuses a process whose HOME, XDG
+# folders or DevRyan/OpenCode roots are not inside a private test root.
+[test]
+preload = ["../../scripts/test-isolation-preload.mjs"]

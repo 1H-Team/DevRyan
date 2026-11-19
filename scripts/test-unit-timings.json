@@ -311,6 +311,7 @@
     "scripts:scripts/test-git-template.test.mjs": 167,
     "scripts:scripts/test-pool.test.mjs": 3365,
     "scripts:scripts/test-runner-utils.test.mjs": 721,
+    "scripts:scripts/test-select.test.mjs": 2000,
     "scripts:scripts/test-suite-contract.test.mjs": 788,
     "scripts:scripts/typecheck.test.mjs": 1814,
     "scripts:scripts/verify-concurrent-revert-execution.test.mjs": 135,

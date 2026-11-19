@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn as nodeSpawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { cleanupStaleAtomicFiles } from '../../../../../harness-runtime/lib/atomic-file.js';
 import { CLAUDE_AGENT_CHUNK_BYTES, parseClaudeAgentReply, parseClaudeAgentRequest } from './claude-agent-protocol.js';
 
 /**
@@ -363,10 +365,26 @@ export function readClaudeAgentConnectionChoice(choiceFile) {
     return value?.version === 1 && ['connected', 'disconnected'].includes(value.choice) ? value.choice : undefined;
   } catch { return undefined; }
 }
+// Choice writes run one at a time in call order, each through its own temporary file, so an
+// overlapping Connect and Disconnect neither consume each other's file nor store an earlier choice.
+// A failed write removes its file and does not hold up the writes behind it; one a crash left
+// behind is removed by a later write once it is a day old (best effort).
+let choiceWrite = Promise.resolve();
 export async function writeClaudeAgentConnectionChoice(choiceFile, choice) {
   if (!['connected', 'disconnected'].includes(choice)) throw fail('claude_agent_choice_invalid');
-  await fs.promises.mkdir(path.dirname(choiceFile), { recursive: true, mode: 0o700 });
-  const temporary = `${choiceFile}.${process.pid}.tmp`;
-  await fs.promises.writeFile(temporary, JSON.stringify({ version: 1, choice }), { mode: 0o600 });
-  await fs.promises.rename(temporary, choiceFile);
+  const write = async () => {
+    await fs.promises.mkdir(path.dirname(choiceFile), { recursive: true, mode: 0o700 });
+    await cleanupStaleAtomicFiles(choiceFile).catch(() => undefined);
+    const temporary = `${choiceFile}.tmp-${process.pid}-${randomUUID()}`;
+    try {
+      await fs.promises.writeFile(temporary, JSON.stringify({ version: 1, choice }), { mode: 0o600 });
+      await fs.promises.rename(temporary, choiceFile);
+    } catch (error) {
+      await fs.promises.rm(temporary, { force: true }).catch(() => undefined);
+      throw error;
+    }
+  };
+  const result = choiceWrite.then(write, write);
+  choiceWrite = result.catch(() => undefined);
+  return result;
 }

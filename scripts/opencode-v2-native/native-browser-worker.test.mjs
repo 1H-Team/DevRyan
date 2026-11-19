@@ -21,7 +21,7 @@ export * from ${JSON.stringify(path.join(repository,'packages/web/server/default
 }
 
 test('original complete browser sequence runs in one real supervised worker with canonical lease operations',async()=>{
- const {root,bundle}=await graph();let active;
+ const {root}=await graph();let active;
  try{
   const view=path.join(root,'worktree'),scratch=path.join(root,'scratch');await fs.mkdir(view);await fs.mkdir(scratch,{mode:0o700});
   const binary=path.join(root,'agent-browser'),config=path.join(root,'empty.json');await fs.writeFile(config,'{}');
@@ -57,7 +57,7 @@ process.stdout.write(JSON.stringify({result,operations,permissions}));\n`);
 },30_000);
 
 test('reviewed original browser plugin registers in the actual SDK snapshot under captured location/provenance',async()=>{
- const {root,bundle}=await graph();let child;
+ const {root}=await graph();let child;
  try{
   const home=path.join(root,'home'),tmp=path.join(home,'tmp'),directory=path.join(root,'project');await fs.mkdir(tmp,{recursive:true});await fs.mkdir(directory);await fs.writeFile(path.join(tmp,'package.json'),'{"type":"commonjs"}\n');
   const host=path.join(repository,'packages/web/server/lib/opencode/runtime-host');
@@ -131,7 +131,7 @@ test.skipIf(!existsSync(capturedAgentBrowser))('captured managed Rust daemon rea
   const view=path.join(root,'worktree'),scratch=path.join(root,'scratch'),socket=path.join(scratch,'s');await fs.mkdir(view);await fs.mkdir(scratch,{mode:0o700});
   const config=path.join(root,'empty.json');await fs.writeFile(config,'{}');
   server=Bun.serve({hostname:'127.0.0.1',port:0,fetch(request,server){if(server.upgrade(request))return;return new Response('owned fixture',{status:400});},websocket:{
-   async open(ws){upgraded++;socketNames.push(...await fs.readdir(path.join(socket,'namespaces/devryan/run')).catch(()=>[]));},message(ws,value){const input=JSON.parse(String(value));ws.send(JSON.stringify({id:input.id,error:{code:-32000,message:'owned fixture endpoint refused CDP'}}));}}});
+   async open(_ws){upgraded++;socketNames.push(...await fs.readdir(path.join(socket,'namespaces/devryan/run')).catch(()=>[]));},message(ws,value){const input=JSON.parse(String(value));ws.send(JSON.stringify({id:input.id,error:{code:-32000,message:'owned fixture endpoint refused CDP'}}));}}});
   const request={protocol:1,tool:'devryan_browser',input:{command:'snapshot'},directory:view,projectDirectory:view,logicalDirectory:root,logicalProjectDirectory:root,
    scratchDirectory:scratch,browserSocketDirectory:socket,config:{},reviewedBrowser:{binaryPath:binary,sha256:hash(await fs.readFile(binary)),configPath:config,configSha256:hash('{}')},
    context:{sessionID:'ses_owned',messageID:'msg_assistant',userMessageID:'msg_user',agent:'build',id:'call_browser'}};

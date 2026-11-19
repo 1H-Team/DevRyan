@@ -1,5 +1,4 @@
 import { DEFAULT_HELPER_MODEL_SELECTION } from '@devryan/shared-runtime';
-import { registerCommitTemplateRoutes } from './template-routes.js';
 import { generateCommitMessageDirect } from './commit-message.js';
 import { collectCommitMessageContext, validateCommitMessageSelectedFiles } from './commit-message-context.js';
 import { generatePullRequestDescriptionDirect } from './pr-description.js';
@@ -118,16 +117,12 @@ const collectCommitContextWithinDeadline = async ({ promise, selectedFiles, stag
 };
 
 export function registerGitRoutes(app, {
-  // Global UI event broadcaster (`devryan:*` events, filtered per directory).
-  broadcastEvent = null,
   generateCommitMessage = generateCommitMessageDirect,
   generatePullRequestDescription = generatePullRequestDescriptionDirect,
   generateTextWithSessionModel = generateTextWithSessionModelDefault,
   generateHelperText,
   resolveHelperSelection,
   cursorRuntime,
-  buildOpenCodeUrl,
-  getOpenCodeAuthHeaders,
   // The client or a getter; forwarded so OpenCode helpers pick the runtime generation.
   openCodeClient = null,
   recordCommitTiming = () => {},
@@ -135,8 +130,6 @@ export function registerGitRoutes(app, {
   prepareNativeDirectory,
   loadGitLibraries,
 } = {}) {
-  registerCommitTemplateRoutes(app);
-
   const resolveOpenCodeClient = () => (typeof openCodeClient === 'function' ? openCodeClient() : openCodeClient) ?? null;
   const openCodeClientArgs = () => {
     const client = resolveOpenCodeClient();
@@ -253,7 +246,7 @@ export function registerGitRoutes(app, {
         }
         try {
           message = await generateCommitMessage({ context, guidance, allowLocalFallback: false,
-            ...createGitZenTextTransport({ generateHelperText, cursorRuntime, buildOpenCodeUrl, getOpenCodeAuthHeaders, ...openCodeClientArgs(), directory,
+            ...createGitZenTextTransport({ generateHelperText, cursorRuntime, ...openCodeClientArgs(), directory,
               sessionID: req.body?.sessionID, selection, agent: 'devryan-commit' }),
             models: [selection.modelID], catalogState: selectionMode, cooldowns: null,
             onAttempt: attempt => recordGenerationAttempt(req, 'git_commit_message_model_attempt', selectionMode, attempt, selectionMode),
@@ -1221,7 +1214,7 @@ export function registerGitRoutes(app, {
       try {
         if (!configured) throw Object.assign(new Error('Helper selection unavailable'), { code: 'HELPER_MODEL_FAILED' });
         const generated = await generatePullRequestDescription({
-          ...createGitZenTextTransport({ generateHelperText, cursorRuntime, buildOpenCodeUrl, getOpenCodeAuthHeaders, ...openCodeClientArgs(), directory, sessionID: req.body?.sessionID, selection: configured, agent: PR_SESSION_HELPER_AGENT }),
+          ...createGitZenTextTransport({ generateHelperText, cursorRuntime, ...openCodeClientArgs(), directory, sessionID: req.body?.sessionID, selection: configured, agent: PR_SESSION_HELPER_AGENT }),
           prompt: fullPrompt,
           models: [configured.modelID],
           cooldowns: null,
@@ -1257,8 +1250,6 @@ export function registerGitRoutes(app, {
       const sessionResult = await generateTextWithSessionModel({
         generateHelperText,
         cursorRuntime,
-        buildOpenCodeUrl,
-        getOpenCodeAuthHeaders,
         ...openCodeClientArgs(),
         directory,
         selection,
@@ -1266,7 +1257,6 @@ export function registerGitRoutes(app, {
         agent: PR_SESSION_HELPER_AGENT,
         prompt: fullPrompt,
         repairPrompt: PR_SESSION_REPAIR_PROMPT,
-        denyTools: true,
         accept: normalizePullRequestDraft,
         timeoutMs: PR_SESSION_MODEL_TIMEOUT_MS,
       });
@@ -1319,15 +1309,12 @@ export function registerGitRoutes(app, {
       const result = await generateTextWithSessionModel({
         generateHelperText,
         cursorRuntime,
-        buildOpenCodeUrl,
-        getOpenCodeAuthHeaders,
         ...openCodeClientArgs(),
         directory,
         selection,
         agent: 'devryan-branch',
         prompt: buildBranchNamePrompt(prompt.slice(0, BRANCH_NAME_PROMPT_MAX_LENGTH)),
         accept: normalizeBranchSlug,
-        denyTools: true,
         maxOutputTokens: BRANCH_NAME_MAX_OUTPUT_TOKENS,
         timeoutMs: BRANCH_NAME_TIMEOUT_MS,
       });

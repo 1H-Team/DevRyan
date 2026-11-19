@@ -6,6 +6,7 @@ import { checkExecutionAdmission, executionProgress, executionStep } from './exe
 import { changeError } from './session-changes-git.js';
 import { hasDirectoryAncestors, hasDirectoryAncestorsSync, safeChangePath } from './session-changes-snapshot.js';
 import { markObjectDirectoryPending, markObjectIfUnsynced } from './object-durability.js';
+import { removeTemporaryFile } from './session-changes-trees.js';
 
 export const GRANULAR_TEXT_BYTES = 8 * 1024 * 1024;
 const stamp = (stat) => stat ? [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs, stat.mode].join(':') : null;
@@ -128,13 +129,13 @@ export async function inspectMutationFile(repo, file, directory = repo.directory
     markObjectDirectoryPending(objects);
     // Unlinking the temporary name changes the object's link count and so
     // its change time: record the identity only after it is gone.
-    if (installed) { await fs.rm(temporary, { force: true }); await recordInstalledObject(objects, digest); }
+    if (installed) { await removeTemporaryFile(temporary); await recordInstalledObject(objects, digest); }
     return describe(stat, digest, kind.whole);
   } catch (cause) {
     if (['ENOSPC', 'EDQUOT'].includes(cause.code)) throw changeError('storage_unavailable', 503);
     throw cause;
   } finally {
-    await output?.close(); await fs.rm(temporary, { force: true });
+    await output?.close(); await removeTemporaryFile(temporary);
   }
 }
 
@@ -183,7 +184,7 @@ const loadVerifiedObjects = (root) => {
         try {
           await fs.writeFile(temporary, [...latest].map(([hash, identity]) => `${hash} ${identity}\n`).join(''), { mode: 0o600, flag: 'wx' });
           await fs.rename(temporary, file);
-        } finally { await fs.rm(temporary, { force: true }); }
+        } finally { await removeTemporaryFile(temporary); }
       }
     })().catch(() => { /* Rehashing is always correct. */ });
     persistedRoots.set(root, pending);
@@ -286,7 +287,7 @@ export async function copyMutationObject(repo, entry, target, mode, { durable = 
     } catch (cause) {
       if (['ENOSPC', 'EDQUOT'].includes(cause.code)) throw changeError('storage_unavailable', 503);
       throw cause;
-    } finally { await fs.rm(temporary, { force: true }); }
+    } finally { await removeTemporaryFile(temporary); }
     return;
   }
   const source = await fs.open(path.join(repo.root, 'objects', entry.hash), 'r');
@@ -313,6 +314,6 @@ export async function copyMutationObject(repo, entry, target, mode, { durable = 
     if (['ENOSPC', 'EDQUOT'].includes(cause.code)) throw changeError('storage_unavailable', 503);
     throw cause;
   } finally {
-    await source.close(); await output?.close(); await fs.rm(temporary, { force: true });
+    await source.close(); await output?.close(); await removeTemporaryFile(temporary);
   }
 }

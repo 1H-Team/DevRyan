@@ -481,7 +481,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
             sessionTtlMs: tunnelAuthController.hasOwner ? TUNNEL_SESSION_TTL_MS : sessionTtlMs,
           },
         });
-      } catch (error) {
+      } catch {
         return res.status(500).json({ error: 'Failed to get tunnel status' });
       }
     });

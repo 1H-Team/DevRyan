@@ -15,7 +15,6 @@ import { createTunnelAccessControl, registerTunnelAccessBoundary, hasTunnelBound
 import { attachSupabaseConnectionBoundary } from '../multi-user/connection-routes.js';
 import { isDirectLocalRequest } from '../security/direct-local-request.js';
 import { createRequestSecurityRuntime } from '../security/request-security.js';
-import { registerRuntimeServiceRoutes } from '../runtime-service/routes.js';
 import { createTerminalRuntime } from '../terminal/runtime.js';
 import { createMessageStreamWsRuntime } from '../event-stream/runtime.js';
 import { createPreviewProxyRuntime } from '../preview/proxy-runtime.js';
@@ -32,6 +31,18 @@ afterEach(async () => { for (const close of disposers.splice(0).reverse()) await
 // holds on 127.0.0.1 (OpenCode, Docker, a running DevRyan), which then answers
 // instead of the fixture: spurious 404s, or a foreign 401/403 passing an
 // assertion. An explicit loopback listener is the only possible responder.
+// Stand-in for a private desktop capability registered after the boundary (the
+// retired runtime-service routes were the real one): its paths must never be
+// reached from a tunnel, and its upgrade gate must see the boundary's mark on an
+// admitted upgrade and leave that socket to the later account check.
+function registerPrivateCapabilityStandIn(app, { server = null, reached } = {}) {
+  app.use(['/api/runtime-service', '/auth/runtime-service-bootstrap'], (_req, res) => { reached(); res.sendStatus(200); });
+  server?.on('upgrade', (req, socket) => {
+    if (req.tunnelAccessDenied || socket.destroyed || hasTunnelBoundaryAuthorization(req)) return;
+    socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+    socket.destroy();
+  });
+}
 async function listenOnLoopback(server) {
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   disposers.push(() => new Promise((resolve) => { server.closeAllConnections(); server.close(resolve); }));
@@ -55,10 +66,7 @@ async function fixture(mode = 'absent', ownerAccess = false) {
   // Mirrors the ordering in bootstrap-runtime: private handlers precede /api
   // auth. No tunnel request may reach them, even with Supabase On.
   app.use('/api/desktop', (_req, res) => { forbidden(); res.sendStatus(200); });
-  registerRuntimeServiceRoutes(app, { controller: {
-    consumeBootstrap: async () => { throw new Error('No native proof'); }, authorizeSession: () => false,
-    publicStatus: () => { forbidden(); return {}; },
-  } });
+  registerPrivateCapabilityStandIn(app, { reached: forbidden });
   app.use((req, res, next) => {
     if (connection.enabled && !req.principal && !isDirectLocalRequest(req)) return res.sendStatus(401);
     next();
@@ -336,10 +344,8 @@ describe('tunnel link boundary', () => {
     const cookie = cookieState === 'unknown' ? `oc_tunnel_session=${'A'.repeat(43)}` : cookieState === 'malformed' ? 'oc_tunnel_session=invalid' : '';
     const app = express();
     registerTunnelAccessBoundary(app, null, { controller: f.controller, connection: f.connection });
-    registerRuntimeServiceRoutes(app, { controller: {
-      consumeBootstrap: async () => { throw new Error('No native proof'); }, authorizeSession: () => false,
-      publicStatus: () => { throw new Error('Native status must remain private'); },
-    } });
+    const privateReached = vi.fn();
+    registerPrivateCapabilityStandIn(app, { reached: privateReached });
     const authenticateAccount = vi.fn((req, res) => {
       expect(req.principal).toBeUndefined();
       res.status(401).json({ authenticated: false, mode: 'multi-user' });
@@ -349,6 +355,7 @@ describe('tunnel link boundary', () => {
     expect(response.status).toBe(401);
     expect(response.body).toEqual({ authenticated: false, mode: 'multi-user' });
     expect(authenticateAccount).toHaveBeenCalledOnce();
+    expect(privateReached).not.toHaveBeenCalled();
     if (cookie) expect(response.headers['set-cookie'][0]).toContain('oc_tunnel_session=;');
     if (cookie) expect(response.headers['set-cookie'][0]).toContain('Max-Age=0');
   });
@@ -358,10 +365,8 @@ describe('tunnel link boundary', () => {
     const app = express();
     registerTunnelAccessBoundary(app, null, { controller: f.controller, connection: f.connection });
     attachSupabaseConnectionBoundary(app, null, f.connection, { allowRemoteRequest: hasTunnelBoundaryAuthorization });
-    registerRuntimeServiceRoutes(app, { controller: {
-      consumeBootstrap: async () => { throw new Error('No native proof'); }, authorizeSession: () => false,
-      publicStatus: () => { throw new Error('Native status must remain private'); },
-    } });
+    const privateReached = vi.fn();
+    registerPrivateCapabilityStandIn(app, { reached: privateReached });
     let sessionValid = true;
     const authenticateAccount = vi.fn((req, res, next) => {
       expect(req.principal).toBeUndefined();
@@ -384,6 +389,7 @@ describe('tunnel link boundary', () => {
       expect((await request(server).get(route).set(remote).set('Cookie', 'account=fixture')).status).toBe(403);
     }
     expect(authenticateAccount).toHaveBeenCalledTimes(calls);
+    expect(privateReached).not.toHaveBeenCalled();
     expect(hostExecution).toHaveBeenCalledOnce();
   });
   it('runs tunnel admission before the service upgrade gate and still requires account authentication', async () => {
@@ -392,10 +398,8 @@ describe('tunnel link boundary', () => {
     const server = http.createServer(app);
     registerTunnelAccessBoundary(app, server, { controller: f.controller, connection: f.connection });
     attachSupabaseConnectionBoundary(app, server, f.connection, { allowRemoteRequest: hasTunnelBoundaryAuthorization });
-    registerRuntimeServiceRoutes(app, { server, controller: {
-      consumeBootstrap: async () => { throw new Error('No native proof'); }, authorizeSession: () => false,
-      publicStatus: () => { throw new Error('Native status must remain private'); },
-    } });
+    const privateReached = vi.fn();
+    registerPrivateCapabilityStandIn(app, { server, reached: privateReached });
     const authenticateAccount = vi.fn((req, socket) => {
       if (socket.destroyed) return;
       expect(hasTunnelBoundaryAuthorization(req)).toBe(true);
@@ -414,6 +418,7 @@ describe('tunnel link boundary', () => {
       expect(status).toBe(401);
     }
     expect(authenticateAccount).toHaveBeenCalledTimes(2);
+    expect(privateReached).not.toHaveBeenCalled();
   });
 
   it('never changes remote authentication policy during a cloud outage', async () => {

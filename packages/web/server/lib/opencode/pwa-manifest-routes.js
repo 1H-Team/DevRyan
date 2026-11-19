@@ -13,7 +13,6 @@ const mapPwaOrientationToManifest = (value) => {
 
 export const registerPwaManifestRoute = (app, dependencies) => {
   const {
-    process,
     resolveProjectDirectory,
     readSettingsFromDiskMigrated,
     normalizePwaAppName,

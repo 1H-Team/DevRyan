@@ -2,7 +2,6 @@ import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import {
   findMessageIndex,
   insertMessageChronologically,
-  sortMessagesChronologically,
 } from "./message-order"
 
 function filterRenderableParts(parts: Part[]) {
@@ -107,18 +106,3 @@ export function applyOptimisticRemove(draft: OptimisticStore, input: OptimisticR
   delete draft.part[input.messageID]
 }
 
-/** Merge two sorted message arrays by id, deduplicating.
- *  Preserves references from `a` for items that already exist — avoids
- *  unnecessary React re-renders when prepending older history. */
-export function mergeMessages<T extends { id: string; time?: { created?: unknown } }>(a: readonly T[], b: readonly T[]) {
-  const existing = new Map(a.map((item) => [item.id, item] as const))
-  let changed = false
-  for (const item of b) {
-    if (!existing.has(item.id)) {
-      existing.set(item.id, item)
-      changed = true
-    }
-  }
-  if (!changed) return a as T[]
-  return sortMessagesChronologically([...existing.values()])
-}

@@ -26,7 +26,7 @@ export function requiresMac(unit) {
 export function ciTestInventory(root, options = {}) {
   return planFullTests(root, options).flatMap(unit => {
     if (unit.name === 'scripts:node') return unit.args.filter(arg => /test\.[cm]?js$/.test(arg) && !BUILD_JOB_TESTS.includes(arg))
-      .map(file => ({ ...unit, name: `scripts:${file}`, args: ['--test', file] }));
+      .map(file => ({ ...unit, name: `scripts:${file}`, args: [...unit.args.filter(arg => arg.startsWith('--import=')), '--test', file] }));
     if (unit.suite === 'harness') return discoverTestFiles(path.join(root, 'packages/harness-runtime'), root)
       .map(file => ({ ...unit, cwd: root, name: `harness:${file}`, args: ['test', `./${file}`] }));
     if (unit.name.endsWith('/native-stream-continuation.graph.test.ts')) return Array.from({ length: 2 }, (_, index) => ({ ...unit,

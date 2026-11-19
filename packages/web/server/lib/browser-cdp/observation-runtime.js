@@ -310,7 +310,7 @@ export const createBrowserObservationRuntime = ({
       deleteView(view, 'attach_expired');
       throw new BrowserObservationError('browser_view_expired', 'Browser viewer session expired', 410);
     }
-    const record = await requireRecord(principal, leaseId);
+    await requireRecord(principal, leaseId);
     if (held || views.get(viewId) !== view) throw new BrowserObservationError('browser_observation_held', 'Browser observation is paused', 503);
     view.attached = true;
     if (view.expiryTimer) clearTimer(view.expiryTimer);

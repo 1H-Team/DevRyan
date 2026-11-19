@@ -9,7 +9,6 @@ import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 import { createReadStream, appendFileSync } from 'node:fs';
 
-const repository = fileURLToPath(new URL('../../', import.meta.url));
 const run = promisify(childProcess.execFile);
 const clock = () => performance.now();
 const round = value => Math.round(value * 10) / 10;
@@ -96,7 +95,7 @@ export async function measurePreparation(options) {
     appendFileSync(path.join(options.trialRoot, 'diagnostics.jsonl'), JSON.stringify(row) + '\n');
   };
   const nativeSocketDirectories = new Set();
-  let runtime, started, measured;
+  let runtime, measured;
   const report = { status: 'failed', observationSchemaVersion: 2, files, projectCommit, metrics: {}, diagnostics, actions,
     unavailable: ['Git child CPU and exact process-tree peak RSS', 'Copy timing includes copyFile only; hashing/chmod/rename are inside preparation', 'Concurrent/nested phase totals overlap'] };
   report.sourceHashes = Object.fromEntries(await Promise.all(['session-mutations.js', 'session-mutation-files.js', 'execution-admission.js']
@@ -150,7 +149,7 @@ export async function measurePreparation(options) {
     }
     if (options.scenario === 'changed-content') await fs.appendFile(path.join(directory, 'README.md'), '\nFixture incoming content change.\n');
     const diagnosticStart = diagnostics.length;
-    started = clock();
+    clock();
     const sample = await measure(measured);
     const phases = phaseTotals(diagnostics.slice(diagnosticStart));
     Object.assign(report.metrics, { wallMs: sample.wallMs, hostCpuMs: sample.cpuMs, hostPeakRssMiB: round(process.resourceUsage().maxRSS / 1024),

@@ -16,8 +16,6 @@ const makeApp = ({
     resolveHelperSelection,
     generateTextWithSessionModel,
     generateHelperText: vi.fn(),
-    buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
-    getOpenCodeAuthHeaders: () => ({}),
     loadGitLibraries: async () => ({}),
   });
   return { app, resolveHelperSelection, generateTextWithSessionModel };
@@ -39,7 +37,7 @@ describe('POST /api/git/branch-name', () => {
     expect(response.body).toEqual({ slug: 'homepage-language-audit', source: 'helper_model', model: 'opencode/deepseek-v4.1-flash' });
     expect(resolveHelperSelection).toHaveBeenCalledWith({ directory: '/repo', agent: 'devryan-branch', selectionMode: 'configured' });
     const call = generateTextWithSessionModel.mock.calls[0][0];
-    expect(call).toMatchObject({ directory: '/repo', agent: 'devryan-branch', selection: configured, denyTools: true, timeoutMs: 6_000 });
+    expect(call).toMatchObject({ directory: '/repo', agent: 'devryan-branch', selection: configured, timeoutMs: 6_000 });
     expect(call.prompt).toContain('Audit the homepage copy for language issues');
   });
 

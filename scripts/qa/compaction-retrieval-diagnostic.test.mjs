@@ -102,7 +102,7 @@ test('questions correlate only to the current root assistant and exact pending c
 
 test('matched pairs retain different generated plans and distinguish compacted/control/both candidates', () => {
   const c = arm('control'); const k = arm('compacted');
-  let result = compareQaRetrievalPair(c, k);
+  const result = compareQaRetrievalPair(c, k);
   assert.equal(result.comparable, true);
   assert.deepEqual(result.generatedPlanHashes, { control: 'control-generated-plan', compacted: 'compacted-generated-plan' });
   assert.equal(result.retrievalEvidenceCandidates, 'neither-arm');

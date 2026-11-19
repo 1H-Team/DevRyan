@@ -25,7 +25,6 @@ export const createBootstrapRuntime = (dependencies) => {
       tunnelAuthController,
       readSettingsFromDiskMigrated,
       normalizeTunnelSessionTtlMs,
-      getRuntimeReady,
       resolveZenModel,
       sayTTSCapability,
       ensurePushInitialized,
@@ -41,12 +40,6 @@ export const createBootstrapRuntime = (dependencies) => {
       writeSseEvent,
       sessionRuntime,
       setPushInitialized,
-      fs,
-      os,
-      path,
-      server,
-      __dirname,
-      devryanDataDir,
       modelsDevApiUrl,
       modelsMetadataCacheTtl,
       fetchFreeZenModels,
@@ -91,7 +84,6 @@ export const createBootstrapRuntime = (dependencies) => {
       uiAuthController,
       readSettingsFromDiskMigrated,
       normalizeTunnelSessionTtlMs,
-      getRuntimeReady,
     });
 
     registerTtsRoutes(app, { resolveZenModel, sayTTSCapability });
@@ -112,28 +104,14 @@ export const createBootstrapRuntime = (dependencies) => {
       getUiNotificationClients,
       writeSseEvent,
       getSessionActivitySnapshot: sessionRuntime.getSessionActivitySnapshot,
-      getSessionStateSnapshot: sessionRuntime.getSessionStateSnapshot,
-      getSessionAttentionSnapshot: sessionRuntime.getSessionAttentionSnapshot,
-      getSessionState: sessionRuntime.getSessionState,
-      getSessionAttentionState: sessionRuntime.getSessionAttentionState,
-      markSessionViewed: sessionRuntime.markSessionViewed,
-      markSessionUnviewed: sessionRuntime.markSessionUnviewed,
       markUserMessageSent: sessionRuntime.markUserMessageSent,
       setPushInitialized,
       setAutoAcceptSession,
     });
 
     registerDevRyanRoutes(app, {
-      fs,
-      os,
-      path,
-      process,
-      server,
-      __dirname,
-      devryanDataDir,
       modelsDevApiUrl,
       modelsMetadataCacheTtl,
-      readSettingsFromDiskMigrated,
       fetchFreeZenModels,
       getCachedZenModels,
     });

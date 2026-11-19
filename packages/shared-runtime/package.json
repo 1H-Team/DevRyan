@@ -89,7 +89,7 @@
     }
   },
   "scripts": {
-    "test": "bun test"
+    "test": "node ../../scripts/test-isolation-guard.mjs bun test"
   },
   "dependencies": {
     "adm-zip": "^0.6.0"

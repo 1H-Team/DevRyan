@@ -31,8 +31,6 @@ export type QueuedEvent = {
   payload: Event
 }
 
-export type FlushHandler = (events: QueuedEvent[]) => void
-
 const FLUSH_FRAME_MS = 33
 const STREAMING_FLUSH_FRAME_MS = 24
 const STREAMING_FLUSH_QUEUE_DEPTH = 8

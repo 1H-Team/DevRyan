@@ -1,0 +1,300 @@
+{
+  "description": "Every test file that can skip a test, or return early from one, on a condition. scripts/test-suite-contract.test.mjs checks it: a skipIf, runIf or t.skip() call, or a test.skip-style reference used as an alias, that no guard of its file covers fails, a guard text or definition no longer in its file fails (whitespace ignored), and ciJobs must be the CI job(s) that run the file (tests: Ubuntu lanes, native-tests: macOS lanes, build: the build job). ci is yes when CI satisfies the condition under which the guarded test runs, no when CI never does; the contract prints every guard with ci no. Early-return and if-wrapped guards cannot be found mechanically: add them here by hand. See docs/TESTING.md.",
+  "entries": [
+    {
+      "file": "packages/agents-core/src/hooks/apply-patch/rewrite.test.ts",
+      "ciJobs": ["native-tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform === 'win32')", "condition": "skipped on Windows", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/agents-core/src/hooks/search-path-guard/index.test.ts",
+      "ciJobs": ["native-tests"],
+      "guards": [
+        { "mechanism": "early return", "text": "if (process.platform !== 'win32') return;", "condition": "the Windows drive-relative path test returns at once except on Windows", "ci": "no", "note": "CI has no Windows runner" }
+      ]
+    },
+    {
+      "file": "packages/harness-runtime/lib/atomic-file.test.js",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform === 'win32')", "condition": "skipped on Windows", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/harness-runtime/lib/execution-developer-tools.test.js",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(!fullXcode)", "definition": "const fullXcode = path.isAbsolute(selected) && existsSync(path.join(selected, 'usr', 'bin', 'xcodebuild'));", "condition": "runs only on macOS with a full Xcode selected by xcode-select", "ci": "no", "note": "the file runs on the Ubuntu tests lanes, where xcode-select does not exist" }
+      ]
+    },
+    {
+      "file": "packages/harness-runtime/lib/registered-host-operations.test.js",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "skip alias", "text": "const darwinTest=process.platform==='darwin'?test:test.skip;", "condition": "the registered host capability daemon test registers as test.skip off macOS", "ci": "no", "note": "the file runs on the Ubuntu tests lanes; nativeHarness in scripts/test-ci-lanes.mjs does not list it" }
+      ]
+    },
+    {
+      "file": "packages/harness-runtime/lib/session-execution-local.test.js",
+      "ciJobs": ["native-tests"],
+      "guards": [
+        { "mechanism": "early return", "text": "if (process.platform !== 'darwin') {", "condition": "off macOS the test asserts mutation_platform_unsupported and returns before the macOS checks", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/harness-runtime/lib/session-execution.test.js",
+      "ciJobs": ["native-tests"],
+      "guards": [
+        { "mechanism": "early return", "text": "if (process.platform === 'win32') return;", "condition": "the termination-receipt test returns at once on Windows", "ci": "yes" },
+        { "mechanism": "skipIf", "text": "skipIf(process.platform !== 'darwin')", "condition": "darwinTest cases are skipped off macOS", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/harness-runtime/lib/session-mutations-inputs.test.js",
+      "ciJobs": ["native-tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform === 'win32')", "condition": "skipped on Windows", "ci": "yes" },
+        { "mechanism": "skipIf", "text": "skipIf(process.platform !== 'darwin')", "condition": "skipped off macOS", "ci": "yes" },
+        { "mechanism": "early return", "text": "if (process.platform !== 'darwin') return;", "condition": "the two .artifacts write-through tests return at once off macOS", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/ui/src/components/chat/MessageList.longTurn.test.tsx",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "if around test", "text": "if (process.env.DEVRYAN_LONG_TURN_BENCH === '1') test(", "condition": "the growing-turn render benchmark registers only with DEVRYAN_LONG_TURN_BENCH=1", "ci": "no", "note": "an opt-in benchmark; no workflow sets the variable" }
+      ]
+    },
+    {
+      "file": "packages/web/server/default-config/plugins/devryan-browser.test.mjs",
+      "ciJobs": ["native-tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform !== 'darwin')", "condition": "skipped off macOS", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/fs/routes.clone-credentials.test.js",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform === 'win32')", "condition": "skipped on Windows", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/fs/routes.clone-identity.test.js",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform === 'win32')", "condition": "skipped on Windows", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/git/routes.global-identity.test.js",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform === 'win32')", "condition": "skipped on Windows", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/git/service.git-askpass.test.js",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform === 'win32')", "condition": "skipped on Windows", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/git/service.git-credentials.test.js",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform === 'win32')", "condition": "skipped on Windows", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/git/service.git-env.test.js",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform === 'win32')", "condition": "skipped on Windows", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/git/service.git-ssh.test.js",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform === 'win32')", "condition": "skipped on Windows", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/git/service.local-identity.test.js",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform === 'win32')", "condition": "skipped on Windows", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/git/service.test.js",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform === 'win32')", "condition": "skipped on Windows", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/git/ssh-command.test.js",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform === 'win32')", "condition": "skipped on Windows", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/opencode/native-readonly-shell.test.js",
+      "ciJobs": ["native-tests"],
+      "guards": [
+        { "mechanism": "if around test", "text": "if (process.platform !== 'win32') it(", "condition": "registers off Windows only", "ci": "yes" },
+        { "mechanism": "if around test", "text": "if (process.platform === 'darwin') it(", "condition": "registers on macOS only", "ci": "yes" },
+        { "mechanism": "if around test", "text": "if (sipEnabled) it(", "definition": "const sipEnabled = process.platform === 'darwin' && /enabled/.test(spawnSync('/usr/bin/csrutil', ['status'], { encoding: 'utf8' }).stdout ?? '');", "condition": "the real local POST and git push probe registers only on macOS with System Integrity Protection enabled", "ci": "no", "note": "GitHub macOS runners run with SIP disabled (the file's own comment)" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/opencode/native-served-identity.test.js",
+      "ciJobs": ["native-tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform !== 'darwin')", "condition": "skipped off macOS", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/opencode/parent-death-watchdog.test.js",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform === 'win32')", "condition": "skipped on Windows", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/opencode/runtime-host/native-artifacts.test.js",
+      "ciJobs": ["native-tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform === 'win32')", "condition": "skipped on Windows", "ci": "yes" },
+        { "mechanism": "skipIf", "text": "skipIf(process.platform !== 'darwin')", "condition": "the unsigned-controller signature tests are skipped off macOS", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/opencode/runtime-host/native-process.test.js",
+      "ciJobs": ["native-tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(!launcherPresent)", "definition": "const launcherPresent = process.platform === 'darwin' && await fs.access(nativeLauncher).then(() => true, () => false);", "condition": "runs only on macOS with the built confinement launcher (packages/web/runtime/darwin-arm64 or DEVRYAN_EXECUTION_ARTIFACTS)", "ci": "yes", "note": "the native-tests job runs bun scripts/build-native-runtime.mjs before its lane" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/opencode/runtime-host/native-setup-seed.test.js",
+      "ciJobs": ["native-tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(!caseInsensitive)", "definition": "const caseInsensitive=await(async()=>{", "condition": "runs only on a case-insensitive temp filesystem", "ci": "yes", "note": "macOS runners use case-insensitive APFS" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/opencode/runtime-selection.test.js",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "early return", "text": "if (process.platform === 'win32') return;", "condition": "the owner-only mode test returns at once on Windows", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/opencode/session-execution-host.test.js",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "if around test", "text": "if (process.platform !== 'win32') test(", "condition": "registers off Windows only", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/opencode/shared-config-write.test.js",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform === 'win32')", "condition": "skipped on Windows", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/skills-catalog/git.managed-credentials.test.js",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform === 'win32')", "condition": "skipped on Windows", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/skills-catalog/git.ssh-key.test.js",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform === 'win32')", "condition": "skipped on Windows", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "packages/web/server/lib/skills-catalog/scan.test.js",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform === 'win32')", "condition": "skipped on Windows", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "scripts/agent-evals/client.test.mjs",
+      "ciJobs": ["native-tests"],
+      "guards": [
+        { "mechanism": "early return", "text": "if (process.platform !== 'darwin') return;", "condition": "the two zsh owned-test wrapper tests return before their real-shell checks off macOS", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "scripts/dev.test.mjs",
+      "ciJobs": ["native-tests"],
+      "guards": [
+        { "mechanism": "early return", "text": "if (process.platform !== 'darwin') {", "condition": "the detached process-group test checks only the export and returns off macOS", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "scripts/opencode-v2-native/artifacts.test.mjs",
+      "ciJobs": ["native-tests"],
+      "guards": [
+        { "mechanism": "early return", "text": "if (process.platform !== 'darwin' || process.arch !== 'arm64') {", "condition": "off macOS arm64 the test asserts the refusal and returns before the shipped-ripgrep checks", "ci": "yes", "note": "macos-26 runners are arm64" }
+      ]
+    },
+    {
+      "file": "scripts/opencode-v2-native/controller-providers.graph.test.ts",
+      "ciJobs": ["native-tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(compiled===true&&process.platform!=='darwin')", "condition": "the compiled-host case is skipped off macOS", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "scripts/opencode-v2-native/execution-routing.test.ts",
+      "ciJobs": ["native-tests"],
+      "guards": [
+        { "mechanism": "if around test", "text": "if (process.env.DEVRYAN_SHELL_FIXTURE === '1') test(", "condition": "the real native shell case registers only inside the isolated-home child process", "ci": "yes", "note": "the DEVRYAN_SHELL_FIXTURE !== '1' test spawns that child with DEVRYAN_SHELL_FIXTURE=1 in every run" },
+        { "mechanism": "if around test", "text": "if (process.env.DEVRYAN_SHELL_FIXTURE !== '1') test(", "condition": "the parent test does not register again inside its own child", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "scripts/opencode-v2-native/native-browser-worker.test.mjs",
+      "ciJobs": ["native-tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(!existsSync(capturedAgentBrowser))", "definition": "const capturedAgentBrowser=path.join(repository,'.cache/browser-upgrade/current/node_modules/agent-browser/package.json');", "condition": "runs only when an agent-browser install exists at .cache/browser-upgrade/current", "ci": "no", "note": "no workflow or script creates that directory; upgrade-install.mjs installs into an OS-temp run root" }
+      ]
+    },
+    {
+      "file": "scripts/opencode-v2-native/one-call-verification.test.ts",
+      "ciJobs": ["native-tests"],
+      "guards": [
+        { "mechanism": "skipIf", "text": "skipIf(process.platform !== 'darwin')", "condition": "skipped off macOS", "ci": "yes" }
+      ]
+    },
+    {
+      "file": "scripts/qa/qa1-profile-exercise.test.mjs",
+      "ciJobs": ["tests"],
+      "guards": [
+        { "mechanism": "early return", "text": "if (!qa1PermissionDeniesNetwork()) {", "condition": "on Node below 25 the test asserts the refusal and returns before the heldout run", "ci": "yes", "note": "CI's .nvmrc is the floating lts/*, which resolves to Node 26 since 2026-10; it would be no on Node 24" }
+      ]
+    },
+    {
+      "file": "scripts/verify-revert-runtime-artifacts.test.mjs",
+      "ciJobs": ["native-tests"],
+      "guards": [
+        { "mechanism": "early return", "text": "if (process.platform !== 'darwin' || process.arch !== 'arm64') return;", "condition": "off macOS arm64 the packaging test returns after its refusal checks", "ci": "yes", "note": "macos-26 runners are arm64" },
+        { "mechanism": "t.skip()", "text": "t.skip('Actual native target unavailable')", "condition": "skipped off macOS arm64", "ci": "yes" }
+      ]
+    }
+  ]
+}

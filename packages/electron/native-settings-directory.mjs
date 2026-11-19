@@ -1,4 +1,3 @@
-import path from 'node:path';
 import {resolveDevRyanDataRoot} from '../shared-runtime/lib/data-root.js';
 import {readNativeShellBundleBinding} from '@devryan/web/server/lib/opencode/runtime-host/runtime-bundle-root.js';
 export {readNativeShellBundleBinding};

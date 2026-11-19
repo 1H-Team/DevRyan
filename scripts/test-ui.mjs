@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 import { bunTestArgs, discoverTestFiles } from './test-runner-utils.mjs';
+import { spawnStatus, withTestIsolationSync } from './test-isolation-guard.mjs';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const uiRoot = path.join(repositoryRoot, 'packages/ui');
@@ -26,7 +27,8 @@ export function runUiTests({ root = uiRoot, explicitFiles = [] } = {}) {
   }
   const args = bunTestArgs(explicitFiles.length > 0 ? files.map((file) => `./${file}`) : ['src']);
   console.log(`\n$ bun ${args.join(' ')}`);
-  return spawnSync('bun', args, { cwd: root, stdio: 'inherit', env: process.env }).status ?? 1;
+  // The private environment of scripts/test-isolation-guard.mjs (reused when already isolated).
+  return withTestIsolationSync((env) => spawnStatus(spawnSync('bun', args, { cwd: root, stdio: 'inherit', env })));
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {

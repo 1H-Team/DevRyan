@@ -165,7 +165,6 @@ export function createNativeIntegrationFacade({ getNativeRuntimeOwner, getOpenCo
     return { kind: providerID === 'openai' ? 'openai' : providerID === 'cursor-acp' ? 'cursor' : providerID === CLAUDE_AGENT ? 'claude' : 'provider', directory: selected.location.directory, integrationID: providerID,
       configurationDigest: credentialMutationFingerprint(selected.location.configuration.providers?.[providerID] ?? {}) };
   };
-  const openAiScope = selected => providerScope(selected, 'openai');
   const scopedRequest = (selected, scope, operation, path, options, method = 'GET', body, beforeDispatch) => {
     check(selected);
     const specification = { ...scope, operation, method, path, ...(body === undefined ? {} : { body }) };
@@ -186,7 +185,6 @@ export function createNativeIntegrationFacade({ getNativeRuntimeOwner, getOpenCo
     if (info.metadata?.source === 'mcp') throw unavailable('providerAuthentication');
     return info;
   };
-  const openAiInfo = (selected, options) => providerInfo(selected, 'openai', options);
   const mcpInfo = async (selected, server, options) => {
     const scope = mcpScope(selected, server);
     // MCP.status is a read with the original caller scope. Its native catalog

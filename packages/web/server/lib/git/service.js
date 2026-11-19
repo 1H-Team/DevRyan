@@ -11,7 +11,6 @@ import path from 'path';
 import os from 'os';
 import { execFile } from 'child_process';
 import { inspect, promisify } from 'util';
-import { createRequire } from 'module';
 
 import {
   createPostCheckoutHookRunner,
@@ -24,7 +23,6 @@ import { getGitHubAuthById } from '../github/auth.js';
 import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 
 const fsp = fs.promises;
-const require = createRequire(import.meta.url);
 const execFileAsync = promisify(execFile);
 const gpgconfCandidates = ['gpgconf', '/opt/homebrew/bin/gpgconf', '/usr/local/bin/gpgconf'];
 let resolvedGitBinary = null;
@@ -425,7 +423,7 @@ export const buildGitEnv = async (
   if (optionalLocks === false) {
     env.GIT_OPTIONAL_LOCKS = '0';
   }
-  const { principal, assignment } = resolveManagedGitAssignment(directory);
+  const { principal } = resolveManagedGitAssignment(directory);
   const selectedAccountId = principal
     ? principal.githubAccountId || null
     : githubAccountId || null;
@@ -1789,7 +1787,7 @@ export async function getStatus(directory, options = {}) {
       return null;
     };
 
-    let tracking = status.tracking || null;
+    const tracking = status.tracking || null;
     let ahead = status.ahead;
     let behind = status.behind;
 
@@ -2153,7 +2151,7 @@ async function revertFileUnlocked(directory, filePath) {
     try {
       await git.raw(['clean', '-f', '-d', '--', filePath]);
       return;
-    } catch (cleanError) {
+    } catch {
       try {
         await fsp.rm(absoluteTarget, { recursive: true, force: true });
         return;
@@ -2169,13 +2167,13 @@ async function revertFileUnlocked(directory, filePath) {
 
   try {
     await withIndexLockRetry(() => git.raw(['restore', '--staged', filePath]));
-  } catch (error) {
+  } catch {
     await withIndexLockRetry(() => git.raw(['reset', 'HEAD', '--', filePath])).catch(() => {});
   }
 
   try {
     await withIndexLockRetry(() => git.raw(['restore', filePath]));
-  } catch (error) {
+  } catch {
     try {
       await withIndexLockRetry(() => git.raw(['checkout', '--', filePath]));
     } catch (fallbackError) {
