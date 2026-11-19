@@ -23,6 +23,7 @@ test('every planted difference outside the per-push sample is reported by its ow
   assert.equal(PLANTED.filter((mutant) => mutant.origin.startsWith('C0c fix')).length, 34, 'the C0c fix round, the reviewer\'s ten missed planted differences among them');
   assert.equal(PLANTED.filter((mutant) => mutant.origin.startsWith('C0c review 2,')).length, 3, 'the C0c second review\'s three missed planted differences, re-planted');
   assert.equal(PLANTED.filter((mutant) => mutant.origin.startsWith('C0c second fix')).length, 3, 'the C0c second fix round: discovery callers and test functions');
+  assert.equal(PLANTED.filter((mutant) => mutant.origin.startsWith('C0c2 ')).length, 32, 'package C0c2: the per-case clock and the mock-module layer');
   const rest = PLANTED.filter((mutant) => !PER_PUSH_SAMPLE.includes(mutant.name)).map((mutant) => mutant.name);
   assert.equal(rest.length + PER_PUSH_SAMPLE.length, PLANTED.length, 'the sample and this batch run every planted difference, each once');
   const results = await runPlanted(scratch.dir, { concurrency: 6, only: rest });

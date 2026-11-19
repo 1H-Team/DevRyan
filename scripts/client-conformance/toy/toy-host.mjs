@@ -5,7 +5,7 @@
 // Product code never imports it.
 import { log } from './toy-log.mjs';
 import { applyEvent } from './toy-reducer.mjs';
-import { after, later, seed, visit, whenSettled } from './toy-sched.mjs';
+import { after, later, seed, sinkLater, visit, whenSettled } from './toy-sched.mjs';
 
 // Not a tail call: Bun's transpiler may turn `const x = f(); return x` into
 // `return f()`, and a proper tail call removes this frame, so the call would
@@ -49,4 +49,9 @@ export function hostLater(draft) {
 export function hostSeed(draft) {
   const noted = seed(draft);
   return noted.length;
+}
+// A family's entry whose timer writes to the sink: passed through, so the family's timer code runs outside any chain.
+export function hostSinkLater() {
+  const written = sinkLater();
+  return written.then((count) => count + 0);
 }

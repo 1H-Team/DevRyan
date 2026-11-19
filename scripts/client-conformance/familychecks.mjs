@@ -20,7 +20,7 @@ const TOY_PREFIX = 'scripts/client-conformance/toy/';
 /** The toy modules a product would reach: everything but the tests and the helper the naming rule does not call test code. */
 const TOY_ENGINE = ['toy-clock.mjs', 'toy-flow.mjs', 'toy-gate.mjs', 'toy-guard.mjs', 'toy-host.mjs', 'toy-log.mjs', 'toy-reducer.mjs', 'toy-sched.mjs', 'toy-timers.mjs', 'toy-transport.mjs'].map((name) => TOY_PREFIX + name);
 // What the toy recordings pass through (toy-host, toy-sched, toy-fixtures, the two no-frame calls): any change is a change of the caller rule.
-export const TOY_PASSED = Object.freeze({ calls: 13, nested: 1, noFrame: 2, ports: 2, portsNested: 1 });
+export const TOY_PASSED = Object.freeze({ calls: 14, nested: 1, noFrame: 2, ports: 2, portsNested: 1 });
 
 const clone = (recording) => ({ ...recording, incomplete: [...recording.incomplete], containers: recording.containers.map((container) => ({ ...container })) });
 
@@ -100,7 +100,7 @@ export const FAMILY_CHECKS = Object.freeze([
     void dir;
     const last = lines.at(-1) ?? '';
     const totals = `passed through ${TOY_PASSED.calls} calls (${TOY_PASSED.nested} inside pass-through calls, ${TOY_PASSED.noFrame} with no frame) and ${TOY_PASSED.ports} port uses (${TOY_PASSED.portsNested} inside pass-through calls)`;
-    return code === EXIT.pass && last.includes(totals) && lines.some((line) => line.startsWith(`passed-through caller ${TOY_PREFIX}toy-host.mjs: 7 calls, 1 port uses`))
+    return code === EXIT.pass && last.includes(totals) && lines.some((line) => line.startsWith(`passed-through caller ${TOY_PREFIX}toy-host.mjs: 8 calls, 1 port uses`))
       && lines.some((line) => line === 'passed through, toy-reducer: applyEvent 7, createState 1') && lines.some((line) => line.startsWith('passed-through caller <no frame>: 2 calls'));
   }],
   ['family-exit-precedence', async ({ recordings, dir }) => {

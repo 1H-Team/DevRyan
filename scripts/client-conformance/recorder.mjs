@@ -6,10 +6,17 @@
 // change what a test observes, except where docs/TESTING.md lists it.
 //
 // What it does, per layer (DEVRYAN_CONFORMANCE_LAYERS, default all):
-// - clock: a nominal clock. Timers keep real scheduling; Date.now(), new
-//   Date() and performance.now() read a virtual time that starts at EPOCH and
-//   moves, when a timer fires, to that timer's nominal due time (its virtual
-//   set time plus its delay), never backward. setSystemTime sets it; under
+// - clock: a nominal clock per case. Timers keep real scheduling; Date.now(),
+//   new Date() and performance.now() read a virtual time that starts, for
+//   case k of the file, at EPOCH + k × CASE_SPAN_MS (or where the previous
+//   case closed, when that is later), and moves, when a timer the case set fires, to that
+//   timer's nominal due time (its virtual set time plus its delay), never
+//   backward; a timer an earlier case left moves that case's clock only. Test
+//   bodies, the test file's hooks and test timers' callbacks run in a test
+//   store of their case, so what they leave behind stays that case's; a timer
+//   set by code with no known case that moves a clock flags the case
+//   (`timer-owner-unknown`).
+//   setSystemTime sets it; under
 //   fake timers the fake clock (started at the virtual time) is read instead.
 //   A clock stub a test installs answers, and its answers are recorded.
 // - random: Math.random, crypto.getRandomValues and crypto.randomUUID draw
@@ -21,7 +28,7 @@
 //   is set. A test's own definition of one (Object.defineProperty, an
 //   accessor) flags every case it stands in (`global-defined:<name>`).
 // - mock-module: mock.module is wrapped, so the exports of every module a test
-//   mocks are recorded as ports.
+//   mocks are recorded as ports; a call with no engine chain records nothing.
 // - entries: the families of the port map (DEVRYAN_CONFORMANCE_PORT_MAP).
 //   Their modules load through a facade (a Bun plugin) whose entry exports
 //   are wrapped and whose port modules' exports are recorded; nothing loads
@@ -80,9 +87,11 @@ import { entryOf, isTestPath, loadPortMap } from './port-map.mjs';
 
 export const EPOCH = 1700000000000;
 export const PERFORMANCE_ORIGIN = 1000;
+/** The nominal time each case of a file is given: case k (0 the module load) opens at EPOCH + k × CASE_SPAN_MS at the earliest. */
+export const CASE_SPAN_MS = 1000;
 export const RAW_VERSION = 5;
 // The recording's semantics: bumped by hand whenever what a recording says changes (attribution, late effects, flags).
-export const RECORDING_VERSION = 5;
+export const RECORDING_VERSION = 6;
 /** How long the recorder's own hook that writes a file's recording may take. */
 export const WRITE_TIMEOUT_MS = 600000;
 export const LAYERS = Object.freeze(['clock', 'random', 'globals', 'mock-module', 'entries']);
@@ -168,9 +177,27 @@ const portNames = new RealWeakMap(); // wrapper or port object -> port name (the
 const rawOf = new RealWeakMap(); // wrapper -> what it wraps
 const errors = [];
 const values = new RealMap(); // hash -> canonical text
-let virtualNow = EPOCH;
-// performance.now() is a monotonic clock: it moves only with the nominal schedule, never with setSystemTime.
-let virtualPerformance = PERFORMANCE_ORIGIN;
+/**
+ * A nominal clock: `now` (Date) and `performance` (performance.now(), monotonic: it moves only with the
+ * schedule, never with setSystemTime), and the time a test's setSystemTime override began. Each case has its
+ * own, and only the timers that case set move it (see the clock).
+ */
+const newClock = (from = null) => (from ? { ...from } : { now: EPOCH, performance: PERFORMANCE_ORIGIN, beforeOverride: null, overrideSetAt: 0 });
+let casesOpened = 0;
+/**
+ * The clock case number `index` opens with: its own slot of the file's time, EPOCH + index × CASE_SPAN_MS,
+ * so it does not depend on how far the case before it got (a test that polls until its own timer fires
+ * ends a millisecond earlier or later by load); never earlier than the previous case's clock as it closed,
+ * so time never runs backward within a file; and, while a test's setSystemTime stands, the time it set.
+ */
+function openClock(previous, index) {
+  if (!previous) return newClock();
+  const clock = newClock(previous.clock);
+  if (clock.beforeOverride !== null) return clock;
+  clock.now = Math.max(clock.now, EPOCH + index * CASE_SPAN_MS);
+  clock.performance = Math.max(clock.performance, PERFORMANCE_ORIGIN + index * CASE_SPAN_MS);
+  return clock;
+}
 
 const guard = (what, fn, fallback) => {
   try { return fn(); } catch (error) {
@@ -183,13 +210,15 @@ if (TEST_FILE === '<outside>') errors.push(`the test file is outside ${ROOT}: it
 const unwrap = (item) => apply(WeakMapGet, rawOf, [item]);
 let testsSeen = 0;
 /** A case: one test (`ordinal`) or the hooks that ran after `hooks` tests. */
-function newCase({ ordinal = null, hooks = null }) {
+function newCase({ ordinal = null, hooks = null }, previous = null) {
+  const clock = openClock(previous, casesOpened);
+  casesOpened += 1;
   const label = ordinal !== null ? String(ordinal) : `hooks:${hooks}`;
   const seed = createHash('sha256').update(`${TEST_FILE}#${ordinal !== null ? ordinal : label}`).digest();
   return {
     kind: ordinal !== null ? 'test' : 'hooks', ordinal, hooks, label, seed: seed.toString('hex').slice(0, 32), families: new RealMap(), context: [],
     codec: createCodecContext({ names: portNames, unwrap }), flags: new RealSet(), testTimers: 0, testCalls: 0, expired: [],
-    entryNow: virtualNow, endNow: null, entryState: {}, endState: {}, random: sfc32(seed), out: null,
+    clock, entryNow: clock.now, endNow: null, entryState: {}, endState: {}, random: sfc32(seed), out: null,
   };
 }
 
@@ -260,6 +289,13 @@ function inPort(caller, fn) {
 }
 const reentrant = (opener) => opener?.kind === 'port' && opener.active === true;
 const runIn = (store, fn) => (store ? als.run(store, fn) : als.exit(fn));
+/**
+ * A store for test code of case `kase`: a test body, a hook the test file registered, and a test timer's
+ * callback run in one, so what they start (a promise job, a timer, a timer set from a timer) belongs to that
+ * case even when it runs after its test ended. Test code with no store (a test API the recorder could not
+ * wrap, code a module ran at load) runs for the current case.
+ */
+const testStore = (kase) => ({ kind: 'test', case: kase });
 
 // ------------------------------------------------------------ release windows
 //
@@ -372,7 +408,7 @@ function checkExpired(store, seq) {
 function openStep(family, input, opener = storeNow(), owner = current) {
   if (written) { noteUnplaced(input.kind); return null; }
   const record = familyRecord(family, owner);
-  const step = { n: record.steps.length + 1, input: { ...input, now: readNow() }, effects: [] };
+  const step = { n: record.steps.length + 1, input: { ...input, now: readNow(owner) }, effects: [] };
   // An input that arrives after its case's test ended (a timer, an answer, a resolve) is still the case's: marked late.
   if (owner.endNow !== null) step.late = true;
   apply(WeakMapSet, seqOf, [step, (stepSeq += 1)]);
@@ -396,8 +432,11 @@ function record(effect, store = storeNow()) {
   if (origin === 'port' || origin === 'harness') return false;
   if (origin === 'engine') return place(stepOf(store), store.case, effect);
   checkOutside();
+  // Test code runs for the case whose test (or test timer) set it in motion (a test store), else for the current case.
+  const kase = caseOf(store);
   effect.origin = 'test';
-  current.context.push(effect);
+  if (kase.endNow !== null) effect.late = true;
+  kase.context.push(effect);
   return true;
 }
 
@@ -594,16 +633,22 @@ const seededRandomUUID = function randomUUID() {
 
 // ------------------------------------------------------------------- the clock
 
-let nominalBeforeOverride = null; // the nominal time when a test first set the system time
-let overrideSetAt = 0;
+// The clock is per case (newClock), so what a case reads depends only on what the case did: a case opens
+// in its own slot of the file's time (openClock), and from then on only a timer the case itself set (its test code, its engine chains or its port code) moves it, when it fires, to
+// that timer's nominal due time (its set time on the case's clock plus its delay). A timer an earlier case
+// left running moves that case's clock only, so it fires as a late input of its own case and never shifts
+// the time a later case sees, however real time interleaves the two. Code reads the clock of the case it
+// runs for: an engine or port chain its own case's, test code the current case's.
 let fakePerformance = null; // { real, nominal } when fake timers started
 const fakeTimersOn = () => { try { return isFakeTimers() === true; } catch { return false; } };
-function advance(due) { if (due > virtualNow) { virtualPerformance += due - virtualNow; virtualNow = due; } }
-/** The time an input or a clock read sees: the nominal clock, or under fake timers the fake clock (started at it). */
-const readNow = () => (fakeTimersOn() ? apply(RealDateNow, RealDate, []) : virtualNow);
+/** The clock that running code reads and sets: that of the case its chain belongs to, else the current case's. */
+const clockOf = (store = storeNow()) => caseOf(store).clock;
+function advance(clock, due) { if (due > clock.now) { clock.performance += due - clock.now; clock.now = due; } }
+/** The time an input or a clock read sees: the nominal clock of `kase`, or under fake timers the fake clock (started at it). */
+const readNow = (kase = caseOf(storeNow())) => (fakeTimersOn() ? apply(RealDateNow, RealDate, []) : kase.clock.now);
 function readPerformanceNow() {
   if (fakeTimersOn() && fakePerformance) return fakePerformance.nominal + (apply(RealPerformanceNow, realPerformance, []) - fakePerformance.real);
-  return virtualPerformance;
+  return clockOf().performance;
 }
 function noteClock(source, value, store = storeNow()) {
   guard('clock', () => {
@@ -684,15 +729,16 @@ apply(WeakMapSet, rawOf, [NominalDate, RealDate]);
 function setSystemTimeWrapper(real) {
   const wrapper = { setSystemTime(time, ...rest) {
     if (layers.has('clock')) guard('setSystemTime', () => {
+      const clock = clockOf();
       if (time === undefined || time === null) {
-        if (nominalBeforeOverride !== null) { virtualNow = nominalBeforeOverride + Math.max(0, virtualNow - overrideSetAt); nominalBeforeOverride = null; }
+        if (clock.beforeOverride !== null) { clock.now = clock.beforeOverride + Math.max(0, clock.now - clock.overrideSetAt); clock.beforeOverride = null; }
         return;
       }
       const value = apply(DateGetTime, new RealDate(time), []);
       if (value !== value) return;
-      if (nominalBeforeOverride === null) nominalBeforeOverride = virtualNow;
-      overrideSetAt = value;
-      virtualNow = value;
+      if (clock.beforeOverride === null) clock.beforeOverride = clock.now;
+      clock.overrideSetAt = value;
+      clock.now = value;
     });
     return apply(real, this, [time, ...rest]);
   } }.setSystemTime;
@@ -705,8 +751,9 @@ function useFakeTimersWrapper(real) {
     const result = apply(real, this, args);
     if (layers.has('clock')) guard('useFakeTimers', () => {
       const options = args[0];
-      if (!(options && typeof options === 'object' && hasOwn(options, 'now'))) apply(realSetSystemTime, bunTest, [virtualNow]);
-      fakePerformance = { real: apply(RealPerformanceNow, realPerformance, []), nominal: virtualPerformance, date: apply(RealDateNow, RealDate, []) };
+      const clock = clockOf();
+      if (!(options && typeof options === 'object' && hasOwn(options, 'now'))) apply(realSetSystemTime, bunTest, [clock.now]);
+      fakePerformance = { real: apply(RealPerformanceNow, realPerformance, []), nominal: clock.performance, date: apply(RealDateNow, RealDate, []) };
     });
     return result;
   } }.useFakeTimers;
@@ -717,7 +764,7 @@ function useRealTimersWrapper(real) {
   const wrapper = { useRealTimers(...args) {
     const reached = layers.has('clock') && fakeTimersOn() && fakePerformance ? { date: apply(RealDateNow, RealDate, []), performance: readPerformanceNow() } : null;
     const result = apply(real, this, args);
-    if (reached !== null) guard('useRealTimers', () => { if (reached.date > virtualNow) virtualNow = reached.date; if (reached.performance > virtualPerformance) virtualPerformance = reached.performance; fakePerformance = null; });
+    if (reached !== null) guard('useRealTimers', () => { const clock = clockOf(); if (reached.date > clock.now) clock.now = reached.date; if (reached.performance > clock.performance) clock.performance = reached.performance; fakePerformance = null; });
     return result;
   } }.useRealTimers;
   apply(WeakMapSet, rawOf, [wrapper, real]);
@@ -742,20 +789,32 @@ function setTimerWrapper(kind, underlying) {
     const counted = origin !== 'port';
     const engine = origin === 'engine';
     // Engine timers are numbered 1, 2, ... per family; the test's own are t1, t2, ... so they never shift the engine's.
-    const id = !counted ? null : engine ? (familyRecord(store.family, store.case).timers += 1) : `t${(current.testTimers += 1)}`;
-    const owner = engine ? store.case : current;
-    const setAt = virtualNow;
+    // A test timer belongs to the case whose test code set it in motion (its test store). Code with no store
+    // (a test API the recorder could not wrap, a job a module started at load, a job of a pass-through call)
+    // has no known owner: the current case is taken, and if the timer then moves that case's clock, the case
+    // is flagged (`timer-owner-unknown`), never moved silently.
+    const owner = caseOf(store);
+    const unowned = store === undefined;
+    const id = !counted ? null : engine ? (familyRecord(store.family, store.case).timers += 1) : `t${(owner.testTimers += 1)}`;
+    // The case whose clock the timer moves: the one whose code set it (a port's caller's, for port code).
+    const timed = caseOf(store);
+    const setAt = timed.clock.now;
     const span = typeof delay === 'number' && delay > 0 ? delay : 0;
     let fires = 0;
     const fire = typeof callback === 'function' ? function (...args) {
       fires += 1;
-      if (layers.has('clock')) advance(setAt + span * fires);
+      if (layers.has('clock')) {
+        if (unowned && counted && timed.kind === 'test' && setAt + span * fires > timed.clock.now) guard('timer.fire', () => timed.flags.add('timer-owner-unknown'));
+        advance(timed.clock, setAt + span * fires);
+      }
       const opener = storeNow();
       // An engine timer's firing is an input of the case that set it, even after that test ended (marked late).
       const step = counted && engine ? guard('timer.fire', () => openStep(store.family, { kind: 'timer', id }, opener, store.case), null) : null;
       if (!step) {
-        if (counted && !engine) guard('timer.fire', () => current.context.push({ kind: 'timer.fire', id, origin: owner === current ? 'test' : `test:${owner.label}` }));
-        return runIn(store, () => apply(callback, this, args));
+        // A test timer is context of the case whose test set it; one that fires after that test ended is that case's, late.
+        if (counted && !engine) guard('timer.fire', () => owner.context.push(owner.endNow !== null ? { kind: 'timer.fire', id, origin: 'test', late: true } : { kind: 'timer.fire', id, origin: 'test' }));
+        // A test timer's callback is test code of its own case: a timer it sets, or a job it starts, is that case's too.
+        return runIn(origin === 'test' ? testStore(owner) : store, () => apply(callback, this, args));
       }
       // The chain that set the timer moves to its firing (an await on it resumes there), except for a re-entrant firing.
       const nested = reentrant(opener);
@@ -878,9 +937,11 @@ const portFunctions = new RealWeakMap(); // target -> Map(name -> wrapper)
  * A port function: calls are effects, a sync answer is part of the effect,
  * a promise answer opens a step when it settles, and functions the engine
  * passes are wrapped as callbacks. `thisArg` binds a method to its owner.
- * `families` limits whose port it is: other families inline it.
+ * `families` limits whose port it is: other families inline it. `mocked`:
+ * an export of a module the test mocked (the mock-module layer), whose calls
+ * with no engine chain record nothing (see there).
  */
-function portFunction(name, target, { thisArg, wrapAnswers = false, families = null } = {}) {
+function portFunction(name, target, { thisArg, wrapAnswers = false, families = null, mocked = false } = {}) {
   let byName = apply(WeakMapGet, portFunctions, [target]);
   if (!byName) { byName = new RealMap(); apply(WeakMapSet, portFunctions, [target, byName]); }
   const cacheKey = thisArg === undefined ? name : null;
@@ -893,9 +954,13 @@ function portFunction(name, target, { thisArg, wrapAnswers = false, families = n
     if (origin === 'port' || origin === 'harness') return invoke(args);
     if (origin === 'engine' && families && !apply(SetHas, families, [store.family])) return invoke(args); // inlined for this family
     const engine = origin === 'engine';
+    // A mocked module's export called with no engine chain (the test, or a component it renders, calling its own
+    // stub) is no effect of any step: it records nothing and takes no copy of its arguments or answer, which on a
+    // mounted test is every render's props and store state. Engine code found running there still flags its case.
+    if (!engine && mocked) { checkOutside(); return invoke(args); }
     if (!engine && families) flagOutside(families, name);
     // Engine calls are numbered 1, 2, ... per family; the test's own t1, t2, ... so they never shift the engine's.
-    const effect = guard('port', () => ({ kind: isNew ? 'new' : 'port', port: name, call: engine ? (familyRecord(store.family, store.case).portCalls += 1) : `t${(current.testCalls += 1)}`, args: ref(listOf(args)) }), null);
+    const effect = guard('port', () => ({ kind: isNew ? 'new' : 'port', port: name, call: engine ? (familyRecord(store.family, store.case).portCalls += 1) : `t${(caseOf(store).testCalls += 1)}`, args: ref(listOf(args)) }), null);
     if (effect) guard('port', () => record(effect, store));
     const finalArgs = engine ? args.map((arg, index) => (typeof arg === 'function' ? callbackFor(store.family, `${name}:${index}`, arg, store) : arg)) : args;
     let result;
@@ -926,7 +991,7 @@ function portFunction(name, target, { thisArg, wrapAnswers = false, families = n
     },
     get(fnTarget, key) {
       const value = reflectGet(fnTarget, key);
-      if (typeof value === 'function' && key !== 'prototype' && key !== 'constructor' && substitutable(fnTarget, key)) return portFunction(`${name}.${String(key)}`, value, { thisArg: fnTarget, families, wrapAnswers });
+      if (typeof value === 'function' && key !== 'prototype' && key !== 'constructor' && substitutable(fnTarget, key)) return portFunction(`${name}.${String(key)}`, value, { thisArg: fnTarget, families, wrapAnswers, mocked });
       return value;
     },
   };
@@ -955,7 +1020,7 @@ function answerLike(value) {
 }
 
 /** An object with behaviour handed to or answered to the engine: method calls are effects, data reads are inputs. */
-function portObject(name, target, { families = null, wrapAnswers = false } = {}) {
+function portObject(name, target, { families = null, wrapAnswers = false, mocked = false } = {}) {
   if (apply(WeakMapHas, portObjects, [target])) return apply(WeakMapGet, portObjects, [target]);
   const methods = new RealMap();
   const proxy = new RealProxy(target, {
@@ -964,10 +1029,10 @@ function portObject(name, target, { families = null, wrapAnswers = false } = {})
       if (!substitutable(object, key)) return value;
       if (typeof value === 'function') {
         let byValue = apply(MapGet, methods, [key]);
-        if (!byValue || byValue.value !== value) { byValue = { value, wrapper: portFunction(`${name}.${String(key)}`, value, { thisArg: object, families, wrapAnswers }) }; apply(MapSet, methods, [key, byValue]); }
+        if (!byValue || byValue.value !== value) { byValue = { value, wrapper: portFunction(`${name}.${String(key)}`, value, { thisArg: object, families, wrapAnswers, mocked }) }; apply(MapSet, methods, [key, byValue]); }
         return byValue.wrapper;
       }
-      const answer = typeof key === 'string' && (portLike(value) || (wrapAnswers && answerLike(value))) ? portObject(`${name}.${key}`, value, { families, wrapAnswers }) : value;
+      const answer = typeof key === 'string' && (portLike(value) || (wrapAnswers && answerLike(value))) ? portObject(`${name}.${key}`, value, { families, wrapAnswers, mocked }) : value;
       if (typeof key === 'string' && !apply(SetHas, IMPLICIT_READS, [key])) {
         const store = storeNow();
         const origin = originOf(store);
@@ -1021,7 +1086,8 @@ function callEntry(family, spec, label, target, thisArg, args, newTarget, crossi
     if (portEffect) guard('entry', () => record(portEffect, store));
   }
   // A call from a chain of an earlier case (a late crossing) is that case's input.
-  const kase = caseOf(portEffect ? store : null);
+  // A call from test code of an earlier case (a job or a timer its test started) is that case's input too, late.
+  const kase = caseOf(portEffect || origin === 'test' ? store : null);
   // What the test hands in is the test's, never engine code to hand back out wrapped.
   if (!portEffect) guard('entry', () => { for (const arg of args) markForeign(arg); });
   // A function the test hands in that no injected port wraps (an argument, or a member of one) is opaque: what it
@@ -1472,8 +1538,8 @@ if (layers.has('mock-module')) {
         if (!descriptor) continue;
         if (hasOwn(descriptor, 'value') && typeof key === 'string') {
           const value = descriptor.value;
-          if (typeof value === 'function') descriptor.value = portFunction(`${name}#${key}`, value);
-          else if (portLike(value)) descriptor.value = portObject(`${name}#${key}`, value);
+          if (typeof value === 'function') descriptor.value = portFunction(`${name}#${key}`, value, { mocked: true });
+          else if (portLike(value)) descriptor.value = portObject(`${name}#${key}`, value, { mocked: true });
         }
         defineProperty(out, key, descriptor);
       }
@@ -1586,6 +1652,51 @@ function observeDefinitions() {
 }
 
 /**
+ * The test API the test file imports, with every function it registers (a test body, a hook) run in a test
+ * store of the case current when the runner calls it (testStore), so a job or a timer it leaves behind is
+ * filed under its own case. The function keeps its name and declared length (bun reads the length to tell a
+ * `done` callback). `test.each(…)`, `test.skip` and the like are wrapped the same way; `describe` is not
+ * (its body runs while the file loads, in the module-load case).
+ */
+const ownedBodies = new RealWeakMap();
+function ownedBody(fn) {
+  if (typeof fn !== 'function' || apply(WeakMapHas, rawOf, [fn])) return fn;
+  const known = apply(WeakMapGet, ownedBodies, [fn]);
+  if (known) return known;
+  const body = { [fn.name](...args) { return als.run(testStore(current), () => apply(fn, this, args)); } }[fn.name];
+  defineProperty(body, 'length', { value: fn.length, configurable: true });
+  apply(WeakMapSet, ownedBodies, [fn, body]);
+  apply(WeakMapSet, rawOf, [body, fn]);
+  return body;
+}
+const ownedApis = new RealWeakMap();
+const REGISTRAR_FACTORIES = new RealSet(['each', 'if', 'skipIf', 'todoIf', 'failingIf']);
+function ownedApi(api) {
+  if (typeof api !== 'function') return api;
+  const known = apply(WeakMapGet, ownedApis, [api]);
+  if (known) return known;
+  const proxy = new RealProxy(api, {
+    // A proper tail call: bun names a test by the line of the frame that registers it, which stays the test file's.
+    apply(target, thisArg, args) { return apply(target, thisArg, args.map((arg) => ownedBody(arg))); },
+    get(target, key) {
+      const value = reflectGet(target, key);
+      if (typeof value !== 'function' || key === 'prototype' || !substitutable(target, key)) return value;
+      // `test.each(table)`, `test.if(condition)` and the like hand back the function that registers.
+      if (REGISTRAR_FACTORIES.has(key)) return { [key](...args) { return ownedApi(apply(value, target, args)); } }[key];
+      return ownedApi(value);
+    },
+  });
+  apply(WeakMapSet, ownedApis, [api, proxy]);
+  apply(WeakMapSet, rawOf, [proxy, api]);
+  return proxy;
+}
+const ownedTestApi = () => {
+  const out = {};
+  for (const name of ['test', 'it', 'beforeEach', 'afterEach', 'beforeAll', 'afterAll']) if (typeof bunTest[name] === 'function') out[name] = ownedApi(bunTest[name]);
+  return out;
+};
+
+/**
  * Bun's spyOn refuses accessor properties: around it, a recorder property is a
  * plain data property. It also installs nothing through a Proxy (it reads
  * through the traps and writes past them), so a spy on a recorder Proxy (the
@@ -1648,7 +1759,7 @@ if (layers.has('globals')) {
       if (typeof holder[key] === 'function' && getOwnPropertyDescriptor(holder, key)?.writable) holder[key] = make(holder[key]);
     }
   }
-  realModuleOf(mock)('bun:test', () => ({ ...bunTest, spyOn, setSystemTime }));
+  realModuleOf(mock)('bun:test', () => ({ ...bunTest, spyOn, setSystemTime, ...ownedTestApi() }));
   guard('defineProperty', () => observeDefinitions());
 } else if (layers.has('clock')) {
   globalThis.Date = NominalDate;
@@ -1785,7 +1896,7 @@ function finalizeFamily(entry, steps, end, context) {
 
 function closeCase() {
   if (current.endNow !== null) return;
-  current.endNow = virtualNow;
+  current.endNow = current.clock.now;
   snapshotStates(current.endState);
   // A case stays open to effects that arrive after its test ended (marked late); it is written with the file.
   closed.push(current);
@@ -1821,7 +1932,7 @@ beforeEach(() => {
     const overlap = openTests > 1;
     if (overlap) current.flags.add('concurrent');
     closeCase();
-    current = newCase({ ordinal: (testsSeen += 1) });
+    current = newCase({ ordinal: (testsSeen += 1) }, current);
     if (overlap) current.flags.add('concurrent');
     checkGlobals(current);
     snapshotStates(current.entryState);
@@ -1833,7 +1944,7 @@ afterEach(() => {
     if (current.kind !== 'test' && !(openTests === 0 && current.flags.has('concurrent'))) return;
     checkGlobals(current);
     closeCase();
-    current = newCase({ hooks: testsSeen });
+    current = newCase({ hooks: testsSeen }, current);
     if (openTests > 0) current.flags.add('concurrent');
     snapshotStates(current.entryState);
   });

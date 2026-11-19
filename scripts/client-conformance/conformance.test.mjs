@@ -4,7 +4,8 @@
 // the tools on fixed inputs (selfchecks.mjs); the recorder on the
 // harness-owned toy modules, twice, complete and byte-equal to the tracked
 // corpus, with exactly the fixtures' cases unrecordable; the change-set check
-// and the census of the toy corpus (census.mjs); pass-set parity on the toys;
+// and the census of the toy corpus (census.mjs); the stray-timer toy recorded
+// with another wait, byte-equal to its tracked recording; pass-set parity on the toys;
 // and a fixed sample of the planted differences, one of each tool
 // (mutants.mjs PER_PUSH_SAMPLE), each reported by its own check. Every other
 // planted difference runs in the full suite only (planted.full.test.mjs).
@@ -20,7 +21,7 @@ import { createCodecContext, decode, encode, encodeText, stringifyTree } from '.
 import { createContainerWriter, readContainer } from './container.mjs';
 import { PER_PUSH_SAMPLE, PLANTED, runPlanted } from './mutants.mjs';
 import { passSetParity } from './parity.mjs';
-import { HARNESS_DIR, REPOSITORY_ROOT, TOY_EXPECTED, TOY_FILES, TOY_UNRECORDABLE, compareWithExpected, createScratch, formatDifference, formatIncomplete, recordToys } from './record.mjs';
+import { HARNESS_DIR, REPOSITORY_ROOT, TOY_EXPECTED, TOY_FILES, TOY_UNRECORDABLE, compareWithExpected, createScratch, formatDifference, formatIncomplete, recordOnce, recordToys } from './record.mjs';
 import { toolChecks } from './selfchecks.mjs';
 import { checkChangeSets, loadCensus, mergeExports, runCensus } from './census.mjs';
 import { familyChecks } from './familychecks.mjs';
@@ -29,9 +30,9 @@ import { compareRecordings } from './stability.mjs';
 import { checkVectors } from './vectors.mjs';
 
 // The toy corpus: its cases, the fixtures TOY_UNRECORDABLE lists and the unrecordable cases they make (one per family line).
-const TOY_CASES = 99;
-const TOY_FIXTURES = 26;
-const TOY_UNRECORDABLE_CASES = 30;
+const TOY_CASES = 116;
+const TOY_FIXTURES = 28;
+const TOY_UNRECORDABLE_CASES = 32;
 const toyFiles = () => TOY_FILES.map((name) => `scripts/client-conformance/toy/${name}`);
 // Two recordings of the toy corpus, made once and shared by the tests that judge them (corpus, census, family command).
 let shared = null;
@@ -152,13 +153,25 @@ describe('client conformance self-test', { concurrency: true }, () => {
     scratch.pass();
   });
 
+  test('timers a test leaves behind never move a later case\'s clock: the stray toy recorded with another wait equals toy/expected', async (t) => {
+    // toy/expected holds the stray toy recorded with its default wait (the strays fire before the second test reads
+    // the clock); here they fire after it. Each case's clock is its own, so the bytes are the same.
+    const scratch = scratchFor(t, 'client-conformance-self-test');
+    const file = 'scripts/client-conformance/toy/toy-stray.toy.mjs';
+    const recording = await recordOnce({ files: [file], cwd: REPOSITORY_ROOT, portMap: path.join(HARNESS_DIR, 'toy/port-map.json'), families: [], workDir: scratch.dir, env: { TOY_STRAY_WAIT_MS: '0' } });
+    assert.deepEqual(recording.incomplete.map(formatIncomplete), []);
+    assert.equal(recording.containers.length, 2);
+    assert.deepEqual(compareWithExpected(recording.containers, TOY_EXPECTED, { testFiles: [file] }).map(formatDifference), []);
+    scratch.pass();
+  });
+
   test('pass-set parity holds on the toys', async (t) => {
     const scratch = scratchFor(t, 'client-conformance-self-test');
     const toys = await passSetParity({ targets: toyFiles(), cwd: REPOSITORY_ROOT, portMap: path.join(HARNESS_DIR, 'toy/port-map.json'), workDir: path.join(scratch.dir, 'toys'), parallel: 1 });
     // One worker: what the runner prints is then in one order on every machine, so this test cannot turn on scheduling.
     assert.deepEqual([...toys.differences, ...toys.incomplete], []);
-    assert.equal(toys.runs[0].recordedPassed, 86);
-    assert.equal(toys.runs[0].baselinePassed, 86);
+    assert.equal(toys.runs[0].recordedPassed, 103);
+    assert.equal(toys.runs[0].baselinePassed, 103);
     scratch.pass();
   });
 

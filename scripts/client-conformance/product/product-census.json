@@ -63,7 +63,7 @@
   "excludedFiles": [
     {
       "file": "packages/ui/src/components/chat/ModelControls.hydration.test.tsx",
-      "reason": "under the recorder's mock-module layer alone its 17 mounted tests take 282 s instead of 16 s and 14 time out (every call of the modules it mocks, made on each render, is snapshotted as test context): not harmless, so it is not recorded; its only family use is optimistic's applyOptimisticAdd and applyOptimisticRemove, which sync tests also exercise (C0c report, finding 2)"
+      "reason": "the mock-module layer is harmless on it since package C0c2 (17/17 and 114 assertions with the layer alone, as plain), but it cannot be recorded cleanly, for two reasons of the test itself (C0c2 report, shown by recording it alone twice with product.mjs --runs=2, twice): every one of its 11 cases is unrecordable as global-defined:document and global-defined:window (its DOM helper defines both as data properties the recorder did not wrap); and every one of its 11 cases hands the engine a directory named after the process id (devryan-model-controls-hydration-<pid>: in 10 cases as the input's directory, in one inside a message's path), so their inputs differ between recordings. Its only family use is optimistic's applyOptimisticAdd and applyOptimisticRemove, which sync tests also exercise"
     }
   ],
   "families": [],

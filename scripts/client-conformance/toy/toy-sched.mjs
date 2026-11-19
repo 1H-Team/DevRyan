@@ -5,6 +5,7 @@
 // Product code never imports it.
 import { log } from './toy-log.mjs';
 import { applyEvent } from './toy-reducer.mjs';
+import { sink } from './toy-sink.mjs';
 
 export function after(callback) {
   setTimeout(callback, 0);
@@ -42,4 +43,15 @@ export function seed(draft) {
   const noted = log('seed', String(changed));
   // A template, not `return noted`: Bun may make `const x = f(); return x` a tail call, which drops this frame.
   return `${noted}`;
+}
+
+// Writes to the sink module inside this family's chain: a method call on an object a test may mock.
+export function sinkTo(items) {
+  return sink.write(items);
+}
+
+// Writes to the sink on a timer: inside this family's chain when the test calls it, outside any chain when an
+// unmapped module's call of it is passed through (toy-host's hostSinkLater).
+export function sinkLater() {
+  return new Promise((resolve) => { setTimeout(() => { resolve(sink.write(['later'])); }, 0); });
 }

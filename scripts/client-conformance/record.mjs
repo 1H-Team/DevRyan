@@ -37,7 +37,7 @@ export const TOY_DIR = path.join(HARNESS_DIR, 'toy');
 export const TOY_PORT_MAP = path.join(TOY_DIR, 'port-map.json');
 export const TOY_EXPECTED = path.join(TOY_DIR, 'expected');
 /** The toy corpus: every case of it must be recorded (none unrecordable). */
-export const TOY_TESTS = Object.freeze(['toy-reducer.toy.mjs', 'toy-timers.toy.mjs', 'toy-transport.toy.mjs', 'toy-flow.toy.mjs', 'toy-gate.toy.mjs', 'toy-clock.toy.mjs', 'toy-hooks.toy.mjs', 'toy-host.toy.mjs', 'toy-callers.toy.mjs', 'toy-fixtures.toy.mjs']);
+export const TOY_TESTS = Object.freeze(['toy-reducer.toy.mjs', 'toy-timers.toy.mjs', 'toy-transport.toy.mjs', 'toy-flow.toy.mjs', 'toy-gate.toy.mjs', 'toy-clock.toy.mjs', 'toy-hooks.toy.mjs', 'toy-host.toy.mjs', 'toy-callers.toy.mjs', 'toy-fixtures.toy.mjs', 'toy-stray.toy.mjs', 'toy-mocked.toy.mjs']);
 /**
  * Toy fixtures that prove the recorder refuses what it cannot record: each
  * listed case must come out unrecordable with exactly these flags (and no
@@ -73,6 +73,12 @@ export const TOY_UNRECORDABLE = Object.freeze({
     ['engine code a passed-through call puts on a timer runs outside any chain', 'outside-chain'],
     ['a test callback an entry runs, which no injected port declares, is flagged with its family\'s call inside', 'test-function'],
   ]),
+  'toy-mocked-outside.toy.mjs': Object.freeze([
+    ['family code that calls a mocked export with no chain is flagged', 'outside-chain'],
+  ]),
+  'toy-unowned.toy.mjs': Object.freeze([
+    ['a timer set by a job with no known case moves the clock and flags the case', 'timer-owner-unknown'],
+  ]),
   'toy-concurrent.toy.mjs': Object.freeze([
     ['concurrent test 1 of the file (cannot be named)', 'concurrent'],
     ['concurrent test 2 of the file (cannot be named)', 'concurrent'],
@@ -97,6 +103,7 @@ export const FLAG_REASONS = Object.freeze({
   unwrappable: 'the test read engine code the recorder cannot wrap (a non-configurable, non-writable member, as on a frozen object): running it would not be recorded as an input',
   'global-defined': 'the test defined this global itself (a data property the recorder did not wrap, or an accessor), so what the engine did through it is not recorded',
   'no-frame': 'an entry of this family was called with no frame with a file at all (a bound entry or the entry itself run by a promise job or a timer, a test body that only returns the call): it may be the test\'s call, which would be lost, and the census names no engine site that calls it so',
+  'timer-owner-unknown': 'a timer set by code with no known case (no test store: a test API the recorder could not wrap, a job a module started at load) moved this case\'s clock when it fired: it may be left over from an earlier test, so the time this case saw may depend on load',
   'port-no-line': 'test code (by the stack) called a port of this family while the family had no step in the case: the test\'s own call of the port, or a closure of the family whose frame a proper tail call removed; the two cannot be told apart',
 });
 /** Flags that mean engine code ran where no step holds it: a case flagged so must be written for some family, never dropped. */
