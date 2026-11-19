@@ -18,7 +18,7 @@ const response = requestId => ({ requestId, response: { url: 'http://127.0.0.1:4
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
 test('independent startup endpoint uses a pointer to focus, accepts the exact fixed draft and leaves it unsent', async () => {
-  let value = '', focused = false, requests = 0, now = 100;
+  let value = '', focused = false; const requests = 0; let now = 100;
   const point = { x: 100, y: 200 }, calls = [];
   const proof = await proveNativeStartupComposer({ startedAt: 50, expectedTimeOrigin: 77, clock: () => now,
     read: async () => ({ point, hitOwned: true, enabled: true, visibilityState: 'visible', splashAbsent: true,
