@@ -964,9 +964,11 @@ const startLocalServer = async () => {
 
   if(recoveryOnly)return url;
 
-  // Managed startup invokes getManagedBrowserEnvironment before it can become
-  // ready. If readiness arrives without that callback, the lifecycle selected
-  // an existing external runtime (for example an occupied OPENCODE_PORT).
+  // Managed startup: the native runtime owner invokes
+  // getManagedBrowserEnvironment while it prepares the reviewed browser
+  // plugin, before the controller can become ready. If readiness arrives
+  // without that callback, no managed browser handoff was made and the agent
+  // browser is treated as external.
   const runtimeModeTimer = setInterval(() => {
     if (state.agentBrowserRuntimeMode !== 'pending') {
       clearInterval(runtimeModeTimer);

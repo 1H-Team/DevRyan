@@ -876,11 +876,10 @@ async function constructWebHost(options = {}) {
     openCodeEpoch += 1;
   };
 
+  // Only the configured host decides anything; the parsed port and hostname
+  // feed nothing (the native runtime picks its own port).
   const {
-    configuredOpenCodePort: ENV_CONFIGURED_OPENCODE_PORT,
     configuredOpenCodeHost: ENV_CONFIGURED_OPENCODE_HOST,
-    effectivePort: ENV_EFFECTIVE_PORT,
-    configuredOpenCodeHostname: ENV_CONFIGURED_OPENCODE_HOSTNAME,
   } = resolveOpenCodeEnvConfig({
     env: process.env,
     logger: console,
@@ -1421,10 +1420,7 @@ async function constructWebHost(options = {}) {
   const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
     state: openCodeLifecycleState,
     env: {
-      ENV_CONFIGURED_OPENCODE_PORT,
       ENV_CONFIGURED_OPENCODE_HOST,
-      ENV_EFFECTIVE_PORT,
-      ENV_CONFIGURED_OPENCODE_HOSTNAME,
       ENV_SKIP_OPENCODE_START,
     },
     syncToHmrState,
