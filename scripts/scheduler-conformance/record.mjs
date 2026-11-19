@@ -25,6 +25,7 @@
 // usage error, and then nothing is written. The last line counts everything.
 // Scratch lives in <os tmpdir>/devryan-scheduler-conformance and is removed on
 // pass, failure and interruption (--keep-artifacts keeps it).
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -41,8 +42,59 @@ export const RECORDER = path.join(HARNESS_DIR, 'recorder.mjs');
 export const schedulerTestFiles = (directory = PACKAGE_DIR) => readdirSync(directory)
   .filter((name) => /^scheduler\..+\.test\.js$/.test(name)).sort().map((name) => `./${name}`);
 
-/** A scratch run root for one tool run (scripts/qa/run-root.mjs lifecycle). */
-export const createScratch = (owner) => createRunRoot({ parent: scratchParent('scheduler-conformance'), prefix: 'run-', owner });
+/** The parent of every tool's scratch run root. */
+export const scratchParentDir = () => scratchParent('scheduler-conformance');
+/** A file in each run root naming the process that owns it (a test finds its child's run root by it). */
+export const SCRATCH_OWNER_FILE = 'owner.pid';
+
+/** The processes below `pid`, as the system lists them (ps): every child, grandchild and so on. */
+export function descendants(pid = process.pid) {
+  const listed = spawnSync('ps', ['-A', '-o', 'pid=', '-o', 'ppid='], { encoding: 'utf8' });
+  if (listed.status !== 0) return [];
+  const children = new Map();
+  for (const line of listed.stdout.split('\n')) {
+    const [child, parent] = line.trim().split(/\s+/).map(Number);
+    if (!Number.isInteger(child) || !Number.isInteger(parent) || child === listed.pid) continue;
+    if (!children.has(parent)) children.set(parent, []);
+    children.get(parent).push(child);
+  }
+  const out = [];
+  const visit = (parent) => { for (const child of children.get(parent) ?? []) { out.push(child); visit(child); } };
+  visit(pid);
+  return out;
+}
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (error) { return error?.code === 'EPERM'; } };
+
+/**
+ * Stops every process below this one (the `bun test` children of the shared
+ * runner, a replay process, anything they started) and waits until they are
+ * gone, so none of them writes into a run root after it is removed: SIGTERM,
+ * then SIGKILL for what is left when `graceMs` has passed; the whole wait is
+ * bounded by `deadlineMs`. Listed again each round, since a child may start
+ * another while it is being stopped.
+ */
+export async function stopDescendants({ graceMs = 5_000, deadlineMs = 20_000 } = {}) {
+  const started = Date.now();
+  const signal = (pids, name) => { for (const pid of pids) { try { process.kill(pid, name); } catch { /* gone */ } } };
+  for (;;) {
+    const pids = descendants().filter(alive);
+    if (pids.length === 0) return;
+    const elapsed = Date.now() - started;
+    if (elapsed > deadlineMs) { signal(pids, 'SIGKILL'); return; }
+    signal(pids, elapsed > graceMs ? 'SIGKILL' : 'SIGTERM');
+    await new Promise((resolve) => { setTimeout(resolve, 25); });
+  }
+}
+
+/**
+ * A scratch run root for one tool run (scripts/qa/run-root.mjs lifecycle): removed on pass, failure, SIGINT and
+ * SIGTERM, after every process this one started has stopped (`stopDescendants`), so nothing recreates it.
+ */
+export function createScratch(owner) {
+  const root = createRunRoot({ parent: scratchParentDir(), prefix: 'run-', owner, onInterrupt: () => stopDescendants() });
+  writeFileSync(path.join(root.dir, SCRATCH_OWNER_FILE), `${process.pid}\n`);
+  return root;
+}
 
 /**
  * Records `files` (relative to `cwd`) once plainly and `runs` times under the

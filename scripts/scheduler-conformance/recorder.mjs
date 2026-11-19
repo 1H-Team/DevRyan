@@ -62,6 +62,14 @@
 // default `now` and the hidden performance reads use the real clocks (still
 // recorded) and Date is left alone.
 //
+// Where inputs arrived. Every input that arrives on its own is written with
+// its `place` ("the rest rule" below: rest, during, group, return, with,
+// settle, or busy when the recorder cannot show where it arrived), a promise
+// a port returned with `settled` when it was already settled, a timer.set
+// with the kind of handle scheduleTimeout returned; a replay reads these and
+// nothing else to deliver an input, and compares a case only up to its first
+// busy input.
+//
 // Cases and late effects. One test is one case; what runs outside a test is a
 // hooks case numbered by the tests before it. A construction belongs to the
 // case that was running when it was built, and everything it does or
@@ -109,6 +117,9 @@ const realRandomUUID = realCrypto.randomUUID;
 const realPerformance = globalThis.performance;
 const realPerformanceNow = realPerformance.now;
 const realConsole = globalThis.console;
+const realSetImmediate = globalThis.setImmediate;
+const realQueueMicrotask = globalThis.queueMicrotask;
+const peekStatus = Bun.peek.status;
 const { afterAll, afterEach, beforeEach } = bunTest;
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -195,6 +206,7 @@ function slot(inst, value, dir, flag = 'unwrapped-function') {
     if (typeof item === 'object') record.sightings.set(item, (record.sightings.get(item) ?? 0) + 1);
     if (typeof item === 'function') { record.flags.add(flag); mark(record, ref.slot, 'unwrapped'); continue; }
     if (isSignal(item)) { (signals ??= []).push(item); continue; }
+    if (dir === 'in' && isPromise(item)) freshPromises.push(item);
     const prototype = getPrototypeOf(item);
     if (prototype !== Object.prototype && prototype !== null && !Array.isArray(item) && holdsFunctions(item)) { record.flags.add(flag); mark(record, ref.slot, 'unwrapped'); }
   }
@@ -227,11 +239,13 @@ function pathTo(value, target) {
 function event(inst, dir, kind, fields) {
   const record = inst.case;
   eventsSeen += 1;
+  if (kind !== 'step') record.lastActivity = (activity += 1);
+  scheduleProbe();
   if (written) {
     unplaced += 1;
     lateCases.add(keyOf(record));
     writeUnplaced();
-    return;
+    return null;
   }
   const entry = { seq: (inst.seq += 1), at: (record.at += 1), dir, kind };
   let signals;
@@ -242,12 +256,261 @@ function event(inst, dir, kind, fields) {
   if (signals) entry.signals = signals;
   if (record.closed) entry.late = true;
   inst.events.push(entry);
+  return entry;
 }
-const input = (inst, kind, fields) => {
+const ARRIVED = new Set(['call', 'control', 'callback', 'fire', 'abort', 'step']);
+/**
+ * An input. One that arrived on its own (a call, control, callback, fire,
+ * abort, a step marker; an answer's settlement through `settledAnswer`) is
+ * written with its `place` (see "the rest rule" below), decided now, before
+ * the input's event is counted: what the recorder can show about where it
+ * arrived. `except` is the promise whose settlement this input is.
+ */
+const input = (inst, kind, fields, except = null) => {
   const during = inst.portStack.length ? inst.portStack[inst.portStack.length - 1] : undefined;
-  event(inst, 'in', kind, during === undefined ? fields : { ...fields, during });
+  const placed = ARRIVED.has(kind) || except !== null ? placeOf(inst, kind, fields, during, except) : null;
+  // Promises in this input's values are watched from now on, with the state they have now.
+  for (const promise of freshPromises.splice(0)) if (!watchedIn.has(promise)) { watchedIn.set(promise, inst.case); restPoint.statuses.set(promise, peekStatus(promise)); }
+  return event(inst, 'in', kind, { ...fields, ...(during === undefined ? {} : { during }), ...placed });
 };
+const freshPromises = []; // promises met in values that went in, since the last input event
 const output = (inst, kind, fields) => event(inst, 'out', kind, fields);
+
+// --------------------------------------------------------------- the rest rule
+//
+// Where an arrived input reached the scheduler, as the recorder can show it
+// (the replayer delivers each input where its mark says, and compares a case
+// only up to its first input marked `busy`). Every arrived input gets one
+// `place`, the first of these that holds:
+// - `during`: a port call of its construction was on the stack (the test's port
+//   code called it synchronously): the position is the port call's. A port
+//   answer's settlement written then is `busy` instead: it was written by a
+//   reaction, so microtasks ran inside the port.
+// - `group`: the scripted driver listed it in the latest step marker's group
+//   (driver.mjs delivers a group in one macrotask, at quiescence it confirmed).
+// - `return`: the settlement of a promise a port returned already settled
+//   (`settled` on its `answer promise`; Bun.peek.status, which runs no job): the
+//   recorder's reaction, registered first, was queued when the port returned.
+// - `with` with `after: <call>`: it arrived in the same synchronous run as call
+//   `<call>`'s return (or throw), with nothing written between. Shown by: the
+//   event just written was that call's `return` or `throw`; the microtask the
+//   recorder queued at that return has not run yet; and the caller's async
+//   context holds the stamp the recorder entered (AsyncLocalStorage
+//   `enterWith`, a new object per call) right where it queued that microtask.
+//   A job other than the one that made the return could hold that stamp only
+//   if its context was captured after the stamp was entered, and every such
+//   job is queued after that microtask, so it runs after it.
+// - `settle` with `after: <call>`: it arrived in a reaction job that the
+//   settlement of call `<call>` queued, and nothing was written since that
+//   settlement. The caller never holds the scheduler's promise: it holds one
+//   the recorder made at the return, settled only by the recorder's reaction to
+//   the scheduler's (registered first, at the return), which writes the
+//   `settle` event, queues an opener microtask, settles the caller's promise
+//   (queuing exactly the reactions registered on it so far) and queues a
+//   closer microtask (`settledWindow`). The microtask queue runs in order, so
+//   the jobs between opener and closer are exactly those reactions: a job the
+//   test queued before (a chain of awaits that runs alongside, however long) is
+//   ahead of the opener, one queued later (an await after the continuation, a
+//   `.then` of a `.then`, the continuation of a function that awaited the
+//   call) is behind the closer. Shown by: the window of that call is open, the
+//   input is of its case, and no event was written since its `settle`.
+// - `rest`: the scheduler had come to rest. A rest point is a moment at which
+//   the microtask queue is empty: a `setImmediate` callback the recorder queues
+//   after any event, and the entry of a timer callback of a real timer the
+//   recorder set or the test set (Bun runs the microtask queue to the end between any two timer or
+//   immediate callbacks). At a rest point every job the scheduler could run has
+//   run: what makes it run again is an input. The input is at rest when its
+//   case wrote no event since the latest rest point (step markers left out)
+//   and no promise its schedulers may await silently changed state since: every
+//   promise a port of the case returned pending whose settlement is not
+//   recorded yet, and every promise met in a value that went in in the case,
+//   has the state it had at that rest point (`except`, the promise this input
+//   is the settlement of, aside). Per case, because the schedulers of other
+//   cases share nothing with it (the scheduler's modules hold no mutable
+//   state; a test's own shared objects reach it only through recorded inputs
+//   and through promises, which are watched); a replay has only its case.
+//   The entry of a real timer callback of the test's own is a rest point as
+//   well: without it, whether the recorder's probe ran before such a timer,
+//   or a real timer of the scheduler's fired just before it in the same timer
+//   phase, would decide between `rest` and `busy`, and a mark must not depend
+//   on load. Each of these is a rest point only when the event loop itself
+//   entered the callback (no frame below it) and, for a timer, the test
+//   runner's fake timers are off: a fake clock calls timer callbacks from
+//   the test's own code with microtasks still queued (`enteredFromEventLoop`).
+//   Both kinds rest on the scheduler queuing no macrotask of its own (no
+//   timer, immediate, sleep or message outside its options): a case in
+//   which product code queues one gives no `rest` mark from then on
+//   (`ownMacrotask`, note `own-macrotask`).
+// - `busy`: nothing above shows it; the scheduler may have had work queued when
+//   it arrived. Doubt is `busy`, never the reverse.
+let activity = 0; // events written, step markers left out (a case's `lastActivity` is this count at its latest event)
+const restPoint = { activity: 0, statuses: new RealMap() };
+const outstanding = new RealMap(); // a promise a port returned pending, settlement not recorded yet -> its case
+const watchedIn = new RealMap(); // a promise met in a value that went in -> its case
+let probePending = false;
+/** `wrapper` with every own property of `real` (its name and length, util.promisify's custom function: the same values). */
+function sameShape(real, wrapper) {
+  for (const key of ownKeys(real)) {
+    if (key === 'prototype') continue;
+    try { defineProperty(wrapper, key, getOwnPropertyDescriptor(real, key)); } catch { /* a property the wrapper cannot take: kept as it is */ }
+  }
+  return wrapper;
+}
+// Whether the test runner's fake timers are installed: bun:test's switches (`jest` and `vi`) are wrapped, and the
+// runner's own answer counts too, for a switch the recorder did not see. While they are, a timer callback runs when
+// whatever advances the fake clock calls it, synchronously, with microtasks still queued, so no timer entry is a
+// rest point (O0c review 3, B1).
+const fakeTimers = { installed: false };
+const runnerIsFake = typeof bunTest.jest?.isFakeTimers === 'function' ? bunTest.jest.isFakeTimers : null;
+const fakeTimersOn = () => fakeTimers.installed || (runnerIsFake !== null && apply(runnerIsFake, bunTest.jest, []) === true);
+for (const holder of [bunTest.jest, bunTest.vi]) {
+  if (!holder || typeof holder !== 'object') continue;
+  for (const name of ['useFakeTimers', 'useRealTimers']) {
+    const real = holder[name];
+    if (typeof real !== 'function') continue;
+    holder[name] = sameShape(real, function (...args) {
+      const result = apply(real, this, args);
+      fakeTimers.installed = name === 'useFakeTimers';
+      if (fakeTimers.installed) ownerNow().notes.add('fake-timers');
+      return result;
+    });
+  }
+}
+/**
+ * Whether the callback that called this was entered from the event loop: no frame below it. Anything that calls a
+ * timer callback synchronously (a fake clock's advance, a test calling a Timeout's `_onTimeout`) is a frame below
+ * it; only from the event loop is the microtask queue known to be empty at the entry. A timer entry (`timer`) also
+ * needs the runner's fake timers off. Doubt (a stack the recorder cannot read) is no rest point.
+ */
+function enteredFromEventLoop(timer) {
+  if (timer && fakeTimersOn()) {
+    ownerNow().notes.add('fake-timers');
+    return false;
+  }
+  const limit = RealError.stackTraceLimit;
+  const prepare = RealError.prepareStackTrace;
+  RealError.stackTraceLimit = 3;
+  if (prepare !== undefined) RealError.prepareStackTrace = undefined;
+  let stack;
+  try { stack = new RealError().stack; } finally {
+    RealError.stackTraceLimit = limit;
+    if (prepare !== undefined) RealError.prepareStackTrace = prepare;
+  }
+  // This function's frame and the callback's, nothing below.
+  return typeof stack === 'string' && stack.split('\n').filter((line) => line.trim().startsWith('at ')).length === 2;
+}
+/**
+ * A macrotask queued by the scheduler's own code: a frame of its module closure called a timer, setImmediate,
+ * Bun.sleep or a MessagePort's postMessage directly, not through an option. Its callback could run the scheduler
+ * after a rest point with no input recorded, so the case gives no `rest` mark from then on (`own-macrotask`, a note;
+ * O0c review 3, S4). The frame that called is found as for a hidden read: the first one below the recorder's own,
+ * or, when product code called it in tail position, the recorder line that called that code.
+ */
+function ownMacrotask(route) {
+  const frames = stackFrames();
+  let at = 0;
+  for (; at < frames.length && RECORDER_FILES.has(frames[at].file); at += 1) {
+    if (CALLS_TEST.has(frames[at].line)) return;
+    if (CALLS_PRODUCT.has(frames[at].line)) break;
+  }
+  if (at >= frames.length || (!RECORDER_FILES.has(frames[at].file) && !PRODUCT_FILES.has(frames[at].file))) return;
+  const record = als.getStore()?.inst?.case ?? current;
+  record.ownMacrotask = route;
+  record.notes.add('own-macrotask');
+}
+// A real timer of the test's own (setTimeout, setInterval) is a rest point at its callback's entry too, as the
+// recorder's own timers are: whether the recorder's probe ran before it, or a real timer of the scheduler's fired
+// just before it in the same timer phase, is the wall clock's choice, and a mark must not depend on it. Only an
+// entry from the event loop, with fake timers off, is one.
+for (const name of ['setTimeout', 'setInterval']) {
+  const real = globalThis[name];
+  globalThis[name] = sameShape(real, function (handler, ...rest) {
+    ownMacrotask(name);
+    if (typeof handler !== 'function') return apply(real, this, [handler, ...rest]);
+    return apply(real, this, [function (...args) { if (enteredFromEventLoop(true)) markRest(); return apply(handler, this, args); }, ...rest]);
+  });
+}
+// The other ways to queue a macrotask, watched for the scheduler's own calls (queueMicrotask and process.nextTick
+// queue jobs Bun runs to the end before any timer or immediate callback: no rest point is passed while one waits).
+globalThis.setImmediate = sameShape(realSetImmediate, function (...args) { ownMacrotask('setImmediate'); return apply(realSetImmediate, this, args); });
+const realSleep = Bun.sleep;
+Bun.sleep = sameShape(realSleep, function (...args) { ownMacrotask('Bun.sleep'); return apply(realSleep, this, args); });
+if (typeof MessagePort === 'function') {
+  const realPostMessage = MessagePort.prototype.postMessage;
+  defineProperty(MessagePort.prototype, 'postMessage', { ...getOwnPropertyDescriptor(MessagePort.prototype, 'postMessage'), value: sameShape(realPostMessage, function (...args) { ownMacrotask('postMessage'); return apply(realPostMessage, this, args); }) });
+}
+function markRest() {
+  restPoint.activity = activity;
+  restPoint.statuses = new RealMap();
+  for (const promise of outstanding.keys()) restPoint.statuses.set(promise, peekStatus(promise));
+  // A settled promise never changes again: it is no longer watched.
+  for (const promise of [...watchedIn.keys()]) { const status = peekStatus(promise); if (status === 'pending') restPoint.statuses.set(promise, status); else watchedIn.delete(promise); }
+}
+function scheduleProbe() {
+  if (probePending || written) return;
+  probePending = true;
+  apply(realSetImmediate, globalThis, [() => { probePending = false; if (enteredFromEventLoop(false)) markRest(); }]);
+}
+const unchangedSinceRest = (record, except) => {
+  for (const watched of [outstanding, watchedIn]) {
+    for (const [promise, owner] of watched) if (owner === record && promise !== except && restPoint.statuses.get(promise) !== peekStatus(promise)) return false;
+  }
+  return true;
+};
+// The caller's flow: a stamp per call of a member (or handed function, timer, construction), entered on its return.
+const callerAls = new AsyncLocalStorage();
+let lastSettle = null; // { case, call, activity } of a settlement whose window is open (between its opener and closer microtasks)
+let lastReturn = null; // { activity, stamp } of the return just made, until the microtask queued then runs
+const stepItems = new RealWeakMap(); // a step marker's input item -> matched
+function groupMatch(inst, kind, fields) {
+  const marker = inst.case.stepMarker;
+  if (!marker || kind === 'step') return false;
+  const item = marker.inputs.find((entry) => !apply(WeakMapGet, stepItems, [entry]) && entry.construction === inst.n && entry.kind === kind
+    && (kind === 'answer' ? entry.port === fields.port && entry.outcome === fields.outcome : kind === 'abort' ? entry.signal === fields.signal : entry.call === fields.call));
+  if (!item) return false;
+  apply(WeakMapSet, stepItems, [item, true]);
+  return true;
+}
+function placeOf(inst, kind, fields, during, except) {
+  // A settlement is written by a reaction: one written while a port call is on the stack ran in microtasks the test's
+  // code ran inside the port (Bun's expect().rejects does), a position no replay can give it.
+  if (during !== undefined) return { place: except !== null ? 'busy' : 'during' };
+  if (groupMatch(inst, kind, fields)) return { place: 'group' };
+  if (except !== null && apply(WeakMapGet, settledAtReturn, [except])) return { place: 'return' };
+  const flow = callerAls.getStore();
+  if (lastReturn && lastReturn.activity === activity && flow === lastReturn.stamp) return { place: 'with', after: lastReturn.stamp.call };
+  if (lastSettle && lastSettle.activity === activity && lastSettle.case === inst.case) return { place: 'settle', after: lastSettle.call };
+  if (!inst.case.ownMacrotask && (inst.case.lastActivity ?? 0) <= restPoint.activity && unchangedSinceRest(inst.case, except)) return { place: 'rest' };
+  return { place: 'busy' };
+}
+const settledAtReturn = new RealWeakMap(); // a promise a port returned -> its state then, when already settled
+/** The settlement of a promise a port returned, as an input placed by the rest rule. */
+function settledAnswer(inst, port, promise, outcome, value) {
+  const entry = input(inst, 'answer', { port, outcome, value }, promise);
+  outstanding.delete(promise);
+  return entry;
+}
+/**
+ * Right after a member's (or handed function's) settle event, in the recorder's reaction to the scheduler's promise:
+ * queues the microtask that opens the window, settles the promise the caller holds (which queues every reaction
+ * registered on it, and nothing else), and queues the microtask that closes the window. The jobs that run while it
+ * is open are exactly those reactions: every job queued before this reaction ran precedes the opener, every job
+ * queued after it follows the closer.
+ */
+function settledWindow(inst, call, settle) {
+  const mark = { case: inst.case, call, activity };
+  apply(realQueueMicrotask, globalThis, [() => { lastSettle = mark; }]);
+  settle();
+  apply(realQueueMicrotask, globalThis, [() => { if (lastSettle === mark) lastSettle = null; }]);
+}
+/** Right after a call returned (or threw) to its caller: a stamp for the caller's flow, and a microtask that ends the synchronous run's window. */
+function noteReturn(inst, call) {
+  const stamp = { inst, call };
+  callerAls.enterWith(stamp);
+  const mark = { activity, stamp };
+  lastReturn = mark;
+  apply(realQueueMicrotask, globalThis, [() => { if (lastReturn === mark) lastReturn = null; }]);
+}
 
 /**
  * An AbortSignal's number in its construction; on first sight it is watched:
@@ -328,6 +591,7 @@ const markedLines = (tag) => new Set(OWN_SOURCE.flatMap((line, index) => (line.t
 const CALLS_PRODUCT = markedLines('product');
 const CALLS_TEST = markedLines('test');
 
+const handedFor = new RealWeakMap(); // a promise a member (or handed function) returned -> the promise its callers get
 /** Runs scheduler code for an input `call`, recording its return, throw or settlement. */
 function deliver(inst, call, thunk, name = null, transform = null) {
   let result;
@@ -345,7 +609,17 @@ function deliver(inst, call, thunk, name = null, transform = null) {
   const flag = typeof name === 'string' ? 'handed-code' : 'unwrapped-function';
   if (isPromise(result)) {
     output(inst, 'return', { call, promise: true });
-    observe(result, (value) => { output(inst, 'settle', { call, outcome: 'resolve', value: slot(inst, value, 'out', flag) }); }, (error) => { output(inst, 'settle', { call, outcome: 'reject', value: slot(inst, error, 'out', flag) }); });
+    // The caller gets a promise of the recorder's own, settled by the recorder's reaction to the scheduler's: the
+    // reactions the caller registered on it are then queued inside that reaction, between the two microtasks that
+    // open and close the settlement's window (`settledWindow`, "the rest rule"). One promise of the recorder's per
+    // promise of the scheduler's, so two calls the scheduler answers with one promise (a memoised shutdown) answer
+    // with one promise here too; the first settlement settles it.
+    let settleHanded = null;
+    const known = apply(WeakMapGet, handedFor, [result]);
+    const handed = known ?? new RealPromise((resolve, reject) => { settleHanded = { resolve, reject }; });
+    if (!known) apply(WeakMapSet, handedFor, [result, handed]);
+    observe(result, (value) => { output(inst, 'settle', { call, outcome: 'resolve', value: slot(inst, value, 'out', flag) }); settledWindow(inst, call, () => { settleHanded?.resolve(value); }); }, (error) => { output(inst, 'settle', { call, outcome: 'reject', value: slot(inst, error, 'out', flag) }); settledWindow(inst, call, () => { settleHanded?.reject(error); }); });
+    return handed;
   } else {
     output(inst, 'return', { call, value: slot(inst, result, 'out', flag) });
   }
@@ -371,8 +645,13 @@ function portFunction(inst, name, fn, receiver = (self) => self) {
     }
     inst.portStack.pop();
     if (isPromise(result)) {
-      input(inst, 'answer', { port, outcome: 'promise' });
-      observe(result, (value) => { input(inst, 'answer', { port, outcome: 'resolve', value: slot(inst, value, 'in') }); }, (error) => { input(inst, 'answer', { port, outcome: 'reject', value: slot(inst, error, 'in') }); });
+      // Whether the promise was already settled when the port returned (Bun.peek.status runs no job). Only a native
+      // promise: awaiting a subclass's takes jobs of its own (its `then`), which a replay settling a native one lacks.
+      const status = getPrototypeOf(result) === RealPromise.prototype ? peekStatus(result) : 'pending';
+      const settled = status === 'fulfilled' ? 'resolve' : status === 'rejected' ? 'reject' : null;
+      if (settled) apply(WeakMapSet, settledAtReturn, [result, settled]); else outstanding.set(result, inst.case);
+      input(inst, 'answer', { port, outcome: 'promise', ...(settled ? { settled } : {}) });
+      observe(result, (value) => { settledAnswer(inst, port, result, 'resolve', slot(inst, value, 'in')); }, (error) => { settledAnswer(inst, port, result, 'reject', slot(inst, error, 'in')); });
     } else input(inst, 'answer', { port, outcome: 'return', value: slot(inst, result, 'in') });
     return result;
   };
@@ -485,7 +764,11 @@ function handedFunction(inst, port, at, method, fn, holder) {
     const handed = handFromTest(inst, method !== null ? 'control' : 'callback', call, args);
     if (method !== null) input(inst, 'control', { call, of: port, method, args: slot(inst, handed, 'in') });
     else input(inst, 'callback', { call, of: port, path: at, args: slot(inst, handed, 'in') });
-    return deliver(inst, call, () => apply(fn, holder === undefined ? this : holder, handed));
+    try {
+      return deliver(inst, call, () => apply(fn, holder === undefined ? this : holder, handed));
+    } finally {
+      noteReturn(inst, call);
+    }
   };
   apply(WeakMapSet, rawOf, [wrapper, fn]);
   return wrapper;
@@ -521,20 +804,29 @@ function timerOptions(inst) {
   const forget = (handle, id) => { if (!isObjectHandle(handle) && primitive.has(handle)) primitive.set(handle, primitive.get(handle).filter((entry) => entry !== id)); };
   const schedule = (injectedSet) => ownWrapper(function scheduleTimeout(fn, delay, ...rest) {
     const timer = (inst.timers += 1);
-    output(inst, 'timer.set', { timer, delay: slot(inst, delay, 'out') });
+    const set = output(inst, 'timer.set', { timer, delay: slot(inst, delay, 'out') });
     const setAt = inst.case.clock;
     let handle;
     const fire = function (...args) {
+      // A timer the recorder set really: its callback is a macrotask of its own, entered with the microtask queue empty
+      // when the event loop entered it (not a fake clock's advance).
+      if (!injectedSet && enteredFromEventLoop(true)) markRest();
       const call = (inst.calls += 1);
       forget(handle, timer);
       // A real timer: its virtual due time has come. A test that fires its own timers moves no time.
       if (!injectedSet && CLOCK === 'nominal') advance(inst.case, setAt + effectiveDelay(delay));
       input(inst, 'fire', { call, timer });
-      return deliver(inst, call, () => apply(fn, this, args));
+      try {
+        return deliver(inst, call, () => apply(fn, this, args));
+      } finally {
+        noteReturn(inst, call);
+      }
     };
     apply(WeakMapSet, rawOf, [fire, fn]);
     handle = injectedSet ? apply(injectedSet, undefined, [fire, delay, ...rest]) : apply(realSetTimeout, globalThis, [fire, delay, ...rest]); // conformance:test
     remember(handle, timer);
+    // What the handle is decides how a clear through it is attributed (a primitive one is forgotten when its timer fires).
+    if (set) set.handle = isObjectHandle(handle) ? 'object' : 'primitive';
     return handle;
   });
   const cancel = (injectedClear) => ownWrapper(function cancelTimeout(handle) {
@@ -714,7 +1006,11 @@ function construct(real, thisArg, args) {
   const options = args[0];
   if (options === null || typeof options !== 'object') {
     input(inst, 'call', { call: 0, member: TARGET.export, args: slot(inst, args, 'in') });
-    return deliver(inst, 0, () => apply(real, thisArg, args), null, (scheduler) => members(inst, scheduler));
+    try {
+      return deliver(inst, 0, () => apply(real, thisArg, args), null, (scheduler) => members(inst, scheduler));
+    } finally {
+      noteReturn(inst, 0);
+    }
   }
   const timers = timerOptions(inst);
   const supplied = new RealMap();
@@ -744,7 +1040,11 @@ function construct(real, thisArg, args) {
   // The options as the scheduler gets them at construction: functions by name, objects with functions as ports, data inline.
   input(inst, 'call', { call: 0, member: TARGET.export, args: slot(inst, [optionsView(inst, options), ...args.slice(1)], 'in') });
   // The construction returns the scheduler's members as inputs; its own return value is that proxy (a port, by name).
-  return deliver(inst, 0, () => apply(real, thisArg, handed), null, (scheduler) => members(inst, scheduler));
+  try {
+    return deliver(inst, 0, () => apply(real, thisArg, handed), null, (scheduler) => members(inst, scheduler));
+  } finally {
+    noteReturn(inst, 0);
+  }
 }
 
 /** What the scheduler gets for one option member: a recorded clock, timers or factory, a port, or the data itself. */
@@ -856,7 +1156,11 @@ function members(inst, scheduler) {
           const call = (inst.calls += 1);
           const handed = handFromTest(inst, key, call, args);
           input(inst, 'call', { call, member: key, args: slot(inst, handed, 'in') });
-          return deliver(inst, call, () => apply(value, object, handed), key);
+          try {
+            return deliver(inst, call, () => apply(value, object, handed), key);
+          } finally {
+            noteReturn(inst, call);
+          }
         };
         apply(WeakMapSet, rawOf, [member, value]);
         entry = { fn: value, wrapper: member };
@@ -1055,6 +1359,8 @@ function finalize(record, values) {
     kind: record.kind, ...(record.kind === 'test' ? { ordinal: record.ordinal } : { hooks: record.hooks }),
     flags: [...record.codec.flags, ...record.flags].filter((flag, index, list) => list.indexOf(flag) === index).sort(),
     notes: [...record.notes].sort(),
+    // The case's own count of the events it wrote (every construction's), kept apart from the events: a reader checks one against the other.
+    events: record.at,
     constructions: record.constructions.map((inst) => ({ n: inst.n, defaulted: [...inst.defaulted], events: resolve(record.marks.size ? inst.events.map(marked) : inst.events) })),
   };
 }

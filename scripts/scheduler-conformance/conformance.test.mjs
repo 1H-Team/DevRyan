@@ -100,13 +100,14 @@ guarded('the toy is recorded twice byte-equal and complete, with provenance that
   assert.deepEqual(Object.keys(header.modules), ['scripts/scheduler-conformance/toy/toy-scheduler.mjs']);
   assert.equal(checkProvenance(header, { root: REPOSITORY_ROOT, harnessDir: HARNESS_DIR }), null);
   assert.equal(typeof header.bun, 'string');
-  assert.equal(cases.length, 20);
+  assert.equal(cases.length, 36);
   const results = runToyChecks(first.containers);
   assert.deepEqual(Object.entries(results).filter(([, finding]) => finding !== null), []);
   assert.deepEqual(Object.keys(results), Object.keys(TOY_CHECKS));
   assert.equal(CORPUS_CHECKS['recorder-digest']({ toy: first }), null);
-  // The one noted case keeps its outcome and is listed as information.
-  assert.deepEqual(first.info.map((entry) => entry.note), ['mutated-by-receiver']);
+  // The noted cases keep their outcome and are listed as information: one changed by its receiver, five under fake
+  // timers, five whose scheduler queued a macrotask of its own.
+  assert.deepEqual(first.info.map((entry) => entry.note), ['mutated-by-receiver', ...Array(5).fill('fake-timers'), ...Array(5).fill('own-macrotask')]);
 });
 
 guarded('fixtures: effects after the recording was written, code handed to the test, an unwrapped function (a class instance\'s method included), a mutated input, a handed-out value that crosses back in changed, and overlapping tests are unrecordable; a file that builds no scheduler exits 2', async () => {

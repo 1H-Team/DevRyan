@@ -3,14 +3,17 @@
 // under Bun, the tools and the self-test under Node.
 //
 // A container is one NDJSON file per recorded test file:
-//   line 1  {"format":"devryan-scheduler-conformance","version":1,...provenance}
+//   line 1  {"format":"devryan-scheduler-conformance","version":2,...provenance}
 //   line 2  {"values":{"<hash>":<codec tree>,...}}   values in order of first reference
 //   line 3+ {"case":{...}}                            one line per test (and per hooks block that built a scheduler), in file order
+//   last    {"end":{"cases":<n>,"events":<n>}}        how many case lines and events the file holds (a reader refuses a file
+//                                                whose counts differ: a lost case line, a cut file)
 // Provenance, in every container: the recorder's digest (its own files and
 // the shared codec), the digest of every product module the scheduler is
 // built from (its static import closure), and the Bun version.
 //
-// A case holds its constructions; a construction is one call of
+// A case holds `events` (the recorder's own count of the events it wrote) and
+// its constructions; a construction is one call of
 // `createManagedTaskScheduler`, and its `events` are one total order (`seq`,
 // from 1). `at` orders the events of all constructions of one case. Every
 // value is a slot `"=<16 hex>"` into the value table, encoded with the codec of
@@ -26,7 +29,9 @@
 //   in  control  {call, of, method, args}        a method of the task control object the scheduler handed executor call `of`
 //   in  callback {call, of, path, args}          another function the scheduler handed port call `of` (onProgress, ...)
 //   in  fire     {call, timer}                   a timer the scheduler set fired
-//   in  answer   {port, outcome, value?}         a port call's answer: return | throw | promise, then resolve | reject
+//   in  answer   {port, outcome, value?, settled?}  a port call's answer: return | throw | promise, then resolve | reject;
+//                                                settled (on promise): resolve | reject, the promise was already settled
+//                                                when the port returned (Bun.peek.status)
 //   in  abort    {signal, reason}                an AbortSignal that reached the scheduler aborted
 //   in  read     {object, key?, op?, found?, value, supplied?}  the scheduler read a member of the options (`object: "options"`) or
 //                                                of an object holding functions (a port): no op, a member read; op has, `key in`;
@@ -57,10 +62,22 @@
 //                                                ledger: for the target's save port, "sha256:<hex>" of the saved state's bytes as the
 //                                                reference ledger encoder writes them (or {error} when it refused the state)
 //   out abort    {signal, reason}                an AbortSignal the scheduler handed out (to a port or the test) aborted
+// Every input that arrived on its own (call, control, callback, fire, abort,
+// step, and an answer's resolve | reject) carries `place`, where the recorder
+// can show it arrived (recorder.mjs, "the rest rule"): rest (the scheduler had
+// come to rest), during (a port call was on the stack), group (a step marker's
+// group), return (the settlement of a promise already settled when its port
+// returned), with and `after: <call>` (in the same synchronous run as that
+// call's return or throw, which is the event right before it), settle with
+// `after: <call>` (in the continuation of that call's settlement, which is the
+// event right before it), busy (none of these shown: a replay compares the
+// case only up to its first busy input).
 // An abort through AbortController.prototype.abort is written before the
 // signal dispatches, so what any listener does follows the abort that caused
 // it; one without a controller (AbortSignal.timeout, any) when it dispatches.
-//   out timer.set {timer, delay}, timer.clear {timer, ambiguous?}   timer ids numbered per construction; null: a handle it never set;
+//   out timer.set {timer, delay, handle}, timer.clear {timer, ambiguous?}   timer ids numbered per construction; handle: object |
+//                                                primitive, what scheduleTimeout returned (a primitive handle is forgotten when its
+//                                                timer fires); null: a handle it never set;
 //                                                ambiguous: the live timers a primitive handle stood for (the clear is the last's)
 //   out return   {call, value | promise: true}, throw {call, error}, settle {call, outcome, value}
 // An event lists under `unwrapped` its fields whose value held a function the
@@ -85,10 +102,10 @@ import { pathStem, VALUE_REF } from '../client-conformance/container.mjs';
 import { testKeys } from '../client-conformance/junit.mjs';
 
 export const FORMAT = 'devryan-scheduler-conformance';
-export const FORMAT_VERSION = 1;
-export const RAW_VERSION = 1;
+export const FORMAT_VERSION = 2;
+export const RAW_VERSION = 2;
 // What a recording says: bumped by hand whenever the events, their attribution or the flags change.
-export const RECORDING_VERSION = 4;
+export const RECORDING_VERSION = 6;
 // Date.now() returning one nominal time this many times in a row, with no event between, throws (recorder.mjs).
 export const SPIN_LIMIT = 1_000_000;
 export const EPOCH = 1700000000000;
@@ -110,6 +127,8 @@ export const flagReason = (flag) => `${flag}: ${FLAG_REASONS[flag] ?? 'unrecorda
 // Notes on a case that keep its outcome (information for the replayer).
 export const NOTE_REASONS = Object.freeze({
   'mutated-by-receiver': 'a value the scheduler handed out, never seen crossing again, had other content when its case ended: the recorded value is what the scheduler handed over then',
+  'fake-timers': 'the test runner\'s fake timers were installed: no timer callback the fake clock ran was taken as a rest point',
+  'own-macrotask': 'product code queued a macrotask of its own (a timer, an immediate, a sleep or a message outside its options): no input after it is marked rest',
 });
 
 const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
@@ -184,13 +203,17 @@ export function importClosure(entry) {
   return [...seen].sort(compare);
 }
 
-// What a hidden input looks like in source: a clock, a random source, the environment or the locale. A text
+// What a hidden input looks like in source: a clock, a random source, the environment or the locale, and a
+// macrotask the code could queue of its own. A text
 // scan, so it over-approximates on purpose (a string that names one counts); what it cannot see is listed in
 // docs/TESTING.md (a computed member such as globalThis[name], a name bound by an import it does not list).
 export const HIDDEN_INPUT = new RegExp([
   'randomUUID', 'getRandomValues', 'randomBytes', 'randomInt', 'Math\\.random', 'performance\\.now', 'hrtime', 'Date\\.now', 'new Date\\(\\)', 'Date\\(\\)',
   'process\\??\\.env', 'Bun\\.env', '\\{[^}]*\\benv\\b[^}]*\\}\\s*=\\s*(?:globalThis\\??\\.)?process', "globalThis\\[", 'Intl\\b', 'toLocale[A-Za-z]*String', 'localeCompare',
   "from\\s+['\"](?:node:)?(?:crypto|os|process|perf_hooks)['\"]",
+  // A macrotask product code could queue of its own (O0c review 3, S4): the recorder watches the globals at run time,
+  // this sees the names it cannot (an import of node:timers or timers/promises, a promisified timer).
+  'setTimeout', 'setInterval', 'setImmediate', 'MessageChannel', 'postMessage', 'Bun\\.sleep', "['\"](?:node:)?timers(?:/promises)?['\"]",
 ].join('|'));
 
 /**
@@ -304,6 +327,7 @@ export function containerText(header, cases, table) {
   for (const key of HEADER_KEYS) if (key in header) head[key] = header[key];
   const lines = [JSON.stringify(head), `{"values":{${ordered.map((hash) => `${JSON.stringify(hash)}:${table[hash]}`).join(',')}}}`];
   for (const record of cases) lines.push(JSON.stringify({ case: record }));
+  lines.push(JSON.stringify({ end: { cases: cases.length, events: cases.reduce((sum, record) => sum + record.events, 0) } }));
   return `${lines.join('\n')}\n`;
 }
 
@@ -323,17 +347,23 @@ export function readContainer(text) {
   for (const [hash, tree] of values) if (hashText(stringifyTree(tree)) !== hash) throw new Error(`scheduler-conformance container: value ${hash} does not match its content`);
   const order = [];
   const seen = new Set();
-  const cases = lines.slice(2).map((line, index) => {
+  const end = parse(lines[lines.length - 1], lines.length - 1).end;
+  if (lines.length < 3 || !end || typeof end !== 'object' || !Number.isSafeInteger(end.cases) || !Number.isSafeInteger(end.events)) throw new Error('scheduler-conformance container: no end line (a cut file)');
+  const cases = lines.slice(2, -1).map((line, index) => {
     const record = parse(line, index + 2).case;
+    if (!record || typeof record !== 'object' || !Array.isArray(record.constructions)) throw new Error(`scheduler-conformance container: line ${index + 3} is no case`);
+    const held = record.constructions.reduce((sum, construction) => sum + construction.events.length, 0);
+    if (record.events !== held) throw new Error(`scheduler-conformance container: line ${index + 3} says ${record.events} events and holds ${held}`);
     forEachSlot(record.constructions, (hash) => {
       if (!values.has(hash)) throw new Error(`scheduler-conformance container: line ${index + 3} refers to missing value ${hash}`);
       if (!seen.has(hash)) { seen.add(hash); order.push(hash); }
     });
     return record;
   });
+  if (end.cases !== cases.length || end.events !== cases.reduce((sum, record) => sum + record.events, 0)) throw new Error(`scheduler-conformance container: the end line says ${end.cases} cases and ${end.events} events, the file holds ${cases.length} cases`);
   const tableOrder = [...values.keys()];
   if (tableOrder.length !== order.length || tableOrder.some((hash, index) => hash !== order[index])) throw new Error('scheduler-conformance container: the value table is not exactly the referenced values in order of first reference');
-  return { header, values, cases, lines, resolve: (slot) => values.get(String(slot).slice(1)) };
+  return { header, values, cases, lines, end, resolve: (slot) => values.get(String(slot).slice(1)) };
 }
 
 const outcomeOf = (flags, status, constructions) => (flags.length ? 'unrecordable' : status === 'failed' ? 'inconclusive' : constructions === 0 ? 'empty' : 'recorded');
@@ -384,6 +414,8 @@ export function buildContainers({ raws: all, junit, root, expectedFiles = [], ha
     let index = 0;
     for (const entry of raw.cases) {
       const test = entry.kind === 'test' ? ran[index++] : null;
+      const held = entry.constructions.reduce((sum, construction) => sum + construction.events.length, 0);
+      if (entry.events !== held) incomplete.push({ check: 'event-count', file: raw.file, detail: `a case of ${raw.file} says it wrote ${entry.events} events and holds ${held}` });
       const flags = [...entry.flags, ...(late.has(caseKey(entry)) ? ['late-after-write'] : [])].filter((flag, at, list) => list.indexOf(flag) === at).sort(compare);
       const status = test ? test.status : 'ran';
       const outcome = outcomeOf(flags, status, entry.constructions.length);
@@ -395,7 +427,7 @@ export function buildContainers({ raws: all, junit, root, expectedFiles = [], ha
       for (const note of notes) info.push({ note, file: raw.file, case: id, detail: `${id}: ${note}: ${NOTE_REASONS[note] ?? 'a note'}` });
       cases.push({
         id, kind: entry.kind, file: raw.file, line: test ? test.line : null, describe: test ? test.describe : [], name: test ? test.name : `hooks after ${entry.hooks} tests`,
-        status, outcome, flags, notes, constructions: entry.constructions,
+        status, outcome, flags, notes, events: held, constructions: entry.constructions,
       });
     }
     const testFilePath = path.join(root, raw.file);
@@ -491,6 +523,40 @@ export function identifierOrder(containers) {
     result[site] = { identifiers: ids.length, pairs, differing: differing.length, examples: differing.slice(0, 3) };
   }
   return result;
+}
+
+export const PLACES = Object.freeze(['rest', 'during', 'group', 'return', 'with', 'settle', 'busy']);
+const ARRIVED_KINDS = new Set(['call', 'control', 'callback', 'fire', 'abort', 'step']);
+/** An input that arrived on its own (the replayer delivers it), not one the scheduler asked for. */
+export const isArrivedEvent = (event) => event.dir === 'in' && (ARRIVED_KINDS.has(event.kind) || (event.kind === 'answer' && (event.outcome === 'resolve' || event.outcome === 'reject')));
+/** A case's events in one total order (`at`), each with its construction `c`. */
+export const caseEvents = (record) => record.constructions.flatMap((construction) => construction.events.map((event) => ({ ...event, c: construction.n }))).sort((a, b) => a.at - b.at);
+
+/**
+ * Where the comparison of a recorded case ends, read from the recording alone
+ * (never from a replay): the index, in `at` order, of its first arrived input
+ * whose place does not fix where it arrived (`busy`, or a mark the recording
+ * does not back: `during` with no port, `return` whose port's promise answer
+ * is not marked settled that way, `with` or `settle` that does not follow
+ * that call's return or settlement, an unknown place). Returns `{ events, limit, busy }`: the case is
+ * compared on events [0, limit); `busy` is that input's event, or null when
+ * every input is placed (limit = events).
+ */
+export function casePlacement(record, list = caseEvents(record)) {
+  const answers = new Map();
+  for (const [index, event] of list.entries()) {
+    if (event.kind === 'answer' && event.outcome === 'promise') answers.set(`${event.c}:${event.port}`, event);
+    if (!isArrivedEvent(event)) continue;
+    const before = list[index - 1];
+    const placed = (event.place === 'rest' && event.during === undefined)
+      || (event.place === 'during' && event.during !== undefined && event.kind !== 'answer')
+      || (event.place === 'group' && event.during === undefined)
+      || (event.place === 'return' && event.kind === 'answer' && answers.get(`${event.c}:${event.port}`)?.settled === event.outcome)
+      || (event.place === 'with' && event.during === undefined && (before?.kind === 'return' || before?.kind === 'throw') && before.call === event.after && Number.isSafeInteger(event.after))
+      || (event.place === 'settle' && event.during === undefined && before?.kind === 'settle' && before.call === event.after && Number.isSafeInteger(event.after));
+    if (!placed) return { events: list.length, limit: index, busy: event };
+  }
+  return { events: list.length, limit: list.length, busy: null };
 }
 
 /** One line per outcome count, in a fixed order. */

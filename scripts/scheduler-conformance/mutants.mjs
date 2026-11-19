@@ -8,7 +8,7 @@
 // caught bug. The list holds the first build's six, the first review's 26
 // (P01-P26), those that pin the fix round's changes, the second review's
 // eleven that the self-test missed (N02 ... N21) and those that pin the
-// second fix round's. A mutant may change a second file (`also`).
+// second fix round's and the third's. A mutant may change a second file (`also`).
 import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -39,9 +39,9 @@ export const MUTANTS = Object.freeze([
   recorder('P01-persistence-option-unwrapped', 'option-calls', [['  if (holdsFunctions(value)) return portObject(inst, key, value);\n  return value;', "  if (holdsFunctions(value) && key !== 'persistence') return portObject(inst, key, value);\n  return value;"]]),
   recorder('P02-member-copy-unwrapped', 'identity', [["      if (typeof value !== 'function' || typeof key !== 'string') return value;", "      if (typeof value !== 'function' || typeof key !== 'string' || key === 'copy') return value;"]]),
   recorder('P03-control-markAccepted-unwrapped', 'option-calls', [["      if (typeof value !== 'function' || typeof key !== 'string' || key === 'constructor') return value;", "      if (typeof value !== 'function' || typeof key !== 'string' || key === 'constructor' || key === 'markAccepted') return value;"]]),
-  recorder('P04-resolve-under-previous-port', 'golden-events', [["input(inst, 'answer', { port, outcome: 'resolve'", "input(inst, 'answer', { port: Math.max(1, port - 1), outcome: 'resolve'"]]),
-  recorder('P05-call-after-its-return', 'golden-events', [["          input(inst, 'call', { call, member: key, args: slot(inst, handed, 'in') });\n          return deliver(inst, call, () => apply(value, object, handed), key);",
-    "          const swapped = slot(inst, handed, 'in'); let result; try { result = deliver(inst, call, () => apply(value, object, handed), key); } finally { input(inst, 'call', { call, member: key, args: swapped }); }\n          return result;"]]),
+  recorder('P04-resolve-under-previous-port', 'golden-events', [["settledAnswer(inst, port, result, 'resolve',", "settledAnswer(inst, Math.max(1, port - 1), result, 'resolve',"]]),
+  recorder('P05-call-after-its-return', 'golden-events', [["          input(inst, 'call', { call, member: key, args: slot(inst, handed, 'in') });\n          try {\n            return deliver(inst, call, () => apply(value, object, handed), key);",
+    "          const swapped = slot(inst, handed, 'in');\n          try {\n            let result; try { result = deliver(inst, call, () => apply(value, object, handed), key); } finally { input(inst, 'call', { call, member: key, args: swapped }); }\n            return result;"]]),
   recorder('P06-undefined-reads-dropped', 'golden-events', [["        if (!isImplicitKey(key)) input(inst, 'read', { object: name, key: keyField(inst, key), value: slot(inst, value, 'in') });", "        if (!isImplicitKey(key) && value !== undefined) input(inst, 'read', { object: name, key: keyField(inst, key), value: slot(inst, value, 'in') });"]]),
   recorder('P07-option-draws-unrecorded', 'golden-events', [["      input(inst, 'draw', { site: key, source: 'option', value: slot(inst, result, 'in') });\n", '']]),
   recorder('P08-default-draws-unrecorded', 'served-values', [["      input(inst, 'draw', { site, source: 'default', value: slot(inst, value, 'in') });\n", '']]),
@@ -107,6 +107,36 @@ export const MUTANTS = Object.freeze([
   tool('allowance-allows-every-case', 'allowance', 'record.mjs', [['    if (!entry.case || !reasons.has(entry.case)) return true;', '    if (!entry.case) return true;']]),
   tool('allowance-unused-ignored', 'allowance', 'record.mjs', [["  for (const entry of allow) if (!used.has(entry.case)) open.push(", '  for (const entry of []) if (!used.has(entry.case)) open.push(']]),
   tool('notes-dropped-by-the-reader', 'case-notes', T, [['      const notes = [...(entry.notes ?? [])].sort(compare);', '      const notes = [];']]),
+  // The O0c fix round's: where each input arrived (the rest rule), the timer handle's kind, the counts a reader checks.
+  recorder('busy-marked-rest', 'placement', [["  return { place: 'busy' };\n}", "  return { place: 'rest' };\n}"]]),
+  recorder('promise-watch-ignored', 'placement', [['    for (const [promise, owner] of watched) if (owner === record && promise !== except && restPoint.statuses.get(promise) !== peekStatus(promise)) return false;', '    void watched;']]),
+  recorder('rest-probe-never-run', 'placement', [['  apply(realSetImmediate, globalThis, [() => { probePending = false; if (enteredFromEventLoop(false)) markRest(); }]);', '  void realSetImmediate;']]),
+  recorder('timer-entry-not-a-rest-point', 'placement', [['      if (!injectedSet && enteredFromEventLoop(true)) markRest();\n', '']]),
+  recorder('same-run-window-unbounded', 'placement', [["  apply(realQueueMicrotask, globalThis, [() => { if (lastReturn === mark) lastReturn = null; }]);", '  void mark;']]),
+  recorder('settle-window-unbounded', 'placement', [["  apply(realQueueMicrotask, globalThis, [() => { if (lastSettle === mark) lastSettle = null; }]);", '  void mark;']]),
+  recorder('caller-stamp-ignored', 'placement', [['  if (lastReturn && lastReturn.activity === activity && flow === lastReturn.stamp)', '  if (lastReturn && lastReturn.activity === activity)']]),
+  recorder('settled-at-return-unrecorded', 'placement', [['      if (settled) apply(WeakMapSet, settledAtReturn, [result, settled]); else outstanding.set(result, inst.case);', '      outstanding.set(result, inst.case);']]),
+  recorder('timer-handle-unrecorded', 'timer-handles', [["    if (set) set.handle = isObjectHandle(handle) ? 'object' : 'primitive';", '    void set;']]),
+  recorder('case-events-unwritten', 'event-counts', [['    events: record.at,\n', '']]),
+  tool('end-line-unchecked', 'container-integrity', T, [["  if (end.cases !== cases.length || end.events !== cases.reduce((sum, record) => sum + record.events, 0)) throw", '  if (false) throw']]),
+  tool('case-events-unchecked', 'container-integrity', T, [['    if (record.events !== held) throw', '    if (false) throw']]),
+  // The second fix round's (O0c review 2, B1' and S1): the settlement's window and the test timer's turn.
+  recorder('settle-window-opened-in-the-reaction', 'settle-window', [['  apply(realQueueMicrotask, globalThis, [() => { lastSettle = mark; }]);', '  lastSettle = mark;']]),
+  recorder('caller-holds-the-schedulers-promise', 'settle-window', [['    return handed;\n  } else {', '    void handed;\n  } else {']]),
+  recorder('test-timer-entry-not-a-rest-point', 'settle-window', [['    return apply(real, this, [function (...args) { if (enteredFromEventLoop(true)) markRest(); return apply(handler, this, args); }, ...rest]);', '    return apply(real, this, [handler, ...rest]);']]),
+  // The third fix round's (O0c review 3): fake timers (B1), the timer globals' own properties (S2), one promise per
+  // promise (S3), the scheduler's own macrotasks (S4).
+  recorder('fake-clock-entry-a-rest-point', 'fake-timers', [['function enteredFromEventLoop(timer) {\n', 'function enteredFromEventLoop(timer) {\n  if (timer) return true;\n']]),
+  recorder('fake-timers-unseen', 'fake-timers', [['const fakeTimersOn = () => fakeTimers.installed || (runnerIsFake !== null && apply(runnerIsFake, bunTest.jest, []) === true);', 'const fakeTimersOn = () => false;']]),
+  recorder('timer-globals-reshaped', 'timer-globals', [['  for (const key of ownKeys(real)) {\n    if (key === \'prototype\') continue;', '  for (const key of ownKeys(real)) {\n    if (key !== \'name\') continue;']]),
+  recorder('handed-promise-per-call', 'promise-identity', [['    const known = apply(WeakMapGet, handedFor, [result]);', '    const known = undefined;']]),
+  recorder('own-setTimeout-unseen', 'own-macrotask', [['    ownMacrotask(name);\n', "    if (name !== 'setTimeout') ownMacrotask(name);\n"]]),
+  recorder('own-setInterval-unseen', 'own-macrotask', [['    ownMacrotask(name);\n', "    if (name !== 'setInterval') ownMacrotask(name);\n"]]),
+  recorder('own-setImmediate-unseen', 'own-macrotask', [["ownMacrotask('setImmediate'); return", 'return']]),
+  recorder('own-sleep-unseen', 'own-macrotask', [["ownMacrotask('Bun.sleep'); return", 'return']]),
+  recorder('own-postMessage-unseen', 'own-macrotask', [["ownMacrotask('postMessage'); return", 'return']]),
+  recorder('own-macrotask-keeps-rest', 'own-macrotask', [['  if (!inst.case.ownMacrotask && (inst.case.lastActivity ?? 0) <= restPoint.activity', '  if ((inst.case.lastActivity ?? 0) <= restPoint.activity']]),
+  recorder('own-macrotask-any-caller', 'own-macrotask', [['  if (at >= frames.length || (!RECORDER_FILES.has(frames[at].file) && !PRODUCT_FILES.has(frames[at].file))) return;', '  if (at >= frames.length) return;']]),
 ]);
 
 /**
@@ -145,7 +175,7 @@ const modulesOf = async (copy) => ({
   record: await import(pathToFileURL(path.join(copy, 'record.mjs')).href),
 });
 const EMPTY_FILE = 'scripts/scheduler-conformance/toy/toy-empty.toy.mjs';
-const rawOf = (fields = {}) => ({ version: 1, file: EMPTY_FILE, codec: 3, recording: 4, recorder: 'sha256:0', modules: {}, target: 'toy', clock: 'nominal', bun: '0', cases: [{ kind: 'test', ordinal: 1, flags: [], constructions: [{ n: 1, defaulted: [], events: [] }] }], values: {}, errors: [], unplaced: 0, lateCases: [], ...fields });
+const rawOf = (fields = {}) => ({ version: 2, file: EMPTY_FILE, codec: 3, recording: 6, recorder: 'sha256:0', modules: {}, target: 'toy', clock: 'nominal', bun: '0', cases: [{ kind: 'test', ordinal: 1, flags: [], events: 0, constructions: [{ n: 1, defaulted: [], events: [] }] }], values: {}, errors: [], unplaced: 0, lateCases: [], ...fields });
 const testOf = (name, status = 'passed', line = 5) => ({ file: EMPTY_FILE, line, describe: [], name, status, assertions: 1 });
 const recordingOf = (trace, raws, junit, run = 1) => ({ run, status: 0, junit, ...trace.buildContainers({ raws, junit, root: '/', expectedFiles: [EMPTY_FILE] }) });
 
@@ -159,7 +189,7 @@ export const TOOL_CHECKS = Object.freeze({
   async 'zero-recording'(copy) {
     const { trace, record } = await modulesOf(copy);
     const junit = [testOf('builds no scheduler')];
-    const raw = rawOf({ cases: [{ kind: 'test', ordinal: 1, flags: [], constructions: [] }] });
+    const raw = rawOf({ cases: [{ kind: 'test', ordinal: 1, flags: [], events: 0, constructions: [] }] });
     const { code } = record.judgeRecording({ plain: { status: 0, junit }, recordings: [recordingOf(trace, [raw], junit, 1), recordingOf(trace, [raw], junit, 2)] });
     return code === trace.EXIT.inconclusive ? null : `a recording whose one file built no scheduler exits ${code}`;
   },
@@ -234,7 +264,7 @@ export const TOOL_CHECKS = Object.freeze({
   async allowance(copy) {
     const { trace, record } = await modulesOf(copy);
     const junit = [testOf('one', 'passed', 5), testOf('two', 'passed', 6)];
-    const raw = rawOf({ cases: [1, 2].map((ordinal) => ({ kind: 'test', ordinal, flags: ordinal === 1 ? ['mutated-after-crossing'] : [], constructions: [{ n: 1, defaulted: [], events: [] }] })) });
+    const raw = rawOf({ cases: [1, 2].map((ordinal) => ({ kind: 'test', ordinal, flags: ordinal === 1 ? ['mutated-after-crossing'] : [], events: 0, constructions: [{ n: 1, defaulted: [], events: [] }] })) });
     const recordings = [recordingOf(trace, [raw], junit, 1), recordingOf(trace, [raw], junit, 2)];
     const id = recordings[0].incomplete.find((entry) => entry.check === 'unrecordable')?.case;
     if (!id) return 'the planted unrecordable case is not reported';
@@ -252,11 +282,28 @@ export const TOOL_CHECKS = Object.freeze({
   async 'case-notes'(copy) {
     const { trace } = await modulesOf(copy);
     const junit = [testOf('one')];
-    const raw = rawOf({ cases: [{ kind: 'test', ordinal: 1, flags: [], notes: ['mutated-by-receiver'], constructions: [{ n: 1, defaulted: [], events: [] }] }] });
+    const raw = rawOf({ cases: [{ kind: 'test', ordinal: 1, flags: [], notes: ['mutated-by-receiver'], events: 0, constructions: [{ n: 1, defaulted: [], events: [] }] }] });
     const built = recordingOf(trace, [raw], junit, 1);
     const [line] = trace.readContainer(built.containers[0].text).cases;
     if (JSON.stringify(line.notes) !== '["mutated-by-receiver"]' || line.outcome !== 'recorded') return `the container case has notes ${JSON.stringify(line.notes)}, outcome ${line.outcome}`;
     return built.info.length === 1 && built.info[0].note === 'mutated-by-receiver' ? null : `info ${JSON.stringify(built.info)}`;
+  },
+  /** A container that lost a case line, one whose case was cut short, and one without its end line are refused. */
+  async 'container-integrity'(copy, { containers }) {
+    const { trace } = await modulesOf(copy);
+    const lines = containers[0].text.split('\n');
+    const last = JSON.parse(lines.at(-3));
+    const end = JSON.parse(lines.at(-2)).end;
+    const damaged = {
+      'an end line that counts one case more than it holds': [...lines.slice(0, -2), JSON.stringify({ end: { ...end, cases: end.cases + 1 } }), ''].join('\n'),
+      'a case that counts one event more than it holds': [...lines.slice(0, -3), JSON.stringify({ case: { ...last.case, events: last.case.events + 1 } }), JSON.stringify({ end: { ...end, events: end.events + 1 } }), ''].join('\n'),
+      'no end line': `${lines.slice(0, -2).join('\n')}\n`,
+    };
+    for (const [name, text] of Object.entries(damaged)) {
+      try { trace.readContainer(text); } catch { continue; }
+      return `a container with ${name} was read`;
+    }
+    return null;
   },
   /** checkProvenance holds for a real header and finds a module digest that is not the file's. */
   async provenance(copy, { containers, root, harnessDir }) {

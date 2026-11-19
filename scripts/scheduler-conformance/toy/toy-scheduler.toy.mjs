@@ -4,8 +4,13 @@
 // depends on how long anything takes: at most one recorder timer is pending
 // at a time, and timers that race are the test's own, fired in order.
 // Named *.toy.mjs so that no suite discovers it.
-import { expect, test } from 'bun:test';
+import { expect, jest, test, vi } from 'bun:test';
+import timers from 'node:timers';
+import * as timerPromises from 'node:timers/promises';
+import { promisify } from 'node:util';
 import { createManagedTaskScheduler, ToyError } from './toy-scheduler.mjs';
+
+const rest = () => new Promise((resolve) => { setImmediate(resolve); });
 
 const harness = (extra = {}) => {
   const saves = [];
@@ -148,6 +153,204 @@ test('the nominal clock moves with the recorder\'s timers, and new Date() agrees
   expect(h.scheduler.pause(50)).toBe(true);
   const after = [Date.now(), new Date().getTime(), Date.parse(Date()), new Date(5).getTime(), new Date() instanceof Date];
   expect(h.scheduler.echo([...before, ...after]).length).toBe(7);
+});
+
+test('where each input arrives is marked: at rest, in the same run, in a settlement\'s continuation, or busy', async () => {
+  const starts = [];
+  const h = harness({ executor: { start: () => new Promise((resolve) => { starts.push(resolve); }) } });
+  const rest = () => new Promise((resolve) => { setImmediate(resolve); });
+  const first = h.scheduler.submit({ prompt: 'five' }); // with: in the run the construction returned in
+  await rest();
+  h.scheduler.echo('at rest'); // rest: nothing written since the recorder's own setImmediate ran
+  await rest();
+  starts[0]();
+  h.scheduler.echo('after a silent settlement'); // busy: the executor's promise settled since that rest point
+  await first;
+  await rest();
+  const value = await h.scheduler.later('x', 1); // rest
+  h.scheduler.echo(value); // settle: the continuation of later's settlement
+  await null;
+  h.scheduler.echo('after a job boundary'); // busy: a job ran since echo returned
+  await rest();
+  const again = await h.scheduler.later('y', 1); // rest
+  await null;
+  h.scheduler.echo(again); // busy: a job ran since later settled
+  queueMicrotask(() => { h.scheduler.echo('in another job'); }); // busy: its job holds another call's stamp
+  h.scheduler.echo('in the same run'); // with: in the run the echo before it returned in
+  await rest();
+  // A recorder timer due before the recorder's next setImmediate (Bun runs the timers of the next turn first, and the
+  // spin makes this one due whatever the load): its fire is at rest because a timer callback starts with no job queued.
+  const fired = h.scheduler.laterAt(1);
+  for (const until = performance.now() + 5; performance.now() < until;);
+  await fired;
+  expect(starts.length).toBe(1);
+});
+
+// Each way of awaiting a member, the echo after it with the mark it must get (checks.mjs `settle-window`). A
+// settlement's window holds only the reactions its own settlement queued: one microtask later is not in it.
+test('a settlement\'s window holds only the reactions it queued', async () => {
+  const s = harness().scheduler;
+  const rest = () => new Promise((resolve) => { setImmediate(resolve); });
+  await rest();
+  await s.settleAfter(1);
+  s.echo('directly'); // settle
+  await rest();
+  await s.settleAfter(0);
+  s.echo('already settled'); // settle: its promise was settled when it returned
+  for (const k of [0, 1, 2, 3, 19]) {
+    await rest();
+    const kept = s.settleAfter(2);
+    for (let i = 0; i < k; i += 1) await null;
+    s.echo(`kept ${k}`); // with for 0, else busy: a chain beside the kept promise is never in its window
+    await kept;
+  }
+  await rest();
+  const kept = s.settleAfter(2);
+  await kept;
+  s.echo('kept, awaited before it settles'); // settle
+  await rest();
+  const wrapper = async () => { await s.settleAfter(1); s.echo('in a function that awaits it'); }; // settle
+  await wrapper();
+  s.echo('after that function'); // busy: the function's own promise settled in the window
+  await rest();
+  await s.settleAfter(1).then(() => { s.echo('in a then'); }).then(() => { s.echo('in the then of that then'); }); // settle, busy
+  await rest();
+  await Promise.all([s.settleAfter(1), s.settleAfter(1)]);
+  s.echo('after Promise.all'); // busy
+  await rest();
+  const first = s.gate();
+  const second = s.gate();
+  s.open();
+  await second;
+  s.echo('after the second of two settled in one run'); // settle: its own settlement was written last
+  await rest();
+  const third = s.gate();
+  const fourth = s.gate();
+  s.open();
+  await third;
+  s.echo('after the first of two settled in one run'); // busy: the other settlement was written since
+  await Promise.all([first, fourth]);
+  await rest();
+  // Two timers of the test's own, due at once, so fired in one timer phase, before the recorder's next probe: the
+  // second's entry is the rest point the echo after it stands on, whatever the load.
+  await new Promise((resolve) => { setTimeout(() => { s.echo('in a test timer'); }, 1); setTimeout(resolve, 1); }); // rest
+  s.echo('in the next test timer of that phase'); // rest: a timer callback starts with no job queued
+});
+
+// Fake timers (O0c review 3, B1): a fake clock runs timer callbacks from the test's own code, with microtasks still
+// queued, so no such entry is a rest point (checks.mjs `fake-timers`). `settleAfter(3)` still has jobs queued when
+// the fake clock runs the callback.
+test('under fake timers a test timer the fake clock runs is no rest point (advanceTimersByTime)', async () => {
+  const s = harness().scheduler;
+  await rest();
+  jest.useFakeTimers();
+  try {
+    const busy = s.settleAfter(3); // rest
+    await null;
+    setTimeout(() => { s.echo('in a fake timer'); }, 10);
+    jest.advanceTimersByTime(20); // the echo: busy
+    await busy;
+  } finally { jest.useRealTimers(); }
+});
+
+test('under fake timers a test timer the fake clock runs is no rest point (runAllTimers, through vi)', async () => {
+  const s = harness().scheduler;
+  await rest();
+  vi.useFakeTimers();
+  try {
+    const busy = s.settleAfter(3); // rest
+    await null;
+    setTimeout(() => { s.echo('in a fake timer'); }, 10);
+    vi.runAllTimers(); // the echo: busy
+    await busy;
+  } finally { vi.useRealTimers(); }
+});
+
+test('under fake timers the recorder\'s own timer is no rest point either', async () => {
+  const s = harness().scheduler;
+  await rest();
+  jest.useFakeTimers();
+  try {
+    const later = s.later('x', 5); // rest: its timer is the recorder's, over the native setTimeout, which the fake clock owns now
+    await null;
+    jest.advanceTimersByTime(10); // the fire: busy
+    expect(await later).toBe('x');
+  } finally { jest.useRealTimers(); }
+});
+
+// Two real timers of the test's own, set before fake timers are installed and fired by the event loop while they are
+// (in one timer phase, before the recorder's next probe): while fake timers are installed no timer entry is a rest
+// point, so the second echo is busy.
+test('while fake timers are installed even a real timer\'s entry is no rest point', async () => {
+  const s = harness().scheduler;
+  await rest();
+  const fired = new Promise((resolve) => { setTimeout(() => { s.echo('first real timer'); }, 1); setTimeout(() => { s.echo('second real timer'); resolve(); }, 1); });
+  jest.useFakeTimers();
+  try { await fired; } finally { jest.useRealTimers(); }
+});
+
+test('fake timers installed and removed mid-test, the clock set while they are: a real timer after them is a rest point again', async () => {
+  const s = harness().scheduler;
+  await rest();
+  jest.useFakeTimers();
+  jest.setSystemTime(new Date(1_800_000_000_000));
+  const busy = s.settleAfter(3); // rest
+  await null;
+  setTimeout(() => { s.echo('in a fake timer'); }, 1);
+  jest.advanceTimersByTime(5); // busy
+  await busy;
+  jest.useRealTimers();
+  jest.setSystemTime();
+  await new Promise((resolve) => { setTimeout(() => { s.echo('in a real timer after them'); resolve(); }, 1); }); // rest
+});
+
+test('setSystemTime alone installs no fake timers: a real timer is a rest point', async () => {
+  const s = harness().scheduler;
+  await rest();
+  jest.setSystemTime(new Date(1_800_000_000_000));
+  try { await new Promise((resolve) => { setTimeout(() => { s.echo('in a real timer'); resolve(); }, 1); }); } finally { jest.setSystemTime(); } // rest
+});
+
+// Work the scheduler queues of its own, outside its options (O0c review 3, S4; checks.mjs `own-macrotask`): after it
+// no input is at rest. Each route its own case, since the first one ends rest marks for the case.
+for (const route of ['setTimeout', 'setInterval', 'setImmediate', 'Bun.sleep', 'postMessage']) {
+  test(`a scheduler that queues work of its own through ${route}: no rest mark after it`, async () => {
+    const s = harness().scheduler;
+    await rest();
+    s.queueOwn(route); // rest
+    await new Promise((resolve) => { setTimeout(resolve, 5); });
+    expect(s.ownWork()).toBe(1); // busy
+  });
+}
+
+test('a scheduler that queues microtasks and ticks of its own keeps its rest marks', async () => {
+  const s = harness().scheduler;
+  await rest();
+  s.queueOwn('queueMicrotask'); // rest
+  s.queueOwn('nextTick'); // with
+  await new Promise((resolve) => { setTimeout(resolve, 5); });
+  expect(s.ownWork()).toBe(2); // rest
+});
+
+// What the recorder changes in what a test sees (O0c review 3, S2 and S3; checks.mjs `timer-globals`,
+// `promise-identity`): the wrapped timer globals keep their own properties, util.promisify's custom function among
+// them, and two calls answered with one promise get one promise.
+test('the wrapped timer globals keep their name, length and promisified form', async () => {
+  const s = harness().scheduler;
+  const custom = promisify.custom;
+  const woke = await promisify(setTimeout)(1, 'woke').catch((error) => error.name);
+  s.echo([
+    setTimeout.name, setTimeout.length === timers.setTimeout.length, setTimeout[custom] === timerPromises.setTimeout,
+    setImmediate.name, setImmediate.length === timers.setImmediate.length, setImmediate[custom] === timerPromises.setImmediate,
+    setInterval.name, setInterval.length === timers.setInterval.length, woke,
+  ]);
+});
+
+test('a member that answers two calls with one promise answers with one promise under the recorder too', async () => {
+  const s = harness().scheduler;
+  const first = s.memo();
+  const second = s.memo();
+  s.echo([first === second, await first, await second]);
 });
 
 let carried = null;

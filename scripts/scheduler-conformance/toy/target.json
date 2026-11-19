@@ -58,6 +58,32 @@
     {
       "anchor": "const now = options.now ?? Date.now;",
       "reason": "the recorder always passes now"
+    },
+    {
+      "anchor": "const scheduleTimeout = options.scheduleTimeout ?? globalThis.setTimeout;",
+      "reason": "the recorder always passes scheduleTimeout"
+    }
+  ],
+  "accepted": [
+    {
+      "anchor": "if (route === 'setTimeout') setTimeout(bump, 1);",
+      "reason": "planted for the own-macrotask check (O0c review 3, S4): the toy queues work of its own, which the recorder must see"
+    },
+    {
+      "anchor": "if (route === 'setInterval') { const handle = setInterval(",
+      "reason": "planted for the own-macrotask check (O0c review 3, S4): the toy queues work of its own, which the recorder must see"
+    },
+    {
+      "anchor": "if (route === 'setImmediate') setImmediate(bump);",
+      "reason": "planted for the own-macrotask check (O0c review 3, S4): the toy queues work of its own, which the recorder must see"
+    },
+    {
+      "anchor": "if (route === 'Bun.sleep') void Bun.sleep(1).then(bump);",
+      "reason": "planted for the own-macrotask check (O0c review 3, S4): the toy queues work of its own, which the recorder must see"
+    },
+    {
+      "anchor": "if (route === 'postMessage') { const channel = new MessageChannel();",
+      "reason": "planted for the own-macrotask check (O0c review 3, S4): the toy queues work of its own, which the recorder must see"
     }
   ]
 }

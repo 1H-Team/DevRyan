@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { allCases, EPOCH, servedUuid, sha256 } from './trace.mjs';
 
 export const GOLDEN_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'toy', 'golden.json');
-/** One event as the golden list pins it: direction, kind, what it names, its numbers, and its marks (no values). */
+/** One event as the golden list pins it: direction, kind, what it names, its numbers, and its marks (no values): where an input arrived among them. */
 export function eventTuple(event) {
   const label = event.name ?? event.member ?? event.method ?? event.path ?? (event.kind === 'read' ? `${event.object}.${typeof event.key === 'string' ? event.key : '<symbol>'}${event.op ? `:${event.op}` : ''}` : event.site ?? event.source ?? '');
   const ids = ['call', 'port', 'of', 'timer', 'signal'].filter((key) => event[key] !== undefined).map((key) => `${key}=${event[key]}`);
@@ -22,6 +22,9 @@ export function eventTuple(event) {
   if (event.signals) ids.push(`signals=${event.signals.map((entry) => `${entry.signal}@${entry.in}.${(entry.at ?? ['?']).join('.')}`).join(',')}`);
   if (event.ambiguous) ids.push(`ambiguous=${event.ambiguous.join(',')}`);
   if (event.supplied) ids.push('supplied');
+  if (event.settled) ids.push(`settled=${event.settled}`);
+  if (event.handle) ids.push(`handle=${event.handle}`);
+  if (event.place) ids.push(`place=${event.place}${event.after !== undefined ? `@${event.after}` : ''}`);
   if (event.late) ids.push('late');
   return [event.dir, event.kind, label, ...ids].filter(Boolean).join(' ');
 }
@@ -61,7 +64,24 @@ const NAMES = Object.freeze({
   nulls: 'options set to null are left out, as the scheduler\'s ?? treats them',
   receiver: 'a value the scheduler hands out and the test changes later keeps its case',
   ambiguous: 'a clear through a handle two live timers share is ambiguous',
+  placement: 'where each input arrives is marked: at rest, in the same run, in a settlement\'s continuation, or busy',
+  window: 'a settlement\'s window holds only the reactions it queued',
+  fakeAdvance: 'under fake timers a test timer the fake clock runs is no rest point (advanceTimersByTime)',
+  fakeRunAll: 'under fake timers a test timer the fake clock runs is no rest point (runAllTimers, through vi)',
+  fakeOwn: 'under fake timers the recorder\'s own timer is no rest point either',
+  fakeReal: 'while fake timers are installed even a real timer\'s entry is no rest point',
+  fakeRemoved: 'fake timers installed and removed mid-test, the clock set while they are: a real timer after them is a rest point again',
+  systemTime: 'setSystemTime alone installs no fake timers: a real timer is a rest point',
+  ownTicks: 'a scheduler that queues microtasks and ticks of its own keeps its rest marks',
+  timerGlobals: 'the wrapped timer globals keep their name, length and promisified form',
+  promiseIdentity: 'a member that answers two calls with one promise answers with one promise under the recorder too',
 });
+const OWN_ROUTES = Object.freeze(['setTimeout', 'setInterval', 'setImmediate', 'Bun.sleep', 'postMessage']);
+const ownRouteCase = (route) => `a scheduler that queues work of its own through ${route}: no rest mark after it`;
+/** An arrived input as the placement check reads it: kind (member), place (and the call it follows). */
+const placeOf = (event) => `${event.kind}${event.member ? `:${event.member}` : ''}${event.kind === 'answer' ? `.${event.outcome}` : ''}=${event.place}${event.after !== undefined ? `@${event.after}` : ''}`;
+const ARRIVED_KINDS = new Set(['call', 'control', 'callback', 'fire', 'abort', 'step']);
+const arrived = (event) => event.dir === 'in' && (ARRIVED_KINDS.has(event.kind) || (event.kind === 'answer' && ['resolve', 'reject'].includes(event.outcome)));
 
 export const TOY_CHECKS = Object.freeze({
   /** Every call the toy makes across its options is in the trace, once. */
@@ -281,7 +301,110 @@ export const TOY_CHECKS = Object.freeze({
     const clears = list.filter((event) => event.kind === 'timer.clear').map((event) => JSON.stringify({ timer: event.timer, ambiguous: event.ambiguous ?? null }));
     return JSON.stringify(clears) === JSON.stringify(['{"timer":2,"ambiguous":[1,2]}']) ? null : `clears ${clears.join(', ')}`;
   },
-  /** The whole event sequence of every toy case, as golden.json pins it (order, attribution, during, late, numbers). */
+  /**
+   * Where each input arrived (the rest rule): the placement case's member calls, each at the place its comment
+   * names; a construction at rest; a recorder timer's fire at rest (its callback is a rest point); a port's
+   * promise already settled when it returned, marked `settled`, its settlement placed at the return; a handed
+   * function the port's code calls inside the port call.
+   */
+  placement: (cases) => {
+    const calls = events(byName(cases, NAMES.placement)).filter((event) => arrived(event) && event.kind === 'call').map(placeOf);
+    const want = ['call:createManagedTaskScheduler=rest', 'call:submit=with@0', 'call:echo=rest', 'call:echo=busy', 'call:later=rest', 'call:echo=settle@5', 'call:echo=busy', 'call:later=rest', 'call:echo=busy', 'call:echo=with@11', 'call:echo=busy', 'call:laterAt=rest'];
+    if (JSON.stringify(calls) !== JSON.stringify(want)) return `the placement case's calls are ${calls.join(' ')}, want ${want.join(' ')}`;
+    const placedFires = events(byName(cases, NAMES.placement)).filter((event) => event.kind === 'fire').map(placeOf);
+    if (JSON.stringify(placedFires) !== JSON.stringify(['fire=rest', 'fire=rest', 'fire=rest'])) return `the placement case's recorder timers fire ${placedFires.join(' ')}, want each at rest`;
+    const fires = events(byName(cases, NAMES.carries)).filter((event) => event.kind === 'fire').map(placeOf);
+    if (JSON.stringify(fires) !== '["fire=rest"]') return `the recorder timer fires ${fires.join(' ')}`;
+    const submit = events(byName(cases, NAMES.submit));
+    const settled = submit.filter((event) => event.kind === 'answer' && event.outcome === 'promise' && event.settled === 'resolve').map((event) => event.port);
+    const atReturn = submit.filter((event) => event.kind === 'answer' && event.place === 'return').map((event) => event.port);
+    if (settled.length < 2 || JSON.stringify(settled) !== JSON.stringify(atReturn)) return `ports answered with a settled promise ${settled.join(',')}, settlements placed at the return ${atReturn.join(',')}`;
+    const busy = submit.filter((event) => event.kind === 'answer' && event.place === 'busy').length;
+    if (busy !== 2) return `the submit case has ${busy} settlements marked busy, want 2 (the executor's, which settles after its own await)`;
+    const inside = submit.filter((event) => ['control', 'callback'].includes(event.kind)).map((event) => `${event.kind}=${event.place}`);
+    return inside.length && inside.every((entry) => entry.endsWith('=during')) ? null : `handed functions called inside their port ${inside.join(' ')}`;
+  },
+  /**
+   * A settlement's window (the `settle` mark): the echo after each way of awaiting a member, in the order of the case
+   * (toy-scheduler.toy.mjs): directly, already settled, kept for 0, 1, 2, 3 and 19 microtasks, kept and awaited,
+   * inside and after a function that awaits it, in a then and its then, after Promise.all, after the second and the
+   * first of two settled in one run, in a test timer and in the next test timer of the same timer phase.
+   */
+  'settle-window': (cases) => {
+    const echoes = events(byName(cases, NAMES.window)).filter((event) => arrived(event) && event.kind === 'call' && event.member === 'echo').map((event) => event.place);
+    const want = ['settle', 'settle', 'with', 'busy', 'busy', 'busy', 'busy', 'settle', 'settle', 'busy', 'settle', 'busy', 'busy', 'settle', 'busy', 'rest', 'rest'];
+    if (JSON.stringify(echoes) !== JSON.stringify(want)) return `the window case's echoes are ${echoes.join(' ')}, want ${want.join(' ')}`;
+    // Each settle names the call it follows: the member call just before it.
+    const list = events(byName(cases, NAMES.window));
+    for (const [index, event] of list.entries()) {
+      if (event.place !== 'settle') continue;
+      const before = list[index - 1];
+      if (before?.kind !== 'settle' || before.call !== event.after) return `call ${event.call} is placed after call ${event.after}, but follows ${before?.kind} of call ${before?.call}`;
+    }
+    return null;
+  },
+  /**
+   * Fake timers (O0c review 3, B1): a callback a fake clock runs (advanceTimersByTime, runAllTimers through vi, the
+   * recorder's own timer under it) is no rest point, nor is a real timer's entry while fake timers are installed; a
+   * real timer after they are removed is one again, and setSystemTime alone installs none. Each case that installed
+   * them carries the note `fake-timers`.
+   */
+  'fake-timers': (cases) => {
+    const want = {
+      fakeAdvance: [['call:createManagedTaskScheduler=rest', 'call:settleAfter=rest', 'call:echo=busy'], ['fake-timers']],
+      fakeRunAll: [['call:createManagedTaskScheduler=rest', 'call:settleAfter=rest', 'call:echo=busy'], ['fake-timers']],
+      fakeOwn: [['call:createManagedTaskScheduler=rest', 'call:later=rest', 'fire=busy'], ['fake-timers']],
+      fakeReal: [['call:createManagedTaskScheduler=rest', 'call:echo=rest', 'call:echo=busy'], ['fake-timers']],
+      fakeRemoved: [['call:createManagedTaskScheduler=rest', 'call:settleAfter=rest', 'call:echo=busy', 'call:echo=rest'], ['fake-timers']],
+      systemTime: [['call:createManagedTaskScheduler=rest', 'call:echo=rest'], []],
+    };
+    for (const [key, [marks, notes]] of Object.entries(want)) {
+      const record = byName(cases, NAMES[key]);
+      const found = events(record).filter(arrived).map(placeOf);
+      if (JSON.stringify(found) !== JSON.stringify(marks) || JSON.stringify(record.notes) !== JSON.stringify(notes)) return `${NAMES[key]}: marks ${found.join(' ')}, notes ${JSON.stringify(record.notes)}; want ${marks.join(' ')}, notes ${JSON.stringify(notes)}`;
+    }
+    return null;
+  },
+  /**
+   * Work the scheduler queues of its own (O0c review 3, S4): through each of setTimeout, setInterval, setImmediate,
+   * Bun.sleep and a MessagePort's postMessage the case gets the note `own-macrotask` and the call after it is busy;
+   * microtasks and ticks of its own leave the marks alone.
+   */
+  'own-macrotask': (cases) => {
+    for (const route of OWN_ROUTES) {
+      const record = byName(cases, ownRouteCase(route));
+      const found = events(record).filter(arrived).map(placeOf);
+      const want = ['call:createManagedTaskScheduler=rest', 'call:queueOwn=rest', 'call:ownWork=busy'];
+      if (JSON.stringify(found) !== JSON.stringify(want) || JSON.stringify(record.notes) !== '["own-macrotask"]') return `${route}: marks ${found.join(' ')}, notes ${JSON.stringify(record.notes)}; want ${want.join(' ')}, notes ["own-macrotask"]`;
+    }
+    const ticks = byName(cases, NAMES.ownTicks);
+    const found = events(ticks).filter(arrived).map(placeOf);
+    const want = ['call:createManagedTaskScheduler=rest', 'call:queueOwn=rest', 'call:queueOwn=with@1', 'call:ownWork=rest'];
+    return JSON.stringify(found) === JSON.stringify(want) && JSON.stringify(ticks.notes) === '[]' ? null : `microtasks and ticks: marks ${found.join(' ')}, notes ${JSON.stringify(ticks.notes)}; want ${want.join(' ')}, no note`;
+  },
+  /** The wrapped setTimeout, setImmediate and setInterval keep their name, their length and util.promisify's custom function (it works). */
+  'timer-globals': (cases) => {
+    const record = byName(cases, NAMES.timerGlobals);
+    const echo = events(record).find((event) => event.kind === 'call' && event.member === 'echo');
+    const seen = echo ? value(record, echo.args).map(plain) : null;
+    const want = [['setTimeout', true, true, 'setImmediate', true, true, 'setInterval', true, 'woke']];
+    return JSON.stringify(seen) === JSON.stringify(want) ? null : `the timer globals read ${JSON.stringify(seen)}, want ${JSON.stringify(want)}`;
+  },
+  /** Two calls of a member that answers both with one promise: the caller gets one promise for both, as without the recorder. */
+  'promise-identity': (cases) => {
+    const record = byName(cases, NAMES.promiseIdentity);
+    const echo = events(record).find((event) => event.kind === 'call' && event.member === 'echo');
+    const seen = echo ? value(record, echo.args).map(plain) : null;
+    return JSON.stringify(seen) === JSON.stringify([[true, 'memo', 'memo']]) ? null : `the two promises and their values read ${JSON.stringify(seen)}, want [[true,"memo","memo"]]`;
+  },
+  /** What scheduleTimeout returned: a primitive for the test's own numbering stubs, an object for the recorder's real timers. */
+  'timer-handles': (cases) => {
+    const kinds = (name) => events(byName(cases, name)).filter((event) => event.kind === 'timer.set').map((event) => event.handle ?? 'none').join(',');
+    const found = { settle: kinds(NAMES.settle), ambiguous: kinds(NAMES.ambiguous), timers: kinds(NAMES.timers), carries: kinds(NAMES.carries) };
+    const want = { settle: 'primitive,primitive', ambiguous: 'primitive,primitive', timers: 'object,object', carries: 'object' };
+    return JSON.stringify(found) === JSON.stringify(want) ? null : `timer handles ${JSON.stringify(found)}, want ${JSON.stringify(want)}`;
+  },
+  /** The whole event sequence of every toy case, as golden.json pins it (order, attribution, during, late, numbers, places). */
   'golden-events': (cases) => {
     const golden = readGolden();
     const got = goldenOf(cases);
@@ -380,7 +503,7 @@ const REFUSED_ERRORS = Object.freeze([
 // The recorder digest covers exactly these files (docs/TESTING.md, Containers): its own two and the shared codec and container.
 const DIGEST_FILES = Object.freeze(['scheduler-conformance/recorder.mjs', 'scheduler-conformance/trace.mjs', 'client-conformance/codec.mjs', 'client-conformance/container.mjs']);
 // The corpus each corpus check reads, when it is not the check's own name.
-export const CORPUS_OF = Object.freeze({ 'recorder-digest': 'toy' });
+export const CORPUS_OF = Object.freeze({ 'recorder-digest': 'toy', 'event-counts': 'toy' });
 
 /** Checks of the fixture recordings, each over the first recording of its corpus (`{ junit, incomplete, ... }`). */
 export const CORPUS_CHECKS = Object.freeze({
@@ -392,6 +515,11 @@ export const CORPUS_CHECKS = Object.freeze({
     const scripts = path.join(toy.harnessDir, '..');
     const want = sha256(DIGEST_FILES.map((file) => `${file} ${sha256(readFileSync(path.join(scripts, file)))}`).join('\n'));
     return header.recorder === want ? null : `the header's recorder digest ${header.recorder} is not the digest of ${DIGEST_FILES.join(', ')} (${want})`;
+  },
+  /** Every case of the toy's raw recording says how many events it wrote, and that is how many it holds. */
+  'event-counts': ({ toy }) => {
+    const wrong = toy.raws.flatMap((raw) => raw.cases.filter((entry) => entry.events !== entry.constructions.reduce((sum, construction) => sum + construction.events.length, 0)).map((entry) => `${raw.file} ${entry.kind} ${entry.ordinal ?? entry.hooks}: says ${entry.events}`));
+    return wrong.length ? `case counts that are not what the case holds: ${wrong.slice(0, 3).join('; ')}` : null;
   },
   /** toy-fixtures and toy-empty: each fixture unrecordable with exactly its flag, and the empty file inconclusive. */
   fixtures: ({ fixtures }) => {

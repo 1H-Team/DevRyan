@@ -30,6 +30,9 @@ export const createManagedTaskScheduler = (options = {}) => {
   // A member read that answers undefined, as the scheduler's proof-store probe does.
   const proofStore = typeof persistence.putShard === 'function';
   const tasks = new Map();
+  const gates = [];
+  let ownWork = 0;
+  let memoised = null;
   let tail = Promise.resolve();
 
   const runExclusive = (operation) => {
@@ -133,6 +136,40 @@ export const createManagedTaskScheduler = (options = {}) => {
         await executor.abort?.(stop);
         return stop;
       });
+    },
+    /** Settles after `hops` microtasks of its own (none: already settled when it returns). */
+    async settleAfter(hops) {
+      for (let hop = 0; hop < hops; hop += 1) await null;
+      return hops;
+    },
+    /** A promise each, all settled by one `open` in one synchronous run. */
+    gate() {
+      return new Promise((resolve) => { gates.push(resolve); });
+    },
+    open() {
+      for (const resolve of gates.splice(0)) resolve(true);
+      return true;
+    },
+    /**
+     * Queues work of the toy's own, outside its options, by `route` (the planted schedulers of the own-macrotask
+     * check): it changes the toy's state later, with no input. queueMicrotask and nextTick run before any rest point.
+     */
+    queueOwn(route) {
+      const bump = () => { ownWork += 1; };
+      if (route === 'setTimeout') setTimeout(bump, 1);
+      if (route === 'setInterval') { const handle = setInterval(() => { clearInterval(handle); bump(); }, 1); }
+      if (route === 'setImmediate') setImmediate(bump);
+      if (route === 'Bun.sleep') void Bun.sleep(1).then(bump);
+      if (route === 'postMessage') { const channel = new MessageChannel(); channel.port1.onmessage = () => { channel.port1.close(); bump(); }; channel.port2.postMessage(0); }
+      if (route === 'queueMicrotask') queueMicrotask(bump);
+      if (route === 'nextTick') process.nextTick(bump);
+      return route;
+    },
+    ownWork() { return ownWork; },
+    /** One promise for every call, as a memoised shutdown answers. */
+    memo() {
+      memoised ??= Promise.resolve('memo');
+      return memoised;
     },
     async authorize(action, input) {
       await input.authorize();

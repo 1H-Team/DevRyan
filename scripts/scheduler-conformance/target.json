@@ -86,6 +86,10 @@
       "file": "persistence.js",
       "anchor": "const now = options.now ?? Date.now();",
       "reason": "the scheduler's one call of compactManagedOrchestrationState passes now: now()"
+    },
+    {
+      "anchor": "const scheduleTimeout = options.scheduleTimeout ?? globalThis.setTimeout;",
+      "reason": "the recorder always passes scheduleTimeout (the test's, or its own over the real setTimeout): the global is never the scheduler's timer; a direct call of it by product code is watched at run time (own-macrotask)"
     }
   ],
   "direct": [
