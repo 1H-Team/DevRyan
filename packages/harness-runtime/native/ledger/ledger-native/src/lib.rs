@@ -11,7 +11,9 @@
 //! - `ctx`, `stall`, `iopool`: `execution-admission.js`,
 //!   `host-stall-clock.js` and `execution-io-pool.js` as the worker uses them.
 //! - `js`: JavaScript's jobs (promises, microtasks, ticks, async functions,
-//!   `await`, the combinators), with no ledger type in it; `host`: the event
+//!   `await`, the combinators), with no ledger type in it; `agen`: async
+//!   generators, `for await` and `yield*` on it; `emitter`: Node's
+//!   `EventEmitter`; `host`: the event
 //!   loop around them (units of work, Node's timers and immediates, blocking
 //!   work); `runtime`: the methods and the worker's options.
 //! - With the `test-hooks` feature only: `stub` (the stub methods of the
@@ -21,8 +23,10 @@
 
 use std::rc::Rc;
 
+pub mod agen;
 pub mod codec;
 pub mod ctx;
+pub mod emitter;
 pub mod host;
 pub mod iopool;
 pub mod js;

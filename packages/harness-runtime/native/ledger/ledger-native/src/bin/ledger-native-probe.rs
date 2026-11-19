@@ -51,10 +51,17 @@ fn main() {
         }
         Some("scenarios") => scenarios(),
         Some("transcript") => transcript(),
-        Some("jobs") => jobs(),
+        Some("jobs") => {
+            // `jobs node26`: Node 26.13's frame rule after a `yield`, to
+            // compare the system Node's traces exactly.
+            ledger_native::program::use_node_26_frame_rule(
+                args.get(1).map(String::as_str) == Some("node26"),
+            );
+            jobs()
+        }
         _ => {
             eprintln!(
-                "usage: ledger-native-probe codec | generate <seed> <count> | scenarios | transcript | jobs"
+                "usage: ledger-native-probe codec | generate <seed> <count> | scenarios | transcript | jobs [node26]"
             );
             std::process::exit(2);
         }

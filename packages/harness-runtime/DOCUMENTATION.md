@@ -1773,6 +1773,82 @@ there is no switch, the binary is built only in the verify's scratch, and
     clearing the last timer of a list deletes the list only for a refed
     timer. The loop time is a monotonic millisecond clock; `Date.now()` is
     the epoch clock.
+  - *Iteration* (`src/agen.rs`, no ledger type in it): async generators,
+    `for await`, `yield*` and the async-from-sync iterator by ECMA-262's
+    steps. A generator's call runs nothing; its body starts inside the
+    first `next()`, synchronously, in the caller's frame. `next`, `return`
+    and `throw` made before the first settles are queued and answered in
+    order (AsyncGeneratorEnqueue, Resume, CompleteStep, DrainQueue,
+    AwaitReturn). `yield v` awaits `v` first; a return received at a
+    `yield` awaits its value, then passes through the body's `finally`
+    code (where a `yield` may stand); `return v` awaits `v`. `return(v)` at
+    the start or after the end awaits `v` once; `throw(e)` at the start
+    completes the generator with a rejection. `yield*` does not await the
+    inner values again; a return it forwards to an inner iterator that has
+    `return` is not awaited again either (one without awaits it). A return
+    received at a `yield*` awaits its value first; when that value
+    rejects, V8 (both Nodes) sends the reason to the inner iterator as
+    `next(reason)` and goes on delegating, where the specification's text
+    makes it a throw: the layer follows V8. `for
+    await` is one `Await(next())` per iteration; `break`, `return` and a
+    throw close the iterator (AsyncIteratorClose: `return()` called and
+    awaited; its failure replaces a `break` or `return`, never a throw); a
+    rejected `next()` closes nothing. Over an array or another sync
+    iterable it goes through the async-from-sync iterator: one more await
+    per value (two jobs a value and at the end), a rejected value closes
+    the sync iterator, and `throw` on one without `throw` closes it and
+    throws a `TypeError`. A generator suspended at a `yield` and dropped is
+    freed without running its `finally` (as JavaScript collects it), a
+    chain of any depth without recursion; so is one dropped while it
+    executes, with the promise its body awaits (the body's task is held by
+    that await, not by the generator). A request made with the stack
+    budget spent is rejected with a `RangeError`. Thenables are not built:
+    a `Resolution` is a value or a promise, and no ledger site yields,
+    returns or awaits a thenable (V8 keeps the frame after a yielded
+    thenable and takes two jobs more to resolve one).
+    *Electron's V8 frame rule:* after `yield v` with a request already
+    queued, the code the body runs in that job, and every await it makes
+    until it next suspends with an empty queue, run in the **empty** async
+    context frame exactly when `v` is a primitive (`bigint` included) or
+    an ordinary object whose prototype is `Object.prototype`, with no own
+    `then` and no accessor property, held by V8 in fast mode: Electron's
+    V8 awaits such a value on a path whose job carries no frame. Every
+    other value keeps the caller's frame: an array, a `Buffer` or typed
+    array, an `Error`, a function, a class instance, a `Map`, `Set` or
+    `Date`, a generator object, a boxed primitive, `Object.create(null)`,
+    a promise, a thenable; so does a plain object V8 holds in dictionary
+    mode (128 or more literal or `JSON.parse` properties, 20 or more added
+    by computed keys, a deleted property), which the layer cannot tell: it
+    treats a `W::Object` as fast. Node 26's V8 keeps the frame for every
+    value; every other await of a generator keeps it on both. The layer
+    decides by value (`agen::YieldFrame`; for `W`, `Undefined`, `Null`,
+    `Bool`, `Number`, `String`, a bigint and an `Object` without a `then`
+    key lose the frame; `Bytes`, `Array`, `Function`, `Stream`, `Error`, a
+    date, a map and a set keep it), and the job differential pins each
+    kind. A port that yields a primitive or a plain object while a request
+    is queued, and reads an `AsyncLocalStorage` before its next await,
+    sees no store, as the worker would; one that yields an array
+    (`pagesOf`) or a `Buffer` (`byteStream`, a stream's chunks) keeps the
+    caller's frame. No ledger generator is pulled with a request queued
+    today (each is pulled by `for await`, `yield*` or the host's
+    serialised pulls): a port must not pull one ahead.
+  - *Emitters* (`src/emitter.rs`): Node 24.22's `events.js` as ports reach
+    it: `on`, `prependListener`, `once`, `prependOnceListener`,
+    `removeListener`, `removeAllListeners`, `emit`, `listenerCount`.
+    Listeners run inside `emit`, in its caller's job and frame, in
+    registration order, over the list as `emit` found it (one added during
+    it does not run, one removed during it still runs: the opposite of the
+    abort signal's dispatch); a throw leaves `emit` at once; `once` removes
+    itself before its call and runs at most once; `removeListener` removes
+    the last match (a listener or a `once` wrapper of it); `emit('error')`
+    with no listener throws (`ERR_UNHANDLED_ERROR` with the value as
+    `context`, or the value itself when it is an `Error`, by the emitter's
+    maker). Not built, because no site uses them: the `newListener` and
+    `removeListener` events, `errorMonitor`, `captureRejections`,
+    `listeners`, `rawListeners`, `eventNames`, `events.once`/`events.on`,
+    and the max-listeners warning (a tick that only writes to stderr). The
+    ledger itself calls only `on` (and `once` on a path the worker never
+    reaches); streams and child processes (O2d, O2e) are its users.
   - *Left free:* which of two ready units from different sources runs
     first: a line and a pool completion, a line and a timer that falls due
     while the loop waits. In Node that depends on when the loop wakes and,
@@ -1822,13 +1898,15 @@ there is no switch, the binary is built only in the verify's scratch, and
     one in a cycle, the port keeps a `Weak`.
   The first three are refused by `scripts/ledger-native/porting-lint.mjs`
   (run by the verify; also `node --test` on it alone), a search over every
-  ported module (all of the crate's Rust but `js.rs` and `host.rs`): an
+  ported module (all of the crate's Rust but the layer: `js.rs`, `host.rs`,
+  `agen.rs` and `emitter.rs`): an
   `async fn` without the comment `// port: inline await` on the line above
   (allowed only for a helper that is one JavaScript await, or a coroutine's
-  body), an `async` block that is neither an `async_fn`/`Coroutine::new` body
-  nor awaited where it stands, `ready(`, `std::future::`, `futures::`,
-  `poll_fn`, `join!`/`select!`, a hand-written `impl Future`, and any
-  `impl Drop`. The fourth is no text pattern: `js::live_tasks()` counts
+  body), an `async` block that is neither an `async_fn`, `agen::async_gen`
+  or `Coroutine::new` body nor awaited where it stands, `ready(`,
+  `std::future::`, `futures::`, `poll_fn`, `join!`/`select!`, a
+  hand-written `impl Future`, and any `impl Drop`; and the iteration
+  mistakes below. The fourth is no text pattern: `js::live_tasks()` counts
   live tasks, and the job differential prints a census of the tasks each
   program leaves alive in such cycles (reported, not compared: the random
   programs make them on purpose). A `RefCell` borrow held across an await
@@ -1846,10 +1924,88 @@ there is no switch, the binary is built only in the verify's scratch, and
     which go a directory tree deep. A pending chain of any length is freed
     without recursion (a dropped promise's reactions are freed one list at
     a time), and settles one job per link.
-  Async generators, `for await`, event emitters, streams and child
-  processes are not in the layer yet (`reports/L3d-fix-2.md` lists their
-  sites); the package that ports the first of them adds it to the layer
-  with its proof.
+  - *Iteration and emitters.* Each JavaScript form has one Rust form
+    (`agen`, `emitter`; `Co`, `Abrupt`, `Listener` below are theirs):
+
+    | JavaScript | Port |
+    |---|---|
+    | `async function* g(a) { … }` | `fn g(a: A) -> AsyncGen<W, W> { agen::async_gen(move \|co: Co<W, W>\| async move { …; Ok(()) }) }` |
+    | `yield v` (`yield p`) | `co.yield_(Resolution::Value(v)).await?` (`Resolution::Promise(p)`); its `Ok` is what `next(x)` sent |
+    | `yield* it` | `co.delegate(it).await?` (an array: `agen::from_sync(agen::array(items))`); its `Ok` is `it`'s return value |
+    | `return v` in a generator; the end | `return Err(co.ret(Resolution::Value(v)).await);` (an explicit `return undefined;` below `// port: return undefined`); `Ok(())` |
+    | `return;` in a generator: no value, no job | `return Err(Abrupt::Return(W::Undefined));` (at the top level of the body, `return Ok(());` is the same) |
+    | `try { … } finally { f }` in a generator | `let body = async { …; Ok(()) }.await; f; body?;` |
+    | `try { yield v } catch (e) { h }` | `// port: yield outcome handled` above `match co.yield_(…).await { Err(Abrupt::Throw(e)) => h, other => { other?; } }` |
+    | `for await (const x of it) { … }` | `let rows = agen::for_await(it); while let Some(x) = rows.next().await? { … }` |
+    | `break`, `return v` in it | `rows.close().await?; break;`, `rows.close().await?; return …;` |
+    | `break` (or `continue` of an outer loop) out of a loop body written as the inline block in a generator | the block gives a flag (`Ok(true)` for break), then outside it `if broke { rows.close().await?; break; }`: Rust cannot `break` out of an `async {}` block, and that arm is where a close is forgotten |
+    | a throw `e` out of its body | `return Err(rows.close_throw(e).await);` (in a generator, any abrupt `a`: `return Err(rows.exit(a).await);`) |
+    | `it.next(v)`, `it.return(v)`, `it.throw(e)` | `it.next(v)`, `it.return_(Resolution::Value(v))`, `it.throw_(e)`: each a `Promise<Step<W>, W>` (awaited by hand only below `// port: manual next`) |
+    | `new EventEmitter()`; `e.on(ev, f)`; `e.emit(ev, a)` | `Emitter::new(unhandled)`; `let f = Listener::new(\|a\| { …; Ok(()) }); e.on(ev, &f);` (kept for `remove_listener`); `e.emit(ev, &a)?` |
+
+    For example `for await (const row of entries(prefix)) { if (row.key
+    === key) return row; check(row); }` (`check` may throw) is:
+
+    ```rust
+    let rows = agen::for_await(entries(prefix));
+    while let Some(row) = rows.next().await? {
+        if row.get("key") == key {
+            rows.close().await?;
+            return Ok(Resolution::Value(row));
+        }
+        if let Err(error) = check(&row) {
+            return Err(rows.close_throw(error).await);
+        }
+    }
+    ```
+
+    and a generator that loops is written with its loop body as an inline
+    block, so a received return or throw at its `yield` closes the loop:
+
+    ```rust
+    // async function* rows() { for await (const row of treeRows()) { if (pending.has(row.key)) continue; yield row; } }
+    fn rows(pending: Rc<Pending>) -> AsyncGen<W, W> {
+        agen::async_gen(move |co: Co<W, W>| async move {
+            let tree = agen::for_await(tree_rows());
+            while let Some(row) = tree.next().await? {
+                let step: Result<(), Abrupt<W, W>> = async {
+                    if !pending.has(&row) {
+                        co.yield_(Resolution::Value(row)).await?;
+                    }
+                    Ok(())
+                }
+                .await;
+                if let Err(abrupt) = step {
+                    return Err(tree.exit(abrupt).await);
+                }
+            }
+            Ok(())
+        })
+    }
+    ```
+
+    The layer refuses loudly what it can see: a `for await` loop dropped
+    while open by its own task (an early `?` or `return` without `close`)
+    panics, as does `next()` after its end or a second `close`; a loop
+    dropped with an abandoned task (an await that never settles) is not
+    closed, as JavaScript never closes it. The porting lint refuses the
+    shapes that compile and change the order silently: a generator
+    hand-rolled on `Coroutine::new`/`suspend()`; a `yield_` or `delegate`
+    whose outcome is not passed on with `?` (a received return or throw
+    dropped), unless marked `// port: yield outcome handled`; a Rust `for`
+    loop over an awaited collection standing in for `for await` (the body
+    would run after every item was produced, not between them), unless
+    marked `// port: for-of over an awaited value`; a generator pumped by
+    `.next(v).await` instead of `for await`, unless marked
+    `// port: manual next`; a Rust stream (`poll_next`, `StreamExt`,
+    `async-stream`, `std::async_iter`); a Rust `for` over a binding the
+    same function awaited into (`let rows = collect(…).await?; for row in
+    rows`, `&rows`, `rows.iter()`), unless marked as a for-of; a
+    `co.ret(v)` whose outcome is not the body's `Err`; and `co.ret` of
+    `undefined`, which is JavaScript's `return undefined;` (one job), not
+    `return;` (none), unless marked `// port: return undefined`. Streams
+    and child processes are not in the layer yet (design file 32, packages
+    O2d and O2e).
 - **Process.** A reader thread splits stdin into lines and posts each to the
   loop; a writer thread drains an unbounded queue to stdout (one line on
   stderr past 64 MiB queued); a watchdog thread checks every 250 ms that
@@ -1900,12 +2056,28 @@ there is no switch, the binary is built only in the verify's scratch, and
     queue, timers and immediates under a virtual libuv clock
     (`jobs-js-arm.mjs`, on Electron's Node and on the Node running the
     test) and on the Rust (`ledger-native-probe jobs`); every trace must be
-    equal entry for entry. The gate runs 58 named programs (one per rule,
-    the second review's B1 and B2 cases, the third review's abort and frame
-    cases and its escaped promise bugs) and 400 seeded random ones;
-    `--extended` runs 20,000 over five seeds.
+    equal entry for entry. Iteration programs add compiled functions
+    (async functions and async generators whose JavaScript is real source:
+    `await`, `yield`, `yield*`, `for await` with `break`, `continue`,
+    `return` and throws, `try`/`catch`/`finally`), manual `next`, `return`
+    and `throw` calls several at once, arrays and sync iterables of
+    promises, and event emitters whose listeners add, remove, emit again
+    and throw, async iterators without `return` or `throw`, and values of
+    every kind the frame rule tells apart. The gate runs 180 named
+    programs (one per rule, the second review's B1 and B2 cases, the third
+    review's abort and frame cases and its escaped promise bugs, one per
+    row of the generator and emitter behaviour relied on, one per ledger
+    call shape, the frame rule kind by kind, `return(v)` at a `yield*`)
+    and 400 seeded random ones plus 300 iteration ones; `--extended` runs
+    20,000 and 10,000 over five seeds. Electron's Node is the reference.
+    The Node running the test is compared with it frame tags aside, and
+    exactly, frames included, with the Rust run under Node 26's frame rule
+    (`ledger-native-probe jobs node26`, test-only); the named programs
+    marked `electronOnly` are the ones whose frames differ between the two
+    Nodes, and a test pins that they do.
   - `scripts/ledger-native/porting-lint.mjs`: the porting rule's silent
-    mistakes, refused in the ported modules (above).
+    mistakes, refused in the ported modules (above), with a planted case of
+    each.
   - `scripts/ledger-native/proto-differential.mjs`: 33 scripted host
     transcripts on three arms, the product's worker on a real worker thread
     driven through `postMessage` (the true reference for ordering), the same
@@ -1942,8 +2114,12 @@ there is no switch, the binary is built only in the verify's scratch, and
     callback, the second review's B1 programs, and the porting rule's
     panics; the depth bound and chains of a million links; a queue wait's
     listener removed, an idle pool forgotten, an abort between a slot's
-    grant and its turn, the stall clock's start; and 20,000 random or
-    mutated lines that must never panic.
+    grant and its turn, the stall clock's start; generators 2,000 deep in
+    `yield*` and past the stack budget, a suspended generator and a chain of
+    100,000 dropped without running their `finally`, a generator abandoned
+    mid-`for await`, one abandoned while it executes, one holding its own
+    handle (a counted cycle), the close guard; the emitter's removal,
+    re-entrant `once` and refused `newListener`/`removeListener`; and 20,000 random or mutated lines that must never panic.
 - **What the comparison leaves free**, and why each is fair. Every message
   of one call (reports, callbacks, observations, its result) is compared in
   order; a transcript's `ordered` messages are compared in order across

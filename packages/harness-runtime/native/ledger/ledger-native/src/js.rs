@@ -304,7 +304,7 @@ fn stack_address() -> usize {
     std::hint::black_box(&marker) as *const u8 as usize
 }
 
-fn stack_exhausted() -> bool {
+pub(crate) fn stack_exhausted() -> bool {
     let limit = STACK_LIMIT.with(Cell::get);
     limit != 0 && stack_address() < limit
 }
@@ -316,7 +316,7 @@ pub fn live_tasks() -> usize {
     LIVE_TASKS.with(Cell::get)
 }
 
-fn defer_drop(item: Box<dyn Any>) {
+pub(crate) fn defer_drop(item: Box<dyn Any>) {
     // A thread ending: free inline.
     if DROPS
         .try_with(|drops| drops.borrow_mut().push(item))
@@ -353,7 +353,7 @@ pub fn register_errors<E: 'static>(make: impl Fn(&str, &str) -> E + 'static) {
     });
 }
 
-fn js_error<E: Clone + 'static>(name: &str, message: &str) -> E {
+pub(crate) fn js_error<E: Clone + 'static>(name: &str, message: &str) -> E {
     let id = std::any::TypeId::of::<E>();
     let make = ERRORS
         .with(|errors| {
@@ -654,7 +654,7 @@ impl<T: Clone + 'static, E: Clone + 'static> Promise<T, E> {
 
     /// PerformPromiseThen without a derived promise: `reaction` runs in a
     /// job of its own once the promise settles (at once when it has).
-    fn react(&self, reaction: impl FnOnce(Result<T, E>) + 'static) {
+    pub(crate) fn react(&self, reaction: impl FnOnce(Result<T, E>) + 'static) {
         let jobs = jobs();
         let frame = jobs.frame.borrow().clone();
         let settled = match &mut *self.0.state.borrow_mut() {
@@ -957,6 +957,22 @@ pub fn async_fn<T: Clone + 'static, E: Clone + 'static>(
 pub struct Await<T: 'static, E: 'static> {
     promise: Option<Promise<T, E>>,
     slot: Rc<RefCell<Option<Result<T, E>>>>,
+    /// The frame the continuation runs in, when not the current one.
+    frame: Option<Frame>,
+}
+
+/// An await whose continuation runs in `frame` rather than the frame
+/// current at the await: V8's `yield` of a value that is not a promise
+/// (`agen`), whose job carries no async context frame.
+pub(crate) fn await_in<T: Clone + 'static, E: Clone + 'static>(
+    promise: Promise<T, E>,
+    frame: Frame,
+) -> Await<T, E> {
+    Await {
+        promise: Some(promise),
+        slot: Rc::new(RefCell::new(None)),
+        frame: Some(frame),
+    }
 }
 
 impl<T: Clone + 'static, E: Clone + 'static> Future for Await<T, E> {
@@ -969,10 +985,14 @@ impl<T: Clone + 'static, E: Clone + 'static> Future for Await<T, E> {
                 .expect("await outside an async function");
             task.awaits.set(task.awaits.get() + 1);
             let slot = self.slot.clone();
-            promise.react(move |result| {
+            let reaction = move |result| {
                 *slot.borrow_mut() = Some(result);
                 resume(&task);
-            });
+            };
+            match self.frame.take() {
+                Some(frame) => run_in_frame(frame, || promise.react(reaction)),
+                None => promise.react(reaction),
+            }
             return Poll::Pending;
         }
         match self.slot.borrow_mut().take() {
@@ -992,6 +1012,7 @@ impl<T: Clone + 'static, E: Clone + 'static> IntoFuture for Promise<T, E> {
         Await {
             promise: Some(self),
             slot: Rc::new(RefCell::new(None)),
+            frame: None,
         }
     }
 }
@@ -1021,6 +1042,28 @@ impl Coroutine {
     pub fn resume(&self) {
         resume(&self.0);
     }
+}
+
+/// The identity of the async function call or coroutine running now (0
+/// outside any): `for await`'s close guard tells a loop its own body left
+/// from one dropped with an abandoned task.
+pub(crate) fn running_task() -> usize {
+    TASKS.with(|tasks| {
+        tasks
+            .borrow()
+            .last()
+            .map_or(0, |task| Rc::as_ptr(task) as usize)
+    })
+}
+
+/// The coroutine running now, as a handle its owner can resume later (an
+/// async generator takes its body's task back when the body suspends).
+pub(crate) fn running_coroutine() -> Coroutine {
+    Coroutine(
+        TASKS
+            .with(|tasks| tasks.borrow().last().cloned())
+            .expect("a coroutine is running"),
+    )
 }
 
 /// Stops the current coroutine until its owner resumes it.

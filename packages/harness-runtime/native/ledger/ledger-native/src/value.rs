@@ -48,12 +48,9 @@ pub struct Func {
     pub call: Box<FuncCall>,
 }
 
-/// One step of an async iterator: `{done, value}`.
-#[derive(Clone)]
-pub struct IterStep {
-    pub done: bool,
-    pub value: W,
-}
+/// One step of an async iterator: `{done, value}` (the layer's
+/// iterator result).
+pub type IterStep = crate::agen::Step<W>;
 
 /// An async iterable in a result (a receipt stream), pulled by the host.
 pub trait Stream {
@@ -61,6 +58,34 @@ pub trait Stream {
     fn next(self: Rc<Self>) -> Promise<IterStep, W>;
     /// `iterator.return()`.
     fn finish(self: Rc<Self>) -> Promise<IterStep, W>;
+}
+
+/// An async generator in a result: the host's pulls are its `next()` and
+/// `return()`.
+impl Stream for crate::agen::AsyncGen<W, W> {
+    fn next(self: Rc<Self>) -> Promise<IterStep, W> {
+        crate::agen::AsyncGen::next(&self, W::Undefined)
+    }
+
+    fn finish(self: Rc<Self>) -> Promise<IterStep, W> {
+        self.return_(crate::js::Resolution::Value(W::Undefined))
+    }
+}
+
+/// Electron's V8 frame rule for `yield v` (`agen::YieldFrame`): a
+/// primitive (`bigint` included) or a plain object without an own `then`
+/// loses the frame; a `Buffer`, an array, a function, a stream, an `Error`,
+/// a `Date`, a `Map` or a `Set` keeps it. A plain object V8 would hold in
+/// dictionary mode keeps it too, which a `W` cannot tell (documented).
+impl crate::agen::YieldFrame for W {
+    fn loses_frame_when_yielded(&self) -> bool {
+        match self {
+            W::Undefined | W::Null | W::Bool(_) | W::Number(_) | W::String(_) => true,
+            W::Object(object) => object.get("then").is_none(),
+            W::Unsupported(kind) => *kind == "bigint",
+            W::Bytes(_) | W::Array(_) | W::Function(_) | W::Stream(_) | W::Error(_) => false,
+        }
+    }
 }
 
 /// The fields of an `Error` the seam carries, in the order the worker reads

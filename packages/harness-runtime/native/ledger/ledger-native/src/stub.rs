@@ -5,20 +5,19 @@
 //! the same messages of it. The product's methods stay unported beside them.
 #![forbid(unsafe_code)]
 
-use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, VecDeque};
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use ledger_core::js::JsStr;
 
+use crate::agen::{self, Abrupt, Co};
 use crate::ctx::{self, Ctx, Meter};
 use crate::host;
 use crate::iopool::with_execution_io;
-use crate::js::{self, Coroutine, Promise, Resolution, Resolvers, async_fn};
+use crate::js::{Promise, Resolution, Resolvers, async_fn};
 use crate::runtime::{Factory, Observers, Runtime, Scope, UnportedRuntime};
-use crate::value::{
-    ERROR_FIELDS, Func, IterStep, JsError, Obj, Stream, W, to_js_string, to_number,
-};
+use crate::value::{ERROR_FIELDS, Func, JsError, Obj, W, to_js_string, to_number};
 use crate::wire::encode_wire_error;
 use crate::{Report, Ret, WPromise};
 
@@ -242,252 +241,9 @@ fn make_error(spec: &Obj, env: &Rc<Env>) -> Result<W, W> {
     Ok(W::Error(Rc::new(error)))
 }
 
-/// What resumes the stream's generator: `next()` or `return()`.
-#[derive(Clone)]
-enum Completion {
-    Normal,
-    Return(W),
-}
-
-struct Request {
-    completion: Completion,
-    resolvers: Resolvers<IterStep, W>,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum GenState {
-    SuspendedStart,
-    SuspendedYield,
-    Executing,
-    AwaitingReturn,
-    DrainingQueue,
-    Completed,
-}
-
-/// The stub's stream: the async generator of `makeStream` (fixed chunks,
-/// an optional host wait before each, an optional failure after the last,
-/// a diagnostic in its `finally`), run by the specification's async
-/// generator steps (AsyncGeneratorEnqueue, Resume, Yield with its Await,
-/// CompleteStep, DrainQueue, AwaitReturn) over a `Coroutine`.
-struct StubStream {
-    name: W,
-    chunks: Vec<W>,
-    failure: Option<W>,
-    wait: Option<W>,
-    env: Rc<Env>,
-    state: Cell<GenState>,
-    queue: RefCell<VecDeque<Request>>,
-    body: RefCell<Option<Coroutine>>,
-    resumed_with: RefCell<Completion>,
-}
-
-/// How the generator's body ended.
-enum Ended {
-    Normal,
-    Return(W),
-    Throw(W),
-}
-
-impl StubStream {
-    fn done(value: W) -> IterStep {
-        IterStep { done: true, value }
-    }
-
-    /// AsyncGeneratorCompleteStep: the first request settles.
-    fn complete_step(&self, result: Result<W, W>, done: bool) {
-        let Some(request) = self.queue.borrow_mut().pop_front() else {
-            return;
-        };
-        match result {
-            Ok(value) => request.resolvers.fulfill(IterStep { done, value }),
-            Err(reason) => request.resolvers.reject(reason),
-        }
-    }
-
-    /// AsyncGeneratorDrainQueue.
-    fn drain_queue(self: &Rc<Self>) {
-        loop {
-            let front = self
-                .queue
-                .borrow()
-                .front()
-                .map(|request| request.completion.clone());
-            match front {
-                None => {
-                    self.state.set(GenState::Completed);
-                    return;
-                }
-                Some(Completion::Return(_)) => {
-                    self.state.set(GenState::AwaitingReturn);
-                    self.await_return();
-                    return;
-                }
-                Some(Completion::Normal) => self.complete_step(Ok(W::Undefined), true),
-            }
-        }
-    }
-
-    /// AsyncGeneratorAwaitReturn: the return value is awaited (one job).
-    fn await_return(self: &Rc<Self>) {
-        let value = match self
-            .queue
-            .borrow()
-            .front()
-            .map(|request| request.completion.clone())
-        {
-            Some(Completion::Return(value)) => value,
-            _ => W::Undefined,
-        };
-        let (on_value, on_error) = (self.clone(), self.clone());
-        let _ = js::value::<W, W>(value).then::<()>(
-            move |value| {
-                on_value.state.set(GenState::DrainingQueue);
-                on_value.complete_step(Ok(value), true);
-                on_value.drain_queue();
-                Ok(Resolution::Value(()))
-            },
-            move |reason| {
-                on_error.state.set(GenState::DrainingQueue);
-                on_error.complete_step(Err(reason), true);
-                on_error.drain_queue();
-                Ok(Resolution::Value(()))
-            },
-        );
-    }
-
-    /// AsyncGeneratorResume.
-    fn resume(self: &Rc<Self>, completion: Completion) {
-        self.state.set(GenState::Executing);
-        *self.resumed_with.borrow_mut() = completion;
-        if self.body.borrow().is_none() {
-            let stream = self.clone();
-            *self.body.borrow_mut() = Some(Coroutine::new(async move { stream.run_body().await }));
-        }
-        let body = self.body.borrow().clone().expect("the generator's body");
-        body.resume();
-    }
-
-    /// `yield value` (AsyncGeneratorYield after its Await): what resumed it.
-    // port: inline await (the generator's own `yield` steps, in its body)
-    async fn yield_value(self: &Rc<Self>, value: W) -> Result<Completion, W> {
-        let value = js::value::<W, W>(value).await?;
-        self.complete_step(Ok(value), false);
-        let next = self
-            .queue
-            .borrow()
-            .front()
-            .map(|request| request.completion.clone());
-        let resumption = match next {
-            Some(completion) => completion,
-            None => {
-                self.state.set(GenState::SuspendedYield);
-                js::suspend().await;
-                self.resumed_with.borrow().clone()
-            }
-        };
-        // AsyncGeneratorUnwrapYieldResumption: a return awaits its value.
-        match resumption {
-            Completion::Normal => Ok(Completion::Normal),
-            Completion::Return(value) => Ok(Completion::Return(js::value::<W, W>(value).await?)),
-        }
-    }
-
-    /// The generator's body, then AsyncGeneratorStart's ending.
-    // port: inline await (the generator's body, run only by its coroutine)
-    async fn run_body(self: Rc<Self>) {
-        let mut state = "return";
-        let ended = async {
-            for index in 0..self.chunks.len() {
-                if let Some(wait) = &self.wait {
-                    let func = self.env.function(wait);
-                    let args = vec![self.name.clone(), W::Number(index as f64)];
-                    awaited(call_value(&func, args, &W::Undefined, "env.fns[spec.wait]")).await?;
-                }
-                if let Completion::Return(value) =
-                    self.yield_value(self.chunks[index].clone()).await?
-                {
-                    return Ok(Ended::Return(value));
-                }
-            }
-            if let Some(failure) = &self.failure {
-                state = "error";
-                return Err(failure.clone());
-            }
-            state = "done";
-            Ok(Ended::Normal)
-        }
-        .await;
-        let ended = match ended {
-            Ok(ended) => ended,
-            // catch (cause) { state = 'error'; throw cause; }
-            Err(cause) => {
-                state = "error";
-                Ended::Throw(cause)
-            }
-        };
-        // finally { onDiagnostic?.({ stream: name, closed: state }) }: the
-        // body runs in the context of the pull that resumed it, no call's.
-        let payload = W::object(vec![
-            ("stream", self.name.clone()),
-            ("closed", W::string(state)),
-        ]);
-        let _ = self.env.observe_in(
-            "onDiagnostic",
-            payload,
-            &Scope {
-                cause: W::Undefined,
-            },
-        );
-        self.state.set(GenState::DrainingQueue);
-        match ended {
-            Ended::Normal => self.complete_step(Ok(W::Undefined), true),
-            Ended::Return(value) => self.complete_step(Ok(value), true),
-            Ended::Throw(reason) => self.complete_step(Err(reason), true),
-        }
-        self.drain_queue();
-    }
-}
-
-impl Stream for StubStream {
-    /// `next()`.
-    fn next(self: Rc<Self>) -> Promise<IterStep, W> {
-        let (promise, resolvers) = Promise::with_resolvers();
-        if self.state.get() == GenState::Completed {
-            resolvers.fulfill(StubStream::done(W::Undefined));
-            return promise;
-        }
-        self.queue.borrow_mut().push_back(Request {
-            completion: Completion::Normal,
-            resolvers,
-        });
-        if matches!(
-            self.state.get(),
-            GenState::SuspendedStart | GenState::SuspendedYield
-        ) {
-            self.resume(Completion::Normal);
-        }
-        promise
-    }
-
-    /// `return()`.
-    fn finish(self: Rc<Self>) -> Promise<IterStep, W> {
-        let (promise, resolvers) = Promise::with_resolvers();
-        self.queue.borrow_mut().push_back(Request {
-            completion: Completion::Return(W::Undefined),
-            resolvers,
-        });
-        match self.state.get() {
-            GenState::SuspendedStart | GenState::Completed => {
-                self.state.set(GenState::AwaitingReturn);
-                self.await_return();
-            }
-            GenState::SuspendedYield => self.resume(Completion::Return(W::Undefined)),
-            _ => {}
-        }
-        promise
-    }
-}
-
+/// The stub's stream: `makeStream`'s async generator (fixed chunks, an
+/// optional host wait before each, an optional failure after the last, a
+/// diagnostic in its `finally`), on the layer's async generator.
 fn make_stream(spec: &Obj, env: &Rc<Env>) -> Result<W, W> {
     let chunks = match spec.get("chunks") {
         Some(W::Array(items)) => items
@@ -500,20 +256,48 @@ fn make_stream(spec: &Obj, env: &Rc<Env>) -> Result<W, W> {
         Some(item) => Some(value(item, env)?),
         None => None,
     };
-    Ok(W::Stream(Rc::new(StubStream {
-        name: spec.get("name").cloned().unwrap_or(W::Undefined),
-        chunks,
-        failure,
-        wait: spec
-            .get("wait")
-            .filter(|wait| !wait.is_undefined())
-            .cloned(),
-        env: env.clone(),
-        state: Cell::new(GenState::SuspendedStart),
-        queue: RefCell::new(VecDeque::new()),
-        body: RefCell::new(None),
-        resumed_with: RefCell::new(Completion::Normal),
-    })))
+    let name = spec.get("name").cloned().unwrap_or(W::Undefined);
+    let wait = spec
+        .get("wait")
+        .filter(|wait| !wait.is_undefined())
+        .cloned();
+    let env = env.clone();
+    let generator = agen::async_gen(move |co: Co<W, W>| async move {
+        let mut state = "return";
+        let ended: Result<(), Abrupt<W, W>> = async {
+            for (index, chunk) in chunks.iter().enumerate() {
+                if let Some(wait) = &wait {
+                    let func = env.function(wait);
+                    let args = vec![name.clone(), W::Number(index as f64)];
+                    awaited(call_value(&func, args, &W::Undefined, "env.fns[spec.wait]")).await?;
+                }
+                co.yield_(Resolution::Value(chunk.clone())).await?;
+            }
+            if let Some(failure) = failure {
+                state = "error";
+                return Err(Abrupt::Throw(failure));
+            }
+            state = "done";
+            Ok(())
+        }
+        .await;
+        // catch (cause) { state = 'error'; throw cause; }
+        if matches!(ended, Err(Abrupt::Throw(_))) {
+            state = "error";
+        }
+        // finally { onDiagnostic?.({ stream: name, closed: state }) }: the
+        // body runs in the context of the pull that resumed it, no call's.
+        let payload = W::object(vec![("stream", name.clone()), ("closed", W::string(state))]);
+        let _ = env.observe_in(
+            "onDiagnostic",
+            payload,
+            &Scope {
+                cause: W::Undefined,
+            },
+        );
+        ended
+    });
+    Ok(W::Stream(Rc::new(generator)))
 }
 
 fn classify(ms: f64) -> W {
