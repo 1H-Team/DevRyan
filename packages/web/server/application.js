@@ -924,7 +924,6 @@ async function constructWebHost(options = {}) {
 
   const getOpenCodeAuthHeaders = (...args) => nativeBundle ? nativeRuntime?.getAuthHeaders() ?? {} : openCodeAuthStateRuntime.getOpenCodeAuthHeaders(...args);
   const isOpenCodeConnectionSecure = (...args) => openCodeAuthStateRuntime.isOpenCodeConnectionSecure(...args);
-  const ensureLocalOpenCodeServerPassword = (...args) => openCodeAuthStateRuntime.ensureLocalOpenCodeServerPassword(...args);
 
   const openCodeNetworkState = {};
   Object.defineProperties(openCodeNetworkState, {
@@ -945,7 +944,6 @@ async function constructWebHost(options = {}) {
     getOpenCodeAuthHeaders,
   });
 
-  const waitForReady = (...args) => openCodeNetworkRuntime.waitForReady(...args);
   const normalizeApiPrefix = (...args) => openCodeNetworkRuntime.normalizeApiPrefix(...args);
   const setDetectedOpenCodeApiPrefix = (...args) => openCodeNetworkRuntime.setDetectedOpenCodeApiPrefix(...args);
   const buildOpenCodeUrl = (...args) => openCodeNetworkRuntime.buildOpenCodeUrl(...args);
@@ -1267,7 +1265,6 @@ async function constructWebHost(options = {}) {
   const setOpenCodePort = (...args) => serverUtilsRuntime.setOpenCodePort(...args);
   const waitForOpenCodePort = (...args) => serverUtilsRuntime.waitForOpenCodePort(...args);
   const buildAugmentedPath = (...args) => serverUtilsRuntime.buildAugmentedPath(...args);
-  const buildManagedOpenCodePath = (...args) => serverUtilsRuntime.buildManagedOpenCodePath(...args);
   const parseSseDataPayload = (...args) => serverUtilsRuntime.parseSseDataPayload(...args);
   const staticRoutesRuntime = createStaticRoutesRuntime({
     openCodeClient,
@@ -1427,16 +1424,10 @@ async function constructWebHost(options = {}) {
     syncFromHmrState,
     getOpenCodeAuthHeaders,
     buildOpenCodeUrl,
-    waitForReady,
-    normalizeApiPrefix,
-    ensureLocalOpenCodeServerPassword,
     setOpenCodePort,
     setDetectedOpenCodeApiPrefix,
     setupProxy: (...args) => setupProxy(...args),
     ensureOpenCodeApiPrefix,
-    buildAugmentedPath,
-    buildManagedOpenCodePath,
-    getManagedOpenCodeShellEnvSnapshot: getLoginShellEnvSnapshot,
     getNativeRuntime: () => nativeRuntime,
     getRuntimeBundle: () => selectedRuntimeBundle ? { descriptor: selectedRuntimeBundle.descriptor, version: nativeBundle.artifacts.manifest.opencodeVersion, verify: verifySelectedRuntimeBundle } : null,
     getActiveSessionCount,
@@ -1454,11 +1445,6 @@ async function constructWebHost(options = {}) {
     sanitizeProjects,
     sanitizeHiddenSkills,
     discoverSkills,
-    getManagedBrowserEnvironment: async () => (
-      typeof managedBrowserEnvironmentProvider === 'function'
-        ? await managedBrowserEnvironmentProvider()
-        : {}
-    ),
     pauseManagedBrowserLeases: async (reason) => (
       browserLeaseRuntime && typeof browserLeaseRuntime.pauseForReset === 'function'
         ? await browserLeaseRuntime.pauseForReset(reason)
