@@ -1495,14 +1495,6 @@ async function constructWebHost(options = {}) {
       sessionRuntime.resetAllSessionActivityToIdle();
       if (!bundleWork.isHeld()) void projectPrewarmRuntime?.run('opencode-restart');
     },
-    onManagedProcessExit: ({ pid, code, signal, uptimeMs, expected, stderrTail }) => {
-      harnessRuntime.record({ type: 'lifecycle', event: 'opencode_process_exit',
-        payload: { pid, code, signal, uptimeMs, expected, stderrTail } });
-      if (!expected) {
-        console.error(`[OpenCode] Managed server exited unexpectedly (pid ${pid}, ${signal ? `signal ${signal}` : `code ${code}`}, uptime ${uptimeMs}ms)`,
-          harnessRuntime.sanitizer?.sanitizeText?.(stderrTail) ?? '');
-      }
-    },
     onStartupStatus: (text) => onOpenCodeStartupStatus?.(text),
     assertExecutionReady: executionReadiness.assertReady,
   });
