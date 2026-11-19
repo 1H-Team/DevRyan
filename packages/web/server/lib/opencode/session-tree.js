@@ -5,7 +5,7 @@
 // Scoped revert, redo and the change summary all operate over that tree.
 //
 // With an `openCodeClient` on generation 2 the reads go through the client
-// (`sessions.get`, `sessions.children`, `sessions.status`), which projects the
+// (`sessions.get`, `sessions.children`), which projects the
 // 2.0.20 answers into the application records. Native identity is required.
 
 import { resolveOpenCodeGeneration } from './opencode-generation.js';
