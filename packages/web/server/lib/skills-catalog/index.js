@@ -5,7 +5,6 @@
  */
 
 export {
-  CURATED_SKILLS_SOURCES,
   getCuratedSkillsSources,
 } from './curated-sources.js';
 
@@ -29,14 +28,7 @@ export {
 } from './install.js';
 
 export {
-  scanClawdHub,
   scanClawdHubPage,
   installSkillsFromClawdHub,
-  fetchClawdHubSkills,
-  fetchClawdHubSkillVersion,
-  fetchClawdHubSkillInfo,
-  downloadClawdHubSkill,
   isClawdHubSource,
-  CLAWDHUB_SOURCE_ID,
-  CLAWDHUB_SOURCE_STRING,
 } from './clawdhub/index.js';
