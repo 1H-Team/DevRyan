@@ -58,6 +58,36 @@
       "flag": "port-no-line",
       "family": "reducer",
       "reason": "the test calls filterSessionStatusThroughAbortGuard itself, a port of the reducer; the reducer hands out no closure (its results are data), so no reducer code can hide behind the call"
+    },
+    {
+      "file": "packages/ui/src/sync/__tests__/event-reducer.test.ts",
+      "tests": [
+        "session.idle clears the guard before it writes the idle status",
+        "session.idle clears the guard even when the status is already idle and nothing is written",
+        "session.error clears the guard before it writes the idle status",
+        "a user message that advances the turn writes user activity before it clears the guard, and the message list after",
+        "a replayed older user message writes the list and leaves the guard active"
+      ],
+      "flag": "proxy",
+      "family": "reducer",
+      "reason": "the test wraps the draft in a Proxy of its own to observe the order in which the reducer writes; the recorder never runs a foreign Proxy's traps, so the case cannot carry the value (design §2.7)"
+    },
+    {
+      "file": "packages/ui/src/sync/revert-transactions.test.ts",
+      "tests": [
+        "a begun resend is in flight until it ends, for that session and message only",
+        "beginning the same resend twice needs only one end",
+        "ending a resend that was never begun, or another message's, changes nothing",
+        "never reports a resend with an empty session id or a missing or empty message id as in flight, and an end with such ids leaves a real resend in flight",
+        "clearing a session removes all of its resends and none of a session whose id it prefixes",
+        "clearing takes any iterable, skips empty ids, and clears several sessions at once",
+        "a message id holding the key separator collides with a session id holding it, so both read as in flight",
+        "clearing a session whose id holds the key separator also clears another session's resend that shares the prefix",
+        "clearing a session leaves another session's resend in flight and does not stop the cleared session from beginning a new one"
+      ],
+      "flag": "port-no-line",
+      "family": "reducer",
+      "reason": "the test calls the committed-revert resend functions itself (begin, end, lookup, clear), which are ports of the reducer; the reducer hands out no closure (its results are data), so no reducer code can hide behind the call"
     }
   ],
   "excludedFiles": [
