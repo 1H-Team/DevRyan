@@ -42,11 +42,12 @@ test('close without a grace timer left behind: a finished child keeps nothing al
 });
 
 test('a real child: everything it wrote to stderr before exiting is there', async () => {
-  const text = 'x'.repeat(200_000);
-  const child = spawn(process.execPath, ['-e', `process.stderr.write(${JSON.stringify(text)}, () => process.exit(3))`], { stdio: ['ignore', 'ignore', 'pipe'] });
+  // The child builds the text itself: Linux refuses a single argument of this size.
+  const length = 200_000;
+  const child = spawn(process.execPath, ['-e', `process.stderr.write('x'.repeat(${length}), () => process.exit(3))`], { stdio: ['ignore', 'ignore', 'pipe'] });
   let stderr = '';
   child.stderr.setEncoding('utf8');
   child.stderr.on('data', (chunk) => { stderr += chunk; });
   const result = await new Promise((resolve) => { onceFinished(child, (code, signal) => resolve({ code, signal, length: stderr.length })); });
-  assert.deepEqual(result, { code: 3, signal: null, length: text.length });
+  assert.deepEqual(result, { code: 3, signal: null, length });
 });
