@@ -93,15 +93,13 @@
 - The route calls `resolveGitHubPrStatus(...)` in `packages/web/server/lib/github/pr-status.js`.
 - The resolver finds the most likely repo and PR for a local branch.
 - The route then enriches that result with checks, mergeability, and permission-related fields.
-- The client caches and shares the result between sidebar and Git view.
+- The client caches the result in `useGitHubPrStatusStore`, keyed by `directory::branch`; the Git view is its only PR consumer.
 - `GET /api/github/pulls/list` accepts `state=open|all`; `open` remains the default for existing pickers, while the Git view requests `all` for its repository-wide browser. Results include creation/update timestamps and are ordered by most recently updated across the resolved repository network.
 
 ## Consumers of PR data
 
-- `packages/ui/src/components/session/SessionSidebar.tsx` reads all PR entries and maps them to `directory::branch`.
-- `packages/ui/src/components/session/sidebar/SessionGroupSection.tsx` renders the compact badge, PR number, title, checks summary, and GitHub link.
-- `packages/ui/src/components/views/git/PullRequestSection.tsx` uses the same shared entry for the full PR workflow.
-- `packages/ui/src/components/ui/MemoryDebugPanel.tsx` reads request counters for debugging.
+- `packages/ui/src/components/views/git/PullRequestSection.tsx` (the right-sidebar Git view) is the only component that reads and watches PR entries, for the full PR workflow. The session sidebar reads no PR state (see Sidebar behavior).
+- `packages/ui/src/components/ui/MemoryDebugPanel.tsx` reads only the store's request counter (`totalRequestCount`) for debugging.
 
 ## How PR resolution works
 
@@ -125,7 +123,7 @@
 
 ## Persistence
 
-- PR state is persisted in local storage under `openchamber.github-pr-status`.
+- PR state is persisted in local storage under `devryan.github-pr-status` (`PR_STATUS_STORAGE_KEY` in `packages/ui/src/stores/useGitHubPrStatusStore.ts`); the one-time prefix migration (`packages/ui/src/lib/legacyStorageMigration.ts`) carries an old `openchamber.github-pr-status` value over.
 - Persisted fields include status, timestamps, identity, and resolved remote.
 - Runtime-only details are not persisted.
 - Persisted entries expire after 12 hours.
@@ -133,9 +131,8 @@
 
 ## Polling and refresh model
 
-- There are two layers: entry-level polling in `useGitHubPrStatusStore` and repo scanning in `useGitHubPrBackgroundTracking`.
-- Entry-level polling decides when a known branch should revalidate PR state.
-- Background tracking decides which directories and branches should even be watched.
+- Polling is entry-level only, in `useGitHubPrStatusStore`: an entry is polled while a mounted view watches it (`startWatching`/`stopWatching`), and the Git view (`packages/ui/src/components/views/git/PullRequestSection.tsx`) is the only watcher.
+- There is no background repository scan: directories and branches that no open Git view shows are not polled.
 
 ## Entry-level polling rules
 
@@ -152,17 +149,6 @@
 - `canMerge` is always GitHub permission (`admin`, `maintain` or `write`) AND `isManagedBranchAssigned(directory, base)` for the live request principal, so a revoked managed branch takes effect on the next request, cached or not.
 - GitHub permission refusals: `createGitHubPermissionRefusalCache({ now, ttlMs = 300000, maxEntries = 1000 })` lives per `registerGitHubRoutes` instance (inject `permissionRefusalCache` in tests). It records only a `getCollaboratorPermissionLevel` failure with `error.status === 403` that `classifyGitHubApiError` reports as `forbidden`; 401, 404, rate limits, 5xx, transport errors and internal `BRANCH_NOT_ASSIGNED` 403s are never cached. The key is API origin (`https://api.github.com`), `accountId`, `credentialRevision`, and lowercased owner and repo; entries without a revision (legacy entries, gh CLI) bypass it. Expired entries are dropped on access and the oldest entry is evicted at capacity. The identity is captured from the request's auth snapshot before any GitHub call, so a late response from a replaced credential writes only under its old revision. Accepted tradeoff: a newly granted permission can stay hidden for up to 5 minutes.
 - A GitHub rate-limit response starts a server-side cooldown. Cached status can still be served, while uncached or forced PR-status work returns a stable `429` without making another GitHub request until the cooldown expires.
-
-## Background tracking rules
-
-- Track up to `50` likely directories.
-- Sources are current directory, projects, worktrees, active sessions, and archived sessions.
-- Active directory branch TTL is `15s`.
-- Background directory branch TTL is `2m`.
-- Background scan wakes every `15s`, but only fetches directories whose TTL expired.
-- Each scan reads `branch`, `tracking`, `ahead`, and `behind` from git status.
-- If any of those branch signals change, that branch's PR status refreshes immediately.
-- After that, one more delayed refresh runs after `5s` to catch GitHub eventual consistency.
 
 ## UI refresh triggers
 
@@ -183,17 +169,15 @@
 
 ## Sidebar behavior
 
-- Sidebar shows only compact PR state.
-- Aggregation is by `directory::branch`, so multiple sessions on one branch share one signal.
-- If multiple entries exist, sidebar keeps the strongest visible PR state.
-- Visual state is based on PR health, not merge permissions.
+- The session sidebar shows no PR state: worktree group headers are branch-only and never fetch or render pull requests. PR discovery and presentation belong to the right-sidebar Git view.
+- Store entries are keyed by `directory::branch` (`getGitHubPrStatusKey`), so views of one branch share one entry.
 
 ## Git view behavior
 
 - Git view watches one branch directly.
 - It supports create, edit, mark ready, and merge.
 - It can probe alternate remotes so fork-heavy setups still find the right PR.
-- It uses the same shared store as the sidebar.
+- It reads and writes PR state through the shared `useGitHubPrStatusStore`.
 
 ## Failure handling
 

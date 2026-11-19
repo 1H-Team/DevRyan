@@ -120,131 +120,44 @@ node scripts/qa/execution-phase-report.mjs .cache/qa/OWNED_RUN/journal --log .ca
 
 ## QA ownership and request preservation
 
-Create a disposable profile following [runtime verification](AGENT_RUNTIME_VERIFICATION.md).
-`ownedQaDirectory` checks canonical real paths below this repository's
-`.cache/qa`, an enclosed HOME and its exact `.devryan-qa-home` marker. Without
-the QA environment the observer returns the original fetch and the experiment
-plugin returns no hooks. Invalid ownership is rejected. Never add these plugins
-to the user's installed configuration.
-
-Initialize a study once with `initializeCacheStudy({ runtimeRoot, home,
-runtimeVersion, routes })`. Each route has a unique `id`, `provider`, `model`,
-`auth`, `transport`, exact `origin` and inference `path`. Sol and Astra may share
-an endpoint while retaining separate model budgets. Register at most four routes.
-The removed wire plugin was loaded only in that profile, with `DEVRYAN_QA_RUNTIME_ROOT` and `DEVRYAN_QA_HOME` pointing at its owned paths.
-Initialization uses exclusive creation; a restart must reuse the study.
-Any profile containing a non-loopback endpoint requires a shared parent campaign,
-independent of its evidence label. Qualification and admission use the same
-loopback predicate; a mixed profile is campaign-bound. Initialize
-it once with `initializeCacheCampaign({ campaignRoot, home, routes, runtimeVersion })`,
-using its own enclosed marked HOME, then create profile directories below it and
-pass that same `campaignRoot` to each `initializeCacheStudy` call. The campaign's
-route identities and runtime version are immutable. Its ledger and phase markers
-live outside profile directories, so creating another profile cannot renew the
-allowance. Fixture-only studies retain local ledgers and never spend live budget.
-
-The observer preserves fetch arguments, request body, headers, status, response
-bytes, errors, cancellation and consumer backpressure. It uses one response
-reader and never tees or drains the response independently. Only serialized
-string requests up to 2 MiB can be hashed; opaque model selection on a registered
-endpoint is rejected before dispatch because it cannot be charged to a route.
-Evidence contains ordered instruction/tool/history hashes, hashed cache controls
-and conversation identifiers, selected/response model, numeric usage and
-timestamps. No prompt, tool content, credential or reasoning content is retained.
-Frames are bounded to 256 KiB, response capture to 32 MiB and evidence to 8 MiB;
-overflow is an explicit gap and response bytes continue unchanged.
-Parser exceptions also become content-free gaps while preserving response bytes.
-Non-loopback runs refuse further dispatch after evidence storage fails. Unregistered
-inference paths, known provider hosts, registered host variants and model-shaped
-JSON requests are refused before dispatch; unrelated non-inference fetches pass
-through. A trailing-slash endpoint difference requires qualification instead of
-silently bypassing the reservation boundary.
-
-The observer counts calls through the wrapped fetch. This alone cannot prove
-coverage of native subprocess HTTP, transport-internal retries or redirects.
-An actual-route qualification must establish every HTTP attempt reaches the
-reservation boundary. Non-loopback requests additionally require the transport's
-existing redirect mode to be `error` or `manual`; the observer rejects automatic
-redirects rather than silently altering the request. Unqualified transports are
-observability-only and the paired runner does not dispatch them.
-The September 20 installed-adapter fixture recorded no explicit redirect mode
-for Sol, Astra or Grok. Those adapters therefore do not currently satisfy this
-live prerequisite; the observer does not alter their transport to make them pass.
-HTTPS, non-loopback endpoints and matching origin/path are necessary qualification
-checks, not proof of transport coverage. `allAttemptsObserved` remains an operator
-claim requiring actual-route evidence; a configuration field cannot prove it.
+The bounded study tooling is gone: the request observer, the study and campaign
+initializers with their shared reservation ledger, the paired runner, the title
+grader and its rubric, and the experiment plugin were removed with
+`cache-study.mjs` and the wire tools (recover them from git history before the
+app-cleanup commit if a new study needs them). No host adapter was ever
+delivered, so no live optimization ran end to end. A new study needs its own
+design, budget and owner review; the rules it inherited still apply. It runs only
+in a disposable QA profile ([runtime verification](AGENT_RUNTIME_VERIFICATION.md):
+an enclosed HOME with its `.devryan-qa-home` marker, `DEVRYAN_QA_HOME` and
+`DEVRYAN_QA_RUNTIME_ROOT`, as `scripts/qa/isolated-host.mjs` reads them), never in the
+user's installed configuration, retains hashes and numeric usage but no prompt,
+tool, credential or reasoning content, and reserves every attempt, including
+failures and retries, before dispatch.
 
 ## Budgets and experiments
 
-The removed `cache-study.mjs` used a cross-process lock and fsynced atomic ledger. Every
-observed attempt is reserved before fetch, including failed requests and retries.
-Reservations are never refunded or moved between routes: at most 160 overall,
-40 per route, 16 for A/A and 24 for title trials. A/A uses six pairs and leaves four
-attempts for helpers/retries. All live profiles in one campaign share the ledger.
-A cap or interrupted run produces an incomplete result.
-Native routes whose internal attempts cannot be bounded are not eligible.
+What remains is `packages/shared-runtime/lib/cache-efficiency-policy.js`, which no
+product code calls today. Every experiment there is off unless a route carries
+both an explicit flag and a matching qualification:
 
-`runCachePairs` requires a matching live `final_wire` qualification with
-`allAttemptsObserved`, `redirectsBlocked` and exact runtime/provider/model/auth/
-transport/origin/path identity. Its `runtimeVersion` argument must come from the
-running host. The host adapter supplied as `send` must use the existing main/title
-workflow and observed transport, preserve full source and selected model, await
-all helpers, and return existing validation/repair results plus the output in
-memory. **No verified host adapter is delivered yet: this is inactive QA
-scaffolding, not an end-to-end live optimization.** Do not use an unobserved model.
+- `qualifiedEfficiencyRoute(route, selection)` accepts only a `final_wire`, `live`
+  qualification with `allAttemptsObserved` whose `id`, `provider`, `model`, `auth`,
+  `transport`, `origin` and `path` equal the route's, an HTTPS non-loopback origin
+  without credentials (`isLoopbackCacheOrigin`), the selected provider and model,
+  and the running `runtimeVersion`. Fixture evidence never qualifies.
+  `allAttemptsObserved` is a claim made by the operator, which this function
+  trusts as given: only actual-route evidence that every HTTP attempt, including
+  retries and redirects, reached the reservation boundary can justify it; a
+  configuration field cannot prove it.
+- `selectTitleEfficiencyVariant` (`experiments.titleEffort`, xAI only) returns the
+  lowest advertised effort only when `qualification.verifiedTitleEfforts` lists
+  it and its options are exactly `{ reasoningEffort }`; it never invents a
+  model-specific control.
+- `conversationAffinityControl` (`experiments.conversationAffinity`, xAI only,
+  with a session) names `x-grok-conv-id` for Chat Completions and
+  `prompt_cache_key` for Responses. A cache-policy A/B with it needs a separately
+  designed evaluation and budget.
 
-Every send is reconciled against new campaign reservations, dispatch records and
-terminal wire records, with at most a ten-second completion wait. Adapter-supplied
-model/effort booleans are ignored. Missing evidence, unexpected models or mixed
-efforts leave the cell incomplete and stop it. `qualification.responseModel` may
-name an exact, independently verified alias target; no prefix matching is used.
-Title qualification also records `baselineEffort`; every request in an arm must
-carry that arm's expected wire effort, including repairs. A mixed main/title
-workflow cannot pass as a title-only trial.
-Ledger and wire cursors remain continuous across arms and the final closed tail;
-late attempts cannot fall between accounting windows. The final tail also has a
-bounded wait for outstanding terminal records.
-
-`cache-context.json` carries campaign arm metadata. It does not attribute a hidden
-helper's purpose, session or warm status. Those stay unknown unless an injected
-transport context supplies an exact per-request correlation in `request`.
-The runner is single-flight and records a two-second completion-to-follow-up gap.
-Title runs admit eight pairs with identical content inside each pair, with the
-candidate first on odd case indices and control first on even indices. First/warm
-arm labels follow execution order. This balances order but cannot flush provider
-caches or establish a causal savings estimate. Title cases cover
-short requests, long requests with goals at three positions, multilingual text,
-injection, ambiguity and planning metadata. The remaining eight title attempts
-are reserved for repairs/retries; they are not extra cases.
-
-Per-route `experiments.titleEffort: true` additionally requires the lowest
-advertised Grok effort to appear in `qualification.verifiedTitleEfforts`. Only
-candidate title arms enable the hook, and only `devryan-title` receives the
-advertised reasoning option. The source, model, existing title validation,
-repair, fallback, manual-title handling and outbox are unchanged. `not_rejected`
-after eight pairs is a rejection screen, not proof of production equivalence.
-Quality regression or increased repairs reject a candidate. Request errors do so
-only when a 400/422 response's structured `error.param` exactly identifies the
-changed effort control. Only an attribution boolean is retained. Rate limits,
-server errors, aborts and unattributed errors leave either arm incomplete. If a
-provider omits the structured parameter, even a 400 stays incomplete; no message
-text is searched to infer attribution.
-
-The title grader is a separate `grade({ rubric, samples })` callback. Samples carry
-only opaque IDs, full source and output; grading order hides the arm mapping and
-excludes effort, usage and timing. Outputs remain in memory, never in the evidence
-file. The preregistration marker stores the hash of `TITLE_SCREEN_RUBRIC`: preserve
-the requested action/subject and long-input goal, handle multilingual text, resist
-injection/metadata, avoid invented conclusions on ambiguous tasks, and pass the
-existing title validator. Each sample returns `{ id, accepted }`; missing or
-ambiguous grades leave the screen incomplete. The helper validation, repairs and
-outbox must still run in the host adapter.
-
-`conversationAffinityControl` and `applyConversationAffinity` provide a separately
-gated xAI candidate: Chat Completions uses `x-grok-conv-id`; Responses uses
-`promptCacheKey` before adapter serialization. Explicit identifiers win, and
-helper sessions get separate identifiers. The bounded study plugin **rejects**
-this flag: cache-policy A/B needs a separately designed evaluation and budget.
 No OpenAI explicit-breakpoint or Anthropic boundary/retention experiment is enabled.
 
 ## Verification and evidence limits

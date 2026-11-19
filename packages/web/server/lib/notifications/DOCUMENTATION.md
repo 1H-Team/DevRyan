@@ -184,5 +184,5 @@ Plan Ready native/UI payloads use `kind: "plan-ready"`; web push uses `data.type
 - Non-string inputs are handled gracefully (return empty string).
 
 ### Testing
-- Run `bun run --cwd packages/web test` for server notification changes, followed by `bun run validate:affected`.
+- Run `bun run --cwd packages/web test` for server notification changes, followed by `bun run validate` (`scripts/validate.mjs fast`: lint, type checks and the affected package tests for what changed).
 - Unit tests should cover truncation behavior, summarization success/failure, and edge cases (empty strings, invalid inputs).

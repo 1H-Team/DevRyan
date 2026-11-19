@@ -149,7 +149,7 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
 moves `~/.config/openchamber` to `~/.config/devryan` once, under a cross-process
 lock outside both folders, and leaves a relative compatibility link. It is
 idempotent and finishes an interrupted move; outcomes and recovery are described
-in [identity compatibility](../../docs/IDENTITY_COMPATIBILITY.md#data-folder-migration).
+in [identity compatibility](../../docs/IDENTITY_COMPATIBILITY.md#saved-settings-and-managed-configuration).
 
 ## Runtime ownership
 

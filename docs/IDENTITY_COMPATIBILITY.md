@@ -27,8 +27,9 @@ provenance record is intentional and must not be removed by a bulk replacement.
 
 - Browser local/session-storage keys migrate once to the DevRyan prefix before
   stores hydrate. Canonical values win; old keys remain for stale tabs/downgrades.
-- Saved SSH records write `remoteDevryan` and `auth.devryanPassword`; readers also
-  accept `remoteOpenchamber`, `remote_openchamber` and `auth.openchamberPassword`.
+- Saved SSH records write `remoteDevRyan` and `auth.devryanPassword`; readers also
+  accept `remoteOpenchamber`, `remote_openchamber`, `auth.openchamberPassword` and
+  `auth.openchamber_password` (`packages/electron/ssh-manager.mjs`).
   Secret values are not logged or included in migration diagnostics.
 - New plan prompts write `devryanPlanMode`; transcript, notification, admission
   and UI readers also accept `openchamberPlanMode`.

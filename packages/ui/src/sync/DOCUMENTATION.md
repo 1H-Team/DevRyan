@@ -770,7 +770,7 @@ their error title.
 
 ## The golden rule
 
-When creating a draft in `handleDirectoryEvent`, **only clone the state fields the event will mutate**. Never spread all fields eagerly.
+When creating a draft for `applyDirectoryEvent` (`event-reducer.ts`), **only clone the state fields the event will mutate**. Never spread all fields eagerly. `handleEvent` in `sync-context.tsx` takes the draft from `createEventDraft` in `event-batch.ts` (or from the streaming batch, which uses the same function) and then runs the reducer on it.
 
 ```typescript
 // WRONG — clones everything, breaks referential equality for all subscribers
@@ -800,22 +800,27 @@ During streaming, `message.part.delta` fires ~60 times/sec. Eagerly cloning all 
 
 ## Event → field mapping
 
-Keep this in sync with `handleDirectoryEvent` in `sync-context.tsx`:
+Keep this in sync with `createEventDraft` in `event-batch.ts`:
 
 | Event type | Fields to clone |
 |---|---|
-| `session.created/updated/deleted` | `session`, `permission`, `todo`, `part`; reconcile/clear `session_user_activity` where applicable |
-| `session.diff` | `session_diff` |
-| `session.status` | `session_status` |
+| `session.created/updated` | `session`, `revert_transaction`, `permission`, `todo`, `part` |
+| `session.deleted` | (none — `handleEvent` removes the session from every child store itself and never reaches the draft) |
+| `session.diff` | `session_diff`, `session` |
+| `session.status/idle/error` | `session_status` |
 | `todo.updated` | `todo` |
-| `message.updated` | `message`; `session_user_activity` only for an accepted root user message |
-| `message.removed` | `message`, `part`; reconcile `session_user_activity` when removing a user message |
-| `message.part.updated` | `part`; `message` only when inserting a provisional live assistant message for an orphan assistant text/reasoning/tool part |
+| `message.updated` | `message` |
+| `message.removed`, `message.part.updated` | `message`, `part` |
 | `message.part.removed/delta` | `part` |
-| `vcs.branch.updated` | (none — mutates `draft.vcs` directly) |
+| `vcs.branch.updated` | (none — the reducer assigns a new `draft.vcs`) |
 | `permission.asked/replied` | `permission` |
 | `question.asked/replied/rejected` | `question` |
 | `lsp.updated` | `lsp` |
+
+A reducer that writes a slice not cloned here replaces it with a new object
+instead of mutating it, as `session_user_activity` is replaced for an accepted or
+removed root user message (`session-user-activity.ts`) and for an archived session
+(`event-reducer.ts`).
 
 `question.asked` stores the projected request unchanged, including the optional
 typed hints (`input`, `required`, `minItems`/`maxItems`), `external` links and
@@ -830,7 +835,7 @@ collapsible input JSON (`getMcpPermissionDetails`).
 ## Adding a new event type
 
 1. Add the case to the event reducer (`event-reducer.ts`)
-2. Add a corresponding case to the switch in `handleDirectoryEvent` (`sync-context.tsx`) that clones **only** the fields your reducer writes to
+2. Add a corresponding case to the switch in `createEventDraft` (`event-batch.ts`) that clones **only** the fields your reducer writes to
 3. If your event fires frequently (more than a few times per second), verify that unrelated components don't re-render — check with the stream perf counters
 
 ## Synthetic status events
