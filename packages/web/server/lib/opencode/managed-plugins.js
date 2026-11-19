@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 export const DEVRYAN_MANAGED_PLUGIN_IDS = Object.freeze({
   OPEN_CURSOR: '@rama_nigg/open-cursor',
@@ -232,10 +231,6 @@ const isPackageSpecForPlugin = (spec, plugin) => {
     || (normalized.startsWith(versionPrefix) && normalized.length > versionPrefix.length);
 };
 
-export const getDevRyanManagedPlugin = (pluginId) => (
-  DEVRYAN_MANAGED_PLUGINS.find((plugin) => plugin.id === pluginId) || null
-);
-
 export const getDevRyanManagedPluginForSpec = (value) => {
   const spec = normalizeSpec(value);
   if (!spec) return null;
@@ -330,21 +325,6 @@ export const reconcileDevRyanManagedPluginSpecs = (
     }
   }
   return reconciled;
-};
-
-export const getDevRyanManagedPluginRegistrationForConfigPath = (
-  pluginId,
-  { configDirectory, configPath } = {},
-) => {
-  const plugin = getDevRyanManagedPlugin(pluginId);
-  if (!plugin?.registrationPath) return null;
-  if (!configDirectory || !configPath) return plugin.registrationPath;
-  const managedRoot = path.resolve(configDirectory);
-  const targetDirectory = path.dirname(path.resolve(configPath));
-  if (managedRoot === targetDirectory) {
-    return plugin.registrationPath;
-  }
-  return pathToFileURL(path.join(managedRoot, plugin.registrationPath.replace(/^\.\//, ''))).href;
 };
 
 export const inspectDevRyanManagedPluginInstallation = ({

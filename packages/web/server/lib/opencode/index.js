@@ -35,7 +35,6 @@ export {
 } from './skills.js';
 
 export {
-  CURSOR_ACP_PROVIDER_ID,
   getProviderSources,
   listProviderConfigFiles,
   removeAntigravityProviderConfig,
