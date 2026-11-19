@@ -41,7 +41,6 @@
     {"file":"packages/web/server/lib/multi-user/runtime.auth.test.js","rule":"no-unused-vars","count":3},
     {"file":"packages/web/server/lib/opencode/github-copilot-models.js","rule":"no-dupe-keys","count":1},
     {"file":"packages/web/server/lib/opencode/opencode-client/opencode-client.contract.test.js","rule":"prefer-const","count":1},
-    {"file":"packages/web/server/lib/opencode/providers.js","rule":"no-unused-vars","count":2},
     {"file":"packages/web/server/lib/opencode/routes.js","rule":"no-unused-vars","count":1},
     {"file":"packages/web/server/lib/opencode/runtime-host/native-admission-canonical-read.test.js","rule":"prefer-const","count":1},
     {"file":"packages/web/server/lib/opencode/runtime-host/native-authorization.test.js","rule":"prefer-const","count":1},
