@@ -758,10 +758,9 @@ export const createNotificationTriggerRuntime = (deps) => {
     return result.value;
   };
 
-  const prepareLastMessageForNotification = ({ message, settings, sessionId }) => {
+  const prepareLastMessageForNotification = ({ message, sessionId }) => {
     return prepareNotificationLastMessage({
       message,
-      settings,
       summarize: sessionId
         ? (text, summaryLength) => summarizeViaHelper(text, summaryLength, sessionId)
         : undefined,
@@ -886,7 +885,6 @@ export const createNotificationTriggerRuntime = (deps) => {
         variables.last_message = await prepareLastMessageForNotification({
           sessionId,
           message: planRevision.planText,
-          settings,
         });
 
         const resolvedTitle = resolveNotificationTemplate(planTemplate.title, variables);
@@ -964,7 +962,6 @@ export const createNotificationTriggerRuntime = (deps) => {
       variables.last_message = await prepareLastMessageForNotification({
         sessionId,
         message: lastMessage,
-        settings,
       });
 
       const resolvedTitle = resolveNotificationTemplate(completionTemplate.title, variables);
@@ -1211,7 +1208,6 @@ export const createNotificationTriggerRuntime = (deps) => {
           variables.last_message = await prepareLastMessageForNotification({
             sessionId,
             message: lastMessage,
-            settings,
           });
 
           const errorTemplate = (settings.notificationTemplates || {}).error || { title: 'Tool error', message: '{last_message}' };

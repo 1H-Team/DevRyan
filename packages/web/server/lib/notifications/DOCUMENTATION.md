@@ -23,7 +23,7 @@ an HTTP response or event stream does not establish completion.
 
 ### Notifications API (re-exported from message.js)
 - `truncateNotificationText(text, maxLength)`: Truncates text to specified max length, appending `...` if truncated.
-- `prepareNotificationLastMessage({ message, settings, summarize })`: Prepares the last message for notification display. Summarization is always on whenever a `summarize` function is supplied; without one, the message falls back to plain truncation.
+- `prepareNotificationLastMessage({ message, summarize })`: Prepares the last message for notification display. Summarization is always on whenever a `summarize` function is supplied; without one, the message falls back to plain truncation.
 
 ### Route registration API (routes.js)
 - `registerNotificationRoutes(app, dependencies)`: Registers notification-owned endpoints:
