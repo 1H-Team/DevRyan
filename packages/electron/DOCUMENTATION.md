@@ -40,6 +40,9 @@ rename/swap. A launch with `--runtime-service` exits 0 in `early-startup.mjs`
 `runtime-service/retired.v1`; without it, it unregisters an enabled or pending
 registration, proves its owner stopped, clears the old `productionBots*Runtime*`
 settings and writes the marker. Failure is logged and retried next launch.
+`runtime-service-registration.mjs` only reads (`status`, also behind
+`--runtime-service-control=status`) and withdraws (`unregister`) a registration;
+nothing registers the service.
 `runtime-service.mjs` keeps only the app-bound owner lock and reclaims a stopped
 legacy `service` owner; acquisition deletes the old sealed `handshake.v1.json`.
 
