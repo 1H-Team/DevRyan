@@ -1,4 +1,4 @@
-import {expect,test} from 'bun:test';
+import {afterAll,expect,test} from 'bun:test';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs/promises';
@@ -17,7 +17,9 @@ import {createNativeIntegrationOwner} from '../../packages/web/server/lib/openco
 import type {NativeControllerProcess} from '../../packages/web/server/lib/opencode/runtime-host/native-process.js';
 import {bootstrapNativeSetupCredentials,NATIVE_SETUP_CREDENTIAL_STAMP} from '../../packages/web/server/lib/opencode/runtime-host/native-setup-credentials.js';
 
-const directory=path.resolve('.cache/v2-validation/controller-integrations');
+// The layer below creates this location; an owned OS-temp folder, removed after the file.
+const directory=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-controller-integrations-')));
+afterAll(()=>fs.rm(directory,{recursive:true,force:true}));
 const location=Schema.decodeUnknownSync(Location.Info)({directory,project:{id:'global',directory,canonical:directory}});
 function snapshot():NativeConfigurationSnapshot{return {schema:1,revision:1,sourceStamp:'a'.repeat(64),digest:'b'.repeat(64),registrationManifestDigest:'c'.repeat(64),locations:[{
   directory,configuration:{providers:{}},skills:[],instructions:[],textReferences:[],aliases:[],activePlugins:[],

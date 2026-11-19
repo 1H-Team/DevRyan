@@ -12,7 +12,7 @@ const temporaryRoot = await fs.realpath(os.tmpdir());
 
 test('qualification rejects changed source bytes even when output verification remains portable', async () => {
   // Build inputs are repository-relative files, so this fixture stays in the repository cache and is removed below.
-  const repositoryScratch = path.join(repositoryRoot, '.cache/v2-validation/tmp'); await fs.mkdir(repositoryScratch, { recursive: true });
+  const repositoryScratch = path.join(repositoryRoot, '.cache/v2-validation'); await fs.mkdir(repositoryScratch, { recursive: true });
   const root = await fs.mkdtemp(path.join(repositoryScratch, 'package-build-input-'));
   try {
     const file = path.join(root, 'linked.js'); await fs.writeFile(file, 'export const value = 1;\n');
