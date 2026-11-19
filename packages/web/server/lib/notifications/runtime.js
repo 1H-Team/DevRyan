@@ -745,7 +745,6 @@ export const createNotificationTriggerRuntime = (deps) => {
       prompt: buildSummarizationInput(text, summaryLength, 'notification'),
       // One retry when the first answer is empty: a plainer ask, same text.
       repairPrompt: `Reply with one plain sentence under ${summaryLength} characters that summarizes the text below. Output only that sentence.\n\nText:\n${text}`,
-      denyTools: true,
       timeoutMs: NOTIFICATION_SUMMARY_TIMEOUT_MS,
       maxOutputTokens: NOTIFICATION_SUMMARY_MAX_OUTPUT_TOKENS,
     });

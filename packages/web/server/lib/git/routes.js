@@ -125,8 +125,6 @@ export function registerGitRoutes(app, {
   generateHelperText,
   resolveHelperSelection,
   cursorRuntime,
-  buildOpenCodeUrl,
-  getOpenCodeAuthHeaders,
   // The client or a getter; forwarded so OpenCode helpers pick the runtime generation.
   openCodeClient = null,
   recordCommitTiming = () => {},
@@ -1254,8 +1252,6 @@ export function registerGitRoutes(app, {
       const sessionResult = await generateTextWithSessionModel({
         generateHelperText,
         cursorRuntime,
-        buildOpenCodeUrl,
-        getOpenCodeAuthHeaders,
         ...openCodeClientArgs(),
         directory,
         selection,
@@ -1263,7 +1259,6 @@ export function registerGitRoutes(app, {
         agent: PR_SESSION_HELPER_AGENT,
         prompt: fullPrompt,
         repairPrompt: PR_SESSION_REPAIR_PROMPT,
-        denyTools: true,
         accept: normalizePullRequestDraft,
         timeoutMs: PR_SESSION_MODEL_TIMEOUT_MS,
       });
@@ -1316,15 +1311,12 @@ export function registerGitRoutes(app, {
       const result = await generateTextWithSessionModel({
         generateHelperText,
         cursorRuntime,
-        buildOpenCodeUrl,
-        getOpenCodeAuthHeaders,
         ...openCodeClientArgs(),
         directory,
         selection,
         agent: 'devryan-branch',
         prompt: buildBranchNamePrompt(prompt.slice(0, BRANCH_NAME_PROMPT_MAX_LENGTH)),
         accept: normalizeBranchSlug,
-        denyTools: true,
         maxOutputTokens: BRANCH_NAME_MAX_OUTPUT_TOKENS,
         timeoutMs: BRANCH_NAME_TIMEOUT_MS,
       });

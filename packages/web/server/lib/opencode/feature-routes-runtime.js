@@ -339,9 +339,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       cursorRuntime: cursorTextRuntime,
       recordCommitTiming,
       prepareNativeDirectory: routeDependencies.ensureNativeDirectory,
-      // Native Zen helper sessions, plus PR description tier 2 (session model).
-      buildOpenCodeUrl,
-      getOpenCodeAuthHeaders,
     });
     registerMagicPromptRoutes(app, {
       fsPromises,
