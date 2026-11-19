@@ -9,7 +9,7 @@ promises. Failed asynchronous tails remain an explicit unsettled refusal; closin
 an HTTP response or event stream does not establish completion.
 
 ## Entrypoints and structure
-- `packages/web/server/lib/notifications/index.js`: public entrypoint imported by `packages/web/server/index.js`.
+- `packages/web/server/lib/notifications/index.js`: entrypoint `application.js` imports for `prepareNotificationLastMessage`; the runtimes are imported from their own files.
 - `packages/web/server/lib/notifications/routes.js`: route registration for push, visibility, the notification stream, session activity, message-sent and auto-accept endpoints.
 - `packages/web/server/lib/notifications/push-runtime.js`: push subscription persistence, VAPID initialization, and UI visibility runtime.
 - `packages/web/server/lib/notifications/emitter-runtime.js`: desktop/stdout + UI SSE notification emission runtime.
