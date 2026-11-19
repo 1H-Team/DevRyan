@@ -1419,7 +1419,6 @@ async function constructWebHost(options = {}) {
   });
 
   const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
-    getManagedOAuthEnvironment: () => openAiOAuthBridge.environment(),
     state: openCodeLifecycleState,
     env: {
       ENV_CONFIGURED_OPENCODE_PORT,
@@ -1459,13 +1458,6 @@ async function constructWebHost(options = {}) {
     sanitizeProjects,
     sanitizeHiddenSkills,
     discoverSkills,
-    getManagedOrchestrationEnvironment: async () => {
-      if (!managedOrchestrationRuntime) {
-        throw new Error('Managed orchestration runtime was not prepared before OpenCode startup');
-      }
-      return { ...await managedOrchestrationRuntime.prepareBridge(),
-        ...capturedExecutionEnvironment };
-    },
     getManagedBrowserEnvironment: async () => (
       typeof managedBrowserEnvironmentProvider === 'function'
         ? await managedBrowserEnvironmentProvider()
