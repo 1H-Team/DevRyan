@@ -46,3 +46,58 @@ describe("message chronology", () => {
     expect(messagesFrom(messages, "missing")).toEqual([])
   })
 })
+
+describe("insertMessageChronologically among equal keys", () => {
+  test("inserts after every message with the same time and id", () => {
+    const first = message("msg_same", 10)
+    const second = message("msg_same", 10)
+    const incoming = message("msg_same", 10)
+    const before = message("msg_a", 5)
+    const after = message("msg_z", 20)
+    const messages = [before, first, second, after]
+
+    const result = insertMessageChronologically(messages, incoming)
+
+    expect(result).toHaveLength(5)
+    expect(result[0]).toBe(before)
+    expect(result[1]).toBe(first)
+    expect(result[2]).toBe(second)
+    expect(result[3]).toBe(incoming)
+    expect(result[4]).toBe(after)
+  })
+
+  test("inserts after a single equal message and before the next greater id at the same time", () => {
+    const existing = message("msg_m", 10)
+    const greater = message("msg_n", 10)
+    const incoming = message("msg_m", 10)
+
+    const result = insertMessageChronologically([existing, greater], incoming)
+
+    expect(result[0]).toBe(existing)
+    expect(result[1]).toBe(incoming)
+    expect(result[2]).toBe(greater)
+  })
+
+  test("treats invalid timestamps as an equal time of zero and inserts after them", () => {
+    const zero = message("msg_x", 0)
+    const invalid = message("msg_x", "late")
+    const result = insertMessageChronologically([zero], invalid)
+
+    expect(result[0]).toBe(zero)
+    expect(result[1]).toBe(invalid)
+    // Infinite and NaN times also read as zero, so they sort before a message at time 1.
+    const one = message("msg_a", 1)
+    for (const created of [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NaN]) {
+      const odd = message("msg_z", created)
+      expect(insertMessageChronologically([one], odd)[0]).toBe(odd)
+    }
+  })
+
+  test("returns a new array and leaves the input unchanged", () => {
+    const messages = [message("msg_1", 1)]
+    const result = insertMessageChronologically(messages, message("msg_1", 1))
+
+    expect(result).not.toBe(messages)
+    expect(messages).toHaveLength(1)
+  })
+})

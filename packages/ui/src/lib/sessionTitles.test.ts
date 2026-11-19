@@ -165,3 +165,18 @@ describe("session title helpers", () => {
     }
   })
 })
+
+describe("resolveDisplaySessionTitle: duplicate-word folding and the default locale", () => {
+  // Adjacent duplicate words of a displayed title are compared with toLocaleLowerCase() in the
+  // runtime's default locale, which under Bun is en-US whatever LANG says. Under a Turkish
+  // default locale "I" lowers to dotless "\u0131" and "\u0130" to "i", so both pairs below
+  // would fold to one word.
+  test("folds a case-only duplicate word, but keeps dotted and dotless i pairs apart in the default locale", () => {
+    // Precondition: a non-Turkic default locale; a Turkish one gives the dotless i.
+    expect("I".toLocaleLowerCase()).toBe("i")
+    expect("I".toLocaleLowerCase("tr")).toBe("\u0131")
+    expect(resolveDisplaySessionTitle({ title: "Fix Menu menu layout" })).toBe("Fix Menu layout")
+    expect(resolveDisplaySessionTitle({ title: "Fix Ilk \u0131lk layout" })).toBe("Fix Ilk \u0131lk layout")
+    expect(resolveDisplaySessionTitle({ title: "Fix \u0130lk ilk layout" })).toBe("Fix \u0130lk ilk layout")
+  })
+})

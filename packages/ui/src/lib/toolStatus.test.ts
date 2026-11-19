@@ -53,6 +53,24 @@ describe('normalizeToolStatus', () => {
     expect(normalizeToolStatus('RUN\udc00')).toBe('run\udc00')
   })
 
+  test('removes leading and trailing no-break spaces, byte-order marks and line separators', () => {
+    expect(normalizeToolStatus('\ufeffcompleted')).toBe('completed')
+    expect(normalizeToolStatus('completed\ufeff')).toBe('completed')
+    expect(normalizeToolStatus('\u00a0\ufeff Running \ufeff\u00a0')).toBe('running')
+    expect(normalizeToolStatus('\u2028done\u2029')).toBe('done')
+    expect(normalizeToolStatus('\u202fdone\u205f')).toBe('done')
+    expect(normalizeToolStatus('\ufeff\u00a0')).toBeUndefined()
+    // Inside the status the same characters are removed as separators.
+    expect(normalizeToolStatus('in\ufeffprogress')).toBe('inprogress')
+  })
+
+  test('keeps next-line, zero-width no-joiner and Mongolian vowel separator characters, which JavaScript does not count as whitespace', () => {
+    expect(normalizeToolStatus('\u0085done')).toBe('\u0085done')
+    expect(normalizeToolStatus('done\u0085')).toBe('done\u0085')
+    expect(normalizeToolStatus('\u180edone')).toBe('\u180edone')
+    expect(normalizeToolStatus('\u200cdone')).toBe('\u200cdone')
+  })
+
   test('normalizes a very long status without truncating it', () => {
     const long = `${'A_'.repeat(5_000)}B`
     expect(normalizeToolStatus(long)).toBe(`${'a'.repeat(5_000)}b`)
@@ -93,6 +111,14 @@ describe('isFinalToolStatus', () => {
     expect(isFinalToolStatus(undefined)).toBe(false)
     expect(isFinalToolStatus(null)).toBe(false)
     expect(isFinalToolStatus(1)).toBe(false)
+  })
+
+  test('accepts a final status padded with a byte-order mark or a no-break space, and rejects one carrying a next-line character', () => {
+    expect(isFinalToolStatus('\ufeffdone')).toBe(true)
+    expect(isFinalToolStatus('error\u00a0')).toBe(true)
+    expect(isFinalToolStatus('\u0085done')).toBe(false)
+    expect(getToolLifecycleState({ status: '\ufeffrunning\u00a0' })).toMatchObject({ status: 'running', isStatusActive: true, isInFlight: true })
+    expect(getToolLifecycleState({ status: '\u00a0completed\ufeff' })).toMatchObject({ status: 'completed', isStatusFinal: true, isFinalized: true })
   })
 
   test('does not fold a dotted capital I to a plain i', () => {
@@ -268,5 +294,16 @@ describe('getToolLifecycleState', () => {
     expect(first).not.toBe(second)
     expect(first).toEqual(second)
     expect(input).toEqual({ status: 'running', time: { start: 1 } })
+  })
+})
+
+describe('normalizeToolStatus: dotted and dotless i', () => {
+  // toLowerCase() is locale-independent: "I" always lowers to "i", never to the Turkish dotless "ı".
+  test('lowers a capital I to i in any locale, and keeps a dotless i, so only the first reads as final', () => {
+    expect(normalizeToolStatus('FAILED')).toBe('failed')
+    expect(isFinalToolStatus('FAILED')).toBe(true)
+    expect(normalizeToolStatus('faıled')).toBe('faıled')
+    expect(isFinalToolStatus('faıled')).toBe(false)
+    expect(isFinalToolStatus('FAıLED')).toBe(false)
   })
 })

@@ -1978,3 +1978,343 @@ describe("applyGlobalProject", () => {
     expect(next.projects.map((entry) => entry.id)).toEqual(["c", "a", "b", "c"])
   })
 })
+
+describe("applyDirectoryEvent: message.updated for a message a revert hides", () => {
+  function hiddenDraft(): State {
+    return state({
+      session: [testSession("ses_1")],
+      message: {
+        ses_1: [
+          testMessage("msg_1", "ses_1", "user", 100),
+          testMessage("msg_2", "ses_1", "assistant", 200),
+          testMessage("msg_3", "ses_1", "user", 300),
+        ],
+      },
+      session_user_activity: { ses_1: 300 },
+      revert_transaction: {
+        ses_1: {
+          messageID: "msg_3",
+          hiddenMessageIDs: new Set(["msg_3"]),
+          version: 1,
+          status: "pending",
+          startedAt: 1,
+        },
+      },
+    })
+  }
+
+  test("removes the cached hidden message into a new list and leaves the previous list unchanged", () => {
+    const draft = hiddenDraft()
+    const before = draft.message.ses_1
+    const kept = before.slice(0, 2)
+
+    expect(applyDirectoryEvent(draft, messageUpdatedEvent(testMessage("msg_3", "ses_1", "user", 300)))).toBe(true)
+
+    expect(draft.message.ses_1).not.toBe(before)
+    expect(draft.message.ses_1).toHaveLength(2)
+    expect(draft.message.ses_1[0]).toBe(kept[0])
+    expect(draft.message.ses_1[1]).toBe(kept[1])
+    expect(before.map((message) => message.id)).toEqual(["msg_1", "msg_2", "msg_3"])
+  })
+
+  test("recomputes user activity from the messages left visible", () => {
+    const draft = hiddenDraft()
+    const activityBefore = draft.session_user_activity
+
+    applyDirectoryEvent(draft, messageUpdatedEvent(testMessage("msg_3", "ses_1", "user", 300)))
+
+    expect(draft.session_user_activity).toEqual({ ses_1: 100 })
+    expect(activityBefore).toEqual({ ses_1: 300 })
+  })
+
+  test("removes a hidden message from the middle of the list, keeping the order of the rest", () => {
+    const draft = hiddenDraft()
+    draft.message.ses_1 = [
+      testMessage("msg_1", "ses_1", "user", 100),
+      testMessage("msg_3", "ses_1", "user", 300),
+      testMessage("msg_4", "ses_1", "assistant", 400),
+    ]
+
+    expect(applyDirectoryEvent(draft, messageUpdatedEvent(testMessage("msg_3", "ses_1", "user", 300)))).toBe(true)
+    expect(draft.message.ses_1.map((message) => message.id)).toEqual(["msg_1", "msg_4"])
+  })
+
+  test("returns false and writes nothing when the session has no cached messages", () => {
+    const draft = hiddenDraft()
+    draft.message = {}
+
+    expect(applyDirectoryEvent(draft, messageUpdatedEvent(testMessage("msg_3", "ses_1", "user", 300)))).toBe(false)
+    expect(draft.message).toEqual({})
+    expect(draft.session_user_activity).toEqual({ ses_1: 300 })
+  })
+})
+
+describe("applyDirectoryEvent: the session limit", () => {
+  const ids = (draft: State) => draft.session.map((session) => session.id)
+  const created = (id: string) => ({ type: "session.created", properties: { info: testSession(id) } } as Event)
+
+  test("keeps every session when a new one brings the list to exactly the limit", () => {
+    const draft = state({ limit: 2, session: [testSession("ses_1")] })
+
+    expect(applyDirectoryEvent(draft, created("ses_2"))).toBe(true)
+    expect(ids(draft)).toEqual(["ses_1", "ses_2"])
+    expect(draft.sessionTotal).toBe(1)
+  })
+
+  test("removes exactly one session, the first by id, when a new one goes one over the limit", () => {
+    const draft = state({ limit: 2, session: [testSession("ses_1"), testSession("ses_2")] })
+
+    expect(applyDirectoryEvent(draft, created("ses_3"))).toBe(true)
+    expect(ids(draft)).toEqual(["ses_2", "ses_3"])
+  })
+
+  test("trims a list that was already over the limit down to exactly the limit", () => {
+    const draft = state({
+      limit: 2,
+      session: [testSession("ses_1"), testSession("ses_2"), testSession("ses_3"), testSession("ses_4")],
+    })
+
+    applyDirectoryEvent(draft, created("ses_5"))
+    expect(ids(draft)).toEqual(["ses_4", "ses_5"])
+  })
+
+  test("a limit of zero removes every unprotected session, the new one included", () => {
+    const draft = state({ limit: 0, session: [testSession("ses_1")] })
+
+    expect(applyDirectoryEvent(draft, created("ses_2"))).toBe(true)
+    expect(ids(draft)).toEqual([])
+    expect(draft.sessionTotal).toBe(1)
+  })
+
+  test("a created session whose id sorts first is removed at once when the list is over the limit, though the total still counts it", () => {
+    const draft = state({ limit: 2, session: [testSession("ses_2"), testSession("ses_3")], sessionTotal: 2 })
+
+    expect(applyDirectoryEvent(draft, created("ses_1"))).toBe(true)
+    expect(ids(draft)).toEqual(["ses_2", "ses_3"])
+    expect(draft.sessionTotal).toBe(3)
+  })
+
+  test("session.updated for a session not in the list also trims to the limit", () => {
+    const draft = state({ limit: 1, session: [testSession("ses_1")] })
+
+    expect(applyDirectoryEvent(draft, { type: "session.updated", properties: { info: testSession("ses_2") } } as Event)).toBe(true)
+    expect(ids(draft)).toEqual(["ses_2"])
+  })
+
+  test("stops at the first protected session: pending permission, non-idle status; an idle one is removed", () => {
+    const withPermission = state({
+      limit: 1,
+      session: [testSession("ses_1")],
+      permission: { ses_1: [{ id: "perm_1", sessionID: "ses_1" } as PermissionRequest] },
+    })
+    applyDirectoryEvent(withPermission, created("ses_2"))
+    expect(ids(withPermission)).toEqual(["ses_1", "ses_2"])
+
+    const busy = state({ limit: 1, session: [testSession("ses_1")], session_status: { ses_1: { type: "busy" } as SessionStatus } })
+    applyDirectoryEvent(busy, created("ses_2"))
+    expect(ids(busy)).toEqual(["ses_1", "ses_2"])
+
+    const idle = state({ limit: 1, session: [testSession("ses_1")], session_status: { ses_1: { type: "idle" } as SessionStatus } })
+    applyDirectoryEvent(idle, created("ses_2"))
+    expect(ids(idle)).toEqual(["ses_2"])
+  })
+
+  test("removes unprotected sessions until a protected one is first, leaving the list over the limit", () => {
+    const draft = state({
+      limit: 1,
+      session: [testSession("ses_1"), testSession("ses_2")],
+      session_status: { ses_2: { type: "busy" } as SessionStatus },
+    })
+
+    applyDirectoryEvent(draft, created("ses_3"))
+    expect(ids(draft)).toEqual(["ses_2", "ses_3"])
+  })
+
+  test("an empty permission or question list does not protect a session", () => {
+    const draft = state({
+      limit: 1,
+      session: [testSession("ses_1")],
+      permission: { ses_1: [] },
+      question: { ses_1: [] },
+    })
+
+    applyDirectoryEvent(draft, created("ses_2"))
+    expect(ids(draft)).toEqual(["ses_2"])
+  })
+})
+
+describe("applyDirectoryEvent: the order of abort-guard clears and state writes", () => {
+  // Implementation-order pins: no product code can see these orders (nothing reads the guard
+  // between the two synchronous effects); they hold the order for refactors and the port.
+  // The guard is registered at the latest safe time and read at time 0, so it never expires
+  // and no clock is involved.
+  const REGISTERED_AT = Number.MAX_SAFE_INTEGER
+
+  // Records, for each write to the draft or to its status, message and
+  // activity maps, whether the session's abort guard was still active then.
+  function observeWrites(draft: State, sessionID: string) {
+    const log: string[] = []
+    const watch = <T extends object>(target: T, name: string): T => new Proxy(target, {
+      set(object, key, value, receiver) {
+        log.push(`${name}${String(key)}:${isAbortGuardActive(sessionID, 0) ? "guarded" : "clear"}`)
+        return Reflect.set(object, key, value, receiver)
+      },
+    })
+    draft.session_status = watch(draft.session_status, "session_status.")
+    draft.message = watch(draft.message, "message.")
+    return { draft: watch(draft, ""), log }
+  }
+
+  test("session.idle clears the guard before it writes the idle status", () => {
+    try {
+      registerManualAbortGuard("ses_1", undefined, undefined, REGISTERED_AT)
+      const { draft, log } = observeWrites(state(), "ses_1")
+
+      expect(applyDirectoryEvent(draft, { type: "session.idle", properties: { sessionID: "ses_1" } } as Event)).toBe(true)
+
+      expect(log).toEqual(["session_status.ses_1:clear"])
+      expect(isAbortGuardActive("ses_1", 0)).toBe(false)
+    } finally {
+      resetAbortGuardState()
+    }
+  })
+
+  test("session.idle clears the guard even when the status is already idle and nothing is written", () => {
+    try {
+      registerManualAbortGuard("ses_1", undefined, undefined, REGISTERED_AT)
+      const { draft, log } = observeWrites(state({ session_status: { ses_1: { type: "idle" } as SessionStatus } }), "ses_1")
+
+      expect(applyDirectoryEvent(draft, { type: "session.idle", properties: { sessionID: "ses_1" } } as Event)).toBe(false)
+
+      expect(log).toEqual([])
+      expect(isAbortGuardActive("ses_1", 0)).toBe(false)
+    } finally {
+      resetAbortGuardState()
+    }
+  })
+
+  test("session.error clears the guard before it writes the idle status", () => {
+    try {
+      registerManualAbortGuard("ses_1", undefined, undefined, REGISTERED_AT)
+      const { draft, log } = observeWrites(state(), "ses_1")
+
+      expect(applyDirectoryEvent(draft, { type: "session.error", properties: { sessionID: "ses_1" } } as Event)).toBe(true)
+
+      expect(log).toEqual(["session_status.ses_1:clear"])
+    } finally {
+      resetAbortGuardState()
+    }
+  })
+
+  test("a user message that advances the turn writes user activity before it clears the guard, and the message list after", () => {
+    try {
+      registerManualAbortGuard("ses_1", undefined, undefined, REGISTERED_AT)
+      const { draft, log } = observeWrites(state({
+        session: [testSession("ses_1")],
+        message: { ses_1: [testMessage("msg_1", "ses_1", "user", 100)] },
+      }), "ses_1")
+
+      expect(applyDirectoryEvent(draft, messageUpdatedEvent(testMessage("msg_2", "ses_1", "user", 200)))).toBe(true)
+
+      expect(log).toEqual(["session_user_activity:guarded", "message.ses_1:clear"])
+    } finally {
+      resetAbortGuardState()
+    }
+  })
+
+  test("a replayed older user message writes the list and leaves the guard active", () => {
+    try {
+      registerManualAbortGuard("ses_1", undefined, undefined, REGISTERED_AT)
+      const { draft, log } = observeWrites(state({
+        session: [testSession("ses_1")],
+        message: { ses_1: [testMessage("msg_2", "ses_1", "user", 200)] },
+        session_user_activity: { ses_1: 200 },
+      }), "ses_1")
+
+      expect(applyDirectoryEvent(draft, messageUpdatedEvent(testMessage("msg_1", "ses_1", "user", 100)))).toBe(true)
+
+      expect(log).toEqual(["message.ses_1:guarded"])
+      expect(isAbortGuardActive("ses_1", 0)).toBe(true)
+    } finally {
+      resetAbortGuardState()
+    }
+  })
+})
+
+describe("applyDirectoryEvent: what the review's equivalent mutants change", () => {
+  // An implementation-order pin: the product's only onSetSessionTodo does not read the draft.
+  test("todo.updated writes the todos before it calls onSetSessionTodo, so the callback sees them in the draft", () => {
+    const draft = state({ todo: {} })
+    const todos = [todo("todo_1", "pending")]
+    const seen: Array<Todo[] | undefined> = []
+
+    applyDirectoryEvent(draft, todoUpdatedEvent("ses_1", todos), {
+      onSetSessionTodo: (sessionID) => {
+        seen.push(draft.todo[sessionID])
+      },
+    })
+
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toBe(todos)
+  })
+
+  test("two drafts holding the same session and message lists get the same stripped session object", () => {
+    // The summary memo is keyed by the message list and the session object.
+    const session = { ...testSession("ses_1"), summary: { additions: 3, deletions: 1, files: 1 } } as Session
+    const messages = [testMessage("msg_1", "ses_1", "user", 100)]
+    const first = state({ session: [session], message: { ses_1: messages } })
+    const second = state({ session: [session], message: { ses_1: messages } })
+
+    expect(applyDirectoryEvent(first, messageUpdatedEvent(testMessage("msg_1", "ses_1", "user", 100)))).toBe(true)
+    expect(applyDirectoryEvent(second, messageUpdatedEvent(testMessage("msg_1", "ses_1", "user", 100)))).toBe(true)
+
+    expect(first.session[0]).not.toBe(session)
+    expect("summary" in first.session[0]!).toBe(false)
+    expect(second.session[0]).toBe(first.session[0])
+  })
+})
+
+describe("applyDirectoryEvent: the session limit with real (descending) session ids", () => {
+  // OpenCode 2.x session ids put 12 hex digits of inverted time first, so a newer session
+  // sorts first (the layout of createV2SessionId in packages/web/server/lib/opencode/opencode-client/v2.js).
+  const descendingSessionID = (createdAt: number) => `ses_${(0xffffffffffff - createdAt).toString(16).padStart(12, "0")}AAAAAAAAAAAAAA`
+
+  test("a session.created on a list at the limit drops the new session, which sorts first, and still adds it to sessionTotal", () => {
+    // As directory loadSessions leaves it: 50 root sessions, sorted by id, limit max(50, 50).
+    const sessions = Array.from({ length: 50 }, (_, index) => testSession(descendingSessionID(1_000 + index)))
+      .sort((left, right) => (left.id < right.id ? -1 : 1))
+    const draft = state({ session: sessions, sessionTotal: 50, limit: 50 })
+    const newest = descendingSessionID(2_000)
+    expect(newest < sessions[0]!.id).toBe(true)
+
+    expect(applyDirectoryEvent(draft, { type: "session.created", properties: { info: testSession(newest) } } as Event)).toBe(true)
+
+    expect(draft.session.some((session) => session.id === newest)).toBe(false)
+    expect(draft.session).toHaveLength(50)
+    expect(draft.session[0]).toBe(sessions[0])
+    expect(draft.sessionTotal).toBe(51)
+  })
+
+  test("the dropped session comes back on a session.updated only while it is busy, and the next session.created after it goes idle drops it again with the newer one", () => {
+    const sessions = Array.from({ length: 2 }, (_, index) => testSession(descendingSessionID(1_000 + index)))
+      .sort((left, right) => (left.id < right.id ? -1 : 1))
+    const newest = descendingSessionID(2_000)
+    const draft = state({ session: sessions, sessionTotal: 2, limit: 2 })
+    applyDirectoryEvent(draft, { type: "session.created", properties: { info: testSession(newest) } } as Event)
+    const updated = { type: "session.updated", properties: { info: { ...testSession(newest), time: { created: 1, updated: 2 } } } } as Event
+
+    applyDirectoryEvent(draft, updated)
+    expect(draft.session.some((session) => session.id === newest)).toBe(false)
+
+    draft.session_status = { [newest]: { type: "busy" } as SessionStatus }
+    applyDirectoryEvent(draft, updated)
+    expect(draft.session[0]?.id).toBe(newest)
+    expect(draft.session).toHaveLength(3)
+
+    // Once idle, the next insertion trims from the front again: both new sessions go.
+    draft.session_status = { [newest]: { type: "idle" } as SessionStatus }
+    const later = descendingSessionID(3_000)
+    applyDirectoryEvent(draft, { type: "session.created", properties: { info: testSession(later) } } as Event)
+    expect(draft.session.map((session) => session.id)).toEqual(sessions.map((session) => session.id))
+  })
+})
