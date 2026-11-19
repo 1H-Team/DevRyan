@@ -1,15 +1,14 @@
 import { afterEach, describe, expect, spyOn } from 'bun:test';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
-import { git } from './session-changes-git.js';
+import './session-changes-git.js';
 import { createSessionMutationRuntime } from './session-mutations.js';
-import { createSessionChangeRuntime } from './session-changes.js';
+import './session-changes.js';
 import { openChangeStore, changeKey } from './session-changes-store.js';
 import { withExecutionAdmission } from './execution-admission.js';
 import { withCrossProcessFileLock } from './atomic-file.js';
-import { cleanupRoots, fixture, ledgerState, manyFiles, roots, SMALL_BATCHES, test, withEnv } from '../test/session-mutations-fixture.js';
+import { cleanupRoots, fixture, ledgerState, manyFiles, test, withEnv } from '../test/session-mutations-fixture.js';
 
 afterEach(cleanupRoots);
 describe('baseline content references', () => {
