@@ -7,39 +7,10 @@ import {
 } from '@devryan/shared-runtime';
 import { generateZenText, resolveZenSessionID } from '../text/summarization.js';
 
-export const COMMIT_SUBJECT_MAX_LENGTH = 72;
 export const COMMIT_GENERATION_TIMEOUT_MS = 15_000;
 export const COMMIT_GENERATION_MAX_FREE_MODELS = 3;
 export const COMMIT_GENERATION_CHAT_MAX_TOKENS = 220;
 export const COMMIT_GENERATION_RESPONSES_MAX_OUTPUT_TOKENS = 256;
-export const ALLOWED_COMMIT_TYPES = [
-  'feat',
-  'fix',
-  'refactor',
-  'perf',
-  'docs',
-  'test',
-  'build',
-  'ci',
-  'chore',
-  'style',
-  'revert',
-];
-
-export function normalizeGeneratedCommitSubject(value) {
-  const normalized = normalizeGeneratedCommitDraft(value, {
-    selectedFiles: [{ path: 'changes', index: 'M', workingDir: ' ' }],
-  });
-  if (normalized.source === 'local_fallback') {
-    throw new Error('Generated commit subject is not a valid conventional commit');
-  }
-  return normalized.message.subject;
-}
-
-export function buildCommitMessagePrompt(context, guidance) {
-  return buildCommitDraftPrompt(context, guidance);
-}
-
 export async function generateCommitMessageDirect({
   sessionID,
   context,

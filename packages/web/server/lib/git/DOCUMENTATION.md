@@ -36,9 +36,7 @@ The following functions are exported and used by the web server:
 - Status reads set `GIT_OPTIONAL_LOCKS=0`, preventing Git's optional index refresh from racing worktree population or other index writers.
 - `getDiff(directory, { path, staged, contextLines })`: Get diff output for files or entire working tree.
 - `getRangeDiff(directory, { base, head, path, contextLines })`: Get diff between two refs.
-- `getRangeFiles(directory, { base, head })`: Get list of changed files between two refs.
 - `getFileDiff(directory, { path, staged })`: Get original and modified file contents for a single file (handles images as data URLs).
-- `collectDiffs(directory, files)`: Collect diff output for multiple files.
 - `revertFile(directory, filePath)`: Revert a file to HEAD state.
 - `stageFile(directory, filePath)`: Stage a file into the Git index.
 - `unstageFile(directory, filePath)`: Remove a file from the Git index while preserving working tree changes.

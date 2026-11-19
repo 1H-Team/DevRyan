@@ -1941,32 +1941,6 @@ export async function getRangeDiff(directory, { base, head, path, contextLines =
   return diff;
 }
 
-export async function getRangeFiles(directory, { base, head } = {}) {
-  const git = await createGit(directory);
-  const baseRef = typeof base === 'string' ? base.trim() : '';
-  const headRef = typeof head === 'string' ? head.trim() : '';
-  if (!baseRef || !headRef) {
-    throw new Error('base and head are required');
-  }
-
-  let resolvedBase = baseRef;
-  const originCandidate = `refs/remotes/origin/${baseRef}`;
-  try {
-    const verified = await git.raw(['rev-parse', '--verify', originCandidate]);
-    if (verified && verified.trim()) {
-      resolvedBase = `origin/${baseRef}`;
-    }
-  } catch {
-    // ignore
-  }
-
-  const raw = await git.raw(['diff', '--name-only', `${resolvedBase}...${headRef}`]);
-  return String(raw || '')
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean);
-}
-
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp', 'avif'];
 
 const BINARY_SNIFF_BYTES = 8192;
@@ -2273,21 +2247,6 @@ async function applyHunkUnlocked(directory, filePath, options = {}) {
       await fsp.rm(tmpPath, { force: true }).catch(() => {});
     }
   }
-}
-
-export async function collectDiffs(directory, files = []) {
-  const results = [];
-  for (const filePath of files) {
-    try {
-      const diff = await getDiff(directory, { path: filePath });
-      if (diff && diff.trim().length > 0) {
-        results.push({ path: filePath, diff });
-      }
-    } catch (error) {
-      console.error(`Failed to diff ${filePath}:`, error);
-    }
-  }
-  return results;
 }
 
 async function pullUnlocked(directory, options = {}) {

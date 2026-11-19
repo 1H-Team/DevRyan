@@ -1,15 +1,25 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createFreeZenCooldowns } from '@devryan/shared-runtime';
+import { buildCommitDraftPrompt, createFreeZenCooldowns, normalizeGeneratedCommitDraft } from '@devryan/shared-runtime';
 
 import {
   COMMIT_GENERATION_CHAT_MAX_TOKENS,
   COMMIT_GENERATION_RESPONSES_MAX_OUTPUT_TOKENS,
-  buildCommitMessagePrompt,
   COMMIT_GENERATION_TIMEOUT_MS,
   generateCommitMessageDirect,
-  normalizeGeneratedCommitSubject,
 } from './commit-message.js';
-import { GIT_GENERATION_ZEN_MODEL } from './zen-text.js';
+
+const GIT_GENERATION_ZEN_MODEL = 'deepseek-v4.1-flash';
+// The shared normalizer production uses (generateCommitMessageDirect's accept):
+// a local fallback means the model output was not a conventional commit.
+const normalizeGeneratedCommitSubject = (value) => {
+  const normalized = normalizeGeneratedCommitDraft(value, {
+    selectedFiles: [{ path: 'changes', index: 'M', workingDir: ' ' }],
+  });
+  if (normalized.source === 'local_fallback') {
+    throw new Error('Generated commit subject is not a valid conventional commit');
+  }
+  return normalized.message.subject;
+};
 
 const context = {
   branch: 'feature/source-generation',
@@ -28,7 +38,7 @@ const context = {
 describe('direct commit message generation', () => {
   afterEach(() => vi.useRealTimers());
   it('builds a staged-worktree prompt with non-authoritative guidance', () => {
-    const prompt = buildCommitMessagePrompt(context, 'Prefer a ui scope');
+    const prompt = buildCommitDraftPrompt(context, 'Prefer a ui scope');
 
     expect(prompt).toContain('respect staged-only scope');
     expect(prompt).toContain('"stagedOnly":true');

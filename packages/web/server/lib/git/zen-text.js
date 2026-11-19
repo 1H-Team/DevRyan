@@ -1,10 +1,6 @@
 import { generateTextWithSessionModel } from '../opencode/session-model-text.js';
 import { randomUUID } from 'node:crypto';
 
-// Default remains paid Flash; settings select the exact shared helper tuple,
-// including its reasoning variant (absent means provider Default).
-export const GIT_GENERATION_ZEN_MODEL = 'deepseek-v4.1-flash';
-
 /** Each draft attempt uses the admitted native helper and awaits its actual
  * settlement before repair or another model can start. */
 export const createGitZenTextTransport = ({ openCodeClient, generateHelperText, cursorRuntime, directory, sessionID, selection, agent }) => {

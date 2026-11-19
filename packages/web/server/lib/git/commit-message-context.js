@@ -208,9 +208,3 @@ export const collectCommitMessageContext = async ({
     },
   };
 };
-
-export const __test = {
-  normalizeGitPath,
-  validateSelectedFiles: validateCommitMessageSelectedFiles,
-  collectBatchContext,
-};
