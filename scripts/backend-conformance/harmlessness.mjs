@@ -30,6 +30,7 @@ import { RunRefused, createBackendRun, isolationRefusal } from './run-scratch.mj
 import { REPOSITORY_ROOT, SERVER_REQUIRE_BASE } from './edge.mjs';
 import { TAP_SETUP_VARIABLE } from './tap.mjs';
 import { readTapRecords } from './host-launch.mjs';
+import { onceFinished } from './child-finish.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WEB = path.join(REPOSITORY_ROOT, 'packages/web');
@@ -67,7 +68,7 @@ function runVitest({ files, junit, env }) {
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', (chunk) => { output += chunk; });
     child.stderr.on('data', (chunk) => { output += chunk; });
-    child.once('exit', (code, signal) => {
+    onceFinished(child, (code, signal) => {
       let tests = [];
       try { tests = parseVitestJunit(fs.readFileSync(junit, 'utf8')); } catch { /* no report: no tests, reported as incomplete */ }
       resolve({ code, signal, output, tests });

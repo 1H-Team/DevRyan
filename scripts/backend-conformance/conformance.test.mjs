@@ -28,6 +28,7 @@ import { checkSpan, declarationsOf, draftTable, spanOf } from './composition.mjs
 import { layerStackProblems, reachProblems } from './reach.mjs';
 import { EDGE_PROBES, edgeProbeProblems, rawRequest } from './edge-probes.mjs';
 import { readTapRecords, startGroupHost, stopAllHosts, tapSetupFor } from './host-launch.mjs';
+import { onceFinished } from './child-finish.mjs';
 import { GROUPS } from './groups.mjs';
 import { GROUPS as TOY_GROUPS } from './toy/toy-groups.mjs';
 import { harmlessnessVerdict, learnVaryingSpans, maskVaryingSpans, parseVitestJunit } from './harmlessness-judge.mjs';
@@ -64,7 +65,7 @@ const runChild = (args, { env = process.env, onLine = () => {}, timeoutMs = 90_0
     while ((newline = pending.indexOf('\n')) >= 0) { const line = pending.slice(0, newline); pending = pending.slice(newline + 1); onLine(line, child); }
   });
   child.stderr.on('data', (chunk) => { stderr += chunk; });
-  child.once('exit', (code, signal) => { clearTimeout(timer); resolve({ code, signal, stdout, stderr }); });
+  onceFinished(child, (code, signal) => { clearTimeout(timer); resolve({ code, signal, stdout, stderr }); });
 });
 /** Waits (bounded) until `pid` no longer exists. */
 const processGone = async (pid, timeoutMs = 30_000) => {

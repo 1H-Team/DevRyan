@@ -25,6 +25,7 @@ import { layerStackProblems, reachProblems } from './reach.mjs';
 import { EDGE_PROBES, edgeProbeProblems } from './edge-probes.mjs';
 import { APPLICATION_TABLE, GROUP_TABLES, compositionTextDrift } from './composition-drift.mjs';
 import { readTapRecords, startGroupHost, stopAllHosts } from './host-launch.mjs';
+import { onceFinished } from './child-finish.mjs';
 import { GROUPS } from './groups.mjs';
 import { GROUPS as TOY_GROUPS, TOY_VARIANTS } from './toy/toy-groups.mjs';
 
@@ -50,7 +51,7 @@ const runChild = (args, { env = process.env, timeoutMs = 240_000 } = {}) => new 
   child.stderr.setEncoding('utf8');
   child.stdout.on('data', (chunk) => { stdout += chunk; });
   child.stderr.on('data', (chunk) => { stderr += chunk; });
-  child.once('exit', (code, signal) => { clearTimeout(timer); resolve({ code, signal, stdout, stderr }); });
+  onceFinished(child, (code, signal) => { clearTimeout(timer); resolve({ code, signal, stdout, stderr }); });
 });
 const newProblems = (planted, baseline) => planted.filter((problem) => !baseline.includes(problem));
 

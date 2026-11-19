@@ -9,6 +9,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { REPOSITORY_ROOT, SERVER_REQUIRE_BASE } from './edge.mjs';
 import { TAP_SETUP_VARIABLE } from './tap.mjs';
+import { onceFinished } from './child-finish.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const TAP_MODULE = path.join(HERE, 'tap.mjs');
@@ -65,7 +66,11 @@ export async function startGroupHost({ run, name, group, label, table = null, en
   child.stderr.setEncoding('utf8');
   child.stderr.on('data', (chunk) => { stderr += chunk; });
   running.add(child);
-  const exit = new Promise((resolve) => { child.once('exit', (code, signal) => { running.delete(child); resolve({ code, signal, stderr }); }); });
+  // Settled when the host is gone and its stderr has been read to the end (child-finish.mjs).
+  const exit = new Promise((resolve) => {
+    child.once('exit', () => { running.delete(child); });
+    onceFinished(child, (code, signal) => resolve({ code, signal, stderr }));
+  });
   let timer;
   // Product modules log to stdout (the host serves the product's own code): a line that is not the
   // ready record is kept as output, never taken for it. A host that fails to start is killed.
