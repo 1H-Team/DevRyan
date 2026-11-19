@@ -8,7 +8,7 @@ import { createRunRoot, scratchParent } from './run-root.mjs';
 
 // Constructor validation only; actual compiled startup is a separate diagnostic.
 test('concrete preparation requires explicit account acquisition and manifest-covered canonical mirror paths', async t => {
-  const root = await fs.mkdtemp(path.resolve('.cache/factory-contract-'));
+  const root = await fs.mkdtemp(path.resolve('.cache/qa/factory-contract-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const sourceHome = path.join(root, 'mirror'), artifactRoot = path.join(root, 'artifacts');
   await fs.mkdir(sourceHome); await fs.mkdir(artifactRoot);
@@ -38,7 +38,7 @@ test('concrete preparation requires explicit account acquisition and manifest-co
 test('temporary mirror requires its creator run scope through the preparation factory', async t => {
   const run = createRunRoot({ parent: scratchParent('qa'), owner: 'factory-scope-test', signals: false, argv: [], env: {} });
   const foreign = createRunRoot({ parent: scratchParent('qa'), owner: 'factory-foreign-scope-test', signals: false, argv: [], env: {} });
-  const artifactRoot = await fs.mkdtemp(path.resolve('.cache/factory-artifact-'));
+  const artifactRoot = await fs.mkdtemp(path.resolve('.cache/qa/factory-artifact-'));
   t.after(async () => { run.finish('passed'); foreign.finish('passed'); await fs.rm(artifactRoot, { recursive: true, force: true }); });
   const sourceHome = path.join(run.dir, 'mirror');
   await fs.mkdir(sourceHome);

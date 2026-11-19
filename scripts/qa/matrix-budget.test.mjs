@@ -35,7 +35,7 @@ test('failed quota reads stop admission and a denied pre-sample never dispatches
 });
 
 test('focused matrix stops after a failed first host and retains cleanup and failure evidence', async t => {
-  const directory = await fs.mkdtemp(path.resolve('.cache/matrix-budget-'));
+  const directory = await fs.mkdtemp(path.resolve('.cache/qa/matrix-budget-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   for (const providerId of ['anthropic', 'cursor-acp']) {
     const file = path.join(directory, providerId + '.json'), evidenceRoot = path.join(directory, providerId);

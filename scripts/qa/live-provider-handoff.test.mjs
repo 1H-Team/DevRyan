@@ -206,8 +206,8 @@ test('Claude status projects strict booleans and known problem states without ac
 });
 
 test('reusable profile retention remains pinned after ordinary run completion and rejects foreign ownership', async t => {
-  await fs.mkdir('.cache/test-fixtures', { recursive: true });
-  const root = await fs.mkdtemp(path.resolve('.cache/test-fixtures/provider-handoff-'));
+  await fs.mkdir('.cache/qa', { recursive: true, mode: 0o700 });
+  const root = await fs.mkdtemp(path.resolve('.cache/qa/provider-handoff-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const run = { schemaVersion: 1, owner: 'scripts/qa/live-provider-handoff.mjs', createdAt: new Date().toISOString(), status: 'running', pinned: false };
   await fs.writeFile(path.join(root, 'run.json'), JSON.stringify(run), { mode: 0o600 });
@@ -220,8 +220,8 @@ test('reusable profile retention remains pinned after ordinary run completion an
 });
 
 test('default registration reuses exact retained profile and refuses replacement, aliases and foreign ownership', async t => {
-  await fs.mkdir('.cache/test-fixtures', { recursive: true });
-  const root = await fs.mkdtemp(path.resolve('.cache/test-fixtures/provider-registration-'));
+  await fs.mkdir('.cache/qa', { recursive: true, mode: 0o700 });
+  const root = await fs.mkdtemp(path.resolve('.cache/qa/provider-registration-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const file = path.join(root, 'provider-handoff-current.json');
   const makeProfile = async name => {
@@ -249,8 +249,8 @@ test('default registration reuses exact retained profile and refuses replacement
 });
 
 test('default registration rejects forged labels, extra account fields and substituted profile path', async t => {
-  await fs.mkdir('.cache/test-fixtures', { recursive: true });
-  const root = await fs.mkdtemp(path.resolve('.cache/test-fixtures/provider-registration-'));
+  await fs.mkdir('.cache/qa', { recursive: true, mode: 0o700 });
+  const root = await fs.mkdtemp(path.resolve('.cache/qa/provider-registration-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   await fs.writeFile(path.join(root, 'run.json'), JSON.stringify({ schemaVersion: 1,
     owner: 'scripts/qa/live-provider-handoff.mjs', createdAt: new Date().toISOString() }), { mode: 0o600 });
@@ -265,8 +265,8 @@ test('default registration rejects forged labels, extra account fields and subst
 });
 
 test('registration publication syncs its directory and removes temporary data after an interrupted write', async t => {
-  await fs.mkdir('.cache/test-fixtures', { recursive: true });
-  const root = await fs.mkdtemp(path.resolve('.cache/test-fixtures/provider-registration-'));
+  await fs.mkdir('.cache/qa', { recursive: true, mode: 0o700 });
+  const root = await fs.mkdtemp(path.resolve('.cache/qa/provider-registration-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   await fs.writeFile(path.join(root, 'run.json'), JSON.stringify({ schemaVersion: 1,
     owner: 'scripts/qa/live-provider-handoff.mjs', createdAt: new Date().toISOString() }), { mode: 0o600 });
@@ -365,8 +365,8 @@ test('child startup refusals preserve only exact bounded IPC codes and never rep
 });
 
 test('original child reports a startup refusal over IPC before natural nonzero exit without exposing stdout or private state', async t => {
-  await fs.mkdir('.cache/test-fixtures', { recursive: true });
-  const root = await fs.mkdtemp(path.resolve('.cache/test-fixtures/provider-refusal-'));
+  await fs.mkdir('.cache/qa', { recursive: true, mode: 0o700 });
+  const root = await fs.mkdtemp(path.resolve('.cache/qa/provider-refusal-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const stateFile = path.join(root, 'handoff.json'); await fs.writeFile(stateFile, JSON.stringify({ schema: 0 }), { mode: 0o600 });
   const child = fork(new URL('./live-provider-handoff.mjs', import.meta.url), ['--child', stateFile], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
