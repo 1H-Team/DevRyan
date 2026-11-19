@@ -488,7 +488,7 @@ describe('maintenance validation selection', () => {
   test('checks unreached browser files for package code, tests and the allowlist, and declaration parity for JavaScript and declarations', () => {
     const labels = files => buildPlan('fast', files).commands.map(c => c.label);
     for (const file of ['packages/ui/src/App.tsx', 'packages/ui/package.json', 'scripts/check-browser-graph.mjs', 'scripts/unreached-files.json',
-      'scripts/check-unreached-files.mjs', 'tests/visual-reasoning/main.tsx', 'scripts/release.test.mjs']) {
+      'scripts/check-unreached-files.mjs', 'tests/fixture/main.tsx', 'scripts/release.test.mjs']) {
       assert.ok(labels([file]).includes('unreached-files'), file);
     }
     // The allowlist, checker or a test outside packages/ alone does not re-run the boundary checks.
