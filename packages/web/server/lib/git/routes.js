@@ -250,7 +250,7 @@ export function registerGitRoutes(app, {
         }
         try {
           message = await generateCommitMessage({ context, guidance, allowLocalFallback: false,
-            ...createGitZenTextTransport({ generateHelperText, cursorRuntime, buildOpenCodeUrl, getOpenCodeAuthHeaders, ...openCodeClientArgs(), directory,
+            ...createGitZenTextTransport({ generateHelperText, cursorRuntime, ...openCodeClientArgs(), directory,
               sessionID: req.body?.sessionID, selection, agent: 'devryan-commit' }),
             models: [selection.modelID], catalogState: selectionMode, cooldowns: null,
             onAttempt: attempt => recordGenerationAttempt(req, 'git_commit_message_model_attempt', selectionMode, attempt, selectionMode),
@@ -1218,7 +1218,7 @@ export function registerGitRoutes(app, {
       try {
         if (!configured) throw Object.assign(new Error('Helper selection unavailable'), { code: 'HELPER_MODEL_FAILED' });
         const generated = await generatePullRequestDescription({
-          ...createGitZenTextTransport({ generateHelperText, cursorRuntime, buildOpenCodeUrl, getOpenCodeAuthHeaders, ...openCodeClientArgs(), directory, sessionID: req.body?.sessionID, selection: configured, agent: PR_SESSION_HELPER_AGENT }),
+          ...createGitZenTextTransport({ generateHelperText, cursorRuntime, ...openCodeClientArgs(), directory, sessionID: req.body?.sessionID, selection: configured, agent: PR_SESSION_HELPER_AGENT }),
           prompt: fullPrompt,
           models: [configured.modelID],
           cooldowns: null,
