@@ -372,11 +372,15 @@ export async function engineChecks({ harnessDir, root, workDir, own, EXIT }) {
 
 // --------------------------------------------------------------- interrupted tools (the self-tests' helper)
 
-/** Every process below `pid` (ps), as [pid, command]. */
+/**
+ * Every process below `pid` (ps), as [pid, executable]. The executable is the
+ * first word of the full command line, not the short command name: on Linux a
+ * recent Node reports that name as its main thread's, not as `node`.
+ */
 export function processesBelow(pid) {
-  const listed = spawnSync('ps', ['-A', '-o', 'pid=', '-o', 'ppid=', '-o', 'comm='], { encoding: 'utf8' }).stdout.split('\n').map((line) => line.trim().split(/\s+/)).filter((parts) => parts.length >= 3);
+  const listed = spawnSync('ps', ['-A', '-o', 'pid=', '-o', 'ppid=', '-o', 'args='], { encoding: 'utf8' }).stdout.split('\n').map((line) => line.trim().split(/\s+/)).filter((parts) => parts.length >= 3);
   const below = [];
-  const walk = (parent) => { for (const [child, ppid, ...command] of listed) if (Number(ppid) === parent) { below.push([Number(child), command.join(' ')]); walk(Number(child)); } };
+  const walk = (parent) => { for (const [child, ppid, ...command] of listed) if (Number(ppid) === parent) { below.push([Number(child), command[0]]); walk(Number(child)); } };
   walk(pid);
   return below;
 }
