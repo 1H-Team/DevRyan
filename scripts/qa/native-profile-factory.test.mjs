@@ -24,7 +24,7 @@ test('concrete preparation requires explicit account acquisition and manifest-co
   const factory = await createQaNativePreparationFactory(input);
   assert.equal(typeof factory.prepareSource, 'function'); assert.equal(factory.bootstrapCredentials, input.bootstrapCredentials);
   assert.equal(factory.preparedInput.sourceHome, sourceHome);
-  await fs.writeFile(path.join(sourceHome, 'native/config.json'), '{\"changed\":true}');
+  await fs.writeFile(path.join(sourceHome, 'native/config.json'), '{"changed":true}');
   await assert.rejects(factory.prepareSource({ sourceHome, artifactRoot, runtimeRoot: root, workspace: root }), { code: 'qa_native_input_changed' });
   await fs.writeFile(path.join(sourceHome, 'native/config.json'), '{}');
   await assert.rejects(factory.prepareSource({ sourceHome: root, artifactRoot, runtimeRoot: root, workspace: root }), { code: 'qa_native_input_changed' });

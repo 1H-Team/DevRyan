@@ -168,8 +168,6 @@
     {"file":"scripts/qa/fixture-mobile-coverage.mjs","rule":"no-unsafe-finally","count":2},
     {"file":"scripts/qa/focused-provider-inputs.mjs","rule":"no-unsafe-finally","count":1},
     {"file":"scripts/qa/matrix-runner.mjs","rule":"no-unsafe-finally","count":1},
-    {"file":"scripts/qa/native-backend-ui-diagnostic.mjs","rule":"no-useless-escape","count":4},
-    {"file":"scripts/qa/native-profile-factory.test.mjs","rule":"no-useless-escape","count":2},
     {"file":"scripts/qa/native-profile-preparation.mjs","rule":"no-unsafe-finally","count":2},
     {"file":"scripts/qa/native-startup-benchmark.test.mjs","rule":"prefer-const","count":1},
     {"file":"scripts/qa/natural-compaction-scenarios.mjs","rule":"no-unused-vars","count":2},
