@@ -7,7 +7,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { cacheGrowthFailure, snapshotCache } from './cache-guard.mjs';
+import { scratchGrowthFailure, snapshotRepository } from './cache-guard.mjs';
 import { isTestImporter } from './check-import-boundaries.mjs';
 import { FULL_TEST_SUITES, planFullTests } from './test-full.mjs';
 import { formatDuration, recordTestTimings, runTestUnits, summarizeTestUnits, testConcurrency } from './test-pool.mjs';
@@ -690,10 +690,10 @@ if (isDirectExecution) {
   try {
     const plan = buildPlan(mode);
     printPlan(plan);
-    const cacheBefore = snapshotCache(workspaceRoot);
+    const scratchBefore = snapshotRepository(workspaceRoot);
     const status = await runCommands(plan.commands);
     process.exitCode = status;
-    const growth = cacheGrowthFailure(workspaceRoot, cacheBefore);
+    const growth = scratchGrowthFailure(workspaceRoot, scratchBefore);
     if (growth) {
       console.error(`\n${growth}`);
       process.exitCode = 1;
