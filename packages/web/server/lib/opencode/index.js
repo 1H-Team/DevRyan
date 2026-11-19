@@ -1,24 +1,12 @@
 export {
-  createUserProfileProvisioningRuntime,
-} from './user-profile-provisioning.js';
-
-export {
-  AGENT_DIR,
-  COMMAND_DIR,
   SKILL_DIR,
-  CONFIG_FILE,
-  AGENT_SCOPE,
-  COMMAND_SCOPE,
   SKILL_SCOPE,
-  readConfig,
-  writeConfig,
   readSkillSupportingFile,
   writeSkillSupportingFile,
   deleteSkillSupportingFile,
 } from './shared.js';
 
 export {
-  getAgentScope,
   getAgentSources,
   getAgentConfig,
   listAgentModelOverrides,
@@ -28,30 +16,10 @@ export {
   deleteAgentModelOverride,
   writeAgentBackupModel,
   deleteAgentBackupModel,
-  resolveLocalAgentBackupExecution,
-  listProjectAgents,
   listConfigAgents,
-  createAgent,
-  updateAgent,
-  deleteAgent,
 } from './agents.js';
 
 export {
-  listPackagedAgents,
-} from './packaged-agents.js';
-
-export {
-  syncPackagedAgents,
-  formatPackagedAgentSyncConflicts,
-} from './packaged-agent-sync.js';
-
-export {
-  syncRuntimeAgentOverlays,
-  getRuntimeAgentOverlayConfigDirectory,
-} from './runtime-agent-overlays.js';
-
-export {
-  getCommandScope,
   getCommandSources,
   createCommand,
   updateCommand,
@@ -60,7 +28,6 @@ export {
 
 export {
   getSkillSources,
-  getSkillScope,
   discoverSkills,
   createSkill,
   updateSkill,
@@ -76,18 +43,6 @@ export {
 } from './providers.js';
 
 export {
-  readAuthFile,
-  writeAuthFile,
-  removeProviderAuth,
-  getProviderAuth,
-  listProviderAuths,
-  AUTH_FILE,
-  OPENCODE_DATA_DIR,
-} from './auth.js';
-
-export { createUiAuth } from '../ui-auth/ui-auth.js';
-
-export {
   listMcpConfigs,
   getMcpConfig,
   createMcpConfig,
@@ -95,8 +50,3 @@ export {
   deleteMcpConfig,
   recoverMcpConfigs,
 } from './mcp.js';
-
-export {
-  createPluginReadModel,
-  registerReadonlyPluginRoutes,
-} from './plugins-readonly.js';

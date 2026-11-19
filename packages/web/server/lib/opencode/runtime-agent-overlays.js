@@ -818,14 +818,6 @@ const buildRuntimeSkillPolicy = (skillPolicy, runtimeExternalDirectories) => {
   };
 };
 
-export const getRuntimeAgentOverlayConfigDirectory = (workingDirectory, options = {}) => {
-  if (!workingDirectory) {
-    return null;
-  }
-  const overlayRoot = options.overlayRoot ?? DEFAULT_RUNTIME_AGENT_OVERLAY_ROOT;
-  return path.join(overlayRoot, getProjectOverlayKey(workingDirectory));
-};
-
 export const syncRuntimeAgentOverlays = async (options = {}) => {
   const workingDirectory = typeof options.workingDirectory === 'string' && options.workingDirectory.trim()
     ? path.resolve(options.workingDirectory)
