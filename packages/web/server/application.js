@@ -907,15 +907,6 @@ async function constructWebHost(options = {}) {
     const argv1 = typeof process.argv?.[1] === 'string' ? process.argv[1] : '';
     return /openchamber-server/i.test(argv0) || /openchamber-server/i.test(argv1);
   })();
-  const ENV_CONFIGURED_OPENCODE_WSL_DISTRO =
-    typeof process.env.OPENCODE_WSL_DISTRO === 'string' && process.env.OPENCODE_WSL_DISTRO.trim().length > 0
-      ? process.env.OPENCODE_WSL_DISTRO.trim()
-      : (
-        typeof process.env.DEVRYAN_OPENCODE_WSL_DISTRO === 'string' &&
-        process.env.DEVRYAN_OPENCODE_WSL_DISTRO.trim().length > 0
-          ? process.env.DEVRYAN_OPENCODE_WSL_DISTRO.trim()
-          : null
-      );
 
   const openCodeAuthStateRuntime = createOpenCodeAuthStateRuntime({
     crypto,
@@ -1080,36 +1071,17 @@ async function constructWebHost(options = {}) {
   }
 
   let cachedLoginShellEnvSnapshot;
-  let resolvedOpencodeBinary = null;
-  let resolvedOpencodeBinarySource = null;
-  let resolvedNodeBinary = null;
-  let resolvedBunBinary = null;
   let resolvedGitBinary = null;
-  let useWslForOpencode = false;
-  let resolvedWslBinary = null;
-  let resolvedWslOpencodePath = null;
-  let resolvedWslDistro = null;
 
   const openCodeEnvState = {};
   Object.defineProperties(openCodeEnvState, {
     cachedLoginShellEnvSnapshot: { get: () => cachedLoginShellEnvSnapshot, set: (value) => { cachedLoginShellEnvSnapshot = value; } },
-    resolvedOpencodeBinary: { get: () => resolvedOpencodeBinary, set: (value) => { resolvedOpencodeBinary = value; } },
-    resolvedOpencodeBinarySource: { get: () => resolvedOpencodeBinarySource, set: (value) => { resolvedOpencodeBinarySource = value; } },
-    resolvedNodeBinary: { get: () => resolvedNodeBinary, set: (value) => { resolvedNodeBinary = value; } },
-    resolvedBunBinary: { get: () => resolvedBunBinary, set: (value) => { resolvedBunBinary = value; } },
     resolvedGitBinary: { get: () => resolvedGitBinary, set: (value) => { resolvedGitBinary = value; } },
-    useWslForOpencode: { get: () => useWslForOpencode, set: (value) => { useWslForOpencode = value; } },
-    resolvedWslBinary: { get: () => resolvedWslBinary, set: (value) => { resolvedWslBinary = value; } },
-    resolvedWslOpencodePath: { get: () => resolvedWslOpencodePath, set: (value) => { resolvedWslOpencodePath = value; } },
-    resolvedWslDistro: { get: () => resolvedWslDistro, set: (value) => { resolvedWslDistro = value; } },
   });
 
   const openCodeEnvRuntime = createOpenCodeEnvRuntime({
     homeDirectory: getRuntimeHome(),
     state: openCodeEnvState,
-    normalizeDirectoryPath,
-    readSettingsFromDiskMigrated,
-    ENV_CONFIGURED_OPENCODE_WSL_DISTRO,
   });
 
   const applyLoginShellEnvSnapshot = (...args) => openCodeEnvRuntime.applyLoginShellEnvSnapshot(...args);
@@ -1409,10 +1381,6 @@ async function constructWebHost(options = {}) {
     isShuttingDown: { get: () => isShuttingDown, set: (value) => { isShuttingDown = value; } },
     healthCheckInterval: { get: () => healthCheckInterval, set: (value) => { healthCheckInterval = value; } },
     expressApp: { get: () => expressApp, set: (value) => { expressApp = value; } },
-    useWslForOpencode: { get: () => useWslForOpencode, set: (value) => { useWslForOpencode = value; } },
-    resolvedWslBinary: { get: () => resolvedWslBinary, set: (value) => { resolvedWslBinary = value; } },
-    resolvedWslOpencodePath: { get: () => resolvedWslOpencodePath, set: (value) => { resolvedWslOpencodePath = value; } },
-    resolvedWslDistro: { get: () => resolvedWslDistro, set: (value) => { resolvedWslDistro = value; } },
   });
 
   const openAiOAuthCoordinator = createOpenAiOAuthCoordinator({
@@ -1628,8 +1596,8 @@ async function constructWebHost(options = {}) {
   const harnessFingerprintReader = createHarnessRunFingerprintReader({
     openCodeClient,
     getDuplicateProviderRoute: createDuplicateProviderRouteResolver({ openAiUsesOAuth: () => openAiOAuthCoordinator.usesOAuth() }),
-    getRuntimeBinary: () => useWslForOpencode || executionReadiness.state === 'required_unavailable' ? null : capturedExecutions
-      ? capturedExecutionEnvironment.DEVRYAN_OPENCODE_ARTIFACT : resolvedOpencodeBinary,
+    getRuntimeBinary: () => executionReadiness.state === 'required_unavailable' ? null : capturedExecutions
+      ? capturedExecutionEnvironment.DEVRYAN_OPENCODE_ARTIFACT : null,
     isManaged: () => !(isExternalOpenCode || ENV_SKIP_OPENCODE_START || ENV_CONFIGURED_OPENCODE_HOST),
     buildOpenCodeUrl, getOpenCodeAuthHeaders, fetchImpl: fetch,
     getAgentSource: (agent, directory) => getAgentSources(agent, directory).md,
@@ -2321,11 +2289,11 @@ async function constructWebHost(options = {}) {
           opencodeLaunchArgs: [],
           opencodeLaunchWrapperType: null,
           opencodeViaWsl: false,
-          opencodeWslBinary: resolvedWslBinary || null,
-          opencodeWslPath: resolvedWslOpencodePath || null,
-          opencodeWslDistro: resolvedWslDistro || null,
-          nodeBinaryResolved: resolvedNodeBinary || null,
-          bunBinaryResolved: resolvedBunBinary || null,
+          opencodeWslBinary: null,
+          opencodeWslPath: null,
+          opencodeWslDistro: null,
+          nodeBinaryResolved: null,
+          bunBinaryResolved: null,
           desktopNotifyEnabled: ENV_DESKTOP_NOTIFY,
           planModeExperimentalEnabled: PLAN_MODE_EXPERIMENT_ENABLED,
           multiUserControlPlane: multiUserRuntime.getControlPlaneStatus?.() ?? {

@@ -23,8 +23,8 @@ export const createOpenCodeEnvRuntime = (deps) => {
     logger = console,
   } = deps;
 
-  // A logical discovery owns one runner, including nested WSL probes. The clock
-  // starts at its first subprocess, not while checking configured paths/cache.
+  // A logical discovery owns one runner. The clock starts at its first
+  // subprocess, not while checking configured paths/cache.
   const createProbeRunner = () => {
     let deadline;
     return (executable, args, options = {}) => {
@@ -120,15 +120,6 @@ export const createOpenCodeEnvRuntime = (deps) => {
       }
     }
     return null;
-  };
-
-  const prependToPath = (dir) => {
-    const trimmed = typeof dir === 'string' ? dir.trim() : '';
-    if (!trimmed) return;
-    const current = process.env.PATH || '';
-    const parts = current.split(path.delimiter).filter(Boolean);
-    if (parts.includes(trimmed)) return;
-    process.env.PATH = [trimmed, ...parts].join(path.delimiter);
   };
 
   const getWindowsShellEnvSnapshot = (probe) => {

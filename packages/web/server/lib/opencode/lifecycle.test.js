@@ -260,8 +260,6 @@ it('forwards the native lifecycle version into original application health and H
     isOpenCodeConnectionSecure: () => true,
     executionReadiness: { state: 'ready' },
     nativeBundle: { artifacts: { controller: 'fixture-controller' } },
-    resolvedNodeBinary: null,
-    resolvedBunBinary: null,
     ENV_DESKTOP_NOTIFY: false,
     PLAN_MODE_EXPERIMENT_ENABLED: false,
     multiUserRuntime: { enabled: false },

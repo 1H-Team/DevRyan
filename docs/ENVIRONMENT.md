@@ -83,8 +83,7 @@ Read, but no behaviour depends on them in the native runtime:
 `OPENCODE_PORT`, `DEVRYAN_OPENCODE_PORT`, `DEVRYAN_INTERNAL_PORT` and
 `DEVRYAN_OPENCODE_HOSTNAME` are parsed by `lib/opencode/env-config.js` and handed to
 the lifecycle runtime, which does not use them (the native runtime picks its own
-port); `OPENCODE_WSL_DISTRO` and `DEVRYAN_OPENCODE_WSL_DISTRO` are read by
-`application.js` for the removed WSL launch; `OPENCODE_API_PREFIX` and
+port); `OPENCODE_API_PREFIX` and
 `DEVRYAN_API_PREFIX` only produce the warning that the API runs at the root.
 
 ## Session execution host

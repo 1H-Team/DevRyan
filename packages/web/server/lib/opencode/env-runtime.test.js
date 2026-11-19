@@ -35,14 +35,6 @@ afterEach(() => {
 const createRuntime = (settings, overrides = {}) => {
   const state = {
     cachedLoginShellEnvSnapshot: null,
-    resolvedOpencodeBinary: null,
-    resolvedOpencodeBinarySource: null,
-    useWslForOpencode: false,
-    resolvedWslBinary: null,
-    resolvedWslOpencodePath: null,
-    resolvedWslDistro: null,
-    resolvedNodeBinary: null,
-    resolvedBunBinary: null,
     managedOpenCodeShellEnvSnapshot: null,
   };
 
@@ -50,7 +42,6 @@ const createRuntime = (settings, overrides = {}) => {
     state,
     normalizeDirectoryPath: (value) => value,
     readSettingsFromDiskMigrated: async () => settings,
-    ENV_CONFIGURED_OPENCODE_WSL_DISTRO: null,
     ...overrides,
   });
 
