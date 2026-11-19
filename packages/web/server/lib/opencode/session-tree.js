@@ -8,7 +8,6 @@
 // (`sessions.get`, `sessions.children`, `sessions.status`), which projects the
 // 2.0.20 answers into the application records. Native identity is required.
 
-import { isOpenCodeNotFoundError } from './opencode-client/index.js';
 import { resolveOpenCodeGeneration } from './opencode-generation.js';
 
 export const SESSION_TREE_MAX_DEPTH = 8;
@@ -114,42 +113,3 @@ export const listSessionTree = async ({
 
   return entries;
 };
-
-const normalizeStatuses = (payload) => {
-  if (!isObject(payload)) return {};
-  const statuses = {};
-  for (const [id, status] of Object.entries(payload)) {
-    if (isObject(status) && typeof status.type === 'string') statuses[id] = status;
-  }
-  return statuses;
-};
-
-/**
- * Returns the OpenCode session status map for a directory:
- * `{ [sessionID]: { type: 'idle' | 'busy' | 'retry', ... } }`.
- * A 404 (endpoint unavailable) yields an empty map. On generation 2 (with
- * `openCodeClient`) the map lists only busy and retrying sessions: an absent
- * entry is idle.
- */
-export const listSessionStatuses = async ({
-  directory,
-  openCodeClient,
-  signal,
-}) => {
-  resolveOpenCodeGeneration(openCodeClient);
-  {
-    throwIfAborted(signal);
-    let payload;
-    try {
-      payload = await openCodeClient.sessions.status({ directory }, { signal });
-    } catch (error) {
-      throwIfAborted(signal);
-      if (isOpenCodeNotFoundError(error)) return {};
-      throw new Error(`Cannot read session status (status ${clientStatus(error)})`, { cause: error });
-    }
-    return normalizeStatuses(payload);
-  }
-
-};
-
-export const isActiveSessionStatus = (status) => status?.type === 'busy' || status?.type === 'retry';

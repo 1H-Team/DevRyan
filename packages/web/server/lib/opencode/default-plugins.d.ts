@@ -24,7 +24,6 @@ export const DEVRYAN_DEFAULT_PLUGIN_IDS: Readonly<{
   OPENAI_TOOL_SCHEMA_SANITIZER: 'openai-tool-schema-sanitizer';
 }>;
 export const DEVRYAN_DEFAULT_PLUGINS: ReadonlyArray<Omit<DevRyanDefaultPlugin, 'effectiveSpec' | 'kind' | 'configuredSourcePath'>>;
-export const OPENAI_TOOL_SCHEMA_SANITIZER_FILE: string;
 export const OPENAI_TOOL_SCHEMA_SANITIZER_SPEC: string;
 
 export function getDevRyanDefaultPluginIdForSpec(spec: unknown): DevRyanDefaultPluginId | null;
