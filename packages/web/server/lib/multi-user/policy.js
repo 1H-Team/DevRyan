@@ -392,8 +392,6 @@ export function canEditSettingsPage(principal, rawSlug) {
   return permission?.read === true && permission?.edit === true;
 }
 
-export const canOpenSettingsPage = canReadSettingsPage;
-
 export function canUseBrowser(principal) {
   return principal?.scope === 'local-admin'
     || principal?.role === 'admin'
@@ -467,7 +465,7 @@ export function settingsPageForRequest(requestPath, method = 'GET') {
   return null;
 }
 
-export function allowedSettingsFields(principal) {
+function allowedSettingsFields(principal) {
   return settingsFieldsForPermission(principal, 'edit');
 }
 

@@ -2,7 +2,6 @@ import { classifyProviderTransportFailure } from '@devryan/orchestration-runtime
 
 export const DIAGNOSTIC_IMPACTS = Object.freeze(['low', 'medium', 'high', 'critical']);
 export const DIAGNOSTIC_SOURCES = Object.freeze(['observed', 'inferred']);
-export const DIAGNOSTIC_OUTCOMES = Object.freeze(['recovered', 'unresolved', 'unknown']);
 export const DIAGNOSTIC_DISPOSITIONS = Object.freeze(['actionable', 'expected']);
 export const FAILURE_CLASSES = Object.freeze([
   'filesystem_target',
