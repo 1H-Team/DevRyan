@@ -49,16 +49,21 @@ export function tapSetupFor(name, group, { outDir }) {
 /**
  * Starts a group host for `name` (from `table`, a module path inside this
  * folder, or the default table) inside `run` (run-scratch.mjs), on a fresh
- * data root `<label>/data`. Resolves `{ ready, dataRoot, tapFile, control(path, init, options), stop(), exit }`
+ * data root `<label>/data` (or `dataRoot`). `stubs` maps stub names to the
+ * loopback URLs of harness stubs (handed to the group table's dependencies);
+ * `processGroup` makes the host lead a process group of its own; `home` is
+ * the HOME the host takes once its isolation check passed (group-host.mjs). Resolves `{ ready, dataRoot, tapFile, control(path, init, options), stop(), exit }`
  * once the host printed its ready line; rejects with its stderr when it exits
  * first or is not ready within `limits.readyMs`.
  */
-export async function startGroupHost({ run, name, group, label, table = null, env = process.env, dataRoot = null, variants = [], limits = LIMITS }) {
+export async function startGroupHost({ run, name, group, label, table = null, env = process.env, dataRoot = null, home = null, variants = [], stubs = {}, processGroup = false, limits = LIMITS }) {
   const outDir = run.makeDirectory(`${label}/tap`);
   const data = dataRoot ?? run.makeDirectory(`${label}/data`);
   const setupFile = run.writeFile(`${label}/tap-setup.json`, `${JSON.stringify(tapSetupFor(name, group, { outDir }), null, 2)}\n`);
-  const args = [`--import=${pathToFileURL(TAP_MODULE).href}`, GROUP_HOST, `--group=${name}`, `--data-root=${data}`, ...(table ? [`--table=${table}`] : []), ...(variants.length ? [`--variants=${variants.join(',')}`] : [])];
-  const child = spawn(process.execPath, args, { cwd: REPOSITORY_ROOT, env: { ...env, [TAP_SETUP_VARIABLE]: setupFile }, stdio: ['pipe', 'pipe', 'pipe'] });
+  const stubList = Object.entries(stubs).map(([stub, url]) => `${stub}=${url}`);
+  const args = [`--import=${pathToFileURL(TAP_MODULE).href}`, GROUP_HOST, `--group=${name}`, `--data-root=${data}`, ...(table ? [`--table=${table}`] : []), ...(variants.length ? [`--variants=${variants.join(',')}`] : []), ...(stubList.length ? [`--stubs=${stubList.join(',')}`] : []), ...(home ? [`--home=${home}`] : [])];
+  // processGroup: the host leads a process group of its own (the scenario driver freezes and kills it by group).
+  const child = spawn(process.execPath, args, { cwd: REPOSITORY_ROOT, env: { ...env, [TAP_SETUP_VARIABLE]: setupFile }, stdio: ['pipe', 'pipe', 'pipe'], detached: processGroup });
   // stdin stays open: it closes when this process dies, which stops the host.
   child.stdin.on('error', () => {});
   let stdout = '';

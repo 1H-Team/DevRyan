@@ -6,6 +6,7 @@
 //
 //   node --import=<tap.mjs> scripts/backend-conformance/group-host.mjs --group=<name> --data-root=<dir>
 //       [--listen=127.0.0.1:0] [--control=127.0.0.1:0] [--table=<module in this folder>] [--variants=<name>,...]
+//       [--stubs=<name>=http://127.0.0.1:<port>,...]   harness stubs, handed to the group table's dependencies
 //
 // It refuses (exit 64) outside the test isolation guard, without an armed tap
 // set up for the same group, on an unknown group, variant or option, and on a
@@ -35,12 +36,12 @@ import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { tap } from './tap.mjs';
 import { isolationRefusal } from './run-scratch.mjs';
-import { EDGE_STEPS, REPOSITORY_ROOT, composeEdge, createAbsentDependencies, importFromServer } from './edge.mjs';
+import { EDGE_STEPS, REPOSITORY_ROOT, SERVER_ROOT, composeEdge, createAbsentDependencies, importFromServer } from './edge.mjs';
 import { GROUPS } from './groups.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const EXIT = Object.freeze({ stopped: 0, startup: 1, refused: 64 });
-const OPTIONS = new Set(['group', 'data-root', 'listen', 'control', 'table', 'variants']);
+const OPTIONS = new Set(['group', 'data-root', 'listen', 'control', 'table', 'variants', 'stubs', 'home']);
 const QUIESCENT_DEFAULT_MS = 30_000;
 const QUIESCENT_MAX_MS = 600_000;
 
@@ -65,6 +66,31 @@ const privateDirectory = (directory) => {
   return path.isAbsolute(directory) && stat?.isDirectory() && !stat.isSymbolicLink() && (stat.mode & 0o077) === 0 && fs.realpathSync(directory) === directory;
 };
 const sourceDigest = (file) => { try { return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex').slice(0, 16); } catch { return null; } };
+
+/**
+ * What the edge left on a request, read at the group's entry with the
+ * product's own functions (design §6, the envelope's fields): the
+ * request-context store's assignment, the peer (a direct local request; a
+ * tunnel owner's), and whether the principal's authorisation is live (the
+ * check the product's long-lived routes repeat: the connection's, else the
+ * auth controller's, lib/orchestration/routes.js).
+ */
+async function entryObserver(state) {
+  const fromServer = (relative) => import(pathToFileURL(path.join(SERVER_ROOT, relative)).href);
+  const { getRequestAssignment, getRequestPrincipal } = await fromServer('lib/multi-user/request-context.js');
+  const { isDirectLocalRequest } = await fromServer('lib/security/direct-local-request.js');
+  const { getTunnelOwnerPrincipal } = await fromServer('lib/tunnels/access-control.js');
+  return (req) => {
+    const principal = req.principal ?? null;
+    const check = principal ? (state.multiUserRuntime?.connection?.captureAuthorization?.(principal) ?? state.uiAuthController?.captureAuthorization?.(principal) ?? null) : null;
+    return {
+      assignment: getRequestAssignment(),
+      storePrincipalIsRequestPrincipal: getRequestPrincipal() === principal,
+      peer: { directLocal: isDirectLocalRequest(req) === true, tunnel: getTunnelOwnerPrincipal(req) !== null },
+      authorizationActive: typeof check === 'function' ? check() === true : null,
+    };
+  };
+}
 
 async function loadTable(option) {
   if (!option) return { table: GROUPS, file: path.join(HERE, 'groups.mjs') };
@@ -152,8 +178,20 @@ export async function main(argv = process.argv.slice(2)) {
   if (groupFiles.length !== tapped.size || groupFiles.some((file) => !tapped.has(file))) return refuse('the tap setup names other group files than the group table');
   const declared = (entries) => JSON.stringify(entries.map((entry) => [entry.file, entry.line ?? null, entry.reason]).sort());
   if (declared(group.declaredBackground.map((entry) => ({ ...entry, file: path.join(REPOSITORY_ROOT, entry.file) }))) !== declared(tap.setup.declaredBackground)) return refuse('the tap setup declares other background work than the group table');
+  const stubs = {};
+  for (const entry of options.stubs ? options.stubs.split(',') : []) {
+    const match = /^([a-z0-9][a-z0-9-]*)=(http:\/\/127\.0\.0\.1:\d{1,5})$/.exec(entry);
+    if (!match || Object.hasOwn(stubs, match[1])) return refuse(`--stubs takes <name>=http://127.0.0.1:<port>, each name once (${entry})`);
+    stubs[match[1]] = match[2];
+  }
   const dataRoot = options['data-root'];
   if (!privateDirectory(dataRoot)) return refuse('--data-root must be an existing private canonical directory');
+  // --home: the HOME the harness gives both arms (a directory of its run, tracked like the data root). The
+  // isolation check above ran on the guard's HOME; the group's modules, imported below, see this one.
+  if (options.home !== undefined) {
+    if (!privateDirectory(options.home)) return refuse('--home must be an existing private canonical directory');
+    Object.assign(process.env, { HOME: options.home, XDG_CONFIG_HOME: path.join(options.home, '.config'), XDG_DATA_HOME: path.join(options.home, '.local', 'share'), XDG_STATE_HOME: path.join(options.home, '.local', 'state'), XDG_CACHE_HOME: path.join(options.home, '.cache') });
+  }
 
   // The product's own express, so the tap's router patch is the one it uses.
   const express = await importFromServer('express');
@@ -174,7 +212,7 @@ export async function main(argv = process.argv.slice(2)) {
     tap.markTopRouter(app.router);
     const registerGroup = async () => {
       tap.beginGroupRegistration(options.group);
-      try { await registrar(app, group.dependencies({ dataRoot: root, hub, factories, absent })); } finally { tap.endGroupRegistration(); }
+      try { await registrar(app, group.dependencies({ dataRoot: root, hub, factories, absent, stubs })); } finally { tap.endGroupRegistration(); }
     };
     if (group.edge === 'web-api') {
       const replace = { ...(group.edgeReplace?.({ factories }) ?? {}), ...(variant ? group.variants[variant]({ factories }) : {}) };
@@ -208,6 +246,7 @@ export async function main(argv = process.argv.slice(2)) {
   });
 
   for (const { state } of composed) tap.tagServer(state.server);
+  if (group.edge === 'web-api') tap.observeEntry(await entryObserver(composed[0].state));
   const controlServer = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1');
     let replied = false;

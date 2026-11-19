@@ -10,18 +10,19 @@ import { EXIT, judgeRun, lastLine, reportLines } from './outcomes.mjs';
 import { RunRefused, createBackendRun, isolationRefusal } from './run-scratch.mjs';
 import { GROUPS } from './groups.mjs';
 
-export const USAGE = 'usage: --group=<name> [--allow-inconclusive=<row>,...] [--keep-artifacts]';
+export const USAGE = 'usage: --group=<name> [--scenario=<id>,...] [--allow-inconclusive=<row>,...] [--keep-artifacts]';
 
 export function parseArguments(argv, groups = GROUPS) {
-  const options = { allowInconclusive: [], keepArtifacts: false, group: null };
+  const options = { allowInconclusive: [], keepArtifacts: false, group: null, scenarios: [] };
   for (const argument of argv) {
     if (argument === '--keep-artifacts') { options.keepArtifacts = true; continue; }
-    const match = /^--(group|allow-inconclusive)=(.+)$/.exec(argument);
+    const match = /^--(group|allow-inconclusive|scenario)=(.+)$/.exec(argument);
     if (!match) return { error: `unknown option ${argument}` };
     if (match[1] === 'group') {
       if (options.group) return { error: '--group given twice' };
       options.group = match[2];
-    } else options.allowInconclusive.push(...match[2].split(',').filter(Boolean));
+    } else if (match[1] === 'scenario') options.scenarios.push(...match[2].split(',').filter(Boolean));
+    else options.allowInconclusive.push(...match[2].split(',').filter(Boolean));
   }
   if (!options.group) return { error: '--group is required' };
   if (!Object.hasOwn(groups, options.group)) return { error: `unknown group ${options.group} (known: ${Object.keys(groups).join(', ')})` };
@@ -32,11 +33,14 @@ export function parseArguments(argv, groups = GROUPS) {
  * One run. `checkComposition({ run, group, name, log })` returns the
  * composition problems (any makes the run inconclusive before a row is
  * produced); `produceRows({ run, group, name })` returns the judged rows and
- * the group's waiver table (`{ rows, waivers }`); until the scenario driver
- * exists (BH2-BH4) the CLI produces none.
+ * the group's waiver table (`{ rows, waivers }`; it also gets `options`, the
+ * parsed command line). `onInterrupt` runs on SIGINT, SIGTERM and SIGHUP
+ * before the run root is removed (the driver kills what it started).
+ * A row awaiting comparison (`awaiting` set: recorded, nothing judged it) can
+ * never be waived: a waiver of one is refused.
  */
 export async function runMain({ argv = process.argv.slice(2), env = process.env, log = (line) => process.stdout.write(`${line}\n`), error = (line) => process.stderr.write(`${line}\n`),
-  produceRows = async () => ({ rows: [], waivers: {} }), checkComposition } = {}) {
+  produceRows = async () => ({ rows: [], waivers: {} }), checkComposition, onInterrupt, parent } = {}) {
   if (typeof checkComposition !== 'function') throw new TypeError('runMain needs a composition check');
   const refusal = isolationRefusal({ env });
   if (refusal) { error(`backend conformance: ${refusal}`); return EXIT.refused; }
@@ -44,7 +48,8 @@ export async function runMain({ argv = process.argv.slice(2), env = process.env,
   if (parsed.error) { error(`backend conformance: ${parsed.error}\n${USAGE}`); return EXIT.refused; }
   const { options } = parsed;
   let run;
-  try { run = createBackendRun({ env, argv, keepArtifacts: options.keepArtifacts }); } catch (failure) {
+  // `parent`: the self-test's private scratch parent (no other run's sweep reaches it); the command never passes one.
+  try { run = createBackendRun({ env, argv, keepArtifacts: options.keepArtifacts, onInterrupt, parent }); } catch (failure) {
     if (failure instanceof RunRefused) { error(`backend conformance: ${failure.message}`); return EXIT.refused; }
     throw failure;
   }
@@ -69,13 +74,17 @@ async function judgedRun({ run, options, produceRows, checkComposition, log, err
       log(lastLine(judgement));
       return judgement.exit;
     }
-    const produced = await produceRows({ run, group, name: options.group });
+    const produced = await produceRows({ run, group, name: options.group, options });
     const waivers = { ...(produced.waivers ?? {}) };
     for (const id of options.allowInconclusive) {
       if (Object.hasOwn(waivers, id)) { error(`backend conformance: --allow-inconclusive=${id} repeats a waiver of the table`); return EXIT.refused; }
+      if (produced.rows.some((row) => row.id === id && row.awaiting)) { error(`backend conformance: --allow-inconclusive=${id} names a row awaiting comparison; nothing judged it, so nothing can waive it`); return EXIT.refused; }
       waivers[id] = { outcome: 'inconclusive', reason: '(allowed) by --allow-inconclusive on the command line' };
     }
-    const judgement = judgeRun({ rows: produced.rows, waivers });
+    // A table waiver of a row awaiting comparison waives nothing judged: it is dropped and counted as a gap.
+    const gaps = [...(produced.gaps ?? [])];
+    for (const row of produced.rows) if (row.awaiting && Object.hasOwn(waivers, row.id)) { delete waivers[row.id]; gaps.push(`waiver ${row.id} covers a row awaiting comparison (nothing judged it)`); }
+    const judgement = judgeRun({ rows: produced.rows, waivers, gaps });
     run.writeFile('report.json', `${JSON.stringify({ group: options.group, ...judgement }, null, 2)}\n`);
     for (const line of reportLines(judgement)) log(line);
     return judgement.exit;

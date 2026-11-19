@@ -42,8 +42,11 @@ export function validateRows(rows) {
 }
 
 /**
- * Waivers are `{ [rowId]: { outcome, reason } }`: a waiver names the one
- * outcome it covers and why. Returns the problems with the table itself.
+ * Waivers are `{ [rowId]: { outcome, reason, checks? } }`: a waiver names the
+ * one outcome it covers and why; with `checks` it covers only a row whose
+ * every check is one of them (a scenario's table names the problem it
+ * expects, so any other problem on the row keeps it open). Returns the
+ * problems with the table itself.
  */
 export function waiverProblems(waivers) {
   const problems = [];
@@ -52,6 +55,7 @@ export function waiverProblems(waivers) {
     if (!waiver || typeof waiver !== 'object') { problems.push(`waiver ${id} is not an object`); continue; }
     if (!WAIVABLE.includes(waiver.outcome)) problems.push(`waiver ${id} names outcome ${JSON.stringify(waiver.outcome)}; only ${WAIVABLE.join(', ')} can be waived`);
     if (typeof waiver.reason !== 'string' || waiver.reason.trim().length < 8) problems.push(`waiver ${id} has no reason`);
+    if (waiver.checks !== undefined && (!Array.isArray(waiver.checks) || waiver.checks.length === 0 || waiver.checks.some((check) => typeof check !== 'string' || check === ''))) problems.push(`waiver ${id} names its checks as something other than a non-empty list of names`);
   }
   return problems;
 }
@@ -76,6 +80,11 @@ export function judgeRun({ rows, waivers = {}, gaps = [] }) {
     if (row.outcome === 'passed') { waiverFailures.push(`waiver ${row.id} waives nothing: the row passed`); return { ...row, waived: null }; }
     if (row.outcome === 'failed') { waiverFailures.push(`waiver ${row.id} cannot waive a failure`); return { ...row, waived: null }; }
     if (waiver.outcome !== row.outcome) { waiverFailures.push(`waiver ${row.id} covers ${waiver.outcome}, but the row is ${row.outcome}`); return { ...row, waived: null }; }
+    if (waiver.checks) {
+      const checks = row.checks ?? [];
+      const others = checks.filter((check) => !waiver.checks.includes(check));
+      if (checks.length === 0 || others.length) { waiverFailures.push(`waiver ${row.id} covers only ${waiver.checks.join(', ')}, but the row ${checks.length ? `also has ${others.join(', ')}` : 'has none of them'}`); return { ...row, waived: null }; }
+    }
     return { ...row, waived: waiver.reason };
   });
   for (const id of Object.keys(waivers)) if (!byId.has(id) && !used.has(id)) waiverFailures.push(`waiver ${id} waives nothing: no such row`);

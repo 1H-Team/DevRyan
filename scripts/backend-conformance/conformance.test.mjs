@@ -130,11 +130,11 @@ test('zero rows, only waived rows, census gaps and waivers that waive nothing ne
 // Children run the run module with a composition check of their own (the CLI's real one reads the server's files).
 // After runMain returns (before the process exits) the child says whether the run root is still there:
 // a run finishes its root itself, it never leaves that to the exit hook.
-const CHILD_RUN = (rows, { extra = '', drift = [] } = {}) => `
+const CHILD_RUN = (rows, { extra = '', drift = [], parent = undefined } = {}) => `
 import { existsSync } from 'node:fs';
 import { runMain } from ${JSON.stringify(pathToFileURL(path.join(HERE, 'conformance-run.mjs')).href)};
 let runDir = null;
-process.exitCode = await runMain({ argv: process.argv.slice(1), checkComposition: async ({ run }) => { runDir = run.dir; console.log('RUNDIR ' + run.dir); return ${JSON.stringify(drift)}; },
+process.exitCode = await runMain({ argv: process.argv.slice(1), parent: ${JSON.stringify(parent)}, checkComposition: async ({ run }) => { runDir = run.dir; console.log('RUNDIR ' + run.dir); return ${JSON.stringify(drift)}; },
   produceRows: async ({ run }) => { console.log('ROWS'); ${extra} return { rows: ${JSON.stringify(rows)}, waivers: {} }; } });
 if (runDir) console.log('ROOT AFTER RUN ' + (existsSync(runDir) ? 'present' : 'removed'));
 `;
@@ -188,10 +188,11 @@ test('a run exits by its rows, judges nothing on composition drift, removes its 
   assert.doesNotMatch(drifted.stdout, /^ROWS$/m);
   assert.ok(!fs.existsSync(runDirOf(drifted.stdout)));
   for (const argv of [['--group=nope'], ['--group=magic-prompts', '--frobnicate'], [], ['--group=magic-prompts', '--group=magic-prompts']]) assert.ok(parseArguments(argv).error, String(argv));
-  assert.deepEqual(parseArguments(['--group=magic-prompts', '--allow-inconclusive=a,b']).options, { allowInconclusive: ['a', 'b'], keepArtifacts: false, group: 'magic-prompts' });
+  assert.deepEqual(parseArguments(['--group=magic-prompts', '--allow-inconclusive=a,b']).options, { allowInconclusive: ['a', 'b'], keepArtifacts: false, group: 'magic-prompts', scenarios: [] });
+  assert.deepEqual(parseArguments(['--group=magic-prompts', '--scenario=s.a,s.b', '--scenario=s.c']).options.scenarios, ['s.a', 's.b', 's.c']);
 });
 
-test('SIGTERM, SIGINT and SIGHUP remove the run root; after SIGKILL the next run removes it', DEADLINE, async () => {
+test('SIGTERM, SIGINT and SIGHUP remove the run root; after SIGKILL the next run removes it', DEADLINE, async (t) => {
   await Promise.all([['SIGTERM', 143], ['SIGINT', 130], ['SIGHUP', 129]].map(async ([signal, code]) => {
     let dir;
     let existed = false;
@@ -202,13 +203,16 @@ test('SIGTERM, SIGINT and SIGHUP remove the run root; after SIGKILL the next run
     assert.ok(existed && !fs.existsSync(dir), `${signal}: the root existed while running and is removed`);
   }));
   let dir;
-  const killed = await runChild(childArgs(CHILD_RUN([], { extra: 'process.stdin.resume(); await new Promise(() => {});' })), {
+  // In a private parent: a concurrent run's sweep of the shared one could remove the killed run first.
+  const { run: own, pass } = runFor(t);
+  const killed = await runChild(childArgs(CHILD_RUN([], { extra: 'process.stdin.resume(); await new Promise(() => {});', parent: own.makeDirectory('killed-parent') })), {
     onLine: (line, child) => { const match = /^RUNDIR (.+)$/.exec(line); if (match) dir = match[1]; if (line === 'ROWS') child.kill('SIGKILL'); },
   });
   assert.equal(killed.signal, 'SIGKILL');
   assert.ok(fs.existsSync(dir), 'SIGKILL cannot clean up');
   assert.deepEqual(sweepKilledRuns(path.dirname(dir)).filter((entry) => entry === dir), [dir], 'the next run removes a killed run');
   assert.ok(!fs.existsSync(dir));
+  pass();
 });
 
 test('a group host does not outlive its launcher, whatever kills the launcher', DEADLINE, async (t) => {

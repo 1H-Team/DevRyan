@@ -85,7 +85,7 @@ const TAP_KEY = Symbol.for('devryan.backend-conformance.tap');
 const inert = Object.freeze({
   armed: false, tagServer() {}, recordHub() {}, whenQuiescent: async () => { throw new Error('the tap is not armed'); },
   pendingOf: () => [], blindOf: () => [], registrations: () => [], problems: () => [], beginGroupRegistration() {}, endGroupRegistration() {},
-  markTopRouter() {}, claimHandler: (fn) => fn, markTail() {}, recordHost() {}, flushOf() {}, flushAll() {}, file: null,
+  markTopRouter() {}, claimHandler: (fn) => fn, markTail() {}, recordHost() {}, flushOf() {}, flushAll() {}, observeEntry() {}, file: null,
 });
 
 function readSetup() {
@@ -340,6 +340,9 @@ function arm(setup) {
   // transmission, not the group's work: counted, never pending.
   let transmitting = 0;
   const transmit = (action) => { transmitting += 1; try { return action(); } finally { transmitting -= 1; } };
+  // The host's reading of the request's context at entry (group-host.mjs: the request-context store's
+  // assignment, the peer, whether the principal's authorisation is live), with the product's own functions.
+  let entryObserver = null;
   /** At the group's first handler: what the handler receives, and the group's own body writes from here on. */
   const enterExchange = (exchange, registration, req) => {
     if (exchange.entry || exchange.ended) return;
@@ -354,6 +357,7 @@ function arm(setup) {
       principal, ip: safe(() => req.ip), ips: safe(() => [...(req.ips ?? [])]), socket: { localAddress: req.socket?.localAddress ?? null, localPort: req.socket?.localPort ?? null, remoteAddress: req.socket?.remoteAddress ?? null },
       edgeHeaders: Object.entries(res.getHeaders()).map(([headerName, value]) => [headerName, Array.isArray(value) ? value.map(String) : String(value)]),
       statusAtEntry: res.statusCode,
+      context: entryObserver ? safe(() => JSON.parse(JSON.stringify(entryObserver(req)))) : null,
     };
     const instanceWrite = res.write;
     const instanceEnd = res.end;
@@ -959,6 +963,8 @@ function arm(setup) {
     lastSeq: () => sequence,
     registrations: () => registrations.map((entry) => ({ ...entry })),
     problems: () => [...problems],
+    /** `observer(req)` is called at the group's entry; what it returns is the entry's `context` (the scenario driver's envelope check). */
+    observeEntry(observer) { entryObserver = typeof observer === 'function' ? observer : null; },
     beginGroupRegistration(name) { window = { name }; },
     endGroupRegistration() { window = null; },
   };

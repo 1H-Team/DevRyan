@@ -6,6 +6,7 @@
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { REPOSITORY_ROOT, SERVER_ROOT } from './edge.mjs';
+import { onceFinished } from './child-finish.mjs';
 
 const serverModule = (relative) => import(pathToFileURL(path.join(SERVER_ROOT, relative)).href);
 
@@ -36,7 +37,8 @@ export async function runCensus({ dataDirectory, timeoutMs = 120_000 }) {
   const killOnExit = () => { try { child.kill('SIGKILL'); } catch { /* gone */ } };
   process.once('exit', killOnExit);
   const timer = setTimeout(() => { stderr += `\n(the census did not finish within ${timeoutMs} ms and was killed)`; killOnExit(); }, timeoutMs);
-  const code = await new Promise((resolve) => { child.once('exit', (exitCode, signal) => resolve(exitCode ?? signal)); });
+  // Settled when the child is gone and its output has been read to the end (child-finish.mjs).
+  const code = await new Promise((resolve) => { onceFinished(child, (exitCode, signal) => resolve(exitCode ?? signal)); });
   clearTimeout(timer);
   process.off('exit', killOnExit);
   const line = stdout.split('\n').find((entry) => entry.startsWith('{"census":'));

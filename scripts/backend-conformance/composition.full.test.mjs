@@ -59,7 +59,7 @@ const newProblems = (planted, baseline) => planted.filter((problem) => !baseline
 let censusPromise = null;
 const census = (run) => { censusPromise ??= runCensus({ dataDirectory: run.makeDirectory('census') }); return censusPromise; };
 
-describe('backend conformance with the real server', { concurrency: true, ...DEADLINE }, () => {
+describe('backend conformance with the real server', { concurrency: true, timeout: 900_000 }, () => {
 // Whatever a failed test left running is stopped, so the file always ends.
 after(() => stopAllHosts());
 test('the drift detector names every planted change of the server\'s own composition files, in memory', DEADLINE, (t) => {
@@ -262,19 +262,27 @@ test('each planted re-statement of the edge is caught by its probe, and a missin
   pass();
 });
 
-test('the command line refuses outside the guard and, on the real tree, judges nothing yet', DEADLINE, async (t) => {
+test('the command line refuses outside the guard and, on the real tree, records rows and judges none', { timeout: 900_000 }, async (t) => {
   const { run, pass } = runFor(t);
   const env = { ...process.env, TMPDIR: run.makeDirectory('foreign-tmp') };
   delete env.DEVRYAN_TEST_ISOLATION_ROOT;
   const [refused, real] = await Promise.all([
     runChild([path.join(HERE, 'conformance.mjs'), '--group=magic-prompts'], { env }),
-    runChild([path.join(HERE, 'conformance.mjs'), '--group=magic-prompts']),
+    // The pilot's scenarios start several group hosts: minutes under heavy load.
+    runChild([path.join(HERE, 'conformance.mjs'), '--group=magic-prompts'], { timeoutMs: 840_000 }),
   ]);
   assert.equal(refused.code, EXIT.refused, refused.stderr);
   assert.deepEqual(fs.readdirSync(env.TMPDIR), []);
   assert.equal(real.code, EXIT.incomplete, real.stdout + real.stderr);
-  assert.match(real.stdout, /backend conformance: (NOTHING RECORDED|COMPOSITION DRIFT) \(0 rows/);
-  if (/COMPOSITION DRIFT/.test(real.stdout)) t.diagnostic(real.stdout);
+  // No comparer exists (BH3): the rows are recorded and none is passed; on drift no row is produced at all.
+  const last = /backend conformance: (INCOMPLETE|COMPOSITION DRIFT) \((\d+) rows: (\d+) passed, (\d+) failed/.exec(real.stdout);
+  assert.ok(last, real.stdout);
+  if (last[1] === 'COMPOSITION DRIFT') { t.diagnostic(real.stdout); assert.equal(last[2], '0'); } else {
+    assert.ok(Number(last[2]) > 0, 'rows recorded');
+    assert.deepEqual([last[3], last[4]], ['0', '0'], 'nothing passed, nothing failed');
+    assert.match(real.stdout, /^INCONCLUSIVE magic-prompts\.reads-and-writes\/get-empty: recorded on the reference arm; awaiting comparison/m);
+    assert.doesNotMatch(real.stdout, /^ok {2}/m);
+  }
   pass();
 });
 });

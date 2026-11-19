@@ -15,8 +15,11 @@
 // remove a directory whose identity changed); --keep-artifacts or
 // DEVRYAN_KEEP_ARTIFACTS=1 keeps it. A run killed by SIGKILL cannot clean up:
 // it leaves its directory, marked with its pid, and the next run removes every
-// such directory whose process is gone (its group hosts stop by themselves when
-// their launcher dies).
+// such directory whose process is gone. Group hosts not frozen stop by
+// themselves when their launcher dies; an arm the scenario driver had frozen
+// cannot, so before removing the directory the sweep continues and kills every
+// process group the run recorded (arm-groups.mjs; each checked to be still the
+// recorded process first) and leaves the directory when one survives.
 //
 // A run refuses to start outside the test isolation guard: no harness process
 // may see the developer's real home, DevRyan data or Git configuration.
@@ -25,6 +28,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { RUN_MANIFEST as RUN_MANIFEST_NAME, createRunRoot, scratchParent } from '../qa/run-root.mjs';
 import { isolationProblems } from '../test-isolation-check.mjs';
+import { killRunRecords } from './arm-groups.mjs';
 
 export const SCRATCH_FAMILY = 'backend-conformance';
 const { O_CREAT, O_EXCL, O_WRONLY, O_RDONLY, O_NOFOLLOW, O_DIRECTORY } = fs.constants;
@@ -59,7 +63,8 @@ const processAlive = (pid) => { try { process.kill(pid, 0); return true; } catch
 /**
  * Removes run directories of `parentDirectory` left by runs that were killed
  * (SIGKILL): a plain directory of this user whose pid file names a process
- * that is gone and whose manifest still says running. Returns what it removed.
+ * that is gone and whose manifest still says running, after the process groups
+ * it recorded are killed. Returns what it removed.
  */
 export function sweepKilledRuns(parentDirectory) {
   const removed = [];
@@ -74,6 +79,8 @@ export function sweepKilledRuns(parentDirectory) {
     let status;
     try { pid = Number(fs.readFileSync(path.join(dir, PID_FILE), 'utf8').trim()); status = JSON.parse(fs.readFileSync(path.join(dir, RUN_MANIFEST_NAME), 'utf8')).status; } catch { continue; }
     if (!Number.isInteger(pid) || pid <= 0 || status !== 'running' || processAlive(pid)) continue;
+    // What the killed run left frozen or running (its recorded groups) goes first; a survivor keeps the directory for the next sweep.
+    if (killRunRecords(dir).some(({ result }) => result === 'survived')) continue;
     try { fs.rmSync(dir, { recursive: true, force: true }); removed.push(dir); } catch { /* the prune tool retries */ }
   }
   return removed;
