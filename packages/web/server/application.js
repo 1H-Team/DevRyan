@@ -34,7 +34,6 @@ import { normalizeManagedRemoteTunnelToken } from './lib/tunnels/managed-token.j
 import { createTunnelProviderRegistry } from './lib/tunnels/registry.js';
 import { createCloudflareTunnelProvider } from './lib/tunnels/providers/cloudflare.js';
 import { createRequestSecurityRuntime } from './lib/security/request-security.js';
-import { registerRuntimeServiceRoutes } from './lib/runtime-service/routes.js';
 import {
   getUnauthenticatedLanErrorMessage,
   isNetworkExposedBindHost,
@@ -2296,22 +2295,6 @@ async function constructWebHost(options = {}) {
       registerPrivateCapabilityRoutes: (privateApp) => {
         browserCdpDiscoveryRuntime.attach(privateApp);
         browserLeaseRuntime.attach(privateApp);
-        if (options.runtimeServiceController) {
-          registerRuntimeServiceRoutes(privateApp, {
-            controller: options.runtimeServiceController,
-            onLocalOwnerBootstrap: async (res) => {
-              if (!multiUserRuntime.connection.enabled) {
-                await multiUserRuntime.connection.bootstrapLocalOwner();
-                multiUserRuntime.connection.setOwnerCookie(res, await multiUserRuntime.connection.issueLocalOwnerSession());
-              }
-            },
-            server,
-            onDesktopHostLease: options.onDesktopHostLease,
-            onDesktopHostRelease: options.onDesktopHostRelease,
-            onDisableRuntimeService: options.onDisableRuntimeService,
-            onPrepareRuntimeServiceUpdate: options.onPrepareRuntimeServiceUpdate,
-          });
-        }
         registerSupabaseConnectionRoutes(privateApp, {
           runtime: multiUserRuntime,
           preserveLocalContext: async (principal) => {

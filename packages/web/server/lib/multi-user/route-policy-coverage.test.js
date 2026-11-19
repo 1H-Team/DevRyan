@@ -94,8 +94,7 @@ const CLASSES = [
       'GET /api/health',
       // Server status and shutdown: authorizeSystemRequest (administrator).
       '* /api/system/**',
-      // Desktop/runtime-service capabilities: private capability token.
-      '* /api/runtime-service/**',
+      // Desktop capabilities: private capability token.
       '* /api/desktop/**',
       // Loopback-administrator passkeys and the legacy reset.
       '* /api/passkeys/**',

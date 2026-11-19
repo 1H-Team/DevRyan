@@ -437,7 +437,6 @@ export const enumerateServerRoutes = ({ multiUserRuntime, dataDirectory }) => wi
     { registerDevRyanRoutes },
     { createBrowserCdpDiscoveryRuntime },
     { createBrowserLeaseRuntime },
-    { registerRuntimeServiceRoutes },
     { registerRuntimeBundleLifecycleRoutes },
     { createBrowserObservationRuntime },
     { registerDiagnosticsRoutes },
@@ -469,7 +468,6 @@ export const enumerateServerRoutes = ({ multiUserRuntime, dataDirectory }) => wi
     import('../opencode/devryan-routes.js'),
     import('../browser-cdp/discovery-runtime.js'),
     import('../browser-cdp/lease-runtime.js'),
-    import('../runtime-service/routes.js'),
     import('../opencode/runtime-host/runtime-bundle-lifecycle.js'),
     import('../browser-cdp/observation-runtime.js'),
     import('../diagnostics/routes.js'),
@@ -523,8 +521,6 @@ export const enumerateServerRoutes = ({ multiUserRuntime, dataDirectory }) => wi
   const privateCapabilitySteps = [
     ['browserCdpDiscoveryRuntime.attach(privateApp', (privateApp) => createBrowserCdpDiscoveryRuntime(deps()).attach(privateApp)],
     ['browserLeaseRuntime.attach(privateApp', (privateApp) => createBrowserLeaseRuntime(deps()).attach(privateApp)],
-    // Registered when the Electron runtime service controller is present.
-    ['registerRuntimeServiceRoutes(privateApp', (privateApp) => registerRuntimeServiceRoutes(privateApp, deps({ server }))],
     ['registerSupabaseConnectionRoutes(privateApp', (privateApp) => registerSupabaseConnectionRoutes(privateApp, deps({ runtime: multiUserRuntime }))],
   ];
   const A = 'application.js';

@@ -74,16 +74,16 @@ export const groupRoutesOf = ({ group, census }) => {
 
 /**
  * The reach check on a census result. `values` fills route parameters
- * (`{ id: 'x' }`). Returns problems (strings).
+ * (`{ id: 'x' }`); `omissions` defaults to `REACH_OMISSIONS`. Returns problems (strings).
  */
-export async function reachProblems({ group, census, values = {}, express }) {
+export async function reachProblems({ group, census, values = {}, express, omissions = REACH_OMISSIONS }) {
   express ??= await importFromServer('express');
   const problems = [];
   const { groupFiles, routes: groupRoutes } = groupRoutesOf({ group, census });
   if (groupRoutes.length === 0) return [`reach: the census records no route from ${[...groupFiles].join(', ')}`];
   const first = Math.min(...groupRoutes.map((route) => route.order));
   const composedFiles = new Set(EDGE_STEPS.flatMap((step) => step.layers ?? []));
-  const omitted = new Map(REACH_OMISSIONS.map((entry) => [entry.file, entry.reason]));
+  const omitted = new Map(omissions.map((entry) => [entry.file, entry.reason]));
   const used = new Set();
   // Candidate requests: each group route with its parameters filled in, and each layer's own literal path
   // when the group route matches it (a mount on /api/x/foo applies to a group route /api/x/:id for id foo).

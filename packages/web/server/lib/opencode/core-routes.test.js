@@ -263,7 +263,7 @@ describe('common request middleware', () => {
     // Unlisted /api paths stay raw for the OpenCode proxy; body-reading routes
     // there mount their own parser (api-json-body-coverage.test.js).
     ['/api/session', null],
-    ['/api/runtime-service/desktop-host', null],
+    ['/api/question/que_1/reply', null],
     ['/api/provider/openai/oauth', null],
     ['/api/provider/openai/oauth/callback', null],
     ['/api/provider/openai/oauth-legacy', '50mb'],

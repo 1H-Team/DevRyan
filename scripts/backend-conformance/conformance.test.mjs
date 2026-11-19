@@ -482,6 +482,8 @@ test('the composition detector catches every planted change of a synthetic compo
 // ------------------------------------------------------------------ BH1: the reach and layer-stack checks, on synthetic census entries
 const GROUP_FILE = 'lib/toy-group/routes.js';
 const SYNTHETIC_GROUP = { files: [`packages/web/server/${GROUP_FILE}`] };
+// The real omission list may be empty, so the omission rules are checked against a synthetic one.
+const SYNTHETIC_OMISSION = { file: 'lib/toy-omitted/routes.js', reason: 'synthetic: an omitted layer on every path' };
 const syntheticCensus = (extraRoutes = [], extraMounts = []) => ({
   routes: [
     { method: 'GET', path: '/api/toy-group', order: 50, file: GROUP_FILE, line: 1, viaRouter: false },
@@ -491,7 +493,7 @@ const syntheticCensus = (extraRoutes = [], extraMounts = []) => ({
   ],
   mounts: [
     { method: 'USE', path: null, order: 1, file: 'lib/indexing-policy.js', line: 5, viaRouter: false },
-    { method: 'USE', path: null, order: 3, file: 'lib/runtime-service/routes.js', line: 137, viaRouter: false },
+    { method: 'USE', path: null, order: 3, file: SYNTHETIC_OMISSION.file, line: 137, viaRouter: false },
     { method: 'USE', path: '/api', order: 4, file: 'lib/opencode/core-routes.js', line: 700, viaRouter: false },
     ...extraMounts,
   ],
@@ -499,7 +501,7 @@ const syntheticCensus = (extraRoutes = [], extraMounts = []) => ({
 
 test('the reach check decides by the router\'s own matching: patterns, regexes, arrays, parameters and case', DEADLINE, async () => {
   const express = await importFromServer('express');
-  const reach = (routes, mounts) => reachProblems({ group: SYNTHETIC_GROUP, census: syntheticCensus(routes, mounts), values: { id: 'abc' }, express });
+  const reach = (routes, mounts) => reachProblems({ group: SYNTHETIC_GROUP, census: syntheticCensus(routes, mounts), values: { id: 'abc' }, express, omissions: [SYNTHETIC_OMISSION] });
   assert.deepEqual(await reach(), []);
   const omitted = 'lib/diagnostics/routes.js';
   const caught = [
@@ -525,8 +527,10 @@ test('the reach check decides by the router\'s own matching: patterns, regexes, 
     ['a layer of a composed step', [], [{ method: 'USE', path: '/api', order: 5, file: 'lib/tunnels/access-control.js', line: 24 }]],
   ];
   for (const [name, routes, mounts] of clean) assert.deepEqual(await reach(routes, mounts), [], name);
-  const withoutOmission = { ...syntheticCensus(), mounts: syntheticCensus().mounts.filter((mount) => mount.file !== 'lib/runtime-service/routes.js') };
-  assert.match((await reachProblems({ group: SYNTHETIC_GROUP, census: withoutOmission, express })).join('\n'), /the omission of lib\/runtime-service\/routes\.js matches no layer/);
+  const withoutOmission = { ...syntheticCensus(), mounts: syntheticCensus().mounts.filter((mount) => mount.file !== SYNTHETIC_OMISSION.file) };
+  assert.match((await reachProblems({ group: SYNTHETIC_GROUP, census: withoutOmission, express, omissions: [SYNTHETIC_OMISSION] })).join('\n'), /the omission of lib\/toy-omitted\/routes\.js matches no layer/);
+  // Without the omission, the same layer is reported.
+  assert.match((await reachProblems({ group: SYNTHETIC_GROUP, census: syntheticCensus(), express, omissions: [] })).join('\n'), /reach: use <every path> from lib\/toy-omitted\/routes\.js:137 runs for/);
 });
 
 test('the layer-stack check compares the layers that run for the group, in order', DEADLINE, async () => {

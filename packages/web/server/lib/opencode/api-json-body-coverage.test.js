@@ -284,7 +284,7 @@ describe('API JSON body coverage', () => {
     expect(routes.length).toBeGreaterThan(250);
     const find = (method, routePath) => routes.find((route) => route.method === method && route.path === routePath);
     expect(find('patch', '/api/system/supabase-connection')).toMatchObject({ readsBody: true, parsed: true });
-    expect(find('post', '/api/runtime-service/desktop-host')).toMatchObject({ readsBody: true, parsed: true });
+    expect(find('post', '/api/question/:requestID/reply')).toMatchObject({ readsBody: true, parsed: true });
   });
 
   it('parses the JSON body of every /api route that reads req.body', () => {

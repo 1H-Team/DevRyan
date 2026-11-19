@@ -231,9 +231,7 @@ export const EDGE_STEPS = Object.freeze([
 ]);
 
 /** Layers the census records on the group's paths that no composed step installs, each with why. */
-export const REACH_OMISSIONS = Object.freeze([
-  { file: 'lib/runtime-service/routes.js', reason: 'requireRuntimeSession: the Electron runtime service only (registered when options.runtimeServiceController is passed; the group host is the web composition)' },
-]);
+export const REACH_OMISSIONS = Object.freeze([]);
 
 export const TAIL_STATUS = 599;
 export const TAIL_BODY = 'harness: the server tail (preview, terminal, OpenCode proxy, static files) is not composed\n';

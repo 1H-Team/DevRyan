@@ -114,8 +114,8 @@ is unsupported. `POST /api/devryan/tunnel/links` issues an owner link;
 `DELETE /api/devryan/tunnel/grants/:grantId` revokes an owner grant. Both require direct-local
 owner authentication and CSRF protection.
 
-Electron enrolls an absent local owner through its in-process server handle or
-authenticated runtime-service bootstrap. Standalone web owners explicitly run
+Electron enrolls an absent local owner through its in-process server handle.
+Standalone web owners explicitly run
 `openchamber enroll-owner --port <port>` with the matching `DEVRYAN_DATA_DIR`.
 The private filesystem challenge expires after two minutes and is consumed only
 by a loopback, same-origin POST. Visiting localhost cannot enroll an owner. Missing
