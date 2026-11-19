@@ -10,7 +10,7 @@ an HTTP response or event stream does not establish completion.
 
 ## Entrypoints and structure
 - `packages/web/server/lib/notifications/index.js`: public entrypoint imported by `packages/web/server/index.js`.
-- `packages/web/server/lib/notifications/routes.js`: route registration for push, visibility, and session status/attention endpoints.
+- `packages/web/server/lib/notifications/routes.js`: route registration for push, visibility, the notification stream, session activity, message-sent and auto-accept endpoints.
 - `packages/web/server/lib/notifications/push-runtime.js`: push subscription persistence, VAPID initialization, and UI visibility runtime.
 - `packages/web/server/lib/notifications/emitter-runtime.js`: desktop/stdout + UI SSE notification emission runtime.
 - `packages/web/server/lib/notifications/runtime.js`: trigger runtime for OpenCode event-driven notification fanout.
@@ -33,13 +33,6 @@ an HTTP response or event stream does not establish completion.
   - `POST /api/push/visibility`
   - `GET /api/push/visibility`
   - `GET /api/session-activity`
-  - `GET /api/sessions/snapshot`
-  - `GET /api/sessions/status`
-  - `GET /api/sessions/:id/status`
-  - `GET /api/sessions/attention`
-  - `GET /api/sessions/:id/attention`
-  - `POST /api/sessions/:id/view`
-  - `POST /api/sessions/:id/unview`
   - `POST /api/sessions/:id/message-sent`
 
 ### Trigger runtime API (runtime.js)

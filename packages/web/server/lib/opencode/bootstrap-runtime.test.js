@@ -84,12 +84,6 @@ const createTestApp = ({ desktopCallbacks = true } = {}) => {
     normalizeTunnelSessionTtlMs: (value) => value,
     sessionRuntime: {
       getSessionActivitySnapshot: vi.fn(),
-      getSessionStateSnapshot: vi.fn(),
-      getSessionAttentionSnapshot: vi.fn(),
-      getSessionState: vi.fn(),
-      getSessionAttentionState: vi.fn(),
-      markSessionViewed: vi.fn(),
-      markSessionUnviewed: vi.fn(),
       markUserMessageSent: vi.fn(),
     },
     multiUserRuntime,
