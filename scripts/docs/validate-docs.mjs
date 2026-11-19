@@ -9,12 +9,14 @@ import { validateBunRunScripts } from "./bun-run-scripts.mjs"
 import { validateExportSections } from "./export-sections.mjs"
 import { validateEnvTokens } from "./env-tokens.mjs"
 import { DRIFT_CHECKS, compareWithBaseline, describeEntry, pruneBaseline, readBaseline } from "./known-drift.mjs"
+import { compareUndocumented, describeUndocumented, productionEnvReads, pruneUndocumentedBaseline, readUndocumentedBaseline, staleLiteralAllowlist, undocumentedEnvReads } from "./env-readers.mjs"
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..")
 const docsRoot = path.join(repoRoot, "packages", "docs")
 const contentRoot = path.join(docsRoot, "content", "docs")
 const sidebarPath = path.join(docsRoot, "sidebar.config.json")
 const baselinePath = path.join(import.meta.dirname, "known-drift.json")
+const undocumentedBaselinePath = path.join(import.meta.dirname, "known-undocumented-env.json")
 
 // Read-only, except `--prune`, which deletes baseline entries that no longer occur.
 const args = process.argv.slice(2)
@@ -94,6 +96,29 @@ function checkDrift(repositoryFiles) {
   return errors
 }
 
+// Reverse env check (env-readers.mjs): a variable production code reads must be
+// named in full in a document. Its own shrink-only baseline lists `{ name, reason }`.
+function checkUndocumentedEnv(repositoryFiles) {
+  const files = repositoryFiles.filter((file) => !isHistoricalDocument(file))
+  const relativeBaseline = toPosix(path.relative(repoRoot, undocumentedBaselinePath))
+  const baseline = readUndocumentedBaseline(undocumentedBaselinePath)
+  const reads = productionEnvReads(repoRoot)
+  const { added, stale, known } = compareUndocumented(undocumentedEnvReads(repoRoot, files, { reads }), baseline)
+  const errors = []
+  for (const literal of staleLiteralAllowlist(reads)) {
+    errors.push(`scripts/docs/env-readers.mjs: NOT_ENVIRONMENT_LITERALS lists ${literal}, which no production source contains any more; delete the entry`)
+  }
+  if (prune && stale.length > 0) {
+    pruneUndocumentedBaseline(undocumentedBaselinePath, baseline, stale)
+    for (const entry of stale) console.log(`Pruned from ${relativeBaseline}: ${entry.name}`)
+  } else {
+    for (const entry of stale) errors.push(`${relativeBaseline}: ${entry.name} is documented or no longer read, delete it (or run \`bun run docs:validate --prune\`)`)
+  }
+  console.log(`Docs drift env-reverse: ${added.length} new, ${known.length} known (${baseline.length - (prune ? stale.length : 0)} in baseline); ${reads.size} variables read by ${reads.scanned.length} production sources`)
+  for (const entry of added) errors.push(`[env-reverse] ${describeUndocumented(entry)} (${relativeBaseline} only shrinks)`)
+  return errors
+}
+
 async function run() {
   const filePaths = (await walk(contentRoot)).filter((p) => p.endsWith(".mdx"))
   const routeSet = new Set()
@@ -132,6 +157,7 @@ async function run() {
   for (const warning of repository.warnings) console.warn(`Docs warning: ${warning}`)
   errors.push(...docRetentionErrorMessages(repoRoot))
   errors.push(...checkDrift(repositoryFiles))
+  errors.push(...checkUndocumentedEnv(repositoryFiles))
 
   if (errors.length > 0) {
     console.error("Docs validation failed:")

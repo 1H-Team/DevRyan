@@ -64,3 +64,20 @@ that file, and every `DEVRYAN_*`, `OPENCHAMBER_*` or `OPENCODE_*` token occurs
 in non-Markdown code. Known drift is listed in `scripts/docs/known-drift.json`,
 which only shrinks: new drift fails, and so does an entry that no longer occurs
 until it is deleted (`bun run docs:validate --prune` deletes exactly those).
+
+The other direction is checked too (`scripts/docs/env-readers.mjs`): every
+`DEVRYAN_*` (or its `OPENCHAMBER_*` alias) and `OPENCODE_*` variable that
+production code under `packages/` reads or sets (not tests, fixtures, the legacy
+`packages/desktop`, or build and development scripts) must be named in full in
+some current document; a family name such as `DEVRYAN_LEDGER_*` does not count.
+Comments are ignored. Besides direct reads (`env.X`, `env['X']`, destructuring,
+helpers and native `getenv`), it follows same-file constants, lists or maps of
+names read through a computed key, shell text in strings (`$X`), and, for
+`DEVRYAN_`/`OPENCHAMBER_` names, any string literal that is exactly such a name.
+A literal of that shape that is not a variable (an error code) goes in
+`NOT_ENVIRONMENT_LITERALS` in that file, with its reason. It does not see names
+assembled at run time or another file's constants of other prefixes. The failure
+names the variable and the file and line that reads it, and says to describe it
+in [`docs/ENVIRONMENT.md`](../../docs/ENVIRONMENT.md) or the package document
+that owns it. Its baseline, `scripts/docs/known-undocumented-env.json`, holds
+`{ name, reason }` entries and only shrinks the same way.
