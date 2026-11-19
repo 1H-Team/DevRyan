@@ -566,7 +566,7 @@ describe('managed-user route policy coverage', () => {
       const byRole = {};
       for (const role of ROLES) {
         const probe = (method) => probeManagedDecision({
-          harness, gate: gate.handlers[0], method, routePath: entry.path, principal: harness.principals[role],
+          gate: gate.handlers[0], method, routePath: entry.path, principal: harness.principals[role],
         });
         if (!entry.path.startsWith('/api')) {
           byRole[role] = { decision: OUTSIDE };
@@ -721,12 +721,12 @@ describe('managed-user route policy coverage', () => {
     const handler = gate.handlers[0];
     for (const role of ROLES) {
       for (const method of ['GET', 'POST', 'DELETE']) {
-        const result = await probeManagedDecision({ harness, gate: handler, method, routePath: unlisted, principal: harness.principals[role] });
+        const result = await probeManagedDecision({ gate: handler, method, routePath: unlisted, principal: harness.principals[role] });
         expect(result, `${role} ${method}`).toMatchObject({ decision: 'allow' });
       }
     }
     // Without a signed-in principal the same path is refused.
-    const anonymous = await probeManagedDecision({ harness, gate: handler, method: 'GET', routePath: unlisted, principal: { cookie: '' } });
+    const anonymous = await probeManagedDecision({ gate: handler, method: 'GET', routePath: unlisted, principal: { cookie: '' } });
     expect(anonymous).toMatchObject({ decision: 'deny', status: 401 });
   });
 });
