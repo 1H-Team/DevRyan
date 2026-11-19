@@ -40,12 +40,6 @@ export const createBootstrapRuntime = (dependencies) => {
       writeSseEvent,
       sessionRuntime,
       setPushInitialized,
-      fs,
-      os,
-      path,
-      server,
-      __dirname,
-      devryanDataDir,
       modelsDevApiUrl,
       modelsMetadataCacheTtl,
       fetchFreeZenModels,
@@ -116,16 +110,8 @@ export const createBootstrapRuntime = (dependencies) => {
     });
 
     registerDevRyanRoutes(app, {
-      fs,
-      os,
-      path,
-      process,
-      server,
-      __dirname,
-      devryanDataDir,
       modelsDevApiUrl,
       modelsMetadataCacheTtl,
-      readSettingsFromDiskMigrated,
       fetchFreeZenModels,
       getCachedZenModels,
     });
