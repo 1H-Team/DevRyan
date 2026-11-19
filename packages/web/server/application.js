@@ -1267,8 +1267,6 @@ async function constructWebHost(options = {}) {
     __dirname,
     express,
     resolveProjectDirectory,
-    buildOpenCodeUrl,
-    getOpenCodeAuthHeaders,
     readSettingsFromDiskMigrated,
     normalizePwaAppName,
     normalizePwaOrientation,
