@@ -1149,18 +1149,18 @@ _devryan() {
     '1:command:->command' \\
     '*::arg:->args'
 
-  case \$state in
+  case $state in
     command)
       _describe 'command' commands
       ;;
     args)
-      case \$words[1] in
+      case $words[1] in
         tunnel)
           if (( CURRENT == 2 )); then
             _describe 'tunnel command' tunnel_commands
-          elif [[ \$words[2] == "profile" ]] && (( CURRENT == 3 )); then
+          elif [[ $words[2] == "profile" ]] && (( CURRENT == 3 )); then
             _describe 'profile action' profile_commands
-          elif [[ \$words[2] == "completion" ]] && (( CURRENT == 3 )); then
+          elif [[ $words[2] == "completion" ]] && (( CURRENT == 3 )); then
             _values 'shell' bash zsh fish
           fi
           ;;

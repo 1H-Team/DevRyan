@@ -11,7 +11,7 @@ const migration = readFileSync(
 
 describe('error log remediation migration', () => {
   it('matches only confirmed routine signatures and excludes real browser host failures', () => {
-    expect(migration).toContain('skill\\s+"[^\"]+"\\s+not found');
+    expect(migration).toContain('skill\\s+"[^"]+"\\s+not found');
     expect(migration).toContain('managed task barrier');
     expect(migration).toContain('result is already acknowledged');
     expect(migration).toContain('filepath|oldstring');

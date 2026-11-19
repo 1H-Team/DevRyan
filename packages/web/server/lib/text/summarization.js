@@ -287,7 +287,7 @@ export function sanitizeForTTS(text) {
     .replace(/^\s*[$#>]\s*/gm, '')
     .replace(/[|&;<>]/g, ' ')
     .replace(/\\/g, '')
-    .replace(/[\[\]{}()]/g, '')
+    .replace(/[[\]{}()]/g, '')
     .replace(/["']/g, '')
     .replace(/https?:\/\/[^\s]+/g, ' a link ')
     .replace(/\/[\w\-./]+/g, '')
