@@ -41,7 +41,7 @@ const resolveCanonicalPathFromNearestExistingAncestor = async (value) => {
   }
 };
 
-export const resolveCanonicalManagedPath = async (assignment, candidate) => {
+const resolveCanonicalManagedPath = async (assignment, candidate) => {
   const lexicalCandidate = path.resolve(candidate);
   const lexicalRoot = [assignment.repositoryPath, assignment.worktreeContainerPath]
     .filter((value) => typeof value === 'string' && value.trim())

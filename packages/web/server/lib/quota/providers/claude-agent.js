@@ -15,7 +15,7 @@ const SEVEN_DAY_WINDOW_SECONDS = 7 * 24 * 60 * 60;
 const LABELS = Object.freeze({ five_hour: '5h', seven_day: '7d', seven_day_opus: '7d-opus', seven_day_sonnet: '7d-sonnet' });
 
 /** Maps the recorded windows to the shared usage shape; `utilization` is a 0–1 fraction. */
-export const buildClaudeAgentUsage = usage => {
+const buildClaudeAgentUsage = usage => {
   const windows = {};
   for (const [key, label] of Object.entries(LABELS)) {
     const window = usage?.windows?.[key];

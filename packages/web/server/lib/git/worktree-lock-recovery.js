@@ -4,7 +4,7 @@ import { rm, stat } from 'node:fs/promises';
 export const WORKTREE_INDEX_LOCK_RETRY_LIMIT = 1;
 export const WORKTREE_INDEX_LOCK_RETRY_DELAY_MS = 100;
 
-export const waitForWorktreeLock = (delayMs = WORKTREE_INDEX_LOCK_RETRY_DELAY_MS) => (
+const waitForWorktreeLock = (delayMs = WORKTREE_INDEX_LOCK_RETRY_DELAY_MS) => (
   new Promise((resolve) => setTimeout(resolve, delayMs))
 );
 
@@ -20,7 +20,7 @@ export const isIndexLockError = (error) => {
     || /(?:could not|unable to) write (?:a )?new index file/i.test(text);
 };
 
-export const resolveWorktreeLockPath = async (directory, runGitCommandOrThrow) => {
+const resolveWorktreeLockPath = async (directory, runGitCommandOrThrow) => {
   const result = await runGitCommandOrThrow(
     directory,
     ['rev-parse', '--git-path', 'index.lock'],
@@ -33,7 +33,7 @@ export const resolveWorktreeLockPath = async (directory, runGitCommandOrThrow) =
   return path.isAbsolute(resolved) ? path.normalize(resolved) : path.resolve(directory, resolved);
 };
 
-export const readFileIdentity = async (filePath) => {
+const readFileIdentity = async (filePath) => {
   try {
     const value = await stat(filePath);
     return {

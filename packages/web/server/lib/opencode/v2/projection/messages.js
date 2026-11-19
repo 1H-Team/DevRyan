@@ -318,7 +318,7 @@ export const toV1UserParts = (message, sessionID) => {
  * @param {Record<string, unknown>} message
  * @param {{ sessionID: string, created: number | undefined, agent?: string, model?: V2ModelRef }} context
  */
-export const toV1UserInfo = (message, context) => {
+const toV1UserInfo = (message, context) => {
   const selection = readDevryanPromptSelection(message.metadata);
   return {
     id: message.id,
@@ -490,7 +490,7 @@ export const toV1AssistantParts = (message, context) => {
  * @param {AssistantRecordContext} context
  * @returns {V1MessageRecord}
  */
-export const toV1AssistantRecord = (message, context) => ({
+const toV1AssistantRecord = (message, context) => ({
   info: toV1AssistantInfo(message, context),
   parts: toV1AssistantParts(message, context),
 });
@@ -573,7 +573,7 @@ export const toV1CompactionRecords = (message, context) => {
  * @param {AssistantRecordContext & { agent?: string, model?: V2ModelRef }} context
  * @returns {V1MessageRecord}
  */
-export const toV1ShellRecord = (message, context) => {
+const toV1ShellRecord = (message, context) => {
   const messageID = String(message.id);
   const { sessionID } = context;
   const callID = isNonEmptyString(message.shellID) ? message.shellID : messageID;

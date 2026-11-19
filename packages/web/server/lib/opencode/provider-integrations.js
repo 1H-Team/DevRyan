@@ -26,11 +26,11 @@ const normalizeProviderId = (providerId) => (
   typeof providerId === 'string' ? providerId.trim().toLowerCase() : ''
 );
 
-export const isGitHubCopilotProviderId = (providerId) => (
+const isGitHubCopilotProviderId = (providerId) => (
   GITHUB_COPILOT_PROVIDER_ALIASES.includes(normalizeProviderId(providerId))
 );
 
-export const mergeGitHubCopilotAuthAliases = (auth) => {
+const mergeGitHubCopilotAuthAliases = (auth) => {
   if (!isPlainObject(auth)) {
     return auth;
   }

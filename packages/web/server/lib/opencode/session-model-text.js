@@ -39,7 +39,7 @@ export const classifySessionModelProviderError = (error) => {
 /** The helper call fields carried by a resolved helper selection
  * (`resolveHelperSelection` or the default). One mapping for every caller, so
  * the admitted tuple, including its reasoning variant, cannot drift per caller. */
-export const helperSelectionFields = selection => selection ? {
+const helperSelectionFields = selection => selection ? {
   providerID: selection.providerID, modelID: selection.modelID,
   ...(typeof selection.variant === 'string' && selection.variant ? { variant: selection.variant } : {}),
   ...(selection.selectionMode ? { selectionMode: selection.selectionMode, selectionRevision: selection.selectionRevision ?? selection.revision } : {}),

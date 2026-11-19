@@ -16,7 +16,7 @@ import {
   sharedFreeZenCooldowns,
 } from '@devryan/shared-runtime';
 
-export function buildSummarizationPrompt(maxLength, mode = 'tts') {
+function buildSummarizationPrompt(maxLength, mode = 'tts') {
   if (mode === 'title') {
     return `Generate a concise title for this coding session.
 
@@ -156,7 +156,7 @@ const backoffDelayMs = (baseMs, attempt) => {
 const ZEN_MODEL_COOLDOWN_MS = FREE_ZEN_LONG_COOLDOWN_MS;
 const ZEN_TRANSIENT_MODEL_COOLDOWN_MS = FREE_ZEN_SHORT_COOLDOWN_MS;
 
-export const isRateLimitedZenError = (error) => (
+const isRateLimitedZenError = (error) => (
   error instanceof ZenApiError && error.status === 429
 );
 

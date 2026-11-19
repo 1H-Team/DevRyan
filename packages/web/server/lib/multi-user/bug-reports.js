@@ -292,7 +292,7 @@ const normalizePageLimit = (raw, maximum = MAX_PAGE_LIMIT) => {
 // PostgREST treats these as filter grammar, so they are stripped rather than escaped.
 const escapeLikePattern = (value) => value.replace(/[(),*\\"]/g, ' ').trim();
 
-export const validateErrorLogSearch = (raw) => {
+const validateErrorLogSearch = (raw) => {
   if (raw === undefined || raw === null || raw === '') return { value: null };
   if (typeof raw !== 'string') return { error: 'q must be plain text' };
   const text = raw.trim();
@@ -385,14 +385,14 @@ const reportCursorFilter = (cursor) =>
 const errorCursorFilter = (cursor) =>
   `(created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},event_id.lt.${cursor.eventId}))`;
 
-export const isBugReportsSchemaError = (error) => {
+const isBugReportsSchemaError = (error) => {
   if (!(error instanceof SupabaseRequestError)) return false;
   const code = String(error.payload?.code || '');
   const detail = `${error.message || ''} ${error.payload?.message || ''} ${error.payload?.details || ''}`;
   return (code === 'PGRST205' || code === '42P01') && /bug_reports/i.test(detail);
 };
 
-export const isErrorDiagnosticsSchemaError = (error) => {
+const isErrorDiagnosticsSchemaError = (error) => {
   if (!(error instanceof SupabaseRequestError)) return false;
   const code = String(error.payload?.code || '');
   const detail = `${error.message || ''} ${error.payload?.message || ''} ${error.payload?.details || ''}`;
@@ -407,7 +407,7 @@ const requiredErrorLogsMigration = (error) => {
     : ERROR_DIAGNOSTICS_MIGRATION;
 };
 
-export const isErrorLogClearSchemaError = (error) => {
+const isErrorLogClearSchemaError = (error) => {
   if (!(error instanceof SupabaseRequestError)) return false;
   const code = String(error.payload?.code || '');
   const detail = `${error.message || ''} ${error.payload?.message || ''} ${error.payload?.details || ''}`;

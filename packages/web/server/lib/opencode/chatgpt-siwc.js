@@ -12,10 +12,10 @@ export const CHATGPT_SIWC_PLAN_SCOPE = 'chatgpt.tokens.use.direct';
 const LEGACY_CODEX_METHODS = new Set(['chatgpt-browser', 'chatgpt-headless']);
 const jwks = createRemoteJWKSet(new URL(CHATGPT_SIWC_JWKS_URL));
 
-export const isChatgptSiwcMethodId = (methodID) => methodID === CHATGPT_SIWC_METHOD_ID;
+const isChatgptSiwcMethodId = (methodID) => methodID === CHATGPT_SIWC_METHOD_ID;
 export const isLegacyCodexChatgptMethodId = (methodID) => LEGACY_CODEX_METHODS.has(methodID);
 
-export function failSiwc(code, status = 409) {
+function failSiwc(code, status = 409) {
   return Object.assign(new Error(code), { code, status, statusCode: status });
 }
 

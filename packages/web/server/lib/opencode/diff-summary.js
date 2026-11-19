@@ -32,7 +32,7 @@ export const stripMessageDiffSummary = (record) => {
 };
 
 /** Remove patch bodies from one diff entry, preserving its metadata. */
-export const stripDiffEntryContent = (entry) => {
+const stripDiffEntryContent = (entry) => {
   if (!isRecord(entry)) return entry;
   let stripped = entry;
   for (const field of DIFF_CONTENT_FIELDS) {

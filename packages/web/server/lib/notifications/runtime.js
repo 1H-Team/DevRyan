@@ -17,7 +17,7 @@ const HIDDEN_NOTIFICATION_SESSION_TITLES = new Set([
   'DevRyan text generation (internal)',
 ]);
 
-export const isUserVisibleNotificationSessionInfo = (sessionInfo) => {
+const isUserVisibleNotificationSessionInfo = (sessionInfo) => {
   if (!sessionInfo || typeof sessionInfo !== 'object') return false;
   const title = typeof sessionInfo.title === 'string'
     ? sessionInfo.title.trim()

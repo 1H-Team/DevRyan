@@ -3,7 +3,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-export const supabaseConnectionPath = (dataDirectory) => path.join(dataDirectory, 'supabase-connection.json');
+const supabaseConnectionPath = (dataDirectory) => path.join(dataDirectory, 'supabase-connection.json');
 
 export function readSupabaseConnectionPreference(dataDirectory) {
   const filename = supabaseConnectionPath(dataDirectory);

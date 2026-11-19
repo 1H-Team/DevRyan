@@ -14,7 +14,7 @@ const identity = value => typeof value === 'string' && /^[a-zA-Z0-9_.:/-]{1,256}
 // Release identities travel with the managed files. Absolute installation paths
 // remain in the two-sided runtime inventory check, but cannot identify a release
 // across the private QA installation and the user's managed installation.
-export const duplicatePluginReleaseIdentity = entries => Array.isArray(entries) && entries.length > 0
+const duplicatePluginReleaseIdentity = entries => Array.isArray(entries) && entries.length > 0
   && entries.every(entry => identity(entry?.name) && validHash(entry?.contentHash))
   ? entries.map(({ name, contentHash }) => ({ name, contentHash })) : null;
 const accepted = evidence => validHash(evidence?.reportHash) && evidence.correctness === true

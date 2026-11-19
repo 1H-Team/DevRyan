@@ -169,7 +169,7 @@ const buildModelApi = (row, id) => {
   };
 };
 
-export const enrichGitHubCopilotModelEntry = (entry, modelId) => {
+const enrichGitHubCopilotModelEntry = (entry, modelId) => {
   const id = typeof modelId === 'string' && modelId.trim()
     ? modelId.trim()
     : (typeof entry?.id === 'string' ? entry.id.trim() : '');

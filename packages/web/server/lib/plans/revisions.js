@@ -71,7 +71,7 @@ export const resolveSessionPlanRevision = async ({
 
 export const MAX_PLAN_BYTES = 256 * 1024;
 const versionOf = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
-export const validatePlanText = (text) => {
+const validatePlanText = (text) => {
   if (typeof text !== 'string' || !text.trim()) throw planError(400, 'plan_text_required', 'Plan Markdown must not be blank');
   if (Buffer.byteLength(text) > MAX_PLAN_BYTES) throw planError(413, 'plan_text_too_large', 'Plan Markdown exceeds 256 KiB');
 };

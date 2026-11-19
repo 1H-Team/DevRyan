@@ -145,7 +145,7 @@ const fieldOptions = (field) => (
 const isAskedField = (field) => isRecord(field) && field.hidden !== true;
 
 /** Only an absolute http(s) URL without credentials is ever shown as a link. */
-export const isQuestionLinkUrl = (value) => {
+const isQuestionLinkUrl = (value) => {
   if (typeof value !== 'string' || value.length > 8192) return false;
   try {
     const url = new URL(value);

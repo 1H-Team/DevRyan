@@ -66,7 +66,7 @@ const readLocationMode = ({ queryNames, pathParams, body }) => {
   return 'none';
 };
 
-export const compareOpenCodeV2Operations = (left, right) => {
+const compareOpenCodeV2Operations = (left, right) => {
   if (left.template !== right.template) return left.template < right.template ? -1 : 1;
   if (left.method === right.method) return 0;
   return left.method < right.method ? -1 : 1;

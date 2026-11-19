@@ -113,7 +113,7 @@ export function readDevRyanSidecar(userConfigPath) {
   return legacy || canonical ? { ...legacy, ...canonical } : null;
 }
 
-export function writeDevRyanSidecar(data, userConfigPath) {
+function writeDevRyanSidecar(data, userConfigPath) {
   if (!isPlainObject(data)) {
     throw new Error('DevRyan sidecar data must be a plain object');
   }

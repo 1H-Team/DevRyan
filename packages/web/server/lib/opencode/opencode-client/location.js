@@ -38,7 +38,7 @@ const hasControlCharacter = (value) => {
  * @param {string} operation
  * @returns {string | null}
  */
-export const normalizeLocationDirectory = (directory, operation) => {
+const normalizeLocationDirectory = (directory, operation) => {
   if (directory === undefined || directory === null) return null;
   if (typeof directory !== 'string') {
     throw createOpenCodeClientError(OPENCODE_CLIENT_ERROR_CODES.locationInvalid, 400,

@@ -192,7 +192,7 @@ export async function checkCloudflaredAvailable() {
   return { available: false, path: null, version: null };
 }
 
-export function printCloudflareTunnelInstallHelp() {
+function printCloudflareTunnelInstallHelp() {
   console.log(`
 ╔══════════════════════════════════════════════════════════════════╗
 ║  Cloudflare tunnel requires 'cloudflared' to be installed        ║

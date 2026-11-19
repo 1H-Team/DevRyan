@@ -70,7 +70,7 @@ export const authorizeSavedApprovalDirectory = async (principal, directory) => {
 };
 
 /** @param {unknown} value */
-export const isSavedApprovalId = (value) => typeof value === 'string' && ID_PATTERN.test(value);
+const isSavedApprovalId = (value) => typeof value === 'string' && ID_PATTERN.test(value);
 
 /**
  * The update body: `action` and/or `resource`, nothing else.
