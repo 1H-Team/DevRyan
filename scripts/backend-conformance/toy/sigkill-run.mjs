@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createBackendRun } from '../run-scratch.mjs';
-import { groupAlive, groupMembers, signalGroup } from '../tree.mjs';
+import { groupAlive, groupMembers, liveOnly, processTable, signalGroup } from '../tree.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = path.resolve(HERE, '../../..');
@@ -29,7 +29,9 @@ export async function until(test, what, { ms = 60_000, context = () => '' } = {}
 }
 
 /**
- * `{ mode, arm, keeperToo, parent }` -> what was seen: `{ frozenAtKill, keeperGone, groupGone, runLeft, sweptRun }`.
+ * `{ mode, arm, keeperToo, parent }` -> what was seen: `{ frozenAtKill, frozenAfterKill, groupGoneAlone, runLeft,
+ * groupsAfterSweep (groups with a member that can still run), zombieGroupsAfterSweep (groups with only unreaped
+ * zombies), runAfterSweep, keepersAlive, describe }`.
  * mode: hang | frozen | restart; arm: fake | reference.
  */
 export async function sigkillOnce({ mode, arm = 'fake', keeperToo = false, parent }) {
@@ -81,8 +83,16 @@ export async function sigkillOnce({ mode, arm = 'fake', keeperToo = false, paren
     // The next run in the same parent: its sweep kills what the killed run recorded, then removes the directory.
     const next = createBackendRun({ owner: 'backend-conformance-sigkill-next', signals: 'exit', parent });
     next.finish('passed');
-    const groupsAfterSweep = groups().filter((pgid) => groupAlive(pgid));
+    // The sweep is synchronous: when it returns, no member of a recorded group can still run. That is what
+    // "left" means here. A killed member stays a zombie until its parent reaps it, and the harness that started
+    // it is dead, so that parent is init: Linux counts such a zombie as a member of its group until then
+    // (macOS does not), so asking whether the group exists right after the sweep races init. The members are
+    // read once, from one process table, and their states go into the description.
+    const table = processTable();
+    const afterSweep = groups().map((pgid) => ({ pgid, members: groupMembers(pgid, table) })).filter((group) => group.members.length > 0);
+    const groupsAfterSweep = afterSweep.filter((group) => liveOnly(group.members).length > 0).map((group) => group.pgid);
+    const zombieGroupsAfterSweep = afterSweep.length - groupsAfterSweep.length;
     const runAfterSweep = fs.existsSync(waiting.run);
-    return { mode, arm, keeperToo, frozenAtKill, frozenAfterKill, groupGoneAlone, runLeft, groupsAfterSweep, runAfterSweep, keepersAlive: keepers().filter(alive), describe: describe() };
+    return { mode, arm, keeperToo, frozenAtKill, frozenAfterKill, groupGoneAlone, runLeft, groupsAfterSweep, zombieGroupsAfterSweep, runAfterSweep, keepersAlive: keepers().filter(alive), describe: `${describe()}; members after the sweep: ${JSON.stringify(afterSweep)}` };
   } finally { cleanUp(); }
 }

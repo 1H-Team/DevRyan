@@ -32,7 +32,7 @@ async function repeated(t, arm) {
     if (result.keeperToo && result.mode !== 'hang') assert.equal(result.frozenAfterKill, true, `${where}: still stopped without the keeper`);
     assert.deepEqual([result.groupsAfterSweep, result.runAfterSweep, result.keepersAlive], [[], false, []], where);
   }
-  t.diagnostic(`${arm}: ${results.length} SIGKILLs, every arm group and keeper gone`);
+  t.diagnostic(`${arm}: ${results.length} SIGKILLs, every arm group and keeper gone; ${results.filter((result) => result.zombieGroupsAfterSweep > 0).length} sweeps returned before init had reaped a killed member`);
   status = 'passed';
 }
 
