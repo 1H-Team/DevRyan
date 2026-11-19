@@ -16,7 +16,7 @@ import { beginSessionCreationTrace, isSessionCreateRequest } from './lib/opencod
 import express from 'express';
 import compression from 'compression';
 import path from 'path';
-import { spawn, spawnSync } from 'child_process';
+import { spawn } from 'child_process';
 import fs from 'fs';
 import http from 'http';
 import net from 'net';
@@ -374,15 +374,12 @@ async function constructWebHost(options = {}) {
 
   let notificationTemplateRuntime = null;
 
-  const createTimeoutSignal = (...args) => notificationTemplateRuntime.createTimeoutSignal(...args);
-  const formatProjectLabel = (...args) => notificationTemplateRuntime.formatProjectLabel(...args);
   const resolveNotificationTemplate = (...args) => notificationTemplateRuntime.resolveNotificationTemplate(...args);
   const shouldApplyResolvedTemplateMessage = (...args) => notificationTemplateRuntime.shouldApplyResolvedTemplateMessage(...args);
   const fetchFreeZenModels = (...args) => notificationTemplateRuntime.fetchFreeZenModels(...args);
   const resolveZenModel = (...args) => notificationTemplateRuntime.resolveZenModel(...args);
   const resolveZenModelNonBlocking = (...args) => notificationTemplateRuntime.resolveZenModelNonBlocking(...args);
   const validateZenModelAtStartup = (...args) => notificationTemplateRuntime.validateZenModelAtStartup(...args);
-  const extractTextFromParts = (...args) => notificationTemplateRuntime.extractTextFromParts(...args);
   const extractLastMessageText = (...args) => notificationTemplateRuntime.extractLastMessageText(...args);
   const fetchSessionMessages = (...args) => notificationTemplateRuntime.fetchSessionMessages(...args);
   const fetchLastAssistantMessageText = (...args) => notificationTemplateRuntime.fetchLastAssistantMessageText(...args);
@@ -533,7 +530,6 @@ async function constructWebHost(options = {}) {
   const removePushSubscription = (...args) => pushRuntime.removePushSubscription(...args);
   const sendPushToAllUiSessions = (...args) => pushRuntime.sendPushToAllUiSessions(...args);
   const updateUiVisibility = (...args) => pushRuntime.updateUiVisibility(...args);
-  const isAnyUiVisible = (...args) => pushRuntime.isAnyUiVisible(...args);
   const isUiVisible = (...args) => pushRuntime.isUiVisible(...args);
   const ensurePushInitialized = (...args) => pushRuntime.ensurePushInitialized(...args);
   const setPushInitialized = (...args) => pushRuntime.setPushInitialized(...args);
@@ -1484,7 +1480,6 @@ async function constructWebHost(options = {}) {
     if(!nativeRuntime?.isReady()||!nativeRuntime.getConfigurationSnapshot()?.locations.some(location=>location.directory===directory))throw Object.assign(new Error('native_runtime_not_ready'),{code:'native_runtime_not_ready',statusCode:503});
   };
   const waitForOpenCodeReady = (...args) => openCodeLifecycleRuntime.waitForOpenCodeReady(...args);
-  const waitForAgentPresence = (...args) => openCodeLifecycleRuntime.waitForAgentPresence(...args);
   const commandDeadlineRuntime = createWebCommandDeadlineRuntime({
     openCodeClient,
     store: harnessRuntime.commandDeadlineStore,
@@ -1865,8 +1860,6 @@ async function constructWebHost(options = {}) {
     });
   });
 
-  const fetchAgentsSnapshot = (...args) => serverUtilsRuntime.fetchAgentsSnapshot(...args);
-  const fetchProvidersSnapshot = (...args) => serverUtilsRuntime.fetchProvidersSnapshot(...args);
   const setupProxy = (...args) => serverUtilsRuntime.setupProxy(...args);
   const gracefulShutdownRuntime = createGracefulShutdownRuntime({
     process,

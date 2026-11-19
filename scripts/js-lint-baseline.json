@@ -35,7 +35,6 @@
     {"file":"packages/web/bin/cli.js","rule":"no-unused-vars","count":2},
     {"file":"packages/web/bin/cli.js","rule":"no-useless-escape","count":4},
     {"file":"packages/web/bin/cli.js","rule":"prefer-const","count":1},
-    {"file":"packages/web/server/application.js","rule":"no-unused-vars","count":8},
     {"file":"packages/web/server/application.js","rule":"prefer-const","count":1},
     {"file":"packages/web/server/default-config/plugins/council-session.test.js","rule":"no-unused-vars","count":1},
     {"file":"packages/web/server/default-config/plugins/github-copilot-models.mjs","rule":"no-dupe-keys","count":1},
