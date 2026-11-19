@@ -8,21 +8,5 @@
 export {
   listConfiguredQuotaProviders,
   fetchQuotaForProvider,
-  resolveProviderId,
-  fetchOpenaiQuota,
-  fetchGoogleQuota,
-  fetchCodexQuota,
-  fetchCursorAcpQuota,
-  fetchCopilotQuota,
-  fetchCopilotAddonQuota,
-  fetchKimiQuota,
-  fetchOpenRouterQuota,
-  fetchZaiQuota,
-  fetchNanoGptQuota,
-  fetchMinimaxCodingPlanQuota,
-  fetchMinimaxCnCodingPlanQuota,
-  fetchOllamaCloudQuota,
-  fetchOpenCodeZenQuota,
-  fetchOpenCodeGoQuota,
-  fetchZhipuaiQuota
+  resolveProviderId
 } from './providers/index.js';

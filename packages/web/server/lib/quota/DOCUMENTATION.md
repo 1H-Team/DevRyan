@@ -78,9 +78,6 @@ OpenCode Zen, z.ai, Kimi, Codex, xAI, DeepSeek, and OpenCode Go host modules are
 
 xAI requests the pinned CLI billing endpoint with manual redirect handling. Redirects are rejected, and an HTTP 401 permits one refresh-and-retry when a refresh token and host persistence callback are available; otherwise the result asks the user to re-authenticate. A recognized weekly or monthly period with a valid reset timestamp and an omitted percentage is normalized as zero usage to account for protobuf default-value omission; an explicitly malformed percentage remains a warning. After billing succeeds, the shared adapter uses the effective OAuth access token for a bounded, best-effort request to the private `https://grok.com/prod_mc_billing.ConsumerUiSvc/GetRemainingResets` gRPC-Web method. It exposes only the number and expiry dates of valid banked resets through the existing reset-credit contract; provider token IDs remain private and redemption is intentionally unsupported. Empty inventories are omitted. Authentication, protocol, redirect, timeout, oversized-body, and parse failures preserve the successful billing result and add a sanitized warning. DeepSeek maps available currency balances to value-only rows because the API does not expose a percentage window.
 
-## Internal-only provider module
-- `providers/openai.js` exists for logic parity/reuse but is intentionally not registered for dispatcher ID routing.
-
 ## Anthropic active context
 
 `GET /api/session/:sessionID/context-usage` keeps its authenticated, normalized contract for web and Electron (managed principals must own the session), but no provider reports live context usage since the Meridian proxy was removed: it always answers `status: 'unavailable'` with `source: 'message-fallback'`, and the client derives context from messages.

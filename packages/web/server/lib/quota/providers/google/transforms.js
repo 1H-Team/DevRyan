@@ -28,7 +28,7 @@ export const parseGoogleRefreshToken = (rawRefreshToken) => {
   };
 };
 
-export const resolveGoogleWindow = () => ({ label: 'daily', seconds: GOOGLE_DAILY_WINDOW_SECONDS });
+const resolveGoogleWindow = () => ({ label: 'daily', seconds: GOOGLE_DAILY_WINDOW_SECONDS });
 
 export const transformQuotaBucket = (bucket, sourceId) => {
   const modelId = asNonEmptyString(bucket?.modelId);

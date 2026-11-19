@@ -41,15 +41,3 @@ export const resolveWindowSeconds = (limit) => {
   if (!unitSeconds) return null;
   return unitSeconds * limit.number;
 };
-
-export const resolveWindowLabel = (windowSeconds) => {
-  if (!windowSeconds) return 'tokens';
-  if (windowSeconds % 86400 === 0) {
-    const days = windowSeconds / 86400;
-    return days === 7 ? 'weekly' : `${days}d`;
-  }
-  if (windowSeconds % 3600 === 0) {
-    return `${windowSeconds / 3600}h`;
-  }
-  return `${windowSeconds}s`;
-};
