@@ -377,7 +377,6 @@ async function constructWebHost(options = {}) {
   const shouldApplyResolvedTemplateMessage = (...args) => notificationTemplateRuntime.shouldApplyResolvedTemplateMessage(...args);
   const fetchFreeZenModels = (...args) => notificationTemplateRuntime.fetchFreeZenModels(...args);
   const resolveZenModel = (...args) => notificationTemplateRuntime.resolveZenModel(...args);
-  const resolveZenModelNonBlocking = (...args) => notificationTemplateRuntime.resolveZenModelNonBlocking(...args);
   const validateZenModelAtStartup = (...args) => notificationTemplateRuntime.validateZenModelAtStartup(...args);
   const extractLastMessageText = (...args) => notificationTemplateRuntime.extractLastMessageText(...args);
   const fetchSessionMessages = (...args) => notificationTemplateRuntime.fetchSessionMessages(...args);
@@ -2726,8 +2725,6 @@ async function constructWebHost(options = {}) {
         openCodeWorkingDirectory = directory;
         syncToHmrState();
       },
-      restartOpenCode,
-      waitForOpenCodeReady,
       isExternalOpenCode: () => isExternalOpenCode || ENV_SKIP_OPENCODE_START,
       getPackagedAgentPrompts: () => openCodeLifecycleRuntime.getPackagedAgentPrompts(),
       restorePackagedAgentPrompt: (input) => openCodeLifecycleRuntime.restorePackagedAgentPrompt(input),
@@ -2737,10 +2734,7 @@ async function constructWebHost(options = {}) {
       getDevRyanEventClients: () => uiDevRyanEventClients,
       writeSseEvent,
       emitSyntheticOpenCodeEvent,
-      broadcastGlobalUiEvent,
-      resolveZenModel,
       xaiToolCatalogRuntime,
-      resolveZenModelNonBlocking,
       generateHelperText: request => nativeRuntime.generateHelperText(request),
       resolveHelperSelection: request => nativeRuntime.resolveHelperSelection(request),
       cursorTextRuntime: cursorSdkRuntime,
