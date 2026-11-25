@@ -179,6 +179,9 @@ pub struct Jobs {
     halt: Rc<dyn Fn()>,
     next_promise: Cell<u64>,
     draining: Cell<bool>,
+    /// How many checkpoints have ended: everything a unit of work runs, its
+    /// checkpoint included, sees one value ([`checkpoint_epoch`]).
+    epoch: Cell<u64>,
 }
 
 impl Jobs {
@@ -193,6 +196,7 @@ impl Jobs {
             halt,
             next_promise: Cell::new(0),
             draining: Cell::new(false),
+            epoch: Cell::new(0),
         })
     }
 
@@ -259,6 +263,7 @@ impl Jobs {
         }
         self.rejection_to_warn.set(false);
         self.draining.set(false);
+        self.epoch.set(self.epoch.get() + 1);
     }
 
     /// Whether a job or tick is queued.
@@ -387,6 +392,15 @@ fn jobs() -> Rc<Jobs> {
 /// The checkpoint of this thread's loop (see [`Jobs::checkpoint`]).
 pub fn checkpoint() {
     jobs().checkpoint();
+}
+
+/// The checkpoint epoch: how many checkpoints of this thread's loop have
+/// ended. A unit of work and the checkpoint after it see one value, the next
+/// unit a larger one; so an I/O promise that records it where it starts and
+/// finds it unchanged where it settles was settled in the checkpoint that
+/// started it, an order Node never gives (`node::io` panics on it).
+pub fn checkpoint_epoch() -> u64 {
+    jobs().epoch.get()
 }
 
 /// `queueMicrotask(job)`.

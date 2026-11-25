@@ -51,7 +51,7 @@ use std::sync::{Arc, Mutex};
 pub use refs::{Ref, valid_ref_name};
 pub use repo::Repository;
 pub use walk::{TreeRow, in_git_order, parse_tree_entries};
-pub use write::{LooseEnv, LooseFs, RealLooseFs, SystemLooseEnv, write_loose_object};
+pub use write::{LooseEnv, LooseFs, RealLooseFs, SystemLooseEnv, write_loose_object, zlib_deflate};
 
 use inflate::Source;
 use pack::{EntryKind, Pack, PackSet};

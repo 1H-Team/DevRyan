@@ -519,6 +519,38 @@ impl EventLoop {
         self.timers_phase();
     }
 
+    /// How many pieces of blocking work have not been delivered yet.
+    pub fn blocking_pending(&self) -> usize {
+        self.blocking.borrow().len()
+    }
+
+    /// Runs `work` on the pool; `deliver` gets its result in a unit of its
+    /// own on this loop, in the async context frame current here (a libuv
+    /// request's callback runs in the frame its request was made in).
+    fn submit<T: Send + 'static>(
+        &self,
+        work: impl FnOnce() -> T + Send + 'static,
+        deliver: impl FnOnce(T) + 'static,
+    ) {
+        let id = self.next_blocking.get() + 1;
+        self.next_blocking.set(id);
+        let frame = js::current_frame();
+        self.blocking.borrow_mut().insert(
+            id,
+            Box::new(move |result| {
+                let value = delivered::<T>(result);
+                js::with_frame(frame, move || deliver(value));
+            }),
+        );
+        let inbox = self.inbox.clone();
+        self.pool
+            .borrow_mut()
+            .get_or_insert_with(BlockingPool::new)
+            .run(Box::new(move || {
+                inbox.post(Unit::Done(id, guarded(work)));
+            }));
+    }
+
     fn blocking<T: Clone + Send + 'static, E: Clone + 'static>(
         &self,
         work: impl FnOnce() -> T + Send + 'static,
@@ -529,8 +561,7 @@ impl EventLoop {
         self.blocking.borrow_mut().insert(
             id,
             Box::new(move |result| {
-                let value = result.downcast::<T>().expect("the blocking work's result");
-                resolvers.fulfill(*value);
+                resolvers.fulfill(delivered::<T>(result));
             }),
         );
         let inbox = self.inbox.clone();
@@ -538,11 +569,39 @@ impl EventLoop {
             .borrow_mut()
             .get_or_insert_with(BlockingPool::new)
             .run(Box::new(move || {
-                let result: Box<dyn Any + Send> = Box::new(work());
-                inbox.post(Unit::Done(id, result));
+                inbox.post(Unit::Done(id, guarded(work)));
             }));
         promise
     }
+}
+
+/// A pool job that panicked: its message, carried to the loop thread.
+struct PoolPanic(String);
+
+/// Runs a pool job; a panic in it becomes a [`PoolPanic`] delivered to the
+/// loop (whose delivery panics there), so a dying job never leaves its
+/// promise unsettled. In the process the panic hook has already ended it
+/// (exit 70); in tests the loop thread fails loudly instead of waiting.
+fn guarded<T: Send + 'static>(work: impl FnOnce() -> T) -> Box<dyn Any + Send> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)) {
+        Ok(value) => Box::new(value),
+        Err(panic) => {
+            let message = panic
+                .downcast_ref::<&str>()
+                .map(|text| (*text).to_owned())
+                .or_else(|| panic.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| String::from("a panic without a message"));
+            Box::new(PoolPanic(message))
+        }
+    }
+}
+
+/// A job's result on the loop thread; a job that panicked panics here.
+fn delivered<T: 'static>(result: Box<dyn Any + Send>) -> T {
+    if let Some(PoolPanic(message)) = result.downcast_ref::<PoolPanic>() {
+        panic!("a pool job panicked: {message}");
+    }
+    *result.downcast::<T>().expect("the blocking work's result")
 }
 
 /// libuv's thread pool: four threads, jobs in submission order.
@@ -737,6 +796,17 @@ pub fn blocking<T: Clone + Send + 'static, E: Clone + 'static>(
     work: impl FnOnce() -> T + Send + 'static,
 ) -> Promise<T, E> {
     current().blocking(work)
+}
+
+/// Runs `work` on the four-thread pool; `deliver` gets its result in a unit
+/// of its own on this loop (never in the checkpoint that submitted it), in
+/// the frame current at the submission. `work` runs on another thread and
+/// only computes: it holds no promise, task or job, and settles nothing.
+pub fn submit<T: Send + 'static>(
+    work: impl FnOnce() -> T + Send + 'static,
+    deliver: impl FnOnce(T) + 'static,
+) {
+    current().submit(work, deliver);
 }
 
 /// `process.env[name]`, read per use.

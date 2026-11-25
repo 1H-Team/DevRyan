@@ -121,10 +121,22 @@ impl Fs for RealFs {
 /// the bundled rimraf `lstat`s again and unlinks, removing a directory that
 /// appeared in between with its children. No retries (`maxRetries: 0`).
 pub fn rm_force(target: &str) -> Result<()> {
+    rm(target, false, true)
+}
+
+/// `fs.promises.rm(path, { recursive, force })` in Node 24:
+/// `validateRmOptions` `lstat`s (a missing path is an error unless `force`;
+/// a directory is `ERR_FS_EISDIR` unless `recursive`), then the bundled
+/// rimraf removes it (`lstat`, `unlink`, or `rmdir` and the children, a
+/// path that went missing meanwhile being fine). No retries (`maxRetries: 0`).
+/// rimraf removes a directory's children in parallel; here they go one at a
+/// time in listing order, so of two failing children the first listed is
+/// the one reported (Node reports the first to fail).
+pub fn rm(target: &str, recursive: bool, force: bool) -> Result<()> {
     match fs::lstat(target) {
-        Err(error) if error.is_not_found() => {}
+        Err(error) if force && error.is_not_found() => {}
         Err(error) => return Err(error),
-        Ok(stat) if stat.is_directory() => {
+        Ok(stat) if stat.is_directory() && !recursive => {
             let mut error = Error::coded(
                 "ERR_FS_EISDIR",
                 &format!("Path is a directory: rm returned EISDIR (is a directory) {target}"),

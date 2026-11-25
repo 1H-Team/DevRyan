@@ -15,9 +15,12 @@
 //!   generators, `for await` and `yield*` on it; `emitter`: Node's
 //!   `EventEmitter`; `host`: the event
 //!   loop around them (units of work, Node's timers and immediates, blocking
-//!   work); `runtime`: the methods and the worker's options.
+//!   work); `node`: what the worker calls of Node's library on that loop
+//!   (`fs.promises`, the file read stream, `zlib.deflate`); `runtime`: the
+//!   methods and the worker's options.
 //! - With the `test-hooks` feature only: `stub` (the stub methods of the
-//!   conformance suite), `program` (the job-order programs' interpreter)
+//!   conformance suite), `program` (the job-order programs' interpreter),
+//!   `io_program` (the `node` module's programs and file-system steps)
 //!   and `virtual_host` (a clock tests move by hand).
 #![forbid(unsafe_code)]
 
@@ -31,6 +34,7 @@ pub mod host;
 pub mod iopool;
 pub mod js;
 pub mod methods;
+pub mod node;
 pub mod process;
 pub mod proto;
 pub mod runtime;
@@ -39,6 +43,8 @@ pub mod stall;
 pub mod value;
 pub mod wire;
 
+#[cfg(feature = "test-hooks")]
+pub mod io_program;
 #[cfg(feature = "test-hooks")]
 pub mod program;
 #[cfg(feature = "test-hooks")]

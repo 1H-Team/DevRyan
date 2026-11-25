@@ -49,6 +49,7 @@ export const DIFFERENTIAL_TESTS = Object.freeze([
   'scripts/ledger-native/codec-differential.mjs',
   'scripts/ledger-native/ctx-differential.mjs',
   'scripts/ledger-native/jobs-differential.mjs',
+  'scripts/ledger-native/fs-differential.mjs',
   'scripts/ledger-native/porting-lint.mjs',
   'scripts/ledger-native/proto-differential.mjs',
 ]);

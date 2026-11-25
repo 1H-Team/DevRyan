@@ -1452,8 +1452,12 @@ no switch, no binary in the package and no change to any JavaScript.
     stamps (`dev:ino:size:mtimeNs:ctimeNs[:mode]`, signed 64-bit as Node's
     `BigInt64Array` holds them), `mtimeMs`, the sync chain, `copyfile`, `link`,
     `rename`, `unlink`, `chmod`, exclusive opens with a mode, Node's recursive
-    `mkdir`, `utimes`, `realpath`, `statfs`, directory listing and directory
-    sync.
+    `mkdir` (and the first directory it made), `utimes`, `realpath`,
+    `statfs`, directory listing (with every dirent type) and directory sync;
+    for the `node` module also `access`, `symlink`, `readlink`, reads and
+    writes at a position or the descriptor's offset, `fchmod`, Node's open
+    flag strings and the `fs.constants` values the sites pass, and
+    `atomic::rm` with `recursive` and `force`.
   - Errors are Node's: libuv's names and texts (`uv_err_name`,
     `uv_strerror`, the table `util.getSystemErrorMap()` prints) in Node's
     layout (`<code>: <text>, <syscall> '<path>' -> '<dest>'`), with `errno`
@@ -1749,8 +1753,10 @@ there is no switch, the binary is built only in the verify's scratch, and
     of the code that rejected, so its `cause` is that call's id.
   - *Units of work.* One inbound message (a stdin line, `init` included);
     one timer callback; one immediate; one completion of blocking work
-    (`host::blocking`, on four threads as libuv's pool) or, from L3b, of a
-    child process. Another thread reaches the loop only by posting a unit
+    (`host::blocking`, or `host::submit` whose callback runs in the unit,
+    on four threads as libuv's pool) or, from L3b, of a child process.
+    `js::checkpoint_epoch()` counts the checkpoints that have ended, so
+    everything one unit and its checkpoint run sees one value. Another thread reaches the loop only by posting a unit
     to its inbox; a promise, a task or a job never leaves the loop's
     thread. After each unit comes the checkpoint; only then does the next
     unit start. Two lines of one write are two units, so a callback's
@@ -1849,6 +1855,110 @@ there is no switch, the binary is built only in the verify's scratch, and
     and the max-listeners warning (a tick that only writes to stderr). The
     ledger itself calls only `on` (and `once` on a path the worker never
     reaches); streams and child processes (O2d, O2e) are its users.
+  - *Node's library on the loop* (`src/node/`; design file 32, packages
+    O2f and O2d, in the reduced form research file 33 decided): what the
+    worker calls of `fs.promises`, its `FileHandle`, `fs.createReadStream`
+    and `promisify(zlib.deflate)`, over `ledger-io`'s system calls. What the
+    language defines stays exact (above); of what Node's library decides on
+    top of the loop only three rules are kept:
+    1. *A completion never settles in the checkpoint that started it.*
+       Every call that does I/O runs its system calls on the pool
+       (`host::submit`, libuv's four threads) and settles in a unit of its
+       own, so the awaiting code resumes in a later loop turn, never inline.
+       The guard is where no call can go around it: `node::submit`, the
+       module's only way to the pool (the porting lint refuses
+       `host::submit` elsewhere in `src/node/`), records
+       `js::checkpoint_epoch()` (how many checkpoints have ended) where the
+       work is submitted and panics, in every build, when it finds the same
+       value where the result is delivered; `io`, the read stream's open,
+       reads and close and a handle's deferred close all go through it.
+       Every `fs.promises` call and `FileHandle` method also panics when its
+       promise is already settled as it returns, and a method's completion
+       checks the epoch again. A call Node answers without I/O settles as
+       Node's does, in its own checkpoint, on an explicit path: a read or
+       write of no bytes, an operation on a closed `FileHandle` (`EBADF`,
+       `file closed`), a `close` of a handle already closed or whose close
+       is under way (at once, as 24.22's `kFd === -1` does; only a close
+       deferred behind operations in flight gives its pending promise to a
+       second call), a path with a NUL byte (`ERR_INVALID_ARG_VALUE`, with
+       `inspect`'s quoting and its 128-character cut), a `utimes` time that
+       is not finite (`ERR_INVALID_ARG_TYPE`). A read stream's descriptor
+       is never closed while its `read(2)` is in flight (asserted where it
+       closes), and a pool job that panics panics again on the loop thread,
+       so its promise is never left unsettled.
+    2. *The events of one source keep their order*: a read stream's `open`,
+       `ready`, its values in read order, then `end` or `error`, then
+       `close`, and nothing after; a `for await` over it ends after the
+       `close` (its end-of-stream callback waits for it, as Node 24.22's
+       iterator does).
+    3. *The receipt's read cut*: `_read(highWaterMark)` reads that many
+       bytes at the descriptor's offset (short only at the end of a regular
+       file), one read in flight, the next asked for while fewer than
+       `highWaterMark` bytes are buffered; `for await` takes all that is
+       buffered (24.22's `read()` in paused mode, one read for a regular
+       file that does not change). `session-mutations.js`'s receipt byte
+       stream (128 KiB) hands each read to the host as one message, so its
+       cut is proven byte for byte; elsewhere chunk boundaries are free.
+
+    Free (research file 33): how many jobs and loop round trips Node spends
+    inside a call. A composite call (`readFile`, `writeFile`, `appendFile`,
+    `rm`, a recursive `mkdir`, `readdir` with types) is one piece of pool
+    work and one unit here (`readFile` is four round trips in 24.22), so its
+    continuation may come before an immediate queued ahead of it, as a
+    one-trip call's can in Node. The order of independent completions is
+    free too. The system calls of a call and their order are Node's:
+    libuv's `copyfile`, Node's `MKDirpAsync`, rimraf, `readFileHandle`
+    (one read of a regular file's size, 512 KiB reads above it or with an
+    encoding, 64 KiB reads of a file of unknown size) and `writeFileHandle`
+    (512 KiB writes).
+
+    Threading: pool work only computes (system calls and copies) and gives
+    back plain data; a promise, a task, a job or a `W` never leaves the loop
+    thread, and only the loop thread settles a promise. A request's
+    callback runs in its unit, in the async context frame the request was
+    made in, as a libuv request's does (a stream's listeners run in the
+    frame of the `on('data')` call).
+
+    Errors are Node's objects (`node::error_value`; `node::code_of(e)` is
+    `cause.code`): a libuv error is an `Error` with `errno` (negative),
+    `code`, `syscall`, `path`, `dest` and the message `<code>: <text>,
+    <syscall> '<path>' -> '<dest>'`; Node's own are a `SystemError`
+    (`ERR_FS_EISDIR`, positive `errno`), a `RangeError`
+    (`ERR_FS_FILE_TOO_LARGE`) and a `TypeError` (`ERR_INVALID_ARG_VALUE`).
+
+    Built, from the census of the worker's import closure (the calls
+    reachable on darwin and Linux): `access`, `appendFile`, `chmod`,
+    `copyFile`, `link`, `lstat`, `mkdir`, `open` (a string flag or
+    `fs.constants` bits) and the `FileHandle`'s `read`, `write`,
+    `writeFile`, `stat`, `chmod`, `sync` and `close`, `readFile` (bytes and
+    `'utf8'`), `readdir` (names and `withFileTypes`), `readlink` (`'utf8'`
+    and `{ encoding: 'buffer' }`, `session-mutation-files.js`'s
+    observation), `realpath`, `rename`, `rm`, `rmdir`, `stat` (number and
+    bigint), `statfs`, `symlink` (a string target, and a `Buffer` one:
+    `session-mutations.js` writes a blob's bytes as a link's target),
+    `unlink`, `utimes`, `writeFile`; `lstatSync` and
+    `readdirSync` with types, inline; `createReadStream` with
+    `highWaterMark`, consumed by `for await` or by `data`, `end`, `error`,
+    `close`, `open` and `ready` listeners; `zlib.deflate`, whose bytes are
+    `miniz_oxide`'s (they inflate to the same input; objects are compared by
+    content and id). Not built, because no reachable site calls them:
+    `mkdtemp`, `opendir`, `truncate`, `cp`, `readv` and `writev`, `lchmod`,
+    `lutimes`, `chown`, `watch`, a handle's `readFile`, `truncate`,
+    `utimes`, `datasync` and `readLines`; a stream from a handle or a
+    descriptor, `start` and `end`, encodings, object mode, `unshift`,
+    `pipe`, `pause` and `resume` by hand, and a stream consumed both by
+    `for await` and by listeners (it panics); Writable streams,
+    `pipeline` and `finished`; every other `zlib` function. Not reproduced:
+    a handle whose operation failed and whose close fails too reports the
+    operation's error (Node aggregates the two); rimraf removes a
+    directory's children in parallel and reports the first to fail, here
+    they go one at a time and the first listed is reported; a stat has no
+    `birthtime` (no site reads it).
+
+    **Not in this package**: child processes and their pipes (`spawn`, a
+    child's stdout, stderr and stdin, `pipeline` into stdin,
+    `Readable.from`). They are the next package (design file 32, O2e), on
+    the same `host::submit` units and the same read stream core.
   - *Left free:* which of two ready units from different sources runs
     first: a line and a pool completion, a line and a timer that falls due
     while the loop waits. In Node that depends on when the loop wakes and,
@@ -1899,7 +2009,7 @@ there is no switch, the binary is built only in the verify's scratch, and
   The first three are refused by `scripts/ledger-native/porting-lint.mjs`
   (run by the verify; also `node --test` on it alone), a search over every
   ported module (all of the crate's Rust but the layer: `js.rs`, `host.rs`,
-  `agen.rs` and `emitter.rs`): an
+  `agen.rs`, `emitter.rs` and `node/`): an
   `async fn` without the comment `// port: inline await` on the line above
   (allowed only for a helper that is one JavaScript await, or a coroutine's
   body), an `async` block that is neither an `async_fn`, `agen::async_gen`
@@ -1942,6 +2052,13 @@ there is no switch, the binary is built only in the verify's scratch, and
     | a throw `e` out of its body | `return Err(rows.close_throw(e).await);` (in a generator, any abrupt `a`: `return Err(rows.exit(a).await);`) |
     | `it.next(v)`, `it.return(v)`, `it.throw(e)` | `it.next(v)`, `it.return_(Resolution::Value(v))`, `it.throw_(e)`: each a `Promise<Step<W>, W>` (awaited by hand only below `// port: manual next`) |
     | `new EventEmitter()`; `e.on(ev, f)`; `e.emit(ev, a)` | `Emitter::new(unhandled)`; `let f = Listener::new(\|a\| { …; Ok(()) }); e.on(ev, &f);` (kept for `remove_listener`); `e.emit(ev, &a)?` |
+    | `await fs.promises.lstat(p, { bigint: true })` (any built call) | `node::fs::lstat(&p, true).await?`; options are typed (`MkdirOptions`, `RmOptions`, `WriteOptions`, `Flags::Str("wx")` or `Flags::Bits(constants::O_RDONLY \| constants::O_NOFOLLOW)`, `Time::Date(ms)`) |
+    | `await fs.x(p).catch((cause) => { if (cause.code === 'ENOENT') return null; throw cause; })` | `node::fs::x(&p).then(\|v\| Ok(Resolution::Value(Some(v))), \|cause\| if node::code_of(&cause) == "ENOENT" { Ok(Resolution::Value(None)) } else { Err(cause) }).await?` |
+    | `fs.lstatSync(p, { bigint: true })`, `fs.readdirSync(d, { withFileTypes: true })` | `node::fs::lstat_sync(&p, true)?`, `node::fs::readdir_with_file_types_sync(&d)?`: inline, no promise |
+    | `const h = await fs.open(p, 'r'); try { … await h.read(b, 0, n, null) … } finally { await h.close(); }` | `let h = node::fs::open(&p, Flags::Str("r"), None).await?; let body = async { … h.read(n, None).await? … }.await; h.close().await?; body?;` (`read` gives `{ bytes_read, bytes }`) |
+    | `for await (const chunk of createReadStream(f, { highWaterMark: 128 * 1024 })) { … }` | `let chunks = agen::for_await(node::stream::create_read_stream(&f, ReadStreamOptions { high_water_mark: 128 * 1024 })); while let Some(chunk) = chunks.next().await? { … }` (`createReadStream(f)`: `ReadStreamOptions::DEFAULT`); chunks are `W::Bytes`; leaving the loop closes the iterator, which destroys the stream |
+    | `stream.on('data', (chunk) => …)`, `'end'`, `'error'`, `'close'` | `stream.on("data", &Listener::new(\|chunk\| { …; Ok(()) }))`, and so on (a `data` listener starts the flow) |
+    | `await promisify(zlib.deflate)(bytes)` | `node::zlib::deflate(&bytes).await?` |
 
     For example `for await (const row of entries(prefix)) { if (row.key
     === key) return row; check(row); }` (`check` may throw) is:
@@ -1984,6 +2101,36 @@ there is no switch, the binary is built only in the verify's scratch, and
     }
     ```
 
+    The execution receipt's byte stream (`session-mutations.js:3115`) is:
+
+    ```rust
+    // async function* () { const hash = createHash('sha256');
+    //   for await (const chunk of createReadStream(file, { highWaterMark: 128 * 1024 })) { hash.update(chunk); yield chunk; }
+    //   if (hash.digest('hex') !== entry.hash) throw changeError('invalid_change_record'); }
+    fn byte_stream(file: String, expected: String) -> AsyncGen<W, W> {
+        agen::async_gen(move |co: Co<W, W>| async move {
+            let mut hash = Sha256::new();
+            let options = ReadStreamOptions { high_water_mark: 128 * 1024 };
+            let chunks = agen::for_await(node::stream::create_read_stream(&file, options));
+            while let Some(chunk) = chunks.next().await? {
+                let step: Result<(), Abrupt<W, W>> = async {
+                    hash.update(chunk.bytes());
+                    co.yield_(Resolution::Value(chunk)).await?;
+                    Ok(())
+                }
+                .await;
+                if let Err(abrupt) = step {
+                    return Err(chunks.exit(abrupt).await);
+                }
+            }
+            if hash.hex() != expected {
+                return Err(Abrupt::Throw(change_error("invalid_change_record")));
+            }
+            Ok(())
+        })
+    }
+    ```
+
     The layer refuses loudly what it can see: a `for await` loop dropped
     while open by its own task (an early `?` or `return` without `close`)
     panics, as does `next()` after its end or a second `close`; a loop
@@ -2003,9 +2150,22 @@ there is no switch, the binary is built only in the verify's scratch, and
     rows`, `&rows`, `rows.iter()`), unless marked as a for-of; a
     `co.ret(v)` whose outcome is not the body's `Err`; and `co.ret` of
     `undefined`, which is JavaScript's `return undefined;` (one job), not
-    `return;` (none), unless marked `// port: return undefined`. Streams
-    and child processes are not in the layer yet (design file 32, packages
-    O2d and O2e).
+    `return;` (none), unless marked `// port: return undefined`. For
+    Node's library: a blocking file-system call made directly
+    (`ledger_io::…`, `std::fs::…`, or a `use` of them; an `fs.xSync` of
+    the JavaScript is marked `// port: sync call`), which would settle
+    inside the starting checkpoint; I/O settled outside the facade
+    (`host::blocking`, `host::submit`), which skips rule 1's guard and
+    Node's errors; and a read cut of the port's own: a `create_read_stream`
+    whose `high_water_mark` is not written as the JavaScript's number
+    (`ReadStreamOptions::DEFAULT` for `createReadStream(file)`; a test
+    that takes it from its input marks `// port: read cut given by the
+    caller`), or a `FileHandle` read loop or `.chunks(` re-cut in a
+    generator's body standing in for the stream (marked
+    `// port: handle read loop` where the JavaScript loops on a handle
+    itself). The `node` module's own files are the layer, not ported
+    modules. Child processes are not in the layer yet (design file 32,
+    package O2e).
 - **Process.** A reader thread splits stdin into lines and posts each to the
   loop; a writer thread drains an unbounded queue to stdout (one line on
   stderr past 64 MiB queued); a watchdog thread checks every 250 ms that
@@ -2075,6 +2235,34 @@ there is no switch, the binary is built only in the verify's scratch, and
     (`ledger-native-probe jobs node26`, test-only); the named programs
     marked `electronOnly` are the ones whose frames differ between the two
     Nodes, and a test pins that they do.
+  - `scripts/ledger-native/fs-differential.mjs`: the `node` module against
+    Node's own on Electron's Node, the Node running the test and the Rust
+    ([testing](../../docs/TESTING.md#native-ledger-module-tests)): 31
+    outcome cases (every built call and its failures, field by field, a
+    stat and a `statfs` against Node's own of the same path, what a
+    write's continuation finds on disk, the tree afterwards with link
+    targets as bytes, the descriptor count unchanged by every case; link
+    targets that are not UTF-8, the sync calls, default modes under
+    umask 0, and names that are not UTF-8 on Linux only); the read cut at 128
+    and 64 KiB over ten sizes, byte for byte, and over files that change
+    between two reads; the read stream's lifecycle (ends after its close;
+    leaving it closes the descriptor, a read in flight first); and I/O
+    programs (`fs-programs.mjs`: 21 named and 60 random; `--extended`
+    2,000 over five seeds; a handle's open, read, stat and close are each
+    their own awaited call). Node's job and round-trip counts inside a call
+    are not reproduced, so programs are compared by constraints every
+    arm's trace must meet: Electron's pure part, and for the Rust
+    Electron's I/O strands (what descends from one completion), entry for
+    entry, times and frames included (the system Node's strands are
+    information: its stream iterator's `return()` takes other jobs); every call continued in a later checkpoint than its start and
+    after that checkpoint's last entry (rule 1; the Rust prints its
+    measured checkpoint epoch); each stream's events in order (rule 2). How
+    strands interleave with each other and with the pure part is arrival's.
+    `scripts/ledger-native/fs-planted.mjs` (by hand) plants 33 bugs in a
+    copy of the workspace, each caught by a named test; with `--gate` it
+    also plants the independent review's 25 and runs each bug against the
+    whole of `cargo test` and `fs-differential.mjs`, then the extended run
+    for a survivor.
   - `scripts/ledger-native/porting-lint.mjs`: the porting rule's silent
     mistakes, refused in the ported modules (above), with a planted case of
     each.
@@ -2119,7 +2307,10 @@ there is no switch, the binary is built only in the verify's scratch, and
     100,000 dropped without running their `finally`, a generator abandoned
     mid-`for await`, one abandoned while it executes, one holding its own
     handle (a counted cycle), the close guard; the emitter's removal,
-    re-entrant `once` and refused `newListener`/`removeListener`; and 20,000 random or mutated lines that must never panic.
+    re-entrant `once` and refused `newListener`/`removeListener`; the
+    `node` module's units (a completion in a later checkpoint, the guard's
+    panic, a read stream's cut and close before its `for await` ends, a
+    closed handle's `EBADF`); and 20,000 random or mutated lines that must never panic.
 - **What the comparison leaves free**, and why each is fair. Every message
   of one call (reports, callbacks, observations, its result) is compared in
   order; a transcript's `ordered` messages are compared in order across

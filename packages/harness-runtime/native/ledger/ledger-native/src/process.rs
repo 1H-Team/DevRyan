@@ -221,6 +221,7 @@ pub const LOOP_STACK_BUDGET: usize = LOOP_STACK - (8 << 20);
 /// its own (see [`LOOP_STACK`]); the main thread waits for it.
 pub fn run() -> ! {
     end_on_panic();
+    // port: sync call (Node raises the limit at start, before any JavaScript)
     ledger_io::fs::raise_open_file_limit();
     let spawned = std::thread::Builder::new()
         .name("ledger-loop".into())

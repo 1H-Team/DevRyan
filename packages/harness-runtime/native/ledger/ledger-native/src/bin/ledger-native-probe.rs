@@ -15,6 +15,12 @@
 //!                                        scripts/ledger-native/proto-virtual-js-arm.mjs
 //!                                        drives the worker; stdout:
 //!                                        `<ms>\t<line>` per message sent
+//!   ledger-native-probe fs-steps         stdin: one file-system step per line
+//!                                        (scripts/ledger-native/fs-js-arm.mjs steps);
+//!                                        stdout: its outcome per line
+//!   ledger-native-probe fs-programs      stdin: one {dir, program} per line
+//!                                        (scripts/ledger-native/fs-programs.mjs);
+//!                                        stdout: its trace per line, or `!<why>`
 //!   ledger-native-probe jobs             stdin: one job-order program per line
 //!                                        (scripts/ledger-native/jobs-programs.mjs);
 //!                                        stdout: its trace per line, as
@@ -50,6 +56,16 @@ fn main() {
             generate(seed, count);
         }
         Some("scenarios") => scenarios(),
+        Some("fs-steps") => {
+            let stdin = std::io::stdin();
+            let lines = stdin
+                .lock()
+                .split(b'\n')
+                .map(|line| line.expect("stdin"))
+                .filter(|line| !line.is_empty());
+            ledger_native::io_program::serve_steps(lines, print, |line| decode_line(line).ok());
+        }
+        Some("fs-programs") => fs_programs(),
         Some("transcript") => transcript(),
         Some("jobs") => {
             // `jobs node26`: Node 26.13's frame rule after a `yield`, to
@@ -61,7 +77,7 @@ fn main() {
         }
         _ => {
             eprintln!(
-                "usage: ledger-native-probe codec | generate <seed> <count> | scenarios | transcript | jobs [node26]"
+                "usage: ledger-native-probe codec | generate <seed> <count> | scenarios | transcript | fs-steps | fs-programs | jobs [node26]"
             );
             std::process::exit(2);
         }
@@ -586,6 +602,25 @@ fn transcript() {
 }
 
 /// Job-order programs on the crate's `js` and `host` under a virtual clock.
+/// The `node` module's I/O programs, one `{dir, program}` per line.
+fn fs_programs() {
+    let stdin = std::io::stdin();
+    let mut stdout = std::io::stdout();
+    for line in stdin.lock().split(b'\n') {
+        let line = line.expect("stdin");
+        if line.is_empty() {
+            continue;
+        }
+        let input = decode_line(&line).expect("a program");
+        let dir = to_js_string(&input.get("dir")).to_string_lossy();
+        match ledger_native::io_program::run_program(&input.get("program"), &dir) {
+            Ok(trace) => writeln!(stdout, "{trace}").expect("stdout"),
+            Err(why) => writeln!(stdout, "!{why}").expect("stdout"),
+        }
+        stdout.flush().expect("stdout");
+    }
+}
+
 fn jobs() {
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();

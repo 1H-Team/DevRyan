@@ -674,12 +674,24 @@ pub fn mkdir(path: &str, mode: u32) -> Result<()> {
 /// Every error names `mkdir` and the path being made when it happened (the
 /// stat's errno too), as Node's request reports it.
 pub fn mkdir_recursive(path: &str, mode: u32) -> Result<()> {
+    mkdir_recursive_first(path, mode).map(|_| ())
+}
+
+/// [`mkdir_recursive`] with what `fs.promises.mkdir(path, { recursive: true })`
+/// resolves to: the first directory it created (`first_path`, the first
+/// successful `mkdir`, which is the shallowest one made), or `None` when every
+/// directory already existed.
+pub fn mkdir_recursive_first(path: &str, mode: u32) -> Result<Option<String>> {
+    let mut first: Option<String> = None;
     let mut stack: Vec<String> = vec![path.to_owned()];
     while let Some(next) = stack.pop() {
         let mut outcome = mkdir(&next, mode);
         loop {
             match outcome {
-                Ok(()) => break,
+                Ok(()) => {
+                    first.get_or_insert_with(|| next.clone());
+                    break;
+                }
                 Err(error)
                     if matches!(
                         error.code.as_str(),
@@ -713,7 +725,7 @@ pub fn mkdir_recursive(path: &str, mode: u32) -> Result<()> {
                         }
                     }
                     return match checked {
-                        Ok(stat) if stat.is_directory() => Ok(()),
+                        Ok(stat) if stat.is_directory() => Ok(first),
                         Ok(_) => Err(Error::os(libc::EEXIST, "mkdir", Some(&next))),
                         Err(stat_error) => Err(match stat_error.system_errno() {
                             Some(errno) => Error::os(errno, "mkdir", Some(&next)),
@@ -724,7 +736,7 @@ pub fn mkdir_recursive(path: &str, mode: u32) -> Result<()> {
             }
         }
     }
-    Ok(())
+    Ok(first)
 }
 
 /// `uv__fs_utime`: `utimensat(AT_FDCWD, path, times, 0)` with each time in
@@ -971,6 +983,251 @@ pub fn random_bytes(out: &mut [u8]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// `fs.constants` values the ledger's `fs.promises` sites pass, for this
+/// platform (Node takes them from the same headers).
+pub mod constants {
+    pub const O_RDONLY: i32 = libc::O_RDONLY;
+    pub const O_WRONLY: i32 = libc::O_WRONLY;
+    pub const O_RDWR: i32 = libc::O_RDWR;
+    pub const O_CREAT: i32 = libc::O_CREAT;
+    pub const O_EXCL: i32 = libc::O_EXCL;
+    pub const O_TRUNC: i32 = libc::O_TRUNC;
+    pub const O_APPEND: i32 = libc::O_APPEND;
+    pub const O_SYNC: i32 = libc::O_SYNC;
+    pub const O_NOFOLLOW: i32 = libc::O_NOFOLLOW;
+    pub const O_NONBLOCK: i32 = libc::O_NONBLOCK;
+    pub const O_DIRECTORY: i32 = libc::O_DIRECTORY;
+    pub const F_OK: i32 = libc::F_OK;
+    pub const R_OK: i32 = libc::R_OK;
+    pub const W_OK: i32 = libc::W_OK;
+    pub const X_OK: i32 = libc::X_OK;
+    // `mode_t` is 16 bits on macOS and 32 on Linux.
+    #[allow(clippy::unnecessary_cast)]
+    pub const S_IFMT: i64 = libc::S_IFMT as i64;
+    #[allow(clippy::unnecessary_cast)]
+    pub const S_IFREG: i64 = libc::S_IFREG as i64;
+    #[allow(clippy::unnecessary_cast)]
+    pub const S_IFDIR: i64 = libc::S_IFDIR as i64;
+    #[allow(clippy::unnecessary_cast)]
+    pub const S_IFLNK: i64 = libc::S_IFLNK as i64;
+    #[allow(clippy::unnecessary_cast)]
+    pub const S_IFIFO: i64 = libc::S_IFIFO as i64;
+    #[allow(clippy::unnecessary_cast)]
+    pub const S_IFSOCK: i64 = libc::S_IFSOCK as i64;
+    #[allow(clippy::unnecessary_cast)]
+    pub const S_IFCHR: i64 = libc::S_IFCHR as i64;
+    #[allow(clippy::unnecessary_cast)]
+    pub const S_IFBLK: i64 = libc::S_IFBLK as i64;
+}
+
+/// Node's `stringToFlags` for the strings a port may pass, or `None`.
+pub fn string_to_flags(flags: &str) -> Option<c_int> {
+    use libc::{O_APPEND, O_CREAT, O_EXCL, O_RDONLY, O_RDWR, O_SYNC, O_TRUNC, O_WRONLY};
+    Some(match flags {
+        "r" => O_RDONLY,
+        "rs" | "sr" => O_RDONLY | O_SYNC,
+        "r+" => O_RDWR,
+        "rs+" | "sr+" => O_RDWR | O_SYNC,
+        "w" => O_TRUNC | O_CREAT | O_WRONLY,
+        "wx" | "xw" => O_TRUNC | O_CREAT | O_WRONLY | O_EXCL,
+        "w+" => O_TRUNC | O_CREAT | O_RDWR,
+        "wx+" | "xw+" => O_TRUNC | O_CREAT | O_RDWR | O_EXCL,
+        "a" => O_APPEND | O_CREAT | O_WRONLY,
+        "ax" | "xa" => O_APPEND | O_CREAT | O_WRONLY | O_EXCL,
+        "as" | "sa" => O_APPEND | O_CREAT | O_WRONLY | O_SYNC,
+        "a+" => O_APPEND | O_CREAT | O_RDWR,
+        "ax+" | "xa+" => O_APPEND | O_CREAT | O_RDWR | O_EXCL,
+        "as+" | "sa+" => O_APPEND | O_CREAT | O_RDWR | O_SYNC,
+        _ => return None,
+    })
+}
+
+/// `uv__fs_access`: `access(path, mode)`.
+pub fn access(path: &str, mode: i32) -> Result<()> {
+    // SAFETY: a NUL-terminated string that outlives the call.
+    path_call(path, "access", |c| unsafe {
+        libc::access(c.as_ptr(), mode)
+    })
+}
+
+/// `uv__fs_symlink`: `symlink(target, path)`. Node reports it with the target
+/// as `path` and the link as `dest` (`symlink '<target>' -> '<path>'`).
+pub fn symlink(target: &str, path: &str) -> Result<()> {
+    // SAFETY: as for `rename`.
+    two_path_call(target, path, "symlink", |a, b| unsafe {
+        libc::symlink(a.as_ptr(), b.as_ptr())
+    })
+}
+
+/// `uv__fs_symlink` with a target of raw bytes (Node's `symlink(<Buffer>,
+/// path)`): the bytes are the link's target as they are. A failure shows
+/// the target as V8 makes a string of a C string (`String::NewFromUtf8`:
+/// an ill-formed sequence as U+FFFD), in `path` and in the message.
+pub fn symlink_bytes(target: &[u8], path: &str) -> Result<()> {
+    let a = CString::new(target).map_err(|_| {
+        Error::coded(
+            "ERR_INVALID_ARG_VALUE",
+            "The argument 'target' must be a string, Uint8Array, or URL without null bytes.",
+        )
+    })?;
+    let b = c_path(path)?;
+    // SAFETY: both arguments are NUL-terminated strings that outlive the call.
+    let result = retry(|| (unsafe { libc::symlink(a.as_ptr(), b.as_ptr()) }) as isize);
+    if result == -1 {
+        let shown = String::from_utf8_lossy(target);
+        return Err(Error::os_with_dest(
+            last_errno(),
+            "symlink",
+            Some(&shown),
+            Some(path),
+        ));
+    }
+    Ok(())
+}
+
+/// `uv__fs_readlink`: `readlink(2)` into a buffer of `PATH_MAX` bytes (libuv
+/// sizes it from `lstat` and `pathconf`; the bytes read are the same),
+/// decoded as Node's `'utf8'` decodes them.
+pub fn readlink(path: &str) -> Result<String> {
+    readlink_bytes(path).map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// [`readlink`]'s bytes as they are (Node's `{ encoding: 'buffer' }`).
+pub fn readlink_bytes(path: &str) -> Result<Vec<u8>> {
+    let c = c_path(path)?;
+    let mut buffer = vec![0u8; libc::PATH_MAX as usize + 1];
+    let result = retry(|| {
+        // SAFETY: `c` is NUL-terminated; the pointer and length describe the live `buffer`.
+        (unsafe {
+            libc::readlink(
+                c.as_ptr(),
+                buffer.as_mut_ptr().cast::<libc::c_char>(),
+                buffer.len(),
+            )
+        }) as isize
+    });
+    let length = check(result, "readlink", Some(path))? as usize;
+    buffer.truncate(length.min(buffer.len()));
+    Ok(buffer)
+}
+
+/// `umask(2)`: sets the process's file mode creation mask, returns the old
+/// one (`process.umask(mask)`; test servers use it to make default modes
+/// visible).
+#[allow(clippy::unnecessary_cast)] // `mode_t` is 16 bits on macOS, 32 on Linux.
+pub fn set_umask(mask: u32) -> u32 {
+    // SAFETY: umask has no failure mode and touches no memory.
+    (unsafe { libc::umask(mask as libc::mode_t) }) as u32
+}
+
+/// `uv__fs_read` of `length` bytes: `read(2)` at the descriptor's offset
+/// (Node's position `null`, `-1`), or `pread(2)` at `position`. libuv does
+/// not retry a read on `EINTR`.
+pub fn read(fd: c_int, length: usize, position: Option<i64>) -> Result<Vec<u8>> {
+    let mut buffer = vec![0u8; length];
+    // SAFETY: the pointer and length describe the live, writable `buffer`.
+    let result = unsafe {
+        match position {
+            Some(at) => libc::pread(
+                fd,
+                buffer.as_mut_ptr().cast::<c_void>(),
+                length,
+                at as libc::off_t,
+            ),
+            None => libc::read(fd, buffer.as_mut_ptr().cast::<c_void>(), length),
+        }
+    };
+    let read = check(result, "read", None)? as usize;
+    buffer.truncate(read);
+    Ok(buffer)
+}
+
+/// `uv__fs_write` of `bytes`: `write(2)` at the descriptor's offset, or
+/// `pwrite(2)` at `position`; retried on `EINTR`.
+pub fn write_at(fd: c_int, bytes: &[u8], position: Option<i64>) -> Result<usize> {
+    let result = retry(|| {
+        // SAFETY: the pointer and length describe the live slice `bytes`.
+        unsafe {
+            match position {
+                Some(at) => libc::pwrite(
+                    fd,
+                    bytes.as_ptr().cast::<c_void>(),
+                    bytes.len(),
+                    at as libc::off_t,
+                ),
+                None => libc::write(fd, bytes.as_ptr().cast::<c_void>(), bytes.len()),
+            }
+        }
+    });
+    Ok(check(result, "write", None)? as usize)
+}
+
+/// `uv__fs_fchmod`.
+pub fn fchmod(fd: c_int, mode: u32) -> Result<()> {
+    // SAFETY: fchmod on a caller-provided descriptor; a bad one fails with EBADF.
+    let result = retry(|| (unsafe { libc::fchmod(fd, mode as libc::mode_t) }) as isize);
+    check(result, "fchmod", None).map(|_| ())
+}
+
+/// An entry's type as libuv's `uv_dirent_type_t` names it (Node's `Dirent`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DirentKind {
+    Unknown,
+    File,
+    Directory,
+    SymbolicLink,
+    Fifo,
+    Socket,
+    CharacterDevice,
+    BlockDevice,
+}
+
+/// `fs.promises.readdir(dir)` with every entry's type: the names in
+/// `uv__fs_scandir`'s order (`strcmp` of the raw names), the type from
+/// `d_type` or, when that is unknown, from `lstat` (Node's
+/// `getDirectoryEntriesPromise`; `std::fs::read_dir` does the same).
+pub fn readdir_entries(dir: &str) -> Result<Vec<(String, DirentKind)>> {
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::FileTypeExt;
+    let map = |error: std::io::Error| {
+        Error::os(
+            error.raw_os_error().unwrap_or(libc::EIO),
+            "scandir",
+            Some(dir),
+        )
+    };
+    let mut raw = Vec::new();
+    for entry in std::fs::read_dir(dir).map_err(map)? {
+        let entry = entry.map_err(map)?;
+        let kind = match entry.file_type() {
+            Ok(kind) if kind.is_file() => DirentKind::File,
+            Ok(kind) if kind.is_dir() => DirentKind::Directory,
+            Ok(kind) if kind.is_symlink() => DirentKind::SymbolicLink,
+            Ok(kind) if kind.is_fifo() => DirentKind::Fifo,
+            Ok(kind) if kind.is_socket() => DirentKind::Socket,
+            Ok(kind) if kind.is_char_device() => DirentKind::CharacterDevice,
+            Ok(kind) if kind.is_block_device() => DirentKind::BlockDevice,
+            Ok(_) => DirentKind::Unknown,
+            Err(error) => return Err(map(error)),
+        };
+        raw.push((entry.file_name().as_bytes().to_vec(), kind));
+    }
+    raw.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(raw
+        .into_iter()
+        .map(|(name, kind)| (String::from_utf8_lossy(&name).into_owned(), kind))
+        .collect())
+}
+
+/// How many descriptors this process has open (the entries of `/dev/fd`,
+/// less the one the listing itself opens), for tests that check a handle
+/// was closed.
+pub fn open_descriptor_count() -> usize {
+    std::fs::read_dir("/dev/fd")
+        .map(|entries| entries.count().saturating_sub(1))
+        .unwrap_or(0)
 }
 
 /// `EISDIR`, for errors Node raises itself (`ERR_FS_EISDIR`).

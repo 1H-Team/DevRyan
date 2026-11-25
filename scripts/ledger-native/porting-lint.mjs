@@ -48,6 +48,25 @@
 //    `// port: manual next` on the line above.
 // 9. A Rust stream (`poll_next`, `StreamExt`, `async-stream`, `std::async_iter`)
 //    standing in for an async iterator.
+// 10. A blocking file-system call made directly (`ledger_io::…`, `std::fs::…`,
+//    or a `use` of them): an `await fs.promises.x()` ported as the system
+//    call itself settles nothing in a unit of its own (rule 1 of the `node`
+//    module: the continuation would run inside the starting checkpoint) and
+//    blocks the loop. Ports call `node::fs`. A JavaScript `fs.xSync(…)` is
+//    the inline call: it is marked `// port: sync call` on the line above
+//    (or uses `node::fs::*_sync`).
+// 11. I/O settled outside the facade (`host::blocking(…)`, `host::submit(…)`):
+//    only `node::{fs, stream, zlib}` check rule 1 (their guard panics on a
+//    completion in its starting checkpoint) and give Node's error objects.
+// 12. A read cut of the port's own (rule 3: the execution receipt's byte
+//    stream hands each file read to the host as one message): a
+//    `create_read_stream` whose `high_water_mark` is not written as a
+//    number (the JavaScript's literal `128 * 1024`, or
+//    `ReadStreamOptions::DEFAULT` for `createReadStream(file)`; a test that
+//    takes it from its input marks `// port: read cut given by the caller`), and, in an
+//    async generator's body, a `FileHandle` read loop or a re-cut of bytes
+//    (`.chunks(`, `.chunks_exact(`) standing in for the read stream, unless
+//    marked `// port: handle read loop`.
 //
 // The fourth silent mistake, an await that never settles held in a cycle
 // with its own task, is no text pattern: the job differential's census
@@ -62,11 +81,16 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const crate = path.resolve(here, '../../packages/harness-runtime/native/ledger/ledger-native/src');
 /** The job layer: it implements the futures the rule forbids elsewhere. */
 const LAYER = new Set(['js.rs', 'host.rs', 'agen.rs', 'emitter.rs']);
+/** The layer's directories: Node's library on the loop (`node::{fs, stream, zlib}`), the only callers of `ledger-io`'s blocking functions. */
+const LAYER_DIRECTORIES = new Set(['node']);
 const INLINE_MARKER = '// port: inline await';
 const YIELD_MARKER = '// port: yield outcome handled';
 const FOR_OF_MARKER = '// port: for-of over an awaited value';
 const NEXT_MARKER = '// port: manual next';
 const UNDEFINED_MARKER = '// port: return undefined';
+const SYNC_MARKER = '// port: sync call';
+const READ_LOOP_MARKER = '// port: handle read loop';
+const CUT_MARKER = '// port: read cut given by the caller';
 
 /** The text with comments, strings and character literals blanked (newlines and offsets kept). */
 export function codeOnly(text) {
@@ -190,6 +214,34 @@ export function lintPortedSource(text) {
       found(match.index, 'co.ret of undefined: JavaScript\'s `return;` takes no job (`Err(Abrupt::Return(undefined))`); mark an explicit `return undefined;`');
     }
   }
+  // Rule 10: blocking file-system calls, outside the facade.
+  for (const match of code.matchAll(/\bledger_io::|\bstd::fs\b|\buse\s+std::\{[^}]*\bfs\b/g)) {
+    if (marked(match.index, SYNC_MARKER)) continue;
+    found(match.index, 'a blocking file-system call made directly (an `await fs.promises.x()` is `node::fs::x(…).await`; an `fs.xSync` is marked `// port: sync call`)');
+  }
+  // Rule 11: I/O settled outside the facade.
+  for (const match of code.matchAll(/\bhost::(?:blocking|submit)\s*(?:::<[^\n;]*>)?\s*\(|\buse\s+crate::host::\{[^}]*\b(?:blocking|submit)\b/g)) {
+    found(match.index, 'I/O settled outside node::{fs, stream, zlib} (which check rule 1 and give Node\'s errors)');
+  }
+  // Rule 12: a read cut of the port's own.
+  for (const match of code.matchAll(/\bcreate_read_stream\s*\(/g)) {
+    const open = match.index + match[0].length - 1;
+    const args = code.slice(open + 1, closingParen(code, open));
+    if (/ReadStreamOptions::DEFAULT\b/.test(args) || marked(match.index, CUT_MARKER)) continue;
+    const hwm = /high_water_mark\s*:\s*([^,}]+)/.exec(args)?.[1]?.trim();
+    if (hwm && /^[0-9_]+(?:\s*\*\s*[0-9_]+)*$/.test(hwm)) continue;
+    found(match.index, 'a read stream whose high_water_mark is not the JavaScript\'s number (the receipt\'s cut reaches the host)');
+  }
+  for (const match of code.matchAll(/\basync_gen(?:::<[^\n{};]*>)?\s*\(/g)) {
+    const open = match.index + match[0].length - 1;
+    const end = closingParen(code, open);
+    if (end === -1) continue;
+    for (const inner of code.slice(open, end).matchAll(/\.(?:read|chunks|chunks_exact)\s*\(/g)) {
+      const at = open + inner.index;
+      if (marked(at, READ_LOOP_MARKER)) continue;
+      found(at, 'file bytes cut by the port in a generator (a FileHandle read loop or .chunks) instead of the read stream; mark a JavaScript read loop `// port: handle read loop`');
+    }
+  }
   for (const match of code.matchAll(/\.next\s*\(/g)) {
     const open = match.index + match[0].length - 1;
     const end = closingParen(code, open);
@@ -206,7 +258,7 @@ export function portedModules(root = crate) {
   const walk = (directory) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const full = path.join(directory, entry.name);
-      if (entry.isDirectory()) walk(full);
+      if (entry.isDirectory()) { if (!(directory === root && LAYER_DIRECTORIES.has(entry.name))) walk(full); }
       else if (entry.name.endsWith('.rs') && !(directory === root && LAYER.has(entry.name))) files.push(full);
     }
   };
@@ -258,10 +310,36 @@ describe('the porting rule\'s silent mistakes are refused in the ported modules'
     ['a return passed on as the body\'s Err', 'return Err(co.ret(Resolution::Value(value)).await);\nSome(co) => Err(co.ret(value).await),', 0],
     ['W8: a bare return; ported as return undefined', 'return Err(co.ret(Resolution::Value(W::Undefined)).await);', 1],
     ['an explicit return undefined, marked; a bare return', `${UNDEFINED_MARKER}\nreturn Err(co.ret(Resolution::Value(W::Undefined)).await);\nreturn Err(Abrupt::Return(W::Undefined));`, 0],
+    // The `node` module's wrong shapes (rules 10 to 12), next to the right ones.
+    ['await fs.promises.lstat(p) ported as the system call', 'async_fn(async move { let stat = ledger_io::fs::lstat(&p).map_err(|e| e.message)?; Ok(Resolution::Value(stat.size)) })', 1],
+    ['a use of the blocking functions, and std::fs', 'use ledger_io::fs::{lstat, read_file};\nlet bytes = std::fs::read(&p)?;\nuse std::{fs, io};', 3],
+    ['an fs.lstatSync, marked, and the facade', `${SYNC_MARKER} (fs.lstatSync)\nlet stat = ledger_io::fs::lstat(&p);\nlet stat = node::fs::lstat(&p, true).await?;\nlet same = node::fs::lstat_sync(&p, true)?;`, 0],
+    ['I/O settled outside the facade', 'let stat = host::blocking(move || lstat_of(&p)).await?;\nhost::submit::<u8>(work, deliver);\nuse crate::host::{self, blocking};', 3],
+    ['a read stream with a cut of the port\'s own', 'let s = create_read_stream(&file, ReadStreamOptions { high_water_mark: size });\nlet t = node::stream::create_read_stream(&file, ReadStreamOptions { high_water_mark: 64 * 1024 + extra });', 2],
+    ['the receipt\'s read stream and the default one', 'let s = create_read_stream(&file, ReadStreamOptions { high_water_mark: 128 * 1024 });\nlet t = create_read_stream(&file, ReadStreamOptions::DEFAULT);', 0],
+    ['a generator yielding a FileHandle read loop, and re-cut bytes', 'agen::async_gen(move |co: Co<W, W>| async move {\n    loop { let got = handle.read(131072, None).await?; co.yield_(Resolution::Value(W::Bytes(got.bytes))).await?; }\n    for piece in whole.chunks(131072) { co.yield_(Resolution::Value(piece)).await?; }\n})', 2],
+    ['a JavaScript read loop in a generator, marked; a read loop in an async function', `agen::async_gen(move |co: Co<W, W>| async move {\n    ${READ_LOOP_MARKER}\n    let got = handle.read(16, Some(0)).await?;\n    Ok(())\n})\nasync_fn(async move { let got = input.read(65536, None).await?; Ok(Resolution::Value(got)) })`, 0],
   ];
   for (const [name, source, expected] of cases) {
     test(`${name}: ${expected ? `refused (${expected})` : 'accepted'}`, () => {
       assert.equal(lintPortedSource(source).length, expected, JSON.stringify(lintPortedSource(source)));
     });
   }
+});
+
+// Rule 1's guard inside the `node` module itself: `node::submit` (mod.rs)
+// is the module's only way to the pool, so no completion of the facade or
+// the read stream can go around its epoch check.
+describe('the node module reaches the pool only through its guarded submit', () => {
+  test('host::submit and host::blocking appear in src/node only in node::submit (mod.rs)', () => {
+    const dir = path.join(crate, 'node');
+    const found = [];
+    for (const name of readdirSync(dir).filter((file) => file.endsWith('.rs'))) {
+      const code = readFileSync(path.join(dir, name), 'utf8').split('\n').filter((line) => !/^\s*\/\//.test(line)).join('\n');
+      const uses = [...code.matchAll(/\bhost::(?:blocking|submit)\b/g)].length;
+      const allowed = name === 'mod.rs' ? 1 : 0;
+      if (uses !== allowed) found.push(`${name}: ${uses} (expected ${allowed})`);
+    }
+    assert.deepEqual(found, []);
+  });
 });

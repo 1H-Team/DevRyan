@@ -107,6 +107,13 @@ fn same_directory(created: Option<&Stat>, current: Option<&Stat>) -> bool {
     }
 }
 
+/// `zlib.deflate(raw)` at Node's default level (`Z_DEFAULT_COMPRESSION`,
+/// 6): a zlib stream of `raw`. Its bytes are `miniz_oxide`'s, not Node's
+/// zlib's; both inflate to `raw` (objects are compared by content and id).
+pub fn zlib_deflate(raw: &[u8]) -> Vec<u8> {
+    miniz_oxide::deflate::compress_to_vec_zlib(raw, LEVEL)
+}
+
 /// Writes one loose object unless it already exists; returns its id.
 pub fn write_loose_object(
     fs: &dyn LooseFs,
@@ -126,7 +133,7 @@ pub fn write_loose_object(
     }
     let mut raw = format!("{} {}\0", kind.name(), content.len()).into_bytes();
     raw.extend_from_slice(content);
-    let bytes = miniz_oxide::deflate::compress_to_vec_zlib(&raw, LEVEL);
+    let bytes = zlib_deflate(&raw);
     drop(raw);
     let mut attempt = 1;
     loop {
