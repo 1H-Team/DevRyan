@@ -41,7 +41,21 @@ import { bindPlan, compareReplayed, envOf, notReplayable } from './replay-compar
 export const MODES = Object.freeze(['file', 'isolated']);
 export const REPLAY_TOY_DIR = path.join(HARNESS_DIR, 'toy', 'replay');
 export const REPLAY_PORT_MAP = path.join(REPLAY_TOY_DIR, 'replay-port-map.json');
-export const REPLAY_TOYS = Object.freeze(['toy-relay.toy.mjs']);
+export const REPLAY_TOYS = Object.freeze(['toy-relay.toy.mjs', 'toy-store.toy.mjs']);
+/**
+ * Cases of the replayer's own toys that must be recorded unrecordable with exactly this flag (fixtures, never a
+ * waiver): a module no family maps that writes the toy store, its module state or a box it handed out moves what
+ * the family holds outside its steps.
+ */
+export const REPLAY_UNRECORDABLE = Object.freeze([
+  { file: 'toy-store.toy.mjs', name: 'a module no family maps moves the state between the test\'s own calls (unrecordable: state-moved)', flags: ['state-moved'] },
+  // C0e fix round: a passed-through call that changes module state with no notification (a state comparison, not the store's listener, sees it).
+  { file: 'toy-store.toy.mjs', name: 'a module no family maps writes the module state, with no notification, between the test\'s own calls (unrecordable: state-moved)', flags: ['state-moved'] },
+  // A box the family handed out, written through the family's own reference (the recorder's listener on the handed-out store sees it).
+  { file: 'toy-store.toy.mjs', name: 'a module no family maps writes a box the family handed out, through the family\'s own reference (unrecordable: handed-out-touched)', flags: ['handed-out-touched'] },
+]);
+/** The replayer's own toy families: a pure one (C0d) and a store and timer one (C0e). */
+export const REPLAY_FAMILIES = Object.freeze(['toy-relay', 'toy-store']);
 /**
  * The replayer's own fixtures: the cases of its toy family that must not be
  * reproduced in a mode, with the check that must report them. Every other
@@ -63,11 +77,22 @@ export function familyDescriptor(portMap, name) {
   for (const [module, target] of portMap.modules) {
     for (const [exportName, port] of target.ports) if (port.families.includes(name)) ports.push({ module, export: exportName, name: port.name });
   }
+  // A store's setState and subscribe take the test's functions as ports, as the recorder's store wrapper declares them.
+  const storePorts = family.store ? [
+    { entry: `${family.store}.setState`, arg: 0, name: 'updater' },
+    { entry: `${family.store}.subscribe`, arg: 0, name: 'subscriber', perStep: true },
+    { entry: `${family.store}.subscribe`, arg: 1, name: 'subscriber.listener', perStep: true },
+  ] : [];
+  const injected = [...(family.injected ?? []).map((item) => ({ entry: item.entry, ...(item.member !== undefined ? { member: item.member } : {}), arg: item.arg, ...(item.key !== undefined ? { key: item.key } : {}), name: item.name })), ...storePorts];
+  // A per-step port (a store's subscriber) is named by the step that hands it in: `<name>@<n>`.
+  const portNamePattern = (item) => (item.perStep ? `${item.name}@` : item.name);
   return {
     name, module: family.module, state: family.state ?? null,
+    ...(family.store ? { store: family.store } : {}),
+    ...(family.moduleState ? { moduleState: { bindings: [...family.moduleState.bindings] } } : {}),
     entries: (family.entries ?? []).map((entry) => ({ export: entry.export, ...(entry.draft !== undefined ? { draft: entry.draft } : {}) })),
-    injected: (family.injected ?? []).map((item) => ({ entry: item.entry, arg: item.arg, ...(item.key !== undefined ? { key: item.key } : {}), name: item.name })),
-    injectedNames: (family.injected ?? []).map((item) => item.name),
+    injected,
+    injectedNames: injected.map(portNamePattern),
     ports, unordered: (family.unorderedPorts ?? []).map((waiver) => waiver.port),
   };
 }
@@ -84,8 +109,33 @@ function resolveCase(record, resolve) {
   return { ...rest, entry: deep(record.entry), steps: deep(record.steps), end: deep(record.end) };
 }
 
-/** Every step is a call, so the case can be delivered (in file order, to keep the module's history) even when it is not judged. */
-const deliverable = (kase) => kase.steps.every((step) => step.input.kind === 'call' && !String(step.input.entry).includes('#') && step.input.during === undefined && step.input.caller === undefined && !step.late);
+/** A stateful family (package C0e): its state is recorded at entry, after every step and at the end, and seeded into a replay. */
+export const isStatefulFamily = (family) => Boolean(family.store || family.moduleState);
+/**
+ * Every step is an input the engine delivers (a call, `new` or `get`, a timer firing, a port's promise
+ * settling), so the case can be delivered in file order, to keep the module's history, even when it is not judged.
+ */
+const deliverable = (kase) => kase.steps.every((step) => ['call', 'new', 'get', 'timer', 'settle', 'callback'].includes(step.input.kind) && (step.input.during === undefined || step.input.duringCall !== undefined));
+
+/** Two codec trees with the same content, identity numbers aside (each read alone, its numbers by first appearance). */
+export function sameContent(left, right) {
+  const canonical = (tree) => {
+    const numbers = new Map();
+    const walk = (node) => {
+      if (Array.isArray(node)) return node.map(walk);
+      if (node === null || typeof node !== 'object') return node;
+      if ((node.$dr === 'id' || node.$dr === 'ref') && Number.isInteger(node.n)) {
+        if (!numbers.has(node.n)) numbers.set(node.n, numbers.size + 1);
+        return node.$dr === 'id' ? { $dr: 'id', n: numbers.get(node.n), value: walk(node.value) } : { $dr: 'ref', n: numbers.get(node.n) };
+      }
+      const out = {};
+      for (const key of Object.keys(node)) out[key] = walk(node[key]);
+      return out;
+    };
+    return JSON.stringify(walk(tree));
+  };
+  return canonical(left) === canonical(right);
+}
 
 /**
  * Reads containers (`{ name, text }`) and decides each case: judged, or why
@@ -116,7 +166,7 @@ export function planContainers(list, portMap, { families = null } = {}) {
       return { record, verdict };
     });
     for (const item of cases) {
-      const not = notReplayable(item.record, family);
+      const not = notReplayable(item.record, family, { resolve: reader.resolve });
       item.verdict.deliver = not === null && deliverable(item.record);
       if (item.record.outcome !== 'recorded') continue;
       if (not) { item.verdict.reason = not.feature; item.verdict.later = not.later; continue; }
@@ -151,6 +201,7 @@ async function runUnit(engine, unit, plants, results, notes) {
     entry.differences.push(outsideDifference(entries, when));
   };
   let lost = null;
+  let endedWith = null; // the recorded end state of the case delivered before, in file order
   for (const item of items) {
     if (lost) { if (item.verdict.judge) results.get(item.key)[mode] = { outcome: 'inconclusive', differences: [], detail: lost, stepsCompared: 0 }; continue; }
     const kase = resolveCase(item.record, container.reader.resolve);
@@ -163,11 +214,39 @@ async function runUnit(engine, unit, plants, results, notes) {
       charge(begun.between, 'after the case ended');
       previous = item;
       const table = [];
+      // A stateful family's case starts from its recorded entry state: seeded alone, and in file order where the
+      // recording says the state moved since the case before ended (a case not delivered, code no step holds).
+      if (isStatefulFamily(container.family) && kase.entry?.state) {
+        const start = kase.entry.state;
+        // In file order the first case is seeded too: what the module's load and the code before the first case (an
+        // engine module no family maps, setting the guard's executor while it loads) left is recorded, not rebuilt.
+        const seedIt = mode === 'isolated' || endedWith === null || !sameContent(endedWith, start);
+        if (seedIt) {
+          const before = table.length;
+          const state = shareStrings(start, table);
+          const seeded = await engine.request({ op: 'seed', unit: id, state, bind: plan.entry, ...(table.length > before ? { strings: table.slice(before) } : {}) }, { what: label('the seed') });
+          if (!seeded.ok) throw new Error(seeded.error);
+        }
+      }
+      // Only a judged case's end is where the engine's own history stands; after any other the next case is seeded.
+      endedWith = item.verdict.judge ? (kase.end?.state ?? null) : null;
+      // One step's message: its input, the answers of its effects, the bind plan, and the inputs the test made inside
+      // its port calls (`during`), which travel with it and are delivered inside those calls.
+      const stepMessage = (index) => {
+        const step = kase.steps[index];
+        const given = { kind: step.input.kind, entry: step.input.entry, args: step.input.args, now: step.input.now };
+        for (const key of ['id', 'port', 'call', 'outcome']) if (step.input[key] !== undefined) given[key] = step.input[key];
+        if (Object.prototype.hasOwnProperty.call(step.input, 'value')) given.value = step.input.value;
+        if (Object.prototype.hasOwnProperty.call(step.input, 'target')) given.target = step.input.target;
+        const during = [];
+        kase.steps.forEach((inner, at) => { if (at > index && inner.input.during === step.n && inner.input.duringCall !== undefined) during.push({ call: inner.input.duringCall, step: stepMessage(at) }); });
+        return { input: shareStrings(given, table), env: shareStrings(envOf(step), table), bind: plan[index], ...(during.length ? { during } : {}) };
+      };
       for (const [index, step] of kase.steps.entries()) {
+        if (step.input.during !== undefined) continue;
         const before = table.length;
-        const input = shareStrings({ kind: step.input.kind, entry: step.input.entry, args: step.input.args, now: step.input.now }, table);
-        const env = shareStrings(envOf(step), table);
-        const message = { op: 'step', unit: id, step: { input, env, bind: plan[index], ...(table.length > before ? { strings: table.slice(before) } : {}) } };
+        const body = stepMessage(index);
+        const message = { op: 'step', unit: id, step: { ...body, ...(index === 0 ? { entryBind: plan.entry } : {}), ...(step.late ? { late: true } : {}), ...(table.length > before ? { strings: table.slice(before) } : {}) } };
         const answer = await engine.request(message, { what: label(`step ${index + 1} (recorded ${step.n})`) });
         if (!answer.ok) throw new Error(answer.error);
         if (answer.halted) break;
@@ -207,7 +286,8 @@ function readReplayed(replayed, kase) {
   const strings = Array.isArray(given.strings) ? given.strings : [];
   const steps = Array.isArray(given.steps) ? expandStrings(given.steps, strings).filter((step) => step !== null && typeof step === 'object').map((step) => ({ ...step, input: step.input ?? {}, effects: Array.isArray(step.effects) ? step.effects : [] })) : [];
   const halt = given.halt && typeof given.halt === 'object' ? { ...given.halt, step: Number.isInteger(given.halt.step) ? (kase.steps[given.halt.step - 1]?.n ?? given.halt.step) : given.halt.step } : null;
-  return { steps, halt, outside: Array.isArray(given.outside) ? given.outside : [], bindFailures: Array.isArray(given.bindFailures) ? given.bindFailures : [] };
+  const state = (key) => (Object.prototype.hasOwnProperty.call(given, key) ? expandStrings(given[key], strings) : undefined);
+  return { steps, entry: state('entry'), end: state('end'), pending: Array.isArray(given.pending) ? expandStrings(given.pending, strings) : undefined, halt, outside: Array.isArray(given.outside) ? given.outside : [], bindFailures: Array.isArray(given.bindFailures) ? given.bindFailures : [] };
 }
 
 /**
@@ -396,7 +476,16 @@ export async function recordReplayToys({ workDir, harnessDir = HARNESS_DIR, root
   // Port names are paths relative to the root: a root reached through a symbolic link (the OS temp dir) is resolved first.
   const root = realpathSync(given);
   const files = REPLAY_TOYS.map((name) => path.relative(root, path.join(harnessDir, 'toy', 'replay', name)).split(path.sep).join('/'));
-  return recordOnce({ files, cwd: root, root, portMap: path.join(harnessDir, 'toy', 'replay', 'replay-port-map.json'), families: ['toy-relay'], workDir, recorder: path.join(harnessDir, 'recorder.mjs') });
+  const recorded = await recordOnce({ files, cwd: root, root, portMap: path.join(harnessDir, 'toy', 'replay', 'replay-port-map.json'), families: [...REPLAY_FAMILIES], workDir, recorder: path.join(harnessDir, 'recorder.mjs') });
+  // The fixtures of REPLAY_UNRECORDABLE are expected unrecordable, each with exactly its flags; one that is not is a problem.
+  const expected = REPLAY_UNRECORDABLE.map((item) => ({ ...item, seen: false }));
+  const incomplete = [];
+  for (const entry of recorded.incomplete) {
+    const match = entry.check === 'unrecordable' && expected.find((item) => String(entry.file).endsWith(`/${item.file}`) && item.name === entry.name && JSON.stringify([...entry.flags].sort()) === JSON.stringify([...item.flags].sort()));
+    if (match) match.seen = true; else incomplete.push(entry);
+  }
+  for (const item of expected) if (!item.seen) incomplete.push({ check: 'unrecordable-expected', file: item.file, detail: `${item.name} must be unrecordable, flagged ${item.flags.join(', ')}` });
+  return { ...recorded, incomplete };
 }
 
 /**

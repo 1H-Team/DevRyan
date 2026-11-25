@@ -69,7 +69,10 @@
 // Tests that overlap (test.concurrent) are marked unrecordable. Cases are
 // written when the file ends: what an engine chain does after its test ended
 // goes to that test's case, marked late; after the file's recording is
-// written it is counted as unplaced, never dropped silently.
+// written it is counted as unplaced, never dropped silently. A timer that
+// fires after its test ended is the exception (C0e fix round): the case
+// records the timers still pending at its end, and what such a timer does,
+// or releases, is recorded nowhere (lateStore).
 //
 // Output (DEVRYAN_CONFORMANCE_OUT): one `<path stem>.raw.json` per test file
 // (container.mjs pathStem), cases in file order and a value table; the record
@@ -81,7 +84,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createCodecContext, emitSlots, hashText, snapshot } from './codec.mjs';
+import { createCodecContext, emitSlots, encodeText, hashText, snapshot } from './codec.mjs';
 import { pathStem, sliceTree } from './container.mjs';
 import { entryOf, isTestPath, loadPortMap } from './port-map.mjs';
 
@@ -91,7 +94,9 @@ export const PERFORMANCE_ORIGIN = 1000;
 export const CASE_SPAN_MS = 1000;
 export const RAW_VERSION = 5;
 // The recording's semantics: bumped by hand whenever what a recording says changes (attribution, late effects, flags).
-export const RECORDING_VERSION = 6;
+// 7 (package C0e): a step with a synchronous part (a call, `new`, `get`, a timer firing, a callback) records
+// `returnedAt`, the number of its effects made before that part returned or threw; the rest followed in the jobs it started.
+export const RECORDING_VERSION = 7;
 /** How long the recorder's own hook that writes a file's recording may take. */
 export const WRITE_TIMEOUT_MS = 600000;
 export const LAYERS = Object.freeze(['clock', 'random', 'globals', 'mock-module', 'entries']);
@@ -103,6 +108,9 @@ const API = Symbol.for('devryan.client-conformance');
 const RealMap = Map;
 const RealSet = Set;
 const RealWeakMap = WeakMap;
+const RealWeakSet = WeakSet;
+const WeakSetAdd = WeakSet.prototype.add;
+const WeakSetHas = WeakSet.prototype.has;
 const RealProxy = Proxy;
 const RealError = Error;
 const RealDate = Date;
@@ -159,6 +167,9 @@ for (const name of layerList) if (!LAYERS.includes(name) && !DISCOVER) throw new
 const layers = new RealSet(DISCOVER ? [] : layerList);
 const PORT_MAP_FILE = setting('DEVRYAN_CONFORMANCE_PORT_MAP');
 const portMap = PORT_MAP_FILE && layers.has('entries') ? loadPortMap(PORT_MAP_FILE, { root: ROOT }) : null;
+/** The families of the map by name; a stateful one (package C0e) names a `store` export or `moduleState` bindings. */
+const FAMILY_BY_NAME = new RealMap((portMap?.families ?? []).map((family) => [family.name, family]));
+const isStateful = (name) => { const family = apply(MapGet, FAMILY_BY_NAME, [name]); return Boolean(family && (family.store || family.moduleState)); };
 // The entries engine code calls with no frame at all, which the census names with the engine site (`family#export`, comma-separated):
 // such a call is passed through and counted; any other call with no frame flags its case `no-frame`.
 const NO_FRAME_ALLOWED = new RealSet(String(setting('DEVRYAN_CONFORMANCE_NO_FRAME') ?? '').split(',').map((item) => item.trim()).filter(Boolean));
@@ -216,8 +227,8 @@ function newCase({ ordinal = null, hooks = null }, previous = null) {
   const label = ordinal !== null ? String(ordinal) : `hooks:${hooks}`;
   const seed = createHash('sha256').update(`${TEST_FILE}#${ordinal !== null ? ordinal : label}`).digest();
   return {
-    kind: ordinal !== null ? 'test' : 'hooks', ordinal, hooks, label, seed: seed.toString('hex').slice(0, 32), families: new RealMap(), context: [],
-    codec: createCodecContext({ names: portNames, unwrap }), flags: new RealSet(), testTimers: 0, testCalls: 0, expired: [],
+    kind: ordinal !== null ? 'test' : 'hooks', ordinal, hooks, label, seed: seed.toString('hex').slice(0, 32), families: new RealMap(), context: [], moved: new RealSet(), touched: new RealSet(),
+    codec: createCodecContext({ names: portNames, unwrap, unifyWrapped: true }), flags: new RealSet(), testTimers: 0, testCalls: 0, expired: [],
     clock, entryNow: clock.now, endNow: null, entryState: {}, endState: {}, random: sfc32(seed), out: null,
   };
 }
@@ -268,7 +279,7 @@ function originOf(store) {
 
 function familyRecord(name, owner = current) {
   let record = apply(MapGet, owner.families, [name]);
-  if (!record) { record = { steps: [], timers: 0, portCalls: 0, objects: 0, flags: new RealSet() }; apply(MapSet, owner.families, [name, record]); }
+  if (!record) { record = { steps: [], timers: 0, portCalls: 0, objects: 0, flags: new RealSet(), live: new RealMap(), pending: [] }; apply(MapSet, owner.families, [name, record]); }
   return record;
 }
 
@@ -281,10 +292,10 @@ const engineStore = (family, step, owner = current) => ({ kind: 'engine', family
  * port, if any. It is `active` while the port call runs synchronously: what
  * the port starts asynchronously inherits the store, but is no re-entrance.
  */
-const portStore = (caller = null) => ({ kind: 'port', case: caller?.case ?? current, caller, active: true });
+const portStore = (caller = null, effect = null) => ({ kind: 'port', case: caller?.case ?? current, caller, active: true, effect });
 /** Runs `fn` as port code called by `caller`. */
-function inPort(caller, fn) {
-  const store = portStore(caller);
+function inPort(caller, fn, effect = null) {
+  const store = portStore(caller, effect);
   try { return als.run(store, fn); } finally { store.active = false; }
 }
 const reentrant = (opener) => opener?.kind === 'port' && opener.active === true;
@@ -296,6 +307,28 @@ const runIn = (store, fn) => (store ? als.run(store, fn) : als.exit(fn));
  * wrap, code a module ran at load) runs for the current case.
  */
 const testStore = (kase) => ({ kind: 'test', case: kase });
+/**
+ * A timer that fires after its case's test ended is no step (C0e fix round, an owner decision): whether it
+ * fires before the file's recording is written is decided by real time, so it may never be part of what a
+ * recording says. Its case records the timers still pending at its end instead (`end.pending`: which timer,
+ * the delay it was set with, the step that set it), and the callback runs in a late store of that case:
+ * nothing it does, and nothing it releases (its release windows are late too), is recorded for that case.
+ * What it does to a stateful family's state while a later case runs is that case's `state-moved`.
+ */
+const lateStore = (kase, family = null) => ({ kind: 'late', case: kase, family });
+/** Whether a release window of a late timer of ended case `kase` is running now. */
+function lateWindowFor(kase) {
+  if (kase.endNow === null) return false;
+  for (const window of activeWindows) if (window.late === true && window.case === kase) return true;
+  return false;
+}
+/** Whether code running in `store` runs for a late timer (a late store, or an engine or test chain such a timer released). */
+function isLate(store) {
+  if (!store) return false;
+  if (store.kind === 'late' || store.late === true) return true;
+  if ((store.kind === 'engine' || store.kind === 'test') && store.case && lateWindowFor(store.case)) { store.late = true; return true; }
+  return false;
+}
 
 // ------------------------------------------------------------ release windows
 //
@@ -338,6 +371,7 @@ function windowEnd(window, generation) {
   enqueue(() => windowEnd(window, generation + 1));
 }
 function noteExpired(window) {
+  if (window.late === true) return;
   const list = window.case.expired;
   list.push(window);
   if (list.length > EXPIRED_KEPT) list.shift();
@@ -347,6 +381,8 @@ function releaseTag() {
   const store = storeNow();
   const origin = originOf(store);
   if (origin === 'harness' || stepSeq === 0) return null;
+  // What a late timer releases is late too: never a step, never a flag of its ended case.
+  if (isLate(store)) return { step: null, family: store.family ?? null, case: store.case, late: true, openSeq: stepSeq, openTick: (activity += 1) };
   return guard('release', () => {
     const engine = origin === 'engine';
     return { step: engine ? stepOf(store) : null, family: engine ? store.family : null, case: caseOf(store), openSeq: stepSeq, openTick: (activity += 1) };
@@ -380,12 +416,15 @@ function registeredLate(promise) {
  * have lost is flagged `release-expired`.
  */
 function stepOf(store) {
+  if (store.late === true) return store.step;
   let window = null;
   for (const entry of activeWindows) if (!window || entry.id > window.id) window = entry;
   const seq = stepNumber(store.step);
   let placed = false;
   if (window !== null) {
     window.lastActive = window.generation;
+    // A chain a late timer of its own case released is late from here on: what it does is recorded nowhere.
+    if (window.late === true && window.case === store.case) { store.late = true; return store.step; }
     if (window.step !== null && window.case === store.case && window.family === store.family) {
       if (seq < stepNumber(window.step)) store.step = window.step;
       placed = store.step === window.step;
@@ -407,13 +446,19 @@ function checkExpired(store, seq) {
 /** Opens a step of `family` in case `owner`; `opener` is the store the input arrives in (re-entrance is `during`). */
 function openStep(family, input, opener = storeNow(), owner = current) {
   if (written) { noteUnplaced(input.kind); return null; }
+  // A stateful family's entry state, taken before its first step in the case (before the step's own input is read).
+  if (isStateful(family) && !hasOwn(owner.entryState, family) && owner.endNow === null) owner.entryState[family] = guard('state', () => ref(familyState(family), owner), null);
   const record = familyRecord(family, owner);
   const step = { n: record.steps.length + 1, input: { ...input, now: readNow(owner) }, effects: [] };
   // An input that arrives after its case's test ended (a timer, an answer, a resolve) is still the case's: marked late.
   if (owner.endNow !== null) step.late = true;
   apply(WeakMapSet, seqOf, [step, (stepSeq += 1)]);
   const caller = reentrant(opener) ? opener.caller : null;
-  if (caller && caller.kind === 'engine' && caller.case === owner && caller.family === family) step.input.during = caller.step.n;
+  if (caller && caller.kind === 'engine' && caller.case === owner && caller.family === family) {
+    step.input.during = caller.step.n;
+    // Which port call of that step it arrived in (its number), so a replay delivers it inside that very call.
+    if (opener.effect && opener.effect.call !== undefined) step.input.duringCall = opener.effect.call;
+  }
   record.steps.push(step);
   return step;
 }
@@ -429,8 +474,13 @@ function place(step, owner, effect) {
 /** Records an effect where it belongs: the step of the engine chain running it (in its own case), else the case context. */
 function record(effect, store = storeNow()) {
   const origin = originOf(store);
-  if (origin === 'port' || origin === 'harness') return false;
-  if (origin === 'engine') return place(stepOf(store), store.case, effect);
+  if (origin === 'port' || origin === 'harness' || origin === 'late') return false;
+  if (origin === 'engine') {
+    const step = stepOf(store);
+    return isLate(store) ? false : place(step, store.case, effect);
+  }
+  // Test code a late timer released (a reaction of the test's on what the timer resolved) is late too.
+  if (isLate(store)) return false;
   checkOutside();
   // Test code runs for the case whose test (or test timer) set it in motion (a test store), else for the current case.
   const kase = caseOf(store);
@@ -446,11 +496,18 @@ function observeSettle(promise, onSettle) {
   apply(PromiseThen, promise, [(value) => { guard('settle', () => onSettle('fulfilled', value)); }, (reason) => { guard('settle', () => onSettle('rejected', reason)); }]);
 }
 
+/** What a recorder wrapper that is no port stands for (the codec gives the two one identity); anything else is itself. */
+const canonical = (value) => {
+  if (value === null || (typeof value !== 'object' && typeof value !== 'function') || apply(WeakMapHas, portNames, [value])) return value;
+  const raw = apply(WeakMapGet, rawOf, [value]);
+  return raw !== undefined && raw !== null && (typeof raw === 'object' || typeof raw === 'function') && !apply(WeakMapHas, portNames, [raw]) ? raw : value;
+};
 /** Paths of every container object in a draft, by identity, through own enumerable data members only. */
 function identityPaths(root) {
   const paths = [];
   const visited = new RealSet();
-  const walk = (value, where) => {
+  const walk = (given, where) => {
+    const value = canonical(given);
     if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return;
     paths.push([where, value]);
     if (apply(SetHas, visited, [value]) || typeof value === 'function') return;
@@ -786,6 +843,8 @@ function setTimerWrapper(kind, underlying) {
     const store = storeNow();
     const origin = originOf(store);
     if (origin === 'harness') return apply(underlying, native ? globalThis : this, [callback, delay, ...rest]);
+    // A timer late code sets is late code's: it runs in that late store, and nothing is recorded of it.
+    if (isLate(store)) return apply(underlying, native ? globalThis : this, [typeof callback === 'function' ? function (...args) { return als.run(store, () => apply(callback, this, args)); } : callback, delay, ...rest]);
     const counted = origin !== 'port';
     const engine = origin === 'engine';
     // Engine timers are numbered 1, 2, ... per family; the test's own are t1, t2, ... so they never shift the engine's.
@@ -803,6 +862,10 @@ function setTimerWrapper(kind, underlying) {
     let fires = 0;
     const fire = typeof callback === 'function' ? function (...args) {
       fires += 1;
+      // A timer that fires after its case's test ended is no step and no context of that case: it was recorded as
+      // pending at the case's end, and what its callback does now is recorded nowhere (see lateStore).
+      if (counted && timed.endNow !== null) return runLate(engine ? store.family : null, owner, () => apply(callback, this, args));
+      if (counted && engine && !repeat) guard('timer.fire', () => { apply(MapDelete, familyRecord(store.family, store.case).live, [id]); });
       if (layers.has('clock')) {
         if (unowned && counted && timed.kind === 'test' && setAt + span * fires > timed.clock.now) guard('timer.fire', () => timed.flags.add('timer-owner-unknown'));
         advance(timed.clock, setAt + span * fires);
@@ -820,9 +883,16 @@ function setTimerWrapper(kind, underlying) {
       const nested = reentrant(opener);
       const previous = store.step;
       store.step = step;
-      try { return als.run(engineStore(store.family, step, store.case), () => apply(callback, this, args)); } finally { if (nested) store.step = previous; }
+      const beforeState = stateBefore(store.family);
+      try { return als.run(engineStore(store.family, step, store.case), () => apply(callback, this, args)); } finally {
+        if (nested) store.step = previous;
+        step.returnedAt = step.effects.length;
+        stateAfter(store.family, step, beforeState, store.case);
+      }
     } : callback;
     if (counted) guard('timer.set', () => record({ kind: 'timer.set', id, delay: ref(delay), repeat }, store));
+    // An engine timer is pending until it fires (a timeout) or is cleared; those still pending at the case's end are written there.
+    if (counted && engine && store.case.endNow === null) guard('timer.set', () => { apply(MapSet, familyRecord(store.family, store.case).live, [id, { id, delay: ref(delay, store.case), repeat, step: store.step ? store.step.n : null }]); });
     const handle = inPort(engine ? store : null, () => apply(underlying, native ? globalThis : this, [fire, delay, ...rest]));
     if (counted && handle !== undefined && handle !== null) guard('timer.id', () => {
       const entry = { id, case: owner, family: engine ? store.family : null };
@@ -848,11 +918,16 @@ function clearTimerWrapper(kind, underlying) {
         const object = typeof handle === 'object' || typeof handle === 'function';
         const known = object ? apply(WeakMapGet, timerIds, [handle]) : apply(MapGet, primitiveTimerIds, [handle]);
         if (!object) apply(MapDelete, primitiveTimerIds, [handle]);
+        // A cleared engine timer is no longer pending, whoever clears it.
+        if (known && !known.ambiguous && known.family !== null && known.case.endNow === null) apply(MapDelete, familyRecord(known.family, known.case).live, [known.id]);
+        if (isLate(store)) return;
+        // A timer that is no own timer of the clearing chain (one the test or another family set, an unknown handle, one an
+        // earlier case set) is named by its handle, a value of the case, not by another side's numbering (package C0e).
         let effect;
-        if (!known) effect = { kind: 'timer.clear', id: null };
+        if (!known) effect = { kind: 'timer.clear', id: null, handle: ref(handle) };
         else if (known.ambiguous) effect = { kind: 'timer.clear', id: null, ambiguous: true };
-        else if (known.case !== caseOf(origin === 'engine' ? store : null)) effect = { kind: 'timer.clear', id: known.id, fromCase: known.case.label };
-        else if (origin === 'engine' && known.family !== store.family) effect = { kind: 'timer.clear', id: known.id, family: known.family };
+        else if (known.case !== caseOf(origin === 'engine' ? store : null)) effect = { kind: 'timer.clear', id: null, handle: ref(handle), earlier: true };
+        else if (origin === 'engine' && known.family !== store.family) effect = { kind: 'timer.clear', id: null, handle: ref(handle) };
         else effect = { kind: 'timer.clear', id: known.id };
         record(effect, store);
       });
@@ -897,21 +972,27 @@ function callbackFor(family, name, fn, owner) {
       const store = storeNow();
       const origin = originOf(store);
       if (origin === 'engine' || origin === 'harness') return apply(target, thisArg, args);
+      // Late code (see lateStore) calling back a function the engine handed a port: no step of the ended case.
+      if (isLate(store)) return runLate(family, store.case, () => apply(target, thisArg, args));
       const kase = caseOf(store);
       guard('callback', () => { for (const arg of args) markForeign(arg); });
-      const step = guard('callback', () => openStep(family, { kind: 'callback', port: name, args: ref(listOf(args), kase) }, store, kase), null);
+      // `target` is the engine's function itself, the one the port was handed (its identity names which one).
+      const step = guard('callback', () => openStep(family, { kind: 'callback', port: name, args: ref(listOf(args), kase), target: ref(target, kase) }, store, kase), null);
       if (!step) return apply(target, thisArg, args);
       // An asynchronous invocation moves the chain that handed the callback out (a promise it resolves resumes there).
       if (!reentrant(store) && owner && owner.case === kase) owner.step = step;
       const chain = engineStore(family, step, kase);
+      const beforeState = stateBefore(family);
       let result;
       try {
         result = als.run(chain, () => apply(target, thisArg, args));
       } catch (error) {
-        guard('callback', () => { step.throws = ref(error); });
+        guard('callback', () => { step.returnedAt = step.effects.length; step.throws = ref(error); });
+        stateAfter(family, step, beforeState, kase);
         throw error;
       }
-      guard('callback', () => { step.returns = ref(result); if (isPromise(result)) observeSettle(result, (outcome, value) => settledOutput(chain, step, outcome, value)); });
+      stateAfter(family, step, beforeState, kase);
+      guard('callback', () => { step.returnedAt = step.effects.length; step.returns = ref(result); if (isPromise(result)) observeSettle(result, (outcome, value) => settledOutput(chain, step, outcome, value)); });
       return result;
     },
   });
@@ -922,12 +1003,16 @@ function callbackFor(family, name, fn, owner) {
 
 /** An output: a promise the engine returned settled. It belongs to the step the returning chain is in when it settles. */
 function settledOutput(chain, step, outcome, value) {
-  place(stepOf(chain), chain.case, { kind: 'settled', step: step.n, outcome, value: ref(value, chain.case) });
+  const at = stepOf(chain);
+  if (isLate(chain)) return;
+  place(at, chain.case, { kind: 'settled', step: step.n, outcome, value: ref(value, chain.case) });
 }
 
 /** A port answer settled: a step of the calling chain's family (in the chain's case), and the chain moves to it. */
 function settleStep(chain, name, call, outcome, value) {
   markForeign(value);
+  // An answer a late timer settled (its release window is running) is no step: the chain that waits on it is late.
+  if (isLate(chain)) return;
   const step = openStep(chain.family, { kind: 'settle', port: name, call, outcome, value: ref(value, chain.case) }, null, chain.case);
   if (step) chain.step = step;
 }
@@ -941,7 +1026,7 @@ const portFunctions = new RealWeakMap(); // target -> Map(name -> wrapper)
  * an export of a module the test mocked (the mock-module layer), whose calls
  * with no engine chain record nothing (see there).
  */
-function portFunction(name, target, { thisArg, wrapAnswers = false, families = null, mocked = false } = {}) {
+function portFunction(name, target, { thisArg, wrapAnswers = false, families = null, mocked = false, plainAnswers = false } = {}) {
   let byName = apply(WeakMapGet, portFunctions, [target]);
   if (!byName) { byName = new RealMap(); apply(WeakMapSet, portFunctions, [target, byName]); }
   const cacheKey = thisArg === undefined ? name : null;
@@ -951,7 +1036,7 @@ function portFunction(name, target, { thisArg, wrapAnswers = false, families = n
     const origin = originOf(store);
     const isNew = newTarget !== undefined;
     const invoke = (finalArgs) => (isNew ? construct(fnTarget, finalArgs) : apply(fnTarget, thisArg === undefined ? receiver : thisArg, finalArgs));
-    if (origin === 'port' || origin === 'harness') return invoke(args);
+    if (origin === 'port' || origin === 'harness' || isLate(store)) return invoke(args);
     if (origin === 'engine' && families && !apply(SetHas, families, [store.family])) return invoke(args); // inlined for this family
     const engine = origin === 'engine';
     // A mocked module's export called with no engine chain (the test, or a component it renders, calling its own
@@ -965,22 +1050,32 @@ function portFunction(name, target, { thisArg, wrapAnswers = false, families = n
     const finalArgs = engine ? args.map((arg, index) => (typeof arg === 'function' ? callbackFor(store.family, `${name}:${index}`, arg, store) : arg)) : args;
     let result;
     try {
-      result = inPort(engine ? store : null, () => invoke(finalArgs));
+      result = inPort(engine ? store : null, () => invoke(finalArgs), effect);
     } catch (error) {
       if (effect) guard('port', () => { effect.throws = ref(error); });
       throw error;
     }
     if (!effect) return result;
-    guard('port', () => { effect.answer = ref(result); });
-    if (!engine) return result;
+    // The test's own call: its answer is context. One with behaviour (a storage) is written as the port it would be
+    // to the engine (its name), not walked as data; the test still gets the value itself.
+    if (!engine) { guard('port', () => { effect.answer = ref(!isPromise(result) && portLike(result) ? portObject(`${name}#${effect.call}`, result) : result); }); return result; }
     guard('port', () => markForeign(result));
     const family = store.family;
     if (isPromise(result)) {
+      guard('port', () => { effect.answer = ref(result); });
       guard('port', () => observeSettle(result, (outcome, value) => settleStep(store, name, effect.call, outcome, value)));
       if (wrapAnswers) return apply(PromiseThen, result, [(value) => (answerLike(value) ? portObject(`${name}#${effect.call}`, value, { wrapAnswers }) : value)]);
       return result;
     }
-    if (isNew || portLike(result) || (wrapAnswers && answerLike(result))) return portObject(`${name}#${effect.call}`, result, { wrapAnswers });
+    // An answer the engine gets as a port object is recorded as that port (its name): the engine never sees its
+    // contents as data, it reads and calls them through the port, and those reads and calls are effects (package C0e).
+    // A port whose answer is data by its nature (a store updater's next state, which carries the store's actions) never answers a port object.
+    if (!plainAnswers && (isNew || portLike(result) || (wrapAnswers && answerLike(result)))) {
+      const answered = portObject(`${name}#${effect.call}`, result, { wrapAnswers });
+      guard('port', () => { effect.answer = ref(answered); });
+      return answered;
+    }
+    guard('port', () => { effect.answer = ref(result); });
     return result;
   };
   const handler = {
@@ -1071,6 +1166,8 @@ function callEntry(family, spec, label, target, thisArg, args, newTarget, crossi
   const origin = originOf(store);
   const invoke = (finalArgs) => (newTarget !== undefined ? construct(target, finalArgs, newTarget) : apply(target, thisArg, finalArgs));
   if (origin === 'harness') return invoke(args);
+  // Late code (a timer that fired after its case's test ended, and what it released) calls an entry: no step.
+  if (isLate(store)) return runLate(family, store.case, () => invoke(args));
   // With no engine chain running, the caller frame decides, inside a pass-through call too: test code's call
   // is recorded; any other caller's (engine code no family maps) is passed through and counted, never a step.
   // Engine code an entry handed the test (spec.handedOut) is the test's when no frame shows a caller: the
@@ -1081,7 +1178,16 @@ function callEntry(family, spec, label, target, thisArg, args, newTarget, crossi
   }
   let portEffect = null;
   if (origin === 'engine') {
-    if (store.family === family || !crossing || !apply(SetHas, crossing.families, [store.family])) return invoke(args); // inlined
+    if (store.family === family || !crossing || !apply(SetHas, crossing.families, [store.family])) {
+      // Inlined: another family's chain that runs a stateful family's entry and changes its state moves it outside its steps.
+      if (store.family === family || !isStateful(family)) return invoke(args);
+      const watched = stateText(family);
+      const moved = () => { if (stateText(family) !== watched) noteMoved(family, store); };
+      let result;
+      try { result = invoke(args); } finally { moved(); }
+      if (isPromise(result)) guard('state', () => observeSettle(result, moved));
+      return result;
+    }
     portEffect = guard('entry', () => ({ kind: 'port', port: crossing.name, call: (familyRecord(store.family, store.case).portCalls += 1), args: ref(listOf(args)) }), null);
     if (portEffect) guard('entry', () => record(portEffect, store));
   }
@@ -1100,12 +1206,19 @@ function callEntry(family, spec, label, target, thisArg, args, newTarget, crossi
   if (!step) return invoke(args);
   const draft = spec.draft;
   const before = draft !== undefined ? guard('entry', () => identityPaths(args[draft]), null) : null;
-  const finalArgs = guard('entry', () => injectPorts(family, spec, args), args);
+  const beforeState = stateBefore(family);
+  // A store state the recorder's getState handed the test (a view) is the state itself to the engine: zustand's
+  // own `Object.is(next, state)` must see the very object (setState(getState()) notifies nothing).
+  for (let index = 0; index < args.length; index += 1) if (args[index] !== null && typeof args[index] === 'object' && apply(WeakSetHas, viewedStates, [args[index]])) args[index] = apply(WeakMapGet, rawOf, [args[index]]);
+  const finalArgs = guard('entry', () => injectPorts(family, spec.injected?.some((item) => item.perStep) ? { ...spec, injected: spec.injected.map((item) => (item.perStep ? { ...item, name: `${item.name}@${step.n}` } : item)) } : spec, args), args);
   const chain = engineStore(family, step, kase);
   const finish = (fields) => guard('entry', () => {
+    // Which of the step's effects came before the entry returned or threw (the rest follow in the jobs it started).
+    step.returnedAt = step.effects.length;
     Object.assign(step, fields);
     step.after = ref(listOf(args), kase);
     if (before) step.changes = ref(changedPaths(before, args[draft]), kase);
+    stateAfter(family, step, beforeState, kase);
   });
   let result;
   try {
@@ -1126,7 +1239,13 @@ function callEntry(family, spec, label, target, thisArg, args, newTarget, crossi
   if (portEffect) return whole && result !== null && typeof result === 'object' && !isPromise(result) ? handOut(family, label, result, kase, true) : result;
   // An async entry-object factory: its resolved value is handed out, through a derived promise (one microtask later).
   if (whole && isPromise(result)) return apply(PromiseThen, result, [(value) => handOut(family, label, value, kase, true)]);
-  return handOut(family, label, result, kase, whole);
+  // What the test is handed as engine code is named `<label>#<n>` from here on: the step says which n (a later step
+  // calls `<label>#<n>…`), so a replay binds the name to the value its own step returned.
+  const counted = familyRecord(family, kase).objects;
+  const out = handOut(family, label, result, kase, whole);
+  const numbered = familyRecord(family, kase).objects;
+  if (numbered !== counted) guard('entry', () => { step.handedOut = numbered; });
+  return out;
 }
 
 // Who called an entry with no engine chain running: test code (the test file, or a file the naming rule
@@ -1192,9 +1311,32 @@ function passThrough(family, label, caller, nested, run) {
       if (!apply(SetHas, NO_FRAME_ALLOWED, [key])) flagFamily(family, 'no-frame');
     }
   });
-  if (nested) return run();
-  const store = { kind: 'passthrough', case: current, active: true };
-  try { return als.run(store, run); } finally { store.active = false; }
+  // A passed-through call of engine code a family handed the test (its objects' state, which the family does not
+  // record) may change those objects: flagged `handed-out-touched`. One of a stateful family's own entry moves
+  // its state only when it changes it: its content is compared across the call's synchronous part, and, for an
+  // answer that is a promise, again when it settles (a continuation the call started); a read moves nothing.
+  const handed = String(label).includes('#');
+  if (handed) noteTouched(family, null);
+  const kase = current;
+  const watched = !handed && isStateful(family) ? stateText(family) : null;
+  const moved = () => { if (stateText(family) !== watched) noteMoved(family, { kind: 'passthrough', case: kase }); };
+  const watch = (result) => {
+    if (watched === null) return result;
+    moved();
+    if (isPromise(result)) guard('state', () => observeSettle(result, moved));
+    return result;
+  };
+  const store = nested ? null : { kind: 'passthrough', case: current, active: true };
+  let result;
+  try {
+    result = store ? als.run(store, run) : run();
+  } catch (error) {
+    if (store) store.active = false;
+    if (watched !== null) moved();
+    throw error;
+  }
+  if (store) store.active = false;
+  return watch(result);
 }
 /** A family's port passed through (flagOutside): counted by its caller. */
 function notePassedPort(port, file, nested) {
@@ -1237,7 +1379,8 @@ function injectPorts(family, spec, args) {
   for (const item of injected) {
     const arg = out[item.arg];
     if (arg === null || (typeof arg !== 'object' && typeof arg !== 'function')) continue;
-    const options = { wrapAnswers: item.wrapAnswers === true };
+    if (item.onlyFunction && item.key === undefined && typeof arg !== 'function') continue;
+    const options = { wrapAnswers: item.wrapAnswers === true, plainAnswers: item.plainAnswers === true };
     if (item.key === undefined) { out[item.arg] = typeof arg === 'function' ? portFunction(item.name, arg, options) : portObject(item.name, arg, options); continue; }
     const inner = guard('inject', () => { const descriptor = getOwnPropertyDescriptor(arg, item.key); return descriptor && hasOwn(descriptor, 'value') ? descriptor.value : undefined; });
     if (inner === null || (typeof inner !== 'object' && typeof inner !== 'function')) continue;
@@ -1345,18 +1488,51 @@ function handOut(family, label, value, owner, whole = false) {
  * A wrapper of engine code handed to the test. `parent` (`{ proxy, object }`)
  * makes it a method: called on the parent's wrapper, it runs on the object.
  */
+/** Stores (getState, setState, subscribe) a family handed the test, with the recorder's listener on them. */
+const watchedStores = new RealWeakMap();
+/**
+ * A store a family hands the test (ChildStoreManager's directory stores): the recorder listens to it, so a
+ * change that no step of the family makes (engine code no family maps writing to it through its own reference)
+ * marks the family's state moved in that case (`state-moved`), as for a stateful family's own store.
+ */
+function watchHandedStore(family, value, owner) {
+  if (value === null || (typeof value !== 'object' && typeof value !== 'function') || apply(WeakMapHas, watchedStores, [value])) return;
+  const fields = guard('hand-out', () => ['getState', 'setState', 'subscribe'].every((key) => { const descriptor = getOwnPropertyDescriptor(value, key); return descriptor && hasOwn(descriptor, 'value') && typeof descriptor.value === 'function'; }), false);
+  if (!fields) return;
+  apply(WeakMapSet, watchedStores, [value, true]);
+  guard('hand-out', () => als.run({ kind: 'harness' }, () => value.subscribe(() => {
+    const store = storeNow();
+    if (store && store.kind === 'harness') return;
+    // A late timer of the case that was handed the store writes it after that case's end: recorded nowhere.
+    if (isLate(store)) { if (store.case === owner) return; }
+    else if (store && store.kind === 'engine' && store.family === family) return;
+    noteTouched(family, store);
+  })));
+}
 function engineWrapper(family, name, target, owner, parent) {
+  watchHandedStore(family, target, owner);
   const members = new RealMap(); // key -> { value, wrapper }
   let proxy = null;
   const handler = { get: (object, key) => memberOf(family, name, object, proxy, key, owner, members) };
   if (typeof target === 'function') {
-    handler.apply = (fn, thisArg, args) => callEntry(family, HANDED_OUT, name, fn, parent && thisArg === parent.proxy ? parent.object : thisArg, args, undefined, null);
-    handler.construct = (fn, args, newTarget) => (newTarget === proxy ? callEntry(family, HANDED_OUT, name, fn, undefined, args, fn, null) : construct(fn, args, newTarget));
+    const spec = memberSpec(family, name, HANDED_OUT);
+    handler.apply = (fn, thisArg, args) => callEntry(family, spec, name, fn, parent && thisArg === parent.proxy ? parent.object : thisArg, args, undefined, null);
+    handler.construct = (fn, args, newTarget) => (newTarget === proxy ? callEntry(family, spec, name, fn, undefined, args, fn, null) : construct(fn, args, newTarget));
   }
   proxy = new RealProxy(target, handler);
   if (!parent) apply(WeakMapSet, handedOut, [target, proxy]);
   apply(WeakMapSet, rawOf, [proxy, target]);
   return proxy;
+}
+
+/** Injected ports of a method of handed-out engine code (`member` in the map), by family, entry and member name. */
+const injectedByMember = new RealMap();
+/** The spec of handed-out engine code named `label` (`<entry>#<n>.<member>…`): `base`, with the injected ports the map gives its last member. */
+function memberSpec(family, label, base) {
+  const parts = String(label).split('.');
+  if (parts.length < 2) return base;
+  const injected = apply(MapGet, injectedByMember, [`${family}:${parts[0].split('#')[0]}:${parts[parts.length - 1].split('#')[0]}`]);
+  return injected ? { ...base, injected } : base;
 }
 
 /** A member read through a handed-out wrapper. */
@@ -1399,6 +1575,215 @@ function memberOf(family, name, object, proxy, key, owner, members) {
   return byKey.wrapper;
 }
 
+
+// ------------------------------------------------------- stateful families (C0e)
+//
+// A stateful family names a zustand store export (`store`) and/or module-level
+// bindings no export exposes (`moduleState`). Its state, `{ store?: getState(),
+// module?: { binding: value } }`, is recorded at case entry and end, after the
+// synchronous part of every step (`state`) with that part's change set
+// (`stateChanges`: every path below the root whose object identity changed),
+// and every notification of its store is an effect (`notify`, with the state
+// and the previous state the store handed its listeners). The bindings are read
+// through a function the loader appends to the module's own source (the
+// product file is never written); the store is read through its own getState.
+// The test's calls of an action (`<store>.<action>`), of setState and of
+// subscribe are steps; a function handed to setState is the port `updater`, a
+// subscriber the port `subscriber` (its calls are what each subscriber saw, in
+// order), and the unsubscribe handed back is engine code (`<store>.subscribe#n`).
+// State that changes inside a case by code that is no step of the family (an
+// unmapped module calling an entry, another family inlining one, a notification
+// with none of its steps running) flags the case `state-moved`.
+const moduleStates = new RealMap(); // module file -> () => { binding: value }
+/** The state of a stateful family as it is now, read as harness code (nothing is recorded while it is read). */
+function familyState(name) {
+  return als.run({ kind: 'harness' }, () => {
+    const family = apply(MapGet, FAMILY_BY_NAME, [name]);
+    const namespace = apply(MapGet, loadedFamilies, [name]);
+    const out = {};
+    if (family.store) {
+      const store = namespace ? namespace[family.store] : undefined;
+      out.store = store !== null && store !== undefined && typeof store.getState === 'function' ? store.getState() : undefined;
+    }
+    if (family.moduleState) {
+      const read = apply(MapGet, moduleStates, [family.module]);
+      if (!read) throw new RealError(`the module state of ${name} was never registered: did its module load through the facade?`);
+      out.module = read();
+    }
+    return out;
+  });
+}
+/** The identity paths of a family's state below its root (the root is a fresh object at every read). */
+// The root and its `module` member are fresh objects at every read: no identity of the family's.
+const freshPath = (where) => where.length === 0 || (where.length === 1 && where[0] === 'module');
+const statePaths = (name) => identityPaths(familyState(name)).filter(([where]) => !freshPath(where));
+const stateChangesOf = (before, name, state) => changedPaths(before, state).filter((where) => !freshPath(where));
+/** Before a step's synchronous part: what the family's state is, by identity (null for a family without state). */
+const stateBefore = (family) => (isStateful(family) ? guard('state', () => statePaths(family), null) : null);
+/** After it: the state and the change set, written into the step. */
+function stateAfter(family, step, before, kase) {
+  if (!isStateful(family)) return;
+  guard('state', () => {
+    const state = familyState(family);
+    step.state = ref(state, kase);
+    if (before) step.stateChanges = ref(stateChangesOf(before, family, state), kase);
+  });
+}
+/**
+ * Code that is no step of `family` changed its state in the case `store` runs for (see above). Late code (a
+ * timer that fired after its case's test ended) moves it in the case running now, never in its own ended case.
+ */
+function noteMoved(family, store) {
+  guard('state', () => {
+    let kase = caseOf(store);
+    if (isLate(store)) {
+      kase = current;
+      if (kase === store.case || kase.endNow !== null) return;
+    }
+    apply(SetAdd, kase.moved, [family]);
+  });
+}
+/**
+ * The content of a stateful family's state as text (codec, a throwaway identity scope): two texts differ
+ * exactly when a value in the state differs, a Map's or a Set's order included. Read as harness code.
+ */
+function stateText(family) {
+  return guard('state', () => encodeText(familyState(family), createCodecContext({ names: portNames, unwrap, unifyWrapped: true })), null);
+}
+/**
+ * Runs `fn` as code of a late timer of ended case `kase` (see lateStore). Nothing it does is recorded; if it
+ * changes the state of stateful `family` (the timer's own), that is a move in the case running now.
+ */
+function runLate(family, kase, fn) {
+  const watched = family !== null && isStateful(family) ? stateText(family) : null;
+  const store = lateStore(kase, family);
+  try { return als.run(store, fn); } finally {
+    if (watched !== null && stateText(family) !== watched) noteMoved(family, store);
+  }
+}
+/**
+ * Engine code no family maps called engine code `family` handed the test (`<entry>#<n>…`: an object's method or
+ * getter, a closure), or wrote a store the family handed out, in the case `store` runs for. The family records no
+ * state of those objects (they are its instances, not its store or module state), so whether the call changed
+ * them is not known: the case is flagged `handed-out-touched`.
+ */
+function noteTouched(family, store) {
+  guard('state', () => {
+    let kase = caseOf(store);
+    if (isLate(store)) {
+      kase = current;
+      if (kase === store.case || kase.endNow !== null) return;
+    }
+    apply(SetAdd, kase.touched, [family]);
+  });
+}
+/** A notification of a stateful family's store, seen by the recorder's own listener (subscribed first, when the module loads). */
+function noteNotify(family, state, previous) {
+  guard('notify', () => {
+    const store = storeNow();
+    if (store && store.kind === 'engine' && store.family === family && !isLate(store)) { record({ kind: 'notify', state: ref(state, store.case), previous: ref(previous, store.case) }, store); return; }
+    if (store && store.kind === 'harness') return;
+    noteMoved(family, store);
+  });
+}
+const stateViews = new RealWeakMap(); // a store state -> the view handed to the test
+const viewedStates = new RealWeakSet(); // the views themselves
+const actionWrappers = new RealWeakMap(); // an action -> its entry wrapper
+/** Whether a plain object holds functions of its own (a store state's `actions` group). */
+const holdsActions = (value) => value !== null && typeof value === 'object' && !ArrayIsArray(value) && getPrototypeOf(value) === ObjectPrototype
+  && ownKeys(value).some((key) => typeof key === 'string' && typeof getOwnPropertyDescriptor(value, key)?.value === 'function');
+/** What getState hands the test: the state itself, its actions wrapped as entries `<store>.<action>` (and `<store>.<group>.<action>`). */
+function stateView(family, label, state) {
+  if (state === null || typeof state !== 'object') return state;
+  const known = apply(WeakMapGet, stateViews, [state]);
+  if (known) return known;
+  const view = new RealProxy(state, {
+    get(object, key) {
+      const value = reflectGet(object, key);
+      // A group of actions in the state (`state.actions.set`) is a view too, its actions named below it.
+      if (typeof key === 'string' && holdsActions(value) && substitutable(object, key)) return stateView(family, `${label}.${key}`, value);
+      if (typeof value !== 'function' || typeof key !== 'string' || !substitutable(object, key)) return value;
+      let wrapper = apply(WeakMapGet, actionWrappers, [value]);
+      if (!wrapper) { wrapper = wrapEntry(family, { export: `${label}.${key}` }, `${label}.${key}`, value, null); apply(WeakMapSet, actionWrappers, [value, wrapper]); }
+      return wrapper;
+    },
+  });
+  apply(WeakMapSet, stateViews, [state, view]);
+  apply(WeakMapSet, rawOf, [view, state]);
+  apply(WeakSetAdd, viewedStates, [view]);
+  return view;
+}
+/** The store export of a stateful family: called as a hook it is an entry; getState, setState and subscribe as above. */
+function storeWrapper(family, spec, label, target, crossing) {
+  if (target === null || (typeof target !== 'function' && typeof target !== 'object')) return target;
+  const members = new RealMap();
+  const member = (key, value, make) => {
+    const known = apply(MapGet, members, [key]);
+    if (known && known.value === value) return known.wrapper;
+    const wrapper = make();
+    apply(MapSet, members, [key, { value, wrapper }]);
+    return wrapper;
+  };
+  const handler = {
+    get(object, key) {
+      const value = reflectGet(object, key);
+      if (typeof value !== 'function' || !substitutable(object, key)) return value;
+      if (key === 'getState') {
+        return member(key, value, () => {
+          const getter = { getState(...args) { return stateView(family, label, apply(value, this === proxy ? object : this, args)); } }.getState;
+          apply(WeakMapSet, rawOf, [getter, value]);
+          return getter;
+        });
+      }
+      if (key === 'setState') return member(key, value, () => wrapEntry(family, { export: `${label}.setState`, injected: [{ arg: 0, name: 'updater', onlyFunction: true, plainAnswers: true }] }, `${label}.setState`, value, null));
+      // Each subscriber is a port of its own, named by the step that subscribed it (`subscriber@<n>`): the order the store
+      // calls its subscribers in is then in the effects.
+      if (key === 'subscribe') return member(key, value, () => wrapEntry(family, { export: `${label}.subscribe`, injected: [{ arg: 0, name: 'subscriber', onlyFunction: true, perStep: true }, { arg: 1, name: 'subscriber.listener', onlyFunction: true, perStep: true }] }, `${label}.subscribe`, value, null));
+      return value;
+    },
+  };
+  if (typeof target === 'function') handler.apply = (fn, thisArg, args) => callEntry(family, spec, label, fn, thisArg, args, undefined, crossing);
+  const proxy = new RealProxy(target, handler);
+  apply(WeakMapSet, rawOf, [proxy, target]);
+  return proxy;
+}
+/** The stateful family whose store export `name` of a mapped module is, or null. */
+const storeOf = (target, name) => (target?.families ?? []).find((family) => apply(MapGet, FAMILY_BY_NAME, [family])?.store === name) ?? null;
+/** The actions of every store a mapped module made (`<store>.<action>`, read from its state when it loaded), for the census. */
+const storeActions = new RealMap(); // module file -> { '<store>.<action>': 'function' }
+/** Subscribes the recorder's own listener to the store of every stateful family of a module that just loaded. */
+function listenToStores(file, namespace) {
+  for (const name of portMap.modules.get(file)?.families ?? []) {
+    const family = apply(MapGet, FAMILY_BY_NAME, [name]);
+    if (!family?.store) continue;
+    guard('notify', () => {
+      const store = namespace[family.store];
+      if (store === null || store === undefined || typeof store.subscribe !== 'function') throw new RealError(`the store ${family.store} of ${name} has no subscribe`);
+      als.run({ kind: 'harness' }, () => {
+        store.subscribe((state, previous) => noteNotify(name, state, previous));
+        const state = store.getState();
+        const actions = {};
+        const collect = (object, prefix, depth) => {
+          for (const key of ownKeys(object).filter((item) => typeof item === 'string').sort()) {
+            const value = getOwnPropertyDescriptor(object, key)?.value;
+            if (typeof value === 'function') actions[`${prefix}.${key}`] = 'function';
+            else if (depth > 0 && holdsActions(value)) collect(value, `${prefix}.${key}`, depth - 1);
+          }
+        };
+        if (state !== null && typeof state === 'object') collect(state, family.store, 1);
+        apply(MapSet, storeActions, [file, actions]);
+      });
+    });
+  }
+}
+/** The source a module's real load gets appended, registering a reader of its module-state bindings (the file is never written). */
+function moduleStateSource(file) {
+  const bindings = [];
+  for (const name of portMap.modules.get(file)?.families ?? []) for (const binding of apply(MapGet, FAMILY_BY_NAME, [name])?.moduleState?.bindings ?? []) if (!bindings.includes(binding)) bindings.push(binding);
+  if (bindings.length === 0) return '';
+  return `\n;globalThis[Symbol.for(${JSON.stringify(API.description)})].moduleState(${JSON.stringify(file)}, () => ({ ${bindings.map((binding) => `${JSON.stringify(binding)}: ${binding}`).join(', ')} }));\n`;
+}
+
 // ------------------------------------------------------- facades for the map
 
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
@@ -1419,26 +1804,42 @@ if (DISCOVER && PORT_MAP_FILE && OUT) {
   mkdirSync(OUT, { recursive: true });
   write();
   afterAll(() => { write(); });
+  const note = (key) => guard('discover', () => {
+    const [first] = frames(CALLER_FRAMES);
+    if (!first) report.noFrame += 1; else if (isTestCode(first[0])) report.testCalls += 1;
+    else {
+      // Counted in memory; written when a caller or an export is new to this file, and when the file ends.
+      const row = (report.callers[relative(first[0])] ??= {});
+      const seen = hasOwn(row, key);
+      row[key] = (seen ? row[key] : 0) + 1;
+      if (seen) return;
+    }
+    changed();
+  });
+  const counted = (fn, key) => new RealProxy(fn, { apply(target, thisArg, args) { note(key); return apply(target, thisArg, args); } });
+  // A stateful family's store (C0e): its setState, subscribe and the actions getState hands out are its entries too.
+  const storeExports = new RealSet(families.filter((family) => family.store).map((family) => `${relative(family.module)}#${family.store}`));
+  const stateViews = new RealWeakMap();
+  const storeCounter = (store, key) => new RealProxy(store, {
+    ...(typeof store === 'function' ? { apply(target, thisArg, args) { note(key); return apply(target, thisArg, args); } } : {}),
+    get(target, member) {
+      const value = reflectGet(target, member);
+      if (typeof value !== 'function' || !substitutable(target, member)) return value;
+      if (member === 'setState' || member === 'subscribe') return counted(value, `${key}.${member}`);
+      if (member !== 'getState') return value;
+      return (...args) => {
+        const state = apply(value, target, args);
+        if (state === null || typeof state !== 'object') return state;
+        if (!apply(WeakMapHas, stateViews, [state])) apply(WeakMapSet, stateViews, [state, new RealProxy(state, { get: (object, name) => { const item = reflectGet(object, name); return typeof item === 'function' && typeof name === 'string' && substitutable(object, name) ? counted(item, `${key}.${name}`) : item; } })]);
+        return apply(WeakMapGet, stateViews, [state]);
+      };
+    },
+  });
   const api = {
     wrap(value, key) {
+      if (storeExports.has(key) && value !== null && (typeof value === 'function' || typeof value === 'object')) return storeCounter(value, key);
       if (typeof value !== 'function') return value;
-      return new RealProxy(value, {
-        apply(target, thisArg, args) {
-          guard('discover', () => {
-            const [first] = frames(CALLER_FRAMES);
-            if (!first) report.noFrame += 1; else if (isTestCode(first[0])) report.testCalls += 1;
-            else {
-              // Counted in memory; written when a caller or an export is new to this file, and when the file ends.
-              const row = (report.callers[relative(first[0])] ??= {});
-              const seen = hasOwn(row, key);
-              row[key] = (seen ? row[key] : 0) + 1;
-              if (seen) return;
-            }
-            changed();
-          });
-          return apply(target, thisArg, args);
-        },
-      });
+      return counted(value, key);
     },
   };
   defineProperty(globalThis, Symbol.for('devryan.client-conformance.discover'), { value: api, configurable: true, enumerable: false, writable: false });
@@ -1472,6 +1873,12 @@ const scannedModules = new RealMap(); // mapped module file -> the export names 
 if (portMap) {
   const injectedByEntry = new RealMap();
   for (const family of portMap.families) for (const item of family.injected ?? []) {
+    if (item.member !== undefined) {
+      const byMember = `${family.name}:${item.entry}:${item.member}`;
+      if (!apply(MapHas, injectedByMember, [byMember])) apply(MapSet, injectedByMember, [byMember, []]);
+      apply(MapGet, injectedByMember, [byMember]).push(item);
+      continue;
+    }
     const key = `${family.name}:${item.entry}`;
     if (!apply(MapHas, injectedByEntry, [key])) apply(MapSet, injectedByEntry, [key, []]);
     apply(MapGet, injectedByEntry, [key]).push(item);
@@ -1480,9 +1887,19 @@ if (portMap) {
     loaded(file, namespace) {
       apply(MapSet, loadedModules, [file, namespace]);
       for (const name of portMap.modules.get(file)?.families ?? []) apply(MapSet, loadedFamilies, [name, namespace]);
+      listenToStores(file, namespace);
     },
+    moduleState(file, read) { apply(MapSet, moduleStates, [file, read]); },
     wrap(file, exportName, value) {
       const target = portMap.modules.get(file);
+      // A stateful family's store export (a zustand hook, a function, or a vanilla store object).
+      const storeFamily = storeOf(target, exportName);
+      if (storeFamily) {
+        const listed = entryOf(target, exportName);
+        const spec = { ...(listed?.spec ?? { export: exportName }), injected: apply(MapGet, injectedByEntry, [`${storeFamily}:${exportName}`]) };
+        const port = target?.ports.get(exportName);
+        return storeWrapper(storeFamily, spec, exportName, value, port ? { name: port.name, families: new RealSet(port.families), wrapAnswers: port.wrapAnswers === true } : null);
+      }
       const entry = typeof value === 'function' ? entryOf(target, exportName) : null;
       const port = target?.ports.get(exportName);
       const crossing = port ? { name: port.name, families: new RealSet(port.families), wrapAnswers: port.wrapAnswers === true } : null;
@@ -1504,7 +1921,7 @@ if (portMap) {
       build.onLoad({ filter }, (args) => {
         const [file, query] = args.path.split('?');
         const source = readFileSync(file, 'utf8');
-        if (query === 'conformance-real' || !portMap.modules.has(file)) return { contents: source, loader: loaderFor(file) };
+        if (query === 'conformance-real' || !portMap.modules.has(file)) return { contents: portMap.modules.has(file) ? source + moduleStateSource(file) : source, loader: loaderFor(file) };
         const target = portMap.modules.get(file);
         const exports = new Bun.Transpiler({ loader: loaderFor(file) }).scan(source).exports;
         apply(MapSet, scannedModules, [file, [...exports].sort()]);
@@ -1512,7 +1929,7 @@ if (portMap) {
         const key = JSON.stringify(file);
         const lines = [`import * as __real from ${real};`, `const __api = globalThis[Symbol.for('devryan.client-conformance')];`, `__api.loaded(${key}, __real);`, `export * from ${real};`];
         for (const name of exports) {
-          const wrapped = target.entries.has(name) || target.ports.has(name) || entryOf(target, name) !== null;
+          const wrapped = target.entries.has(name) || target.ports.has(name) || entryOf(target, name) !== null || storeOf(target, name) !== null;
           if (name === 'default') lines.push(wrapped ? `export default __api.wrap(${key}, "default", __real.default);` : `export { default } from ${real};`);
           else if (wrapped) lines.push(`export const ${name} = __api.wrap(${key}, ${JSON.stringify(name)}, __real.${name});`);
         }
@@ -1853,10 +2270,18 @@ if (portMap && layers.has('globals')) {
 
 // ------------------------------------------------------------ case lifecycle
 
-function snapshotStates(target) {
+function snapshotStates(target, owner = null) {
   if (!portMap) return;
   for (const family of portMap.families) {
-    if (!family.state || !apply(MapHas, loadedFamilies, [family.name])) continue;
+    if (!apply(MapHas, loadedFamilies, [family.name])) continue;
+    // A stateful family's state is taken only for a case in which the family has a line: at its first step (entry,
+    // openStep) and when the case closes (end). Taking it for every case would put its values (and their codec
+    // flags) into cases the family never ran in.
+    if (family.store || family.moduleState) {
+      if (owner && apply(MapHas, owner.families, [family.name])) target[family.name] = guard('state', () => ref(familyState(family.name), owner), null);
+      continue;
+    }
+    if (!family.state) continue;
     const namespace = apply(MapGet, loadedFamilies, [family.name]);
     target[family.name] = guard('state', () => ref(als.run({ kind: 'harness' }, () => namespace[family.state]())), null);
   }
@@ -1878,11 +2303,29 @@ function collectPending(item, into) {
   for (const key of ownKeys(item)) collectPending(item[key], into);
 }
 /** One container line's worth of a family: its slots emitted as one identity scope, in written order. */
-function finalizeFamily(entry, steps, end, context) {
-  const parts = { entryState: entry ?? null, steps, endState: end ?? null, context };
+/** Whether a tree holds a node of one of `tags`. */
+function holdsNode(tree, tags) {
+  if (tree === null || typeof tree !== 'object') return false;
+  if (ArrayIsArray(tree)) return tree.some((item) => holdsNode(item, tags));
+  if (typeof tree.$dr === 'string' && tags.includes(tree.$dr)) return true;
+  return ownKeys(tree).some((key) => holdsNode(tree[key], tags));
+}
+function finalizeFamily(entry, steps, end, context, flags = null, pendingTimers = []) {
+  const parts = { entryState: entry ?? null, steps, endState: end ?? null, context, ...(pendingTimers.length ? { pending: pendingTimers } : {}) };
   const pending = [];
   collectPending(parts, pending);
   const trees = emitSlots(pending.map((item) => item.taken));
+  if (flags) {
+    // What a replay could not rebuild (package C0e): a platform object the codec writes as opaque (a Blob, a File)
+    // anywhere in the family's line, and a pending promise in the state the case starts from (work an earlier case
+    // started), which a case replayed alone would wait on for ever.
+    const core = [];
+    collectPending({ entryState: entry ?? null, steps, endState: end ?? null }, core);
+    if (trees.slice(0, core.length).some((tree) => holdsNode(tree, ['opaque']))) flags.add('opaque');
+    const entryCount = [];
+    collectPending({ entryState: entry ?? null }, entryCount);
+    if (trees.slice(0, entryCount.length).some((tree) => holdsNode(tree, ['promise']))) flags.add('state-promise');
+  }
   const slots = new RealMap();
   pending.forEach((item, index) => {
     // Large subtrees and strings are stored once, as slices (container.mjs).
@@ -1897,7 +2340,14 @@ function finalizeFamily(entry, steps, end, context) {
 function closeCase() {
   if (current.endNow !== null) return;
   current.endNow = current.clock.now;
-  snapshotStates(current.endState);
+  snapshotStates(current.endState, current);
+  // The engine timers still pending when the test ended, in the order they were set: what each would have done is
+  // never recorded (a late firing is no step), so the case says which they are, their delay and the step that set them.
+  apply(MapForEach, current.families, [(entry) => {
+    const pending = [];
+    apply(MapForEach, entry.live, [(timer) => { pending.push({ timer: timer.id, delay: timer.delay, repeat: timer.repeat, step: timer.step }); }]);
+    entry.pending = pending;
+  }]);
   // A case stays open to effects that arrive after its test ended (marked late); it is written with the file.
   closed.push(current);
 }
@@ -1905,8 +2355,12 @@ function closeCase() {
 /** The written form of a closed case: every family's line and its flags. */
 function finalizeCase(record) {
   const families = {};
-  apply(MapForEach, record.families, [(entry, name) => { families[name] = guard('case.write', () => finalizeFamily(record.entryState[name], entry.steps, record.endState[name], record.context), null); }]);
+  apply(MapForEach, record.families, [(entry, name) => { families[name] = guard('case.write', () => finalizeFamily(record.entryState[name], entry.steps, record.endState[name], record.context, entry.flags, entry.pending), null); }]);
   const flags = [...record.codec.flags, ...record.flags].filter((flag, index, list) => list.indexOf(flag) === index).sort();
+  // A stateful family whose state code outside its steps changed inside the case cannot be replayed past that point.
+  apply(MapForEach, record.families, [(entry, name) => { if (entry.steps.length && apply(SetHas, record.moved, [name])) entry.flags.add('state-moved'); }]);
+  // Handed-out engine code of the family called, or a store it handed out written, by code no family maps (noteTouched).
+  apply(MapForEach, record.families, [(entry, name) => { if (entry.steps.length && apply(SetHas, record.touched, [name])) entry.flags.add('handed-out-touched'); }]);
   const familyFlags = {};
   apply(MapForEach, record.families, [(entry, name) => { if (entry.flags.size) familyFlags[name] = [...entry.flags].sort(); }]);
   record.out = { kind: record.kind, ...(record.kind === 'test' ? { ordinal: record.ordinal } : { hooks: record.hooks }), seed: record.seed, entryNow: record.entryNow, endNow: record.endNow, flags, familyFlags, families, contextRecords: record.context.length };
@@ -2012,6 +2466,7 @@ afterAll(() => {
   const raw = {
     version: RAW_VERSION, recording: RECORDING_VERSION, file: TEST_FILE, bun: Bun.version, layers: [...layers], portMap: portMap?.digest ?? null, modules: MODULES, epoch: EPOCH,
     exports: guard('exports', () => moduleExports(), {}), scanned: guard('exports', () => scannedExports(), {}),
+    actions: guard('exports', () => { const out = {}; apply(MapForEach, storeActions, [(actions, file) => { out[relative(file)] = actions; }]); return out; }, {}),
     passed, unmapped: sortedTable(unmapped), callers: sortedTable(callers), portCallers: sortedTable(portCallers), noFrame: sortedTable(noFrame),
     cases: kept.map((entry) => entry.out), values: Object.fromEntries(values), errors, unplaced,
   };

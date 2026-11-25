@@ -17,6 +17,10 @@
 // - `crash`: answers as `echo` and exits on the third step it is sent;
 // - `hang`: never answers a step;
 // - `protocol-1`: says it speaks protocol 1.
+// Protocol 3 (package C0e): `seed` is answered and, for `echo`, the seeded state
+// is echoed as the case's entry and end state; timer, settle and callback
+// inputs are echoed like calls. `lookup` answers the pending timers recorded
+// for the id too (C0e fix round).
 // Its subject is the replayer's toy recording only; product code never runs here.
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -34,10 +38,12 @@ if (directory) {
   for (const name of readdirSync(directory).filter((file) => file.endsWith('.ndjson'))) {
     const reader = readContainer(readFileSync(path.join(directory, name), 'utf8'));
     const deep = (value) => (typeof value === 'string' && VALUE_REF.test(value) ? reader.resolve(value) : Array.isArray(value) ? value.map(deep) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, deep(item)])) : value);
-    for (const record of reader.cases) recorded.push({ id: record.id, steps: deep(record.steps) });
+    for (const record of reader.cases) recorded.push({ id: record.id, steps: deep(record.steps), entry: deep(record.entry)?.state ?? undefined, end: deep(record.end)?.state ?? undefined, pending: deep(record.end)?.pending ?? [] });
   }
 }
 const byId = new Map(recorded.map((item) => [item.id, item.steps]));
+const statesById = new Map(recorded.map((item) => [item.id, { entry: item.entry ?? undefined, end: item.end ?? undefined }]));
+const pendingById = new Map(recorded.map((item) => [item.id, item.pending]));
 const keyOf = (input) => JSON.stringify([input.entry, input.args]);
 const byFirstInput = new Map();
 for (const item of recorded) if (item.steps[0] && !byFirstInput.has(keyOf(item.steps[0].input))) byFirstInput.set(keyOf(item.steps[0].input), item.steps);
@@ -54,7 +60,8 @@ for await (const line of createInterface({ input: process.stdin })) {
   if (op === 'stop') { write({ id, ok: true }); process.exit(0); }
   if (op === 'open') { write({ id, ok: true, exports: [] }); continue; }
   // The review's lookup: by the id the request names (`message.case`, which protocol 2 never sends).
-  if (op === 'case') { open.set(unit, { asked: message.case, steps: [], strings: [] }); write({ id, ok: true, between: [] }); continue; }
+  if (op === 'case') { open.set(unit, { asked: message.case, steps: [], strings: [], seeded: undefined }); write({ id, ok: true, between: [] }); continue; }
+  if (op === 'seed') { const kase = open.get(unit); for (const text of message.strings ?? []) kase.strings.push(text); kase.seeded = expandStrings(message.state, kase.strings); write({ id, ok: true, seeded: true }); continue; }
   if (op === 'step') {
     stepsSeen += 1;
     if (mode === 'hang') continue;
@@ -74,7 +81,12 @@ for await (const line of createInterface({ input: process.stdin })) {
       const found = kase.steps.length ? byFirstInput.get(keyOf(kase.steps[0].input)) : undefined;
       steps = found ? kase.steps.map((step, index) => (index === 0 ? { n: 1, input: step.input, effects: [], returns: { $dr: 'undefined' } } : { ...found[index - 1], n: index + 1, input: step.input })) : [];
     } else steps = kase.steps.map(echoed);
-    write({ id, ok: true, replayed: { steps, strings: [], halt: null, outside: [], bindFailures: [] } });
+    // `echo` echoes a seed as both states; `lookup` answers with the states recorded for the id it was told.
+    const looked = mode === 'lookup' ? statesById.get(kase.asked) : undefined;
+    const states = mode === 'echo' && kase.seeded !== undefined ? { entry: kase.seeded, end: kase.seeded } : looked ? Object.fromEntries(Object.entries(looked).filter(([, value]) => value !== undefined && value !== null)) : {};
+    // `lookup` also answers the timers recorded as pending at the end (C0e fix round); the others report none.
+    const pending = mode === 'lookup' ? (pendingById.get(kase.asked) ?? []) : [];
+    write({ id, ok: true, replayed: { steps, ...states, pending, strings: [], halt: null, outside: [], bindFailures: [] } });
     continue;
   }
   if (op === 'close') { write({ id, ok: true, between: [] }); continue; }

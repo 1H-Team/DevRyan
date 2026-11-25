@@ -8,7 +8,8 @@
 // sample of the planted differences in the toy modules, one of each check
 // (TOY_MUTANT_SAMPLE); the planted differences in the replayer itself that
 // the cheap parts catch, and one each of the closure and the engines
-// (REPLAYER_PLANT_SAMPLE); the engine protocol's refusals; and interrupted
+// (REPLAYER_PLANT_SAMPLE); the engine protocol's refusals and protocol 3's
+// timer, settle, seed, notification and nested inputs; and interrupted
 // runs, which must stop what they started and leave no scratch. Everything
 // else planted runs in the full suite only (replay-planted.full.test.mjs). Its
 // subjects are the harness's toys only: no product module or test runs here,
@@ -84,8 +85,13 @@ describe('client conformance replayer self-test', { concurrency: true }, () => {
     pass();
   });
 
-  test('the engine answers the protocol, is told nothing that names a case, and refuses what it cannot place', async () => {
-    assert.ok(ENGINE_ACCIDENTS.length >= 7 && ENGINE_ACCIDENTS.every((item) => item.what && item.instead));
+  test('the engine answers the protocol, is told nothing that names a case, and refuses what it cannot place', async (t) => {
+    assert.ok(ENGINE_ACCIDENTS.length >= 10 && ENGINE_ACCIDENTS.every((item) => item.what && item.instead));
+    // Protocol 3 (package C0e): a timer or a settle the case never made refused by name, a seed, a notification, a nested input.
+    const { dir, pass } = scratchFor(t, 'client-conformance-replay-protocol');
+    const { failures } = await replaySelfTest({ workDir: dir, parts: ['protocol'], mutants: [] });
+    assert.deepEqual(failures, []);
+    pass();
     const engine = openEngine({ ...typescriptEngine({ cwd: REPOSITORY_ROOT }), deadlineMs: 120000 });
     try {
       const hello = await engine.request({ op: 'hello', protocol: PROTOCOL });

@@ -120,15 +120,104 @@ export const PRODUCT_PLANTS = Object.freeze([
   { name: 'reducer-todo-callback-three-jobs-later', origin: 'C0d fix', file: `${SYNC}/event-reducer.ts`, families: ['reducer'],
     anchor: '      callbacks?.onSetSessionTodo?.(props.sessionID, props.todos)\n      return true', replacement: '      setImmediate(() => setImmediate(() => setImmediate(() => callbacks?.onSetSessionTodo?.(props.sessionID, props.todos))))\n      return true',
     expect: { check: 'effects', kind: 'missing', family: 'reducer' }, contained: true },
+  // Package C0e: the store and time-driven families (requirement 7 of its brief), each caught by its named check.
+  { name: 'c0e-store-mutates-in-place-where-it-replaced', origin: 'C0e', file: `${SYNC}/selection-store.ts`, families: ['selection-store'],
+    anchor: '      const map = new Map(s.draftPlanModeSelections)\n      map.set(draftId, enabled)\n', replacement: '      const map = s.draftPlanModeSelections\n      map.set(draftId, enabled)\n',
+    expect: { check: 'state-changes', kind: 'value', family: 'selection-store' } },
+  { name: 'c0e-store-replaces-where-it-kept', origin: 'C0e', file: `${SYNC}/selection-store.ts`, families: ['selection-store'],
+    anchor: '    set((s) => (s.defaultPlanModeSelection === enabled ? s : { defaultPlanModeSelection: enabled })),', replacement: '    set((s) => (s.defaultPlanModeSelection === enabled ? { ...s } : { defaultPlanModeSelection: enabled })),',
+    expect: { check: 'effects', kind: 'extra', family: 'selection-store' } },
+  { name: 'c0e-module-state-replaced-where-it-mutated', origin: 'C0e', file: `${SYNC}/abort-retry-guard.ts`, families: ['abort-guard'],
+    anchor: '  record.reabortCount += 1\n  record.lastReabortAt = now\n', replacement: '  record.reabortCount += 1\n  record.lastReabortAt = now\n  records.set(sessionId, { ...record })\n',
+    expect: { check: 'state-changes', kind: 'value', family: 'abort-guard' } },
+  { name: 'c0e-notification-skipped', origin: 'C0e', file: `${SYNC}/session-worktree-store.ts`, families: ['session-worktree-store'],
+    anchor: '      const next = new Map(s.attachments);\n      next.set(sessionId, attachment);\n      return { attachments: next };', replacement: '      s.attachments.set(sessionId, attachment);\n      return s;',
+    expect: { check: 'effects', kind: 'missing', family: 'session-worktree-store' } },
+  { name: 'c0e-notification-doubled', origin: 'C0e', file: `${SYNC}/global-sync-store.ts`, families: ['global-sync-store'],
+    anchor: '    set: (patch) => set(patch),', replacement: '    set: (patch) => { set(patch); set({ ...patch }) },',
+    expect: { check: 'effects', kind: 'extra', family: 'global-sync-store' } },
+  { name: 'c0e-notification-before-the-state-is-set', origin: 'C0e', file: `${SYNC}/selection-store.ts`, families: ['selection-store'],
+    anchor: '      const map = new Map(s.sessionModelSelections)\n      map.set(sessionId, { providerId, modelId })\n      return { sessionModelSelections: map, lastUsedProvider: { providerID: providerId, modelID: modelId } }',
+    replacement: '      set({ lastUsedProvider: { providerID: providerId, modelID: modelId } })\n      const map = new Map(s.sessionModelSelections)\n      map.set(sessionId, { providerId, modelId })\n      return { sessionModelSelections: map }',
+    expect: { check: 'effects', kind: 'extra', family: 'selection-store' } },
+  { name: 'c0e-persisted-store-writes-one-action-late', origin: 'C0e', file: `${SYNC}/session-creation.ts`, families: ['session-creation'],
+    anchor: "  useSessionCreationStore.setState((state) => ({ attempts: { ...state.attempts, [attempt.draftId]: { ...current, ...patch } } }))\n  persistAttempts()\n",
+    replacement: "  persistAttempts()\n  useSessionCreationStore.setState((state) => ({ attempts: { ...state.attempts, [attempt.draftId]: { ...current, ...patch } } }))\n",
+    expect: { check: 'effects', kind: 'order', family: 'session-creation' } },
+  { name: 'c0e-timer-delay-off-by-one', origin: 'C0e', file: `${SYNC}/abort-retry-guard.ts`, families: ['abort-guard'],
+    anchor: '      // Best effort — the next retry/busy status will trigger another attempt\n      // while the bounded budget lasts.\n    })\n  }, 0)', replacement: '      // Best effort — the next retry/busy status will trigger another attempt\n      // while the bounded budget lasts.\n    })\n  }, 1)',
+    expect: { check: 'effects', kind: 'value', family: 'abort-guard' } },
+  { name: 'c0e-accounting-delay-off-by-one', origin: 'C0e', file: `${SYNC}/history-cache-budget.ts`, families: ['child-store'],
+    anchor: 'const ACCOUNTING_DELAY_MS = 500\n', replacement: 'const ACCOUNTING_DELAY_MS = 501\n',
+    expect: { check: 'effects', kind: 'value', family: 'child-store' } },
+  { name: 'c0e-timer-not-cleared', origin: 'C0e', file: `${SYNC}/history-cache-budget.ts`, families: ['child-store'],
+    anchor: '  flush() {\n    if (this.timer) clearTimeout(this.timer)\n', replacement: '  flush() {\n',
+    expect: { check: 'effects', kind: 'missing', family: 'child-store' } },
+  { name: 'c0e-timer-cleared-twice', origin: 'C0e', file: `${SYNC}/history-cache-budget.ts`, families: ['child-store'],
+    anchor: '  flush() {\n    if (this.timer) clearTimeout(this.timer)\n', replacement: '  flush() {\n    if (this.timer) { clearTimeout(this.timer); clearTimeout(this.timer) }\n',
+    expect: { check: 'effects', kind: 'extra', family: 'child-store' } },
+  { name: 'c0e-timer-cleared-after-it-fired', origin: 'C0e', file: `${SYNC}/abort-retry-guard.ts`, families: ['abort-guard'],
+    anchor: '  const executor = abortExecutor\n  // Defer so callers (event reducers) stay synchronous and side-effect free.\n  setTimeout(() => {\n',
+    replacement: '  const executor = abortExecutor\n  // Defer so callers (event reducers) stay synchronous and side-effect free.\n  const handle = setTimeout(() => {\n    clearTimeout(handle)\n',
+    expect: { check: 'effects', kind: 'extra', family: 'abort-guard' } },
+  { name: 'c0e-deadline-timer-not-cleared', origin: 'C0e', file: `${SYNC}/directory-bootstrap-request.ts`, families: ['directory-bootstrap-request'],
+    anchor: '  } finally {\n    clearTimeout(timer)\n', replacement: '  } finally {\n',
+    expect: { check: 'effects', kind: 'missing', family: 'directory-bootstrap-request' } },
+  { name: 'c0e-sleep-schedule-drifts', origin: 'C0e', file: `${SYNC}/claude-catalog-recovery.ts`, families: ['claude-catalog-recovery'],
+    anchor: '          await sleep(delay)\n', replacement: '          await sleep(delay + delays.indexOf(delay))\n',
+    expect: { check: 'effects', kind: 'value', family: 'claude-catalog-recovery' } },
+  { name: 'c0e-clock-read-at-another-point', origin: 'C0e', file: `${SYNC}/session-creation.ts`, families: ['session-creation'],
+    anchor: "  const attempt: CreationAttempt = { id: crypto.randomUUID(), draftId: snapshot.draftId, startedAt: Date.now(), phase: 'preparing',",
+    replacement: "  const startedAt = Date.now()\n  const attempt: CreationAttempt = { id: crypto.randomUUID(), draftId: snapshot.draftId, startedAt, phase: 'preparing',",
+    expect: { check: 'halt', kind: 'effect-order', family: 'session-creation' } },
+  { name: 'c0e-timer-callback-reads-the-clock', origin: 'C0e', file: `${SYNC}/abort-retry-guard.ts`, families: ['abort-guard'],
+    anchor: '    // The guard may have been cleared (idle arrived / new send) while waiting.\n    if (records.get(sessionId) !== record) return\n',
+    replacement: '    // The guard may have been cleared (idle arrived / new send) while waiting.\n    if (records.get(sessionId) !== record || Date.now() < 0) return\n',
+    expect: { check: 'halt', kind: 'unanswered', family: 'abort-guard' } },
+  { name: 'c0e-ttl-off-by-one', origin: 'C0e', file: `${SYNC}/abort-retry-guard.ts`, families: ['abort-guard'],
+    anchor: 'export const ABORT_GUARD_TTL_MS = 60_000\n', replacement: 'export const ABORT_GUARD_TTL_MS = 60_001\n',
+    expect: { check: 'state', kind: 'value', family: 'abort-guard' } },
+  { name: 'c0e-reabort-cap-off-by-one', origin: 'C0e', file: `${SYNC}/abort-retry-guard.ts`, families: ['abort-guard'],
+    anchor: 'export const ABORT_GUARD_MAX_REABORTS = 3\n', replacement: 'export const ABORT_GUARD_MAX_REABORTS = 2\n',
+    expect: { check: 'effects', kind: 'missing', family: 'abort-guard' } },
+  { name: 'c0e-module-map-not-written', origin: 'C0e', file: `${SYNC}/selection-store.ts`, families: ['selection-store'],
+    anchor: '    restoredSessionUserChoices.set(sessionId, choiceKey)\n', replacement: '',
+    expect: { check: 'state', kind: 'value', family: 'selection-store' } },
+  { name: 'c0e-epoch-off-by-one', origin: 'C0e', file: `${SYNC}/global-sync-store.ts`, families: ['global-sync-store'],
+    anchor: 'bootstrapEpoch: state.bootstrapEpoch + 1 })),', replacement: 'bootstrapEpoch: state.bootstrapEpoch + 2 })),',
+    expect: { check: 'effects', kind: 'value', family: 'global-sync-store' } },
+  { name: 'c0e-history-estimate-off-by-one', origin: 'C0e', file: `${SYNC}/history-cache-budget.ts`, families: ['child-store'],
+    anchor: '    if (typeof value === "string") return 16 + value.length * 2\n', replacement: '    if (typeof value === "string") return 17 + value.length * 2\n',
+    expect: { check: 'result', kind: 'value', family: 'child-store' } },
+  { name: 'c0e-eviction-order-reversed', origin: 'C0e', file: `${SYNC}/history-cache-budget.ts`, families: ['child-store'],
+    anchor: '        .sort((a, b) => a.accessed - b.accessed)\n', replacement: '        .sort((a, b) => b.accessed - a.accessed)\n',
+    expect: { check: 'effects', family: 'child-store' } },
+  { name: 'c0e-recovery-skips-its-recheck', origin: 'C0e', file: `${SYNC}/claude-catalog-recovery.ts`, families: ['claude-catalog-recovery'],
+    anchor: '          // A newer load may have listed the models while this one waited.\n          if (deps.hasClaudeModels(directory)) return\n', replacement: '',
+    expect: { check: 'halt', kind: 'effect-order', family: 'claude-catalog-recovery' } },
+  { name: 'c0e-superseded-cleanup-runs', origin: 'C0e', file: `${SYNC}/directory-disposal.ts`, families: ['directory-disposal'],
+    anchor: '        if (generation === activeGeneration) {\n', replacement: '        if (generation >= activeGeneration) {\n',
+    expect: { check: 'halt', kind: 'unanswered', family: 'directory-disposal' } },
+  { name: 'c0e-creation-deadline-off-by-one', origin: 'C0e', file: `${SYNC}/session-creation.ts`, families: ['session-creation'],
+    anchor: 'export const SESSION_CREATION_DEADLINE_MS = 120_000\n', replacement: 'export const SESSION_CREATION_DEADLINE_MS = 119_999\n',
+    expect: { check: 'effects', kind: 'value', family: 'session-creation' } },
+  { name: 'c0e-notify-after-the-action-returned', origin: 'C0e', file: `${SYNC}/session-worktree-store.ts`, families: ['session-worktree-store'],
+    anchor: '  clearAttachment: (sessionId) =>\n    set((s) => {\n      const next = new Map(s.attachments);\n      next.delete(sessionId);\n      return { attachments: next };\n    }),\n',
+    replacement: '  clearAttachment: (sessionId) =>\n    void Promise.resolve().then(() => set((s) => {\n      const next = new Map(s.attachments);\n      next.delete(sessionId);\n      return { attachments: next };\n    })),\n',
+    expect: { check: 'effects', kind: 'return-position', family: 'session-worktree-store' } },
 ]);
 
 /** The planted copy's source (`anchor` exactly once), or an error naming the plant. */
 export function plantedSource(plant, root = REPOSITORY_ROOT) {
   const file = path.join(root, plant.file);
   const source = readFileSync(file, 'utf8');
-  const occurrences = source.split(plant.anchor).length - 1;
-  if (occurrences !== 1) throw new Error(`planted difference ${plant.name}: its anchor occurs ${occurrences} times in ${plant.file}`);
-  return { module: file, source: source.replace(plant.anchor, () => plant.replacement) };
+  let planted = source;
+  for (const [anchor, replacement] of [[plant.anchor, plant.replacement], ...(plant.extra ? [[plant.extra.anchor, plant.extra.replacement]] : [])]) {
+    const occurrences = planted.split(anchor).length - 1;
+    if (occurrences !== 1) throw new Error(`planted difference ${plant.name}: its anchor occurs ${occurrences} times in ${plant.file}`);
+    planted = planted.replace(anchor, () => replacement);
+  }
+  return { module: file, source: planted };
 }
 
 /** Whether `result` (a replay of the plant's families) holds the difference the plant must cause. */

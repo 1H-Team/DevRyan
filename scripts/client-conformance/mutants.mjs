@@ -49,7 +49,7 @@ export const PLANTED = Object.freeze([
   { name: 'recorder-misses-assigned-global', toys: ['toy-timers.toy.mjs'], origin: 'builder', file: R, tool: 'corpus', expect: { case: toyCase('a timer trap the test assigns is still recorded'), check: 'effects', step: 2 },
     anchor: '    set(value) {\n      assign(value);', replacement: '    set(value) {\n      raw = value; wrapped = value;' },
   { name: 'recorder-wrong-step', toys: ['toy-timers.toy.mjs'], origin: 'builder', file: R, tool: 'corpus', expect: { case: toyCase('a pushed item flushes after the delay'), check: 'effects', step: 1 },
-    anchor: "  if (origin === 'engine') return place(stepOf(store), store.case, effect);", replacement: "  if (origin === 'engine') return place(familyRecord(store.family, store.case).steps[0], store.case, effect);" },
+    anchor: '    return isLate(store) ? false : place(step, store.case, effect);', replacement: '    return isLate(store) ? false : place(familyRecord(store.family, store.case).steps[0], store.case, effect);' },
   { name: 'recorder-reads-real-clock', toys: ['toy-reducer.toy.mjs'], origin: 'builder', file: R, tool: 'stability', expect: { case: toyCase('adds a message with a clock time'), check: 'input', step: 1 },
     anchor: 'const readNow = (kase = caseOf(storeNow())) => (fakeTimersOn() ? apply(RealDateNow, RealDate, []) : kase.clock.now);', replacement: 'const readNow = () => apply(RealDateNow, RealDate, []);' },
   { name: 'recorder-unseeded-random', toys: ['toy-reducer.toy.mjs'], origin: 'builder', file: R, tool: 'stability', expect: { case: toyCase('adds a message with a clock time and a random id'), check: 'effects' },
@@ -99,14 +99,14 @@ export const PLANTED = Object.freeze([
   { name: 'attribution-settle-step', toys: ['toy-flow.toy.mjs'], origin: 'review: attribution, settle step', file: R, tool: 'corpus', expect: { case: toyCase('an answer belongs to the call that waited for it'), check: 'flags' },
     anchor: "  const step = openStep(chain.family, { kind: 'settle', port: name, call, outcome, value: ref(value, chain.case) }, null, chain.case);\n  if (step) chain.step = step;", replacement: '' },
   { name: 'attribution-callback-step', toys: ['toy-transport.toy.mjs'], origin: 'review: attribution, callback step', file: R, tool: 'corpus', expect: { case: toyCase('socket messages reach onEvent with a log tag'), check: 'flags' },
-    anchor: "      if (origin === 'engine' || origin === 'harness') return apply(target, thisArg, args);\n      const kase = caseOf(store);", replacement: "      if (true) return apply(target, thisArg, args);\n      const kase = caseOf(store);" },
+    anchor: "      if (origin === 'engine' || origin === 'harness') return apply(target, thisArg, args);\n      // Late code", replacement: "      if (true) return apply(target, thisArg, args);\n      // Late code" },
   { name: 'attribution-port-code-effects', toys: ['toy-clock.toy.mjs'], origin: 'review: attribution, effects recorded from port code', file: R, tool: 'corpus', expect: { case: toyCase('a stub that itself sets a timer records only what the engine did'), check: 'context' },
     anchor: "    const counted = origin !== 'port';", replacement: '    const counted = true;' },
   // change set, state, naming
   { name: 'changeset-maps-skipped', toys: ['toy-reducer.toy.mjs'], origin: 'review: change set, Maps skipped', file: R, tool: 'corpus', expect: { case: toyCase('keeps Set and Map insertion order and -0'), check: 'changes' },
     anchor: "      apply(MapForEach, value, [(entry, key) => walk(entry, [...where, { map: key }])]);", replacement: '' },
   { name: 'state-not-snapshotted', toys: ['toy-timers.toy.mjs'], origin: 'review: state, not snapshotted', file: R, tool: 'corpus', expect: { case: toyCase('a pushed item flushes after the delay'), check: 'state' },
-    anchor: '    if (!family.state || !apply(MapHas, loadedFamilies, [family.name])) continue;', replacement: '    if (true) continue;' },
+    anchor: '    if (!family.state) continue;\n    const namespace = apply(MapGet, loadedFamilies, [family.name]);', replacement: '    if (true) continue;\n    const namespace = apply(MapGet, loadedFamilies, [family.name]);' },
   { name: 'naming-describe-dropped', toys: ['toy-reducer.toy.mjs'], origin: 'review: naming, describe dropped', file: 'junit.mjs', tool: 'tools-corpus', expect: { container: /toy-reducer\.toy\.mjs\.toy-reducer/, check: 'case-set' },
     anchor: 'describe: suites.slice(1).map((suite) => suite.name),', replacement: 'describe: [],' },
   { name: 'naming-skipped-counted', origin: 'review: naming, skipped tests counted', file: 'record.mjs', tool: 'tools', expect: { check: 'record-skipped' },
@@ -155,11 +155,11 @@ export const PLANTED = Object.freeze([
   { name: 'fix-s2-prelude-dropped', toys: ['toy-hooks.toy.mjs'], origin: 'fix S2: module load and beforeAll calls are written', file: R, tool: 'corpus', expect: { container: /toy-hooks\.toy\.mjs\.toy-timers/, check: 'case-set' },
     anchor: "  return record.kind === 'test' || ownKeys(families).length > 0 || record.out.contextRecords > 0 || flags.length > 0;", replacement: "  return record.kind === 'test';" },
   { name: 'fix-s3-crossing-ignored', toys: ['toy-flow.toy.mjs'], origin: 'fix S3: a port that is another family\'s entry is recorded', file: R, tool: 'corpus', expect: { case: toyCase('a port that is another family\'s entry is a port call'), check: 'effects', step: 2 },
-    anchor: '    if (store.family === family || !crossing || !apply(SetHas, crossing.families, [store.family])) return invoke(args); // inlined', replacement: '    return invoke(args);' },
+    anchor: '    if (store.family === family || !crossing || !apply(SetHas, crossing.families, [store.family])) {', replacement: '    if (true) {' },
   { name: 'fix-s4-most-recent-step', toys: ['toy-flow.toy.mjs'], origin: 'fix S4: effects belong to the input that caused them', file: R, tool: 'corpus', expect: { case: toyCase('a microtask continuation belongs to its own call'), check: 'effects', step: 2 },
-    anchor: "  if (origin === 'engine') return place(stepOf(store), store.case, effect);", replacement: "  if (origin === 'engine') { const steps = familyRecord(store.family, store.case).steps; return place(steps[steps.length - 1], store.case, effect); }" },
+    anchor: '    return isLate(store) ? false : place(step, store.case, effect);', replacement: '    const steps = familyRecord(store.family, store.case).steps;\n    return isLate(store) ? false : place(steps[steps.length - 1], store.case, effect);' },
   { name: 'fix-s4-no-during', toys: ['toy-flow.toy.mjs'], origin: 'fix S4: a re-entrant input is marked during its step', file: R, tool: 'corpus', expect: { case: toyCase('a callback a port invokes re-entrantly'), check: 'input', step: 3 },
-    anchor: '  if (caller && caller.kind === \'engine\' && caller.case === owner && caller.family === family) step.input.during = caller.step.n;', replacement: '' },
+    anchor: '  if (caller && caller.kind === \'engine\' && caller.case === owner && caller.family === family) {', replacement: '  if (false) {' },
   { name: 'fix-s5-date-now-stub-unrecorded', toys: ['toy-clock.toy.mjs'], origin: 'fix S5: a Date.now stub\'s answers are recorded', file: R, tool: 'corpus', expect: { case: toyCase('a Date.now the test assigns answers'), check: 'effects', step: 1 },
     anchor: "  return stubWrapper(value, 'Date.now', 'clock');", replacement: '  return value;' },
   { name: 'fix-s5-fake-timers-ignored', toys: ['toy-clock.toy.mjs'], origin: 'fix S5: fake timers move the clock as without the recorder', file: R, tool: 'parity', expect: { test: toyCase('fake timers advance the clock as they do without the recorder') },
@@ -202,9 +202,9 @@ export const PLANTED = Object.freeze([
     anchor: '      return tag ? inWindow(tag, () => apply(target, thisArg, args)) : apply(target, thisArg, args);', replacement: '      return apply(target, thisArg, args);' },
   { name: 'fix2-b1-released-unflagged', toys: ['toy-unrecordable.toy.mjs'], origin: 'fix B1: a continuation test code released is unrecordable', file: R, tool: 'corpus', expect: { case: toyCase('a promise the test resolves releases no input'), check: 'flags' },
     anchor: "    } else if (seq <= window.openSeq) { store.case.flags.add('released'); placed = true; }", replacement: '    }' },
-  { name: 'fix2-b2-late-dropped', toys: ['toy-gate.toy.mjs'], origin: 'fix B2: effects after a test ended stay in its case', file: R, tool: 'corpus', expect: { case: toyCase('fires after its test ended'), check: 'effects', step: 1 },
+  { name: 'fix2-b2-late-dropped', toys: ['toy-stray.toy.mjs'], origin: 'fix B2: effects after a test ended stay in its case (C0e fix round: a timer firing then is no step, so judged on the input an I/O job of the test makes then)', file: R, tool: 'corpus', expect: { case: toyCase('leaves an I/O job behind that calls the engine'), check: 'step-count' },
     anchor: '  if (written) { noteUnplaced(input.kind); return null; }', replacement: '  if (written || owner !== current) return null;' },
-  { name: 'fix2-b2-late-unmarked', toys: ['toy-gate.toy.mjs'], origin: 'fix B2: an input after the test ended is marked late', file: R, tool: 'corpus', expect: { case: toyCase('fires after its test ended'), check: 'effects', step: 3 },
+  { name: 'fix2-b2-late-unmarked', toys: ['toy-stray.toy.mjs'], origin: 'fix B2: an input after the test ended is marked late (C0e fix round: judged on the input an I/O job of the test makes then)', file: R, tool: 'corpus', expect: { case: toyCase('leaves an I/O job behind that calls the engine'), check: 'effects', step: 2 },
     anchor: '  if (owner.endNow !== null) step.late = true;', replacement: '' },
   { name: 'fix2-b2-unplaced-ignored', origin: 'fix B2: an effect that could not be placed is inconclusive', file: 'record.mjs', tool: 'tools', expect: { check: 'record-unplaced' },
     anchor: '    if (raw.unplaced) incomplete.push(', replacement: '    if (false) incomplete.push(' },
@@ -242,8 +242,8 @@ export const PLANTED = Object.freeze([
     anchor: 'export const SILENT_GENERATIONS = 64;', replacement: 'export const SILENT_GENERATIONS = 4;' },
   { name: 'r3-test-resolve-no-window', toys: ['toy-unrecordable.toy.mjs'], origin: 'review 3: a promise test code resolves opens no window', file: R, tool: 'corpus', expect: { case: toyCase('a promise the test resolves releases no input'), check: 'flags' },
     anchor: "  if (origin === 'harness' || stepSeq === 0) return null;", replacement: "  if (origin === 'harness' || origin === 'test' || stepSeq === 0) return null;" },
-  { name: 'r3-late-timer-to-current', toys: ['toy-gate.toy.mjs'], origin: 'review 3: a late timer opens its step in the current case', file: R, tool: 'corpus', expect: { case: toyCase('fires after its test ended'), check: 'step-count' },
-    anchor: "guard('timer.fire', () => openStep(store.family, { kind: 'timer', id }, opener, store.case), null)", replacement: "guard('timer.fire', () => openStep(store.family, { kind: 'timer', id }, opener, current), null)" },
+  { name: 'r3-late-timer-to-current', toys: ['toy-gate.toy.mjs'], origin: 'review 3: a late timer is judged by the current case (C0e fix round: whether it fired after its own test ended is asked of the current case, so it opens a step again)', file: R, tool: 'corpus', expect: { case: toyCase('fires after its test ended'), check: 'step-count' },
+    anchor: '      if (counted && timed.endNow !== null) return runLate(', replacement: '      if (counted && current.endNow !== null) return runLate(' },
   { name: 'r3-oldest-window', toys: ['toy-gate.toy.mjs'], origin: 'review 3: the oldest active window wins', file: R, tool: 'corpus', expect: { case: toyCase('a release inside another release window'), check: 'effects', step: 3 },
     anchor: '  for (const entry of activeWindows) if (!window || entry.id > window.id) window = entry;', replacement: '  for (const entry of activeWindows) if (!window || entry.id < window.id) window = entry;' },
   { name: 'r3-window-never-closes', toys: ['toy-gate.toy.mjs'], origin: 'review 3: windows never leave the active list', file: R, tool: 'corpus', expect: { case: toyCase('a control that yields twice before acting'), check: 'effects', step: 1 },
@@ -255,7 +255,7 @@ export const PLANTED = Object.freeze([
   { name: 'r3-unplaced-uncounted', toys: ['toy-unplaced.toy.mjs'], origin: 'review 3: an effect after the recording was written is not counted', file: R, tool: 'corpus', expect: { check: 'unplaced-expected' },
     anchor: 'function noteUnplaced(kind) {\n  unplaced += 1;', replacement: 'function noteUnplaced(kind) {\n  return;' },
   { name: 'r3-effect-owner-current', toys: ['toy-unrecordable.toy.mjs'], origin: 'review 3: an engine effect is placed with the current case as owner', file: R, tool: 'corpus', expect: { case: toyCase('a waiter the next test releases stays in its own case'), check: 'effects', step: 1 },
-    anchor: "  if (origin === 'engine') return place(stepOf(store), store.case, effect);", replacement: "  if (origin === 'engine') return place(stepOf(store), current, effect);" },
+    anchor: '    return isLate(store) ? false : place(step, store.case, effect);', replacement: '    return isLate(store) ? false : place(step, current, effect);' },
   { name: 'r3-cross-family-moved', toys: ['toy-unrecordable.toy.mjs'], origin: 'review 3: a window moves chains of any family or case', file: R, tool: 'corpus', expect: { case: toyCase('a waiter another family releases'), check: 'flags' },
     anchor: '    if (window.step !== null && window.case === store.case && window.family === store.family) {', replacement: '    if (window.step !== null) {' },
   { name: 'r3-backward-move', toys: ['toy-gate.toy.mjs'], origin: 'review 3: a window may move a chain backward', file: R, tool: 'corpus', expect: { case: toyCase('a release inside another release window'), check: 'effects', step: 3 },
@@ -276,9 +276,11 @@ export const PLANTED = Object.freeze([
     anchor: '  if (!placed) checkExpired(store, seq);', replacement: '' },
   { name: 'fix3-s2-port-release-unflagged', toys: ['toy-unrecordable.toy.mjs'], origin: 'fix 3 S2: a promise port code resolves opens a window', file: R, tool: 'corpus', expect: { case: toyCase('a promise a port resolves on its own'), check: 'flags' },
     anchor: "  if (origin === 'harness' || stepSeq === 0) return null;", replacement: "  if (origin === 'harness' || origin === 'port' || stepSeq === 0) return null;" },
-  { name: 'fix3-s3-injected-answers-raw', toys: ['toy-gate.toy.mjs'], origin: 'fix 3 S3: an injected port may wrap its answers', file: R, tool: 'corpus', expect: { case: toyCase('a stream a port answers'), check: 'input', step: 2 },
-    anchor: '    const options = { wrapAnswers: item.wrapAnswers === true };', replacement: '    const options = { wrapAnswers: false };' },
-  { name: 'fix3-s3-answer-members-raw', toys: ['toy-gate.toy.mjs'], origin: 'fix 3 S3: a wrapped answer whose member has behaviour is a port object', file: R, tool: 'corpus', expect: { case: toyCase('a stream a port answers'), check: 'input', step: 2 },
+  // Re-pinned by package C0e: the settle input holds the raw value either way, so the stream read without its wrapper shows first in step 2's effects.
+  { name: 'fix3-s3-injected-answers-raw', toys: ['toy-gate.toy.mjs'], origin: 'fix 3 S3: an injected port may wrap its answers', file: R, tool: 'corpus', expect: { case: toyCase('a stream a port answers'), check: 'effects', step: 2 },
+    anchor: '    const options = { wrapAnswers: item.wrapAnswers === true, plainAnswers: item.plainAnswers === true };', replacement: '    const options = { wrapAnswers: false, plainAnswers: item.plainAnswers === true };' },
+  // Re-pinned by package C0e, as fix3-s3-injected-answers-raw above.
+  { name: 'fix3-s3-answer-members-raw', toys: ['toy-gate.toy.mjs'], origin: 'fix 3 S3: a wrapped answer whose member has behaviour is a port object', file: R, tool: 'corpus', expect: { case: toyCase('a stream a port answers'), check: 'effects', step: 2 },
     anchor: '      if (wrapAnswers) return apply(PromiseThen, result, [(value) => (answerLike(value) ?', replacement: '      if (wrapAnswers) return apply(PromiseThen, result, [(value) => (portLike(value) ?' },
   { name: 'fix3-s5-plain-unchecked', origin: 'fix 3 S5: a recording is gated on the plain pass set', file: 'record.mjs', tool: 'tools', expect: { check: 'record-plain-differs' },
     anchor: '    if (!before || before.status !== test.status) differences.push(', replacement: '    if (false) differences.push(' },
@@ -312,7 +314,7 @@ export const PLANTED = Object.freeze([
   { name: 'c0c-family-waiver-exercised', origin: 'C0c: a family waived as untested that records cases', file: 'toy/census.json', tool: 'census', expect: { check: 'waiver-exercised', name: /toy-reducer#\(family\)/ },
     anchor: '  "exports": [\n', replacement: '  "families": [{ "family": "toy-reducer", "reason": "planted" }],\n  "exports": [\n' },
   { name: 'c0c-passthrough-store-off', toys: ['toy-host.toy.mjs'], origin: 'C0c: what a passed-through call does is taken for engine code outside a chain', file: R, tool: 'corpus', expect: { case: toyCase('passed through, not a step'), check: 'flags' },
-    anchor: "  const store = { kind: 'passthrough', case: current, active: true };\n  try { return als.run(store, run); } finally { store.active = false; }", replacement: '  return run();' },
+    anchor: "  const store = nested ? null : { kind: 'passthrough', case: current, active: true };", replacement: '  const store = null;' },
   { name: 'c0c-no-frame-recorded', toys: ['toy-host.toy.mjs'], origin: 'C0c: a call with no frame (an engine continuation\'s tail call) is taken for the test\'s', file: R, tool: 'corpus', expect: { case: toyCase('passed through, not a step'), check: 'step-count' },
     anchor: '    if (caller === null ? spec.handedOut !== true : !caller.test) return passThrough(', replacement: '    if (caller !== null && !caller.test) return passThrough(' },
   { name: 'c0c-caller-rule-off', toys: ['toy-host.toy.mjs'], origin: 'C0c: an entry an unmapped engine module calls is recorded as the test\'s', file: R, tool: 'corpus', expect: { case: toyCase('passed through, not a step'), check: 'step-count' },
@@ -395,7 +397,7 @@ export const PLANTED = Object.freeze([
   { name: 'fix-c0c-discovery-off', origin: 'C0c fix S4: the discover run keeps only tests whose test code calls a family', file: 'family-run.mjs', tool: 'family', expect: { check: 'family-discovery' },
     anchor: '  const loading = found.files.filter((item) => item.loaded.some((file) => modules.has(file)) && (item.testCalls + item.noFrame > 0 || named.has(item.file))).map((item) => item.file);', replacement: '  const loading = found.files.filter((item) => item.loaded.some((file) => modules.has(file))).map((item) => item.file);' },
   { name: 'fix-c0c-discover-layer-blind', origin: 'C0c fix S4: the discover layer counts the calls test code makes', file: R, tool: 'family', expect: { check: 'family-discovery' },
-    anchor: '            if (!first) report.noFrame += 1; else if (isTestCode(first[0])) report.testCalls += 1;\n', replacement: '            if (!first) return; else if (isTestCode(first[0])) return;\n' },
+    anchor: '    if (!first) report.noFrame += 1; else if (isTestCode(first[0])) report.testCalls += 1;\n', replacement: '    if (!first) return; else if (isTestCode(first[0])) return;\n' },
   // ------------------------------------------- the C0c second review's three missed, and the second fix round's own
   { name: 'c0c-r2-n07b-discovery-drops-no-frame', origin: 'C0c review 2, n07b: discovery keeps a test whose only family use has no frame', file: 'family-run.mjs', tool: 'family', expect: { check: 'family-discovery' },
     anchor: '  const loading = found.files.filter(', replacement: '  for (const item of found.files) item.noFrame = 0;\n  const loading = found.files.filter(' },
@@ -406,20 +408,20 @@ export const PLANTED = Object.freeze([
   { name: 'c0c-fix2-n1-discovery-keeps-unclassified', origin: 'C0c second fix N1: discovery keeps a test that reaches a family only through test support code under another name', file: 'family-run.mjs', tool: 'family', expect: { check: 'family-discovery' },
     anchor: '(item.testCalls + item.noFrame > 0 || named.has(item.file))', replacement: 'item.testCalls + item.noFrame > 0' },
   { name: 'c0c-fix2-n1-discover-layer-callers-uncounted', origin: 'C0c second fix N1: the discover layer counts the calls of every other caller file', file: R, tool: 'family', expect: { check: 'family-discovery' },
-    anchor: '              const row = (report.callers[relative(first[0])] ??= {});', replacement: '              const row = {};' },
+    anchor: '      const row = (report.callers[relative(first[0])] ??= {});', replacement: '      const row = {};' },
   { name: 'c0c-fix2-n3-test-function-unflagged', toys: ['toy-unrecordable.toy.mjs'], origin: 'C0c second fix N3: a test function an entry is handed that no injected port declares flags its family', file: R, tool: 'corpus', expect: { case: toyCase('a test callback an entry runs'), check: 'unrecordable-expected' },
     anchor: "  if (!portEffect && guard('entry', () => opaqueTestFunction(spec, args), false)) familyRecord(family, kase).flags.add('test-function');", replacement: '' },
   // C0c2: the per-case clock
-  { name: 'c0c2-stray-moves-current-clock', toys: ['toy-stray.toy.mjs'], origin: 'C0c2 clock: a timer an earlier case left moves the clock of the case it fires in, not its own', file: R, tool: 'corpus', expect: { case: toyCase('a test that leaves timers behind'), check: 'input', step: 2 },
-    anchor: '        advance(timed.clock, setAt + span * fires);', replacement: '        advance(current.clock, setAt + span * fires);' },
+  { name: 'c0c2-stray-moves-current-clock', toys: ['toy-stray.toy.mjs'], origin: 'C0c2 clock: a timer an earlier case left moves the clock of the case it fires in, not its own (C0e fix round: planted on the late firing, which moves no clock)', file: R, tool: 'corpus', expect: { case: toyCase('a later test reads its own clock while the strays fire'), check: 'input', step: 1 },
+    anchor: '      if (counted && timed.endNow !== null) return runLate(', replacement: '      if (counted && timed.endNow !== null && layers.has(\'clock\')) advance(current.clock, current.clock.now + span);\n      if (counted && timed.endNow !== null) return runLate(' },
   { name: 'c0c2-clock-not-inherited', toys: ['toy-stray.toy.mjs'], origin: 'C0c2 clock: a case opens on a fresh clock, not on the clock the previous case closed with or its slot', file: R, tool: 'corpus', expect: { case: toyCase('the strays have fired'), check: 'state' },
     anchor: '  const clock = openClock(previous, casesOpened);', replacement: '  const clock = openClock(null, casesOpened);' },
   { name: 'c0c2-clock-no-slot', toys: ['toy-stray.toy.mjs'], origin: 'C0c2 clock: a case opens at the previous case\'s closing time, not in its own slot', file: R, tool: 'corpus', expect: { case: toyCase('the next test opens in its own slot'), check: 'state' },
     anchor: '  clock.now = Math.max(clock.now, EPOCH + index * CASE_SPAN_MS);', replacement: '' },
   { name: 'c0c2-clock-runs-backward', toys: ['toy-stray.toy.mjs'], origin: 'C0c2 clock: a case opens in its slot even when the previous case got later', file: R, tool: 'corpus', expect: { case: toyCase('the test after it opens where it ended'), check: 'state' },
     anchor: '  clock.now = Math.max(clock.now, EPOCH + index * CASE_SPAN_MS);', replacement: '  clock.now = EPOCH + index * CASE_SPAN_MS;' },
-  { name: 'c0c2-stray-test-timer-in-current-context', toys: ['toy-stray.toy.mjs'], origin: 'C0c2 clock: a test timer that fires after its test ended is context of the case it fires in', file: R, tool: 'corpus', expect: { case: toyCase('a test that leaves timers behind'), check: 'context' },
-    anchor: "owner.context.push(owner.endNow !== null ? { kind: 'timer.fire', id, origin: 'test', late: true } : { kind: 'timer.fire', id, origin: 'test' })", replacement: "current.context.push({ kind: 'timer.fire', id, origin: owner === current ? 'test' : `test:${owner.label}` })" },
+  { name: 'c0c2-stray-test-timer-in-current-context', toys: ['toy-stray.toy.mjs'], origin: 'C0c2 clock: a test timer that fires after its test ended is context of the case it fires in (C0e fix round: planted on the late firing, which is recorded nowhere)', file: R, tool: 'corpus', expect: { case: toyCase('a later test reads its own clock while the strays fire'), check: 'context' },
+    anchor: '      if (counted && timed.endNow !== null) return runLate(', replacement: "      if (counted && !engine && timed.endNow !== null) current.context.push({ kind: 'timer.fire', id, origin: `test:${owner.label}` });\n      if (counted && timed.endNow !== null) return runLate(" },
   // C0c2: the mock-module layer
   { name: 'c0c2-mocked-call-recorded', toys: ['toy-mocked.toy.mjs'], origin: 'C0c2 mock-module: a mocked export called with no engine chain is copied into the case context again', file: R, tool: 'corpus', expect: { case: toyCase('a mocked export the test calls itself records nothing'), check: 'context' },
     anchor: '    if (!engine && mocked) { checkOutside(); return invoke(args); }', replacement: '' },
@@ -434,14 +436,12 @@ export const PLANTED = Object.freeze([
     anchor: "clock.performance = Math.max(clock.performance, PERFORMANCE_ORIGIN + index * CASE_SPAN_MS);", replacement: "clock.performance = PERFORMANCE_ORIGIN + index * CASE_SPAN_MS;" },
   { name: "c0c2-r4-override-not-kept", toys: ['toy-stray.toy.mjs'], origin: "C0c2 review R4: a standing setSystemTime is not kept into the next case", file: R, tool: 'corpus', expect: { case: toyCase("the next test opens at the time that stands"), check: 'effects', step: 1 },
     anchor: "if (clock.beforeOverride !== null) return clock;", replacement: "" },
-  { name: "c0c2-r5-clock-shared", toys: ['toy-stray.toy.mjs'], origin: "C0c2 review R5: the clock is shared, not copied, when a case opens", file: R, tool: 'corpus', expect: { case: toyCase("a test that leaves timers behind"), check: 'input' },
+  { name: "c0c2-r5-clock-shared", toys: ['toy-stray.toy.mjs'], origin: "C0c2 review R5: the clock is shared, not copied, when a case opens (C0e fix round: judged on the input an I/O job of an ended test makes)", file: R, tool: 'corpus', expect: { case: toyCase('leaves an I/O job behind that calls the engine'), check: 'input', step: 2 },
     anchor: "(from ? { ...from } :", replacement: "(from ? from :" },
-  { name: "c0c2-r6-timer-moves-current", toys: ['toy-stray.toy.mjs'], origin: "C0c2 review R6: a timer moves the current case's clock, not that of the case that set it", file: R, tool: 'corpus', expect: { case: toyCase("a test that leaves timers behind"), check: 'input', step: 4 },
+  { name: "c0c2-r6-timer-moves-current", toys: ['toy-stray.toy.mjs'], origin: "C0c2 review R6: a timer moves the current case's clock, not that of the case that set it (C0e fix round: the case it is timed by also says whether it fired after its test ended, so a late test timer is filed in its case's context again)", file: R, tool: 'corpus', expect: { case: toyCase("a test that leaves an I/O job behind that sets a timer"), check: 'context' },
     anchor: "    const timed = caseOf(store);", replacement: "    const timed = current;" },
-  { name: "c0c2-r7-set-time-from-current", toys: ['toy-stray.toy.mjs'], origin: "C0c2 review R7: a timer takes its set time from the current case", file: R, tool: 'corpus', expect: { case: toyCase("a test that leaves timers behind"), check: 'input', step: 4 },
-    anchor: "const setAt = timed.clock.now;", replacement: "const setAt = current.clock.now;" },
-  { name: "c0c2-r9-late-test-timer-to-current", toys: ['toy-stray.toy.mjs'], origin: "C0c2 review R9: a late test-timer firing filed in the current case's context", file: R, tool: 'corpus', expect: { case: toyCase("a test that leaves timers behind"), check: 'context' },
-    anchor: "owner.context.push(owner.endNow", replacement: "current.context.push(owner.endNow" },
+  { name: "c0c2-r9-late-test-timer-to-current", toys: ['toy-stray.toy.mjs'], origin: "C0c2 review R9: a late test-timer firing filed in a case's context (C0e fix round: planted as a late test timer taking the in-time path, filed in its own case's context)", file: R, tool: 'corpus', expect: { case: toyCase("a test that leaves timers behind"), check: 'context' },
+    anchor: '      if (counted && timed.endNow !== null) return runLate(', replacement: '      if (counted && engine && timed.endNow !== null) return runLate(' },
   { name: "c0c2-r10-mocked-outside-no-detector", toys: ['toy-mocked-outside.toy.mjs'], origin: "C0c2 review R10: a mocked call with no chain skips the outside-chain detector", file: R, tool: 'corpus', expect: { case: toyCase("family code that calls a mocked export with no chain"), check: 'unrecordable-expected' },
     anchor: "if (!engine && mocked) { checkOutside(); return invoke(args); }", replacement: "if (!engine && mocked) { return invoke(args); }" },
   { name: "c0c2-r10b-mocked-outside-no-detector", toys: ['toy-mocked-outside.toy.mjs'], origin: "C0c2 review R10b: the same, as a line before", file: R, tool: 'corpus', expect: { case: toyCase("family code that calls a mocked export with no chain"), check: 'unrecordable-expected' },
@@ -467,15 +467,24 @@ export const PLANTED = Object.freeze([
   { name: "c0c2-r18b-mocked-new-outside-recorded", toys: ['toy-mocked.toy.mjs'], origin: "C0c2 review R18b: a mocked new with no chain recorded", file: R, tool: 'corpus', expect: { case: toyCase("the engine's call of a mocked object's method"), check: 'context' },
     anchor: "    if (!engine && mocked) { checkOutside(); return invoke(args); }", replacement: "    if (!engine && mocked && isNew) guard('port', () => record({ kind: 'new', port: name, call: `t${(current.testCalls += 1)}`, args: ref(listOf(args)) }, store));\n    if (!engine && mocked) { checkOutside(); return invoke(args); }" },
   { name: "c0c2-r19-mocked-answer-dropped", toys: ['toy-mocked.toy.mjs'], origin: "C0c2 review R19: a mocked call inside a chain loses its answer", file: R, tool: 'corpus', expect: { case: toyCase("a mocked export the test calls itself records nothing"), check: 'effects', step: 2 },
-    anchor: "    guard('port', () => { effect.answer = ref(result); });", replacement: "    guard('port', () => { if (!mocked) effect.answer = ref(result); });" },
+    anchor: "    guard('port', () => { effect.answer = ref(result); });\n    return result;\n  };", replacement: "    guard('port', () => { if (!mocked) effect.answer = ref(result); });\n    return result;\n  };" },
   { name: "c0c2-test-timer-callback-unowned", toys: ['toy-unowned.toy.mjs'], origin: "C0c2 clock fix: a test timer's callback runs with no test store, so a timer it sets is the current case's", file: R, tool: 'corpus', expect: { case: toyCase("a timer set from the callback of a timer taken for this case"), check: 'flags' },
     anchor: "runIn(origin === 'test' ? testStore(owner) : store,", replacement: "runIn(store," },
   { name: "c0c2-test-bodies-unowned", toys: ['toy-stray.toy.mjs'], origin: "C0c2 clock fix: test bodies run with no test store, so a job they leave sets its timer on the current case", file: R, tool: 'corpus', expect: { case: toyCase("a test that leaves an I/O job behind"), check: 'context' },
     anchor: "spyOn, setSystemTime, ...ownedTestApi() }", replacement: "spyOn, setSystemTime }" },
   { name: "c0c2-unowned-timer-unflagged", toys: ['toy-unowned.toy.mjs'], origin: "C0c2 clock fix: a timer with no known case moves the clock unflagged", file: R, tool: 'corpus', expect: { case: toyCase("a timer set by a job with no known case"), check: 'unrecordable-expected' },
     anchor: "        if (unowned && counted && timed.kind === 'test' && setAt + span * fires > timed.clock.now) guard('timer.fire', () => timed.flags.add('timer-owner-unknown'));\n", replacement: "" },
-  { name: "c0c2-late-test-call-to-current", toys: ['toy-stray.toy.mjs'], origin: "C0c2 clock fix: an entry called by test code of an earlier case lands in the current case", file: R, tool: 'corpus', expect: { case: toyCase("a test that leaves timers behind"), check: 'step-count' },
+  { name: "c0c2-late-test-call-to-current", toys: ['toy-stray.toy.mjs'], origin: "C0c2 clock fix: an entry called by test code of an earlier case lands in the current case (C0e fix round: judged on the I/O job's call)", file: R, tool: 'corpus', expect: { case: toyCase('leaves an I/O job behind that calls the engine'), check: 'step-count' },
     anchor: "  const kase = caseOf(portEffect || origin === 'test' ? store : null);", replacement: "  const kase = caseOf(portEffect ? store : null);" },
+  // C0e fix round: a timer that fires after its test ended is no step; the case writes the engine timers still pending at its end.
+  { name: 'c0e-fix-pending-not-written', toys: ['toy-gate.toy.mjs'], origin: 'C0e fix: the timers pending at a case\'s end are not written', file: R, tool: 'corpus', expect: { case: toyCase('fires after its test ended'), check: 'state' },
+    anchor: '    entry.pending = pending;', replacement: '    entry.pending = [];' },
+  { name: 'c0e-fix-fired-timer-still-pending', toys: ['toy-timers.toy.mjs'], origin: 'C0e fix: a timeout that fired before the test ended is still written as pending', file: R, tool: 'corpus', expect: { case: toyCase('a timer trap the test assigns is still recorded'), check: 'state' },
+    anchor: "      if (counted && engine && !repeat) guard('timer.fire', () => { apply(MapDelete, familyRecord(store.family, store.case).live, [id]); });", replacement: '' },
+  { name: 'c0e-fix-cleared-timer-still-pending', toys: ['toy-timers.toy.mjs'], origin: 'C0e fix: a timer cleared before the test ended is still written as pending', file: R, tool: 'corpus', expect: { case: toyCase('an early flush clears the timer'), check: 'state' },
+    anchor: '        if (known && !known.ambiguous && known.family !== null && known.case.endNow === null) apply(MapDelete, familyRecord(known.family, known.case).live, [known.id]);', replacement: '' },
+  { name: 'c0e-fix-pending-step-off-by-one', toys: ['toy-gate.toy.mjs'], origin: 'C0e fix: a pending timer names the step after the one that set it', file: R, tool: 'corpus', expect: { case: toyCase('fires after its test ended'), check: 'state' },
+    anchor: 'step: store.step ? store.step.n : null }]); });', replacement: 'step: store.step ? store.step.n + 1 : null }]); });' },
 ]);
 
 /**
@@ -510,11 +519,14 @@ export function buildMutant(mutant, parent, { recorderOnly = false } = {}) {
     for (const name of SUPPORT) cpSync(path.join(REPOSITORY_ROOT, 'scripts', name), path.join(root, 'scripts', name));
   }
   if (mutant.anchor === undefined) return { root, harnessDir };
-  const file = path.join(harnessDir, mutant.file);
-  const source = readFileSync(file, 'utf8');
-  const occurrences = source.split(mutant.anchor).length - 1;
-  if (occurrences !== 1) throw new Error(`planted difference ${mutant.name}: its anchor occurs ${occurrences} times in ${mutant.file}`);
-  writeFileSync(file, source.replace(mutant.anchor, () => mutant.replacement));
+  // A plant may change more than one place (`also`: further {file, anchor, replacement}), each anchor exactly once.
+  for (const edit of [mutant, ...(mutant.also ?? [])]) {
+    const file = path.join(harnessDir, edit.file);
+    const source = readFileSync(file, 'utf8');
+    const occurrences = source.split(edit.anchor).length - 1;
+    if (occurrences !== 1) throw new Error(`planted difference ${mutant.name}: its anchor occurs ${occurrences} times in ${edit.file}`);
+    writeFileSync(file, source.replace(edit.anchor, () => edit.replacement));
+  }
   return { root, harnessDir };
 }
 

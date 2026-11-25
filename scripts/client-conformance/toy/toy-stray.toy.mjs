@@ -3,20 +3,23 @@
 // timer of its own, and ends without waiting for them; the second test lets
 // real time pass (TOY_STRAY_WAIT_MS, default 60: the strays then fire before
 // its first clock read; 0: they fire later) and reads the clock through the
-// engine; the third waits for the strays. Whenever the strays fire, they are
-// late inputs and context of the first case and never move the clock of a
-// later one. The fourth polls every millisecond until its own 10 ms timer
+// engine; the third waits for the strays. Whenever the strays fire, the first
+// case has recorded them as pending at its end, their firing is recorded
+// nowhere (C0e fix round: a timer that fires after its test ended is no step),
+// and they never move the clock of a later one. The fourth polls every millisecond until its own 10 ms timer
 // fires, after blocking for the same wait, so its own clock ends at another
 // time by the wait; the fifth still opens in its own slot of the file's time.
 // So two recordings made with different waits are byte-equal. The sixth moves
 // time past its slot (fake timers advanced by 5 s), so the seventh opens where
 // the sixth ended, later than its slot: time never runs backward. The
 // eighth leaves a chain of test timers (a timer whose callback sets another),
-// the ninth an I/O job that sets a timer; the tenth lets real time pass while they
+// the ninth an I/O job that sets a timer, the tenth an I/O job that calls the
+// engine after the test ended (no timer released it: a late step of the tenth
+// case, at the tenth case's clock); the eleventh lets real time pass while they
 // fire (before its clock read with the default wait, partly after it with 0):
-// they are the eighth and ninth cases', so the tenth's clock never moves with
-// them. The eleventh sets the system time and leaves it standing; the twelfth
-// opens at that time and restores it.
+// they are the eighth to tenth cases', so the eleventh's clock never moves with
+// them. The twelfth sets the system time and leaves it standing; the
+// thirteenth opens at that time and restores it.
 // The self-test corpus of the client conformance harness records them.
 import { readFile } from 'node:fs/promises';
 import { expect, jest, setSystemTime, test } from 'bun:test';
@@ -30,7 +33,7 @@ const fired = [];
 test('a test that leaves timers behind', () => {
   const debouncer = createDebouncer({ delay: STRAY_MS, onFlush: (batch) => { fired.push(`flush ${batch.length}`); } });
   expect(debouncer.push('left behind')).toBe(1);
-  // The second call is made by the first's continuation after this test ended: an engine timer that case sets late.
+  // The second call is made by the first's continuation after this test ended, released by a late timer: recorded nowhere.
   later(STRAY_MS).then(async () => { await later(STRAY_MS); }).then(() => { fired.push('later'); });
   setTimeout(() => { fired.push('test timer'); }, STRAY_MS);
 });
@@ -83,6 +86,11 @@ test('a test that leaves a chain of test timers behind', () => {
 
 test('a test that leaves an I/O job behind that sets a timer', () => {
   readFile(import.meta.path).then(() => { setTimeout(() => { fired.push('job'); }, 150); });
+  expect(typeof readClock()[0]).toBe('number');
+});
+
+test('a test that leaves an I/O job behind that calls the engine', () => {
+  readFile(import.meta.path).then(() => { fired.push(`late read ${typeof readClock()[0]}`); });
   expect(typeof readClock()[0]).toBe('number');
 });
 

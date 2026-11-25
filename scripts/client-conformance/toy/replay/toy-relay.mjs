@@ -28,6 +28,12 @@ export function tally(name) {
   return `${name}:${calls}`;
 }
 
+// One port call before the return (recording 7 holds where each effect sits relative to the return).
+export function note(text) {
+  log('note', text);
+  return text.length;
+}
+
 export function pair(first, second) {
   const a = log('first', first);
   const b = log('second', second);

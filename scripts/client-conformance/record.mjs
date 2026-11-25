@@ -106,6 +106,10 @@ export const FLAG_REASONS = Object.freeze({
   'global-defined': 'the test defined this global itself (a data property the recorder did not wrap, or an accessor), so what the engine did through it is not recorded',
   'no-frame': 'an entry of this family was called with no frame with a file at all (a bound entry or the entry itself run by a promise job or a timer, a test body that only returns the call): it may be the test\'s call, which would be lost, and the census names no engine site that calls it so',
   'timer-owner-unknown': 'a timer set by code with no known case (no test store: a test API the recorder could not wrap, a job a module started at load) moved this case\'s clock when it fired: it may be left over from an earlier test, so the time this case saw may depend on load',
+  opaque: 'a value of the case is a platform object the codec writes as opaque (a Blob or a File, say): what it holds is not recorded, so a replay cannot rebuild it',
+  'state-promise': 'the state the case starts from holds a pending promise (work an earlier case started, such as a persistence queue): a replay of the case alone cannot rebuild it, and would wait on it for ever',
+  'state-moved': 'the state of this stateful family (its store or its module state) changed inside the case by code that is no step of the family: an engine module no family maps called one of its entries (passed through) and the state differed after it, another family\'s chain inlined one and changed it, its store notified while none of its steps ran, or a timer of an earlier case that fired after that case ended changed it; what changed it is in no step, so a replay cannot reproduce the steps after it',
+  'handed-out-touched': 'engine code no family maps called engine code this family handed the test (a method or getter of an object it made, a closure), or wrote a store it handed out, inside the case; the family records no state of those objects (they are its instances, not its store or module state), so whether the call changed them is not known, and a replay that does not make the call cannot follow',
   'port-no-line': 'test code (by the stack) called a port of this family while the family had no step in the case: the test\'s own call of the port, or a closure of the family whose frame a proper tail call removed; the two cannot be told apart',
 });
 /** Flags that mean engine code ran where no step holds it: a case flagged so must be written for some family, never dropped. */
@@ -311,7 +315,7 @@ export function buildContainers({ raws, junit, root = REPOSITORY_ROOT, expectedF
           id, digest: createHash('sha256').update(id).digest('hex').slice(0, 8), kind: recorded.kind, file: raw.file,
           line: test ? test.line : null, describe: test ? test.describe : [], name,
           ordinal: test ? test.occurrence : 1, family, status, outcome, flags, reason: reasonOf(flags, status),
-          seed: recorded.seed, entry: { now: recorded.entryNow, state: data.entryState }, steps: data.steps, end: { now: recorded.endNow, state: data.endState }, context: data.context,
+          seed: recorded.seed, entry: { now: recorded.entryNow, state: data.entryState }, steps: data.steps, end: { now: recorded.endNow, state: data.endState, ...(data.pending ? { pending: data.pending } : {}) }, context: data.context,
         });
       }
     }

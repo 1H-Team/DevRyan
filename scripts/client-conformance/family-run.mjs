@@ -147,7 +147,9 @@ export async function recordFamilies({ setup, targets = [], runs = 2, families =
     const found = await defaultTargets({ setup: { ...setup, root }, portMap, workDir, parallel: workers(64) });
     discovery = { searched: found.searched, loading: found.loading, found: found.found ?? [], missing: found.missing.length };
     for (const file of found.missing) incomplete.push({ check: 'discovery-missing', file, detail: 'the discover run left no report for this test file: whether it loads a family module is unknown' });
-    incomplete.push(...found.unclassified);
+    // A file the census excludes (with its reason) is not recorded: its unclassified caller is the reason itself.
+    const excluded = new Set(census.excludedFiles.map((item) => item.file));
+    incomplete.push(...found.unclassified.filter((problem) => !excluded.has(problem.file)));
     const { files: kept, stale } = applyExclusions(found.files, census);
     staleExclusions = stale;
     files = kept.map((file) => path.relative(setup.cwd, path.join(root, file)).split(path.sep).join('/'));

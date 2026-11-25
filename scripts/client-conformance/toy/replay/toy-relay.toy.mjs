@@ -2,7 +2,7 @@
 // self-test records them and replays the recording against the module. Run
 // only by the harness (their name keeps them out of every suite's discovery).
 import { describe, expect, test } from 'bun:test';
-import { ids, label, pair, relay, settle, share, stamp, tally } from './toy-relay.mjs';
+import { ids, label, note, pair, relay, settle, share, stamp, tally } from './toy-relay.mjs';
 
 describe('toy relay', () => {
   test('relays in a microtask, two calls before either job runs', async () => {
@@ -24,6 +24,10 @@ describe('toy relay', () => {
 
   test('a later test sees the count the earlier test left', () => {
     expect(tally('c')).toBe('c:3');
+  });
+
+  test('makes a port call before it returns', () => {
+    expect(note('abc')).toBe(3);
   });
 
   test('makes two port calls in one step', () => {

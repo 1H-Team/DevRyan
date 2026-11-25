@@ -14,9 +14,21 @@
 //     // Every entry's result that holds engine code (a function, an object with methods or getters, an
 //     // iterator, a thenable) is handed to the test wrapped: running it is an input of the family.
 //     "state": "snapshotState",                                         // export called at case entry and end
+//     // Stateful families (package C0e): their state is recorded at case entry, after every step and at case
+//     // end, with the change set of every step, and seeded into a replay. Either or both of:
+//     "store": "useSelectionStore",                                     // a zustand store export (getState,
+//                                                                       // setState, subscribe): its actions, the
+//                                                                       // test's setState and subscribe are steps,
+//                                                                       // every notification an effect
+//     "moduleState": { "bindings": ["records", "executor"],             // module-level bindings no export exposes,
+//                      "reason": "..." },                               // read (and seeded) through the loader
 //     "ports": [{ "module": "<path>", "exports": ["log"] }],             // may be another family's entry: also its input
 //     "injected": [{ "entry": "connect", "arg": 0, "name": "sdk" },       // an object handed in is a port
-//                  { "entry": "connect", "arg": 1, "key": "onEvent", "name": "onEvent" }],
+//                  { "entry": "connect", "arg": 1, "key": "onEvent", "name": "onEvent" },
+//                  { "entry": "Manager", "member": "configure", "arg": 0, "key": "onEvict", "name": "onEvict" }],
+//     // `member`: a method of what the entry handed out (`Manager#1.configure(...)`), at any depth;
+//     // `onlyFunction`: the argument is a port only when it is a function (setState's updater, not its partial);
+//     // `plainAnswers`: its answers are data, never port objects (an updater's next state carries functions)
 //     // "wrapAnswers": true on a port or an injected item: what its calls resolve to is a port object too
 //     // when it has behaviour (an SDK stream's `{ items: <async iterator> }`), one microtask later
 //     "unorderedPorts": [{ "port": "...", "reason": "..." }],           // effect order not observable (waiver)
@@ -31,11 +43,11 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 
-const FAMILY_KEYS = new Set(['name', 'module', 'entries', 'state', 'ports', 'injected', 'unorderedPorts', 'note', 'allExports', 'inline']);
+const FAMILY_KEYS = new Set(['name', 'module', 'entries', 'state', 'store', 'moduleState', 'ports', 'injected', 'unorderedPorts', 'note', 'allExports', 'inline']);
 const ENTRY_KEYS = new Set(['export', 'draft', 'returns', 'reason']);
 const PORT_KEYS = new Set(['module', 'exports', 'wrapAnswers', 'reason']);
 const INLINE_KEYS = new Set(['export', 'reason']);
-const INJECTED_KEYS = new Set(['entry', 'arg', 'key', 'name', 'wrapAnswers']);
+const INJECTED_KEYS = new Set(['entry', 'member', 'arg', 'key', 'name', 'wrapAnswers', 'onlyFunction', 'plainAnswers', 'reason']);
 const GLOBAL_PORTS = new Set(['fetch', 'WebSocket', 'EventSource', 'localStorage', 'sessionStorage', 'document', 'window', 'crypto', 'performance']);
 
 /**
@@ -121,6 +133,14 @@ export function loadPortMap(file, { root } = {}) {
     }
     if (entries.length === 0 && family.allExports !== true) fail(file, `${where} has no entries`);
     if (family.state !== undefined && typeof family.state !== 'string') fail(file, `${where}: state must be an export name`);
+    if (family.store !== undefined && (typeof family.store !== 'string' || !/^[A-Za-z_$][\w$]*$/.test(family.store))) fail(file, `${where}: store must be an export name`);
+    if (family.moduleState !== undefined) {
+      onlyKeys(file, `${where} moduleState`, family.moduleState, new Set(['bindings', 'reason']));
+      const { bindings, reason } = family.moduleState;
+      if (!Array.isArray(bindings) || bindings.length === 0 || bindings.some((name) => typeof name !== 'string' || !/^[A-Za-z_$][\w$]*$/.test(name)) || new Set(bindings).size !== bindings.length) fail(file, `${where}: moduleState.bindings must be distinct identifiers`);
+      if (typeof reason !== 'string' || !reason.trim()) fail(file, `${where}: moduleState needs a reason`);
+    }
+    if (family.state !== undefined && (family.store !== undefined || family.moduleState !== undefined)) fail(file, `${where}: state (an export) and store or moduleState are two ways to say the same: use one`);
     for (const [portIndex, port] of (family.ports ?? []).entries()) {
       onlyKeys(file, `${where} port ${portIndex}`, port, PORT_KEYS);
       const portPath = resolveModule(port.module, `${where} port ${portIndex}`);
@@ -141,7 +161,10 @@ export function loadPortMap(file, { root } = {}) {
     }
     for (const [injectedIndex, injected] of (family.injected ?? []).entries()) {
       onlyKeys(file, `${where} injected ${injectedIndex}`, injected, INJECTED_KEYS);
-      if (!entries.some((entry) => entry.export === injected.entry)) fail(file, `${where} injected ${injectedIndex}: ${injected.entry} is not an entry`);
+      if (!entries.some((entry) => entry.export === injected.entry) && !(family.allExports === true && !inline.has(injected.entry)) && injected.entry !== family.store) fail(file, `${where} injected ${injectedIndex}: ${injected.entry} is not an entry`);
+      if (injected.member !== undefined && (typeof injected.member !== 'string' || !injected.member)) fail(file, `${where} injected ${injectedIndex}: member must be a name`);
+      if (injected.plainAnswers !== undefined && injected.plainAnswers !== true) fail(file, `${where} injected ${injectedIndex}: plainAnswers must be true when given (the port's answers are data, never port objects)`);
+      if (injected.onlyFunction !== undefined && injected.onlyFunction !== true) fail(file, `${where} injected ${injectedIndex}: onlyFunction must be true when given (an argument that is no function is passed as it is)`);
       if (!Number.isInteger(injected.arg) || typeof injected.name !== 'string') fail(file, `${where} injected ${injectedIndex}: arg and name are required`);
       if (injected.wrapAnswers !== undefined && typeof injected.wrapAnswers !== 'boolean') fail(file, `${where} injected ${injectedIndex}: wrapAnswers must be true or false`);
     }

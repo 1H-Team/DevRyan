@@ -40,8 +40,8 @@ import { HARNESS_DIR, REPOSITORY_ROOT, SCRATCH_OWNER_FILE } from './record.mjs';
 
 /** What the toy closure must count: per run (the tracked corpus, the replayer's own toys) and outcome. */
 export const TOY_CLOSURE_COUNTS = Object.freeze({
-  corpus: { cases: 116, reproduced: 29, different: 0, inconclusive: 0, unrecordable: 32, 'no-reference': 0, 'not-replayable': 55 },
-  own: { cases: 9, reproduced: 8, different: 1, inconclusive: 0, unrecordable: 0, 'no-reference': 0, 'not-replayable': 0 },
+  corpus: { cases: 117, reproduced: 40, different: 0, inconclusive: 0, unrecordable: 32, 'no-reference': 0, 'not-replayable': 45 },
+  own: { cases: 28, reproduced: 24, different: 1, inconclusive: 0, unrecordable: 3, 'no-reference': 0, 'not-replayable': 0 },
 });
 /** Families the toy closure must report as not replayable yet, by name. */
 export const TOY_NOT_REPLAYABLE = Object.freeze(['toy-clock', 'toy-flow', 'toy-gate', 'toy-guard', 'toy-sched', 'toy-timers', 'toy-transport']);
@@ -50,6 +50,7 @@ export const NOT_COMPARED_PINNED = Object.freeze(9);
 
 const toy = (name) => `toy/${name}`;
 const replayToy = 'toy/replay/toy-relay.mjs';
+const storeToy = 'toy/replay/toy-store.mjs';
 /**
  * Planted differences in copies of the toy modules: `file` (relative to this
  * directory) is loaded with `anchor` (once) replaced; `expect` is the check
@@ -74,14 +75,26 @@ export const TOY_MUTANTS = Object.freeze([
   { name: 'toy-clock-read-after-draw', file: replayToy, anchor: '{ at: Date.now(), id: crypto.randomUUID() }', replacement: '(() => { const id = crypto.randomUUID(); return { at: Date.now(), id }; })()', expect: { check: 'halt', kind: 'effect-order' } },
   { name: 'toy-draws-reordered', file: replayToy, anchor: '  const first = crypto.randomUUID();\n  const second = crypto.randomUUID();\n', replacement: '  const second = crypto.randomUUID();\n  const first = crypto.randomUUID();\n', expect: { check: 'result', kind: 'draw-oracle' } },
   { name: 'toy-microtask-effect-on-a-timer', file: replayToy, anchor: "  Promise.resolve().then(() => log('relay', String(items.length)));\n", replacement: "  setTimeout(() => log('relay', String(items.length)), 0);\n", expect: { check: 'effects', kind: 'value' } },
+  // C0e: an effect moved across the step's return, in each direction (recording 7, `returnedAt`).
+  { name: 'toy-effect-moved-after-the-return', file: replayToy, anchor: "  log('note', text);\n", replacement: "  Promise.resolve().then(() => log('note', text));\n", expect: { check: 'effects', kind: 'return-position' } },
+  { name: 'toy-effect-moved-before-the-return', file: replayToy, anchor: "  Promise.resolve().then(() => log('relay', String(items.length)));\n", replacement: "  log('relay', String(items.length));\n", expect: { check: 'effects', kind: 'return-position' } },
   { name: 'toy-hidden-counter-off-by-one', file: replayToy, anchor: '  calls += 1;\n', replacement: '  calls += 2;\n', expect: { check: 'result', kind: 'value' } },
   { name: 'toy-clock-source-changed', file: toy('toy-clock.mjs'), anchor: 'return [Date.now(), new Date().getTime(), performance.now()];', replacement: 'return [Date.now(), Date.now(), performance.now()];', expect: { check: 'halt', kind: 'unanswered' } },
+  // C0e: the store and timer toy family. A store that mutates where it replaced, a notification doubled or delivered
+  // after the action returned, a timer delay off by one, an interval its callback no longer clears, a clock read moved.
+  { name: 'toy-store-mutates-in-place', file: storeToy, anchor: "  add: (item) => set((state) => ({ items: [...state.items, item], count: state.count + 1 })),", replacement: "  add: (item) => set((state) => { state.items.push(item); return { items: state.items, count: state.count + 1 }; }),", expect: { check: 'state-changes', kind: 'value' } },
+  { name: 'toy-store-notifies-twice', file: storeToy, anchor: "  tag: (name) => set((state) => { const tags = new Set(state.tags); tags.add(name); return { tags }; }),", replacement: "  tag: (name) => { set((state) => { const tags = new Set(state.tags); tags.add(name); return { tags }; }); set({}); },", expect: { check: 'effects', kind: 'extra' } },
+  { name: 'toy-store-notifies-after-the-return', file: storeToy, anchor: "    for (const listener of listeners) listener(state, previous);\n", replacement: "    Promise.resolve().then(() => { for (const listener of listeners) listener(state, previous); });\n", expect: { check: 'effects', kind: 'return-position' } },
+  { name: 'toy-store-subscribers-reversed', file: storeToy, anchor: "    for (const listener of listeners) listener(state, previous);\n", replacement: "    for (const listener of [...listeners].reverse()) listener(state, previous);\n", expect: { check: 'effects' } },
+  { name: 'toy-timer-delay-off-by-one', file: storeToy, anchor: "    setTimeout(() => { log('second', label); }, 5);\n", replacement: "    setTimeout(() => { log('second', label); }, 6);\n", expect: { check: 'effects', kind: 'value' } },
+  { name: 'toy-interval-not-cleared', file: storeToy, anchor: "    if (ticks % 2 === 0) clearInterval(id);\n", replacement: '', expect: { check: 'effects', kind: 'missing' } },
+  { name: 'toy-module-state-not-kept', file: storeToy, anchor: "  remember: (key, value) => { remembered.set(key, value); },", replacement: "  remember: () => {},", expect: { check: 'state', kind: 'value' } },
   // C0d fix: a rejection the module leaves unhandled, and an error a job it scheduled throws, are the case's (`outside`), and the unit lives on.
   { name: 'toy-unhandled-rejection', file: replayToy, anchor: "  return 'queued';\n", replacement: "  Promise.reject(new Error('planted rejection'));\n  return 'queued';\n", expect: { check: 'outside' }, contained: 1 },
   { name: 'toy-throw-in-a-later-job', file: replayToy, anchor: "  return 'queued';\n", replacement: "  setImmediate(() => setImmediate(() => setImmediate(() => { throw new Error('planted throw'); })));\n  return 'queued';\n", expect: { check: 'outside' }, contained: 1 },
 ]);
 /** The toy mutants the per-push self-test runs (the rest run in the full suite): one of each kind of check. */
-export const TOY_MUTANT_SAMPLE = Object.freeze(['toy-key-moved', 'toy-undefined-as-null', 'toy-clones-one-field-too-many', 'toy-effects-reordered', 'toy-clock-read-after-draw', 'toy-alias-broken', 'toy-time-not-supplied', 'toy-draws-reordered', 'toy-throw-in-a-later-job']);
+export const TOY_MUTANT_SAMPLE = Object.freeze(['toy-key-moved', 'toy-undefined-as-null', 'toy-clones-one-field-too-many', 'toy-effects-reordered', 'toy-clock-read-after-draw', 'toy-alias-broken', 'toy-time-not-supplied', 'toy-draws-reordered', 'toy-throw-in-a-later-job', 'toy-effect-moved-after-the-return', 'toy-store-mutates-in-place', 'toy-interval-not-cleared']);
 
 const RC = 'replay-compare.mjs';
 const RP = 'replay.mjs';
@@ -91,12 +104,14 @@ const MF = 'manifest.mjs';
 const JUDGE_CODE = '  const code = inconclusive.length ? EXIT.inconclusive : failures.length ? EXIT.fail : EXIT.pass;\n  return { code, failures, inconclusive, fixtures };';
 /**
  * Planted differences in the replayer: each must make the copy's self-test
- * fail at `fails` (`closure`, `compare`, `judge`, `engines`, or
- * `toy-mutants:<name>`). `origin` says whose: the package's own (C0d), the
- * review's (C0d review, its 21) or this fix round's (C0d fix).
+ * fail at `fails` (`closure`, `compare`, `judge`, `engines`, `protocol` or
+ * `toy-mutants:<name>`), and where it names a `check`, by a failure that
+ * names that check. `origin` says whose: the package's own (C0d), the
+ * review's (C0d review, its 21), a fix round's (C0d fix), C0e's own, or the
+ * C0e review's 20 (C0e review). `also` lists further edits of the same plant.
  */
 export const REPLAYER_PLANTS = Object.freeze([
-  { name: 'replayer-change-set-not-compared', origin: 'C0d', file: RC, anchor: "['after', 'after'], ['changes', 'change-set']]", replacement: "['after', 'after']]", fails: 'toy-mutants:toy-clones-one-field-too-many' },
+  { name: 'replayer-change-set-not-compared', origin: 'C0d', file: RC, anchor: "['after', 'after'], ['changes', 'change-set'],", replacement: "['after', 'after'],", fails: 'toy-mutants:toy-clones-one-field-too-many' },
   { name: 'replayer-step-delivered-before-quiescence', origin: 'C0d', file: ET, anchor: '    const quiet = await quiesce();\n', replacement: '    const quiet = true;\n', fails: 'closure' },
   { name: 'replayer-identity-not-kept-on-rebuild', origin: 'C0d', file: ET, anchor: '        if (known !== undefined) { local.set(node.n, known); reconcile(known, node.value); return known; }\n', replacement: '', fails: 'closure' },
   { name: 'replayer-prefix-accepted', origin: 'C0d', file: RC, anchor: '  if (expectedSteps.length !== actualSteps.length) {\n', replacement: '  if (actualSteps.length > expectedSteps.length) {\n', fails: 'compare' },
@@ -112,7 +127,7 @@ export const REPLAYER_PLANTS = Object.freeze([
   { name: 'replayer-time-oracle-off', origin: 'C0d', file: RC, anchor: '  if (expectedNumber !== null && supplied.times.has(expectedNumber) && !supplied.times.has(numberOf(actual))) {', replacement: '  if (false) {', fails: 'toy-mutants:toy-time-not-supplied' },
   // The review's 21 (C0d review, "Planted replayer bugs"; anchors moved with the code where it changed).
   { name: 'review-effect-args-not-compared', origin: 'C0d review', file: RC, anchor: '        const keys = Object.keys(l.effects[at]);\n        const otherKeys = Object.keys(r.effects[at]);\n', replacement: "        const keys = Object.keys(l.effects[at]).filter((key) => key !== 'args');\n        const otherKeys = Object.keys(r.effects[at]).filter((key) => key !== 'args');\n", fails: 'compare' },
-  { name: 'review-after-not-compared', origin: 'C0d review', file: RC, anchor: "['returns', 'result'], ['throws', 'result'], ['after', 'after'], ['changes', 'change-set']]", replacement: "['returns', 'result'], ['throws', 'result'], ['changes', 'change-set']]", fails: 'compare' },
+  { name: 'review-after-not-compared', origin: 'C0d review', file: RC, anchor: "['returns', 'result'], ['throws', 'result'], ['after', 'after'], ['changes', 'change-set'],", replacement: "['returns', 'result'], ['throws', 'result'], ['changes', 'change-set'],", fails: 'compare' },
   { name: 'review-outside-not-compared', origin: 'C0d review', file: RC, anchor: '  if ((replayed.outside ?? []).length) {', replacement: '  if (false) {', fails: 'compare' },
   { name: 'review-engine-made-objects-not-bound', origin: 'C0d review', file: ET, anchor: '      if (!kase.bound.has(request.n)) kase.bound.set(request.n, found);\n', replacement: '', fails: 'closure' },
   { name: 'review-quiescence-one-microtask', origin: 'C0d review', file: ET, anchor: '      await new RealPromise((resolve) => { realSetImmediate(resolve); });\n      rounds += 1;\n      quiet = activity === before ? quiet + 1 : 0;', replacement: '      await null;\n      rounds += 1;\n      quiet = activity === before ? quiet + 1 : 0;', fails: 'closure' },
@@ -138,12 +153,58 @@ export const REPLAYER_PLANTS = Object.freeze([
   { name: 'fix-manifest-digest-unchecked', origin: 'C0d fix', file: MF, anchor: '    if (digestOf(text) !== entry.digest) {', replacement: '    if (false) {', fails: 'engines' },
   { name: 'fix-job-errors-charged-to-no-case', origin: 'C0d fix', file: ET, anchor: '          try { run(); } catch (error) { uncaught(error, origin); } finally { jobOrigin = before; }', replacement: '          try { run(); } catch { /* dropped */ } finally { jobOrigin = before; }', fails: 'toy-mutants:toy-throw-in-a-later-job' },
   { name: 'fix-protocol-unchecked', origin: 'C0d fix', file: RP, anchor: '    if (hello.protocol !== PROTOCOL) throw', replacement: '    if (false) throw', fails: 'engines' },
+  // Package C0e: its own changes to the recorder, the codec, the engine and the replayer, each failing a part of the self-test.
+  { name: 'c0e-return-position-not-compared', origin: 'C0e', file: RC, anchor: "    if (!found.some((item) => item.check === 'effects') && (Object.prototype.hasOwnProperty.call(expected, 'returnedAt')", replacement: "    if (false && (Object.prototype.hasOwnProperty.call(expected, 'returnedAt')", fails: 'compare' },
+  { name: 'c0e-engine-counts-the-return-late', origin: 'C0e', file: ET, anchor: '    // The effects made before the entry returned or threw; the rest come from the jobs it started.\n    record.returnedAt = record.effects.length;\n    const list = [];', replacement: '    realQueueMicrotask(() => { record.returnedAt = record.effects.length; });\n    const list = [];', fails: 'closure' },
+  { name: 'c0e-recorder-counts-the-return-late', origin: 'C0e', file: 'recorder.mjs', anchor: '    step.returnedAt = step.effects.length;\n    Object.assign(step, fields);', replacement: '    apply(PromiseThen, RESOLVED, [() => { step.returnedAt = step.effects.length; }]);\n    Object.assign(step, fields);', fails: 'closure' },
+  { name: 'c0e-recorder-notify-not-recorded', origin: 'C0e', file: 'recorder.mjs', anchor: "    if (store && store.kind === 'engine' && store.family === family && !isLate(store)) { record({ kind: 'notify', state: ref(state, store.case), previous: ref(previous, store.case) }, store); return; }", replacement: "    if (store && store.kind === 'engine' && store.family === family && !isLate(store)) return;", fails: 'closure' },
+  { name: 'c0e-engine-notify-dropped', origin: 'C0e', file: ET, anchor: "        current.effects.push({ kind: 'notify', state: snap(state), previous: snap(previous) });", replacement: '        if (current === null) return;', fails: 'closure' },
+  { name: 'c0e-state-changes-not-compared', origin: 'C0e', file: RC, anchor: "['state', 'state'], ['stateChanges', 'state-changes']]", replacement: "['state', 'state']]", fails: 'toy-mutants:toy-store-mutates-in-place' },
+  { name: 'c0e-entry-state-not-compared', origin: 'C0e', file: RC, anchor: '  if (recordedEntry !== null && recordedEntry !== undefined) {', replacement: '  if (false) {', fails: 'compare' },
+  { name: 'c0e-end-state-not-compared', origin: 'C0e', file: RC, anchor: '  if (recordedEnd !== null && recordedEnd !== undefined) {', replacement: '  if (false) {', fails: 'compare' },
+  { name: 'c0e-never-seeded', origin: 'C0e', file: RP, anchor: "        const seedIt = mode === 'isolated' || endedWith === null || !sameContent(endedWith, start);", replacement: '        const seedIt = false;', fails: 'closure' },
+  { name: 'c0e-unknown-timer-not-refused', origin: 'C0e', file: ET, anchor: '    if (!timer || timer.cleared || (!timer.repeat && timer.fired > 0)) {', replacement: '    if (false) {', fails: 'protocol' },
+  { name: 'c0e-unknown-settle-not-refused', origin: 'C0e', file: ET, anchor: '    if (!settle || input.port === undefined) {', replacement: '    if (false) {', fails: 'protocol' },
+  { name: 'c0e-timer-ids-not-paired', origin: 'C0e', file: RC, anchor: '          if (paired) { if (!names[paired](e[key], a[key]))', replacement: '          if (paired) { if (false)', fails: 'compare' },
+  { name: 'c0e-handed-out-name-not-bound', origin: 'C0e', file: RC, anchor: '    if (Number.isInteger(step.handedOut)) bind.push(', replacement: '    if (false) bind.push(', fails: 'closure' },
+  { name: 'c0e-state-moved-unflagged', origin: 'C0e', file: 'recorder.mjs', anchor: "function noteMoved(family, store) {\n  guard('state', () => {", replacement: "function noteMoved() {}\nexport function noteMovedPlanted(family, store) {\n  guard('state', () => {", fails: 'closure' },
+  { name: 'c0e-nested-input-not-delivered', origin: 'C0e', file: ET, anchor: '    if (current.nested.length && item.call !== undefined) deliverNested(item.call);', replacement: '', fails: 'protocol' },
+  { name: 'c0e-subscribers-share-one-name', origin: 'C0e', file: 'recorder.mjs', anchor: '(item.perStep ? { ...item, name: `${item.name}@${step.n}` } : item)', replacement: '(item)', fails: 'closure' },
+  { name: 'c0e-codec-wrapper-identity-split', origin: 'C0e', file: 'recorder.mjs', anchor: '    codec: createCodecContext({ names: portNames, unwrap, unifyWrapped: true }), flags', replacement: '    codec: createCodecContext({ names: portNames, unwrap }), flags', fails: 'closure' },
+  { name: 'c0e-seed-replaces-module-maps', origin: 'C0e', file: ET, anchor: "        if (!isId(moduleTree[name])) moduleTree[name] = { $dr: 'id', n: (fresh -= 1), value: moduleTree[name] };\n        kase.bound.set(moduleTree[name].n, value);", replacement: "        if (!isId(moduleTree[name])) continue;", fails: 'protocol' },
+  // The C0e review's 20 (its "Planted bugs in the recorder, codec, engine and replayer"), anchors moved with the fix round's code where it
+  // changed; each fails a part of the self-test and, named by `check`, the check that reports it.
+  { name: 'c0e-review-compare-timer-delay-ignored', origin: 'C0e review', file: RC, anchor: "          if (JSON.stringify(e[key]) !== JSON.stringify(a[key])) add('effects',", replacement: "          if (key === 'delay') continue;\n          if (JSON.stringify(e[key]) !== JSON.stringify(a[key])) add('effects',", fails: 'compare', check: 'compare-timer-delay' },
+  { name: 'c0e-review-compare-extra-trailing-notify-ignored', origin: 'C0e review', file: RC, anchor: '    const actualNames = actualEffects.map(describeEffect);', replacement: "    const actualNames = (() => { const n = actualEffects.map(describeEffect); const c = (list) => list.filter((x) => x.startsWith('notify')).length; return n.length > expectedNames.length && c(n) > c(expectedNames) && n.slice(0, expectedNames.length).join() === expectedNames.join() ? expectedNames : n; })();", fails: 'compare', check: 'compare-extra-notify' },
+  { name: 'c0e-review-replay-firing-one-step-early', origin: 'C0e review', file: RP, anchor: '      for (const [index, step] of kase.steps.entries()) {\n        if (step.input.during !== undefined) continue;', replacement: "      for (const [index, step] of (() => { const e = [...kase.steps.entries()]; const t = e.findIndex(([, s], i) => i > 0 && s.input.kind === 'timer'); if (t > 0) [e[t - 1], e[t]] = [e[t], e[t - 1]]; return e; })()) {\n        if (step.input.during !== undefined) continue;", fails: 'closure', check: 'input/value' },
+  { name: 'c0e-review-replay-late-flag-not-sent', origin: 'C0e review', file: RP, anchor: '...(step.late ? { late: true } : {})', replacement: '...({})', fails: 'closure', check: 'end-state' },
+  { name: 'c0e-review-replay-unrecordable-counted-reproduced', origin: 'C0e review', file: RP, anchor: "(verdict.judge ? null : verdict.outcome === 'unrecordable' ? 'unrecordable' :", replacement: "(verdict.judge ? null : verdict.outcome === 'unrecordable' ? 'reproduced' :", fails: 'closure', check: 'pinned' },
+  { name: 'c0e-review-engine-omits-return-position', origin: 'C0e review', file: ET, anchor: '      if (record.returnedAt !== undefined) shape.returnedAt = record.returnedAt;', replacement: '', fails: 'closure', check: 'return-position' },
+  { name: 'c0e-review-engine-omits-position-and-compare-needs-both', origin: 'C0e review', file: ET, anchor: '      if (record.returnedAt !== undefined) shape.returnedAt = record.returnedAt;', replacement: '',
+    also: [{ file: RC, anchor: "(Object.prototype.hasOwnProperty.call(expected, 'returnedAt') || Object.prototype.hasOwnProperty.call(actual, 'returnedAt'))", replacement: "(Object.prototype.hasOwnProperty.call(expected, 'returnedAt') && Object.prototype.hasOwnProperty.call(actual, 'returnedAt'))" }], fails: 'compare', check: 'compare-return-position-not-reported' },
+  { name: 'c0e-review-engine-serves-any-port-answer', origin: 'C0e review', file: ET, anchor: "    const matches = (item) => item.kind === kind && (kind === 'port' ? item.port === name :", replacement: "    const matches = (item) => item.kind === kind && (kind === 'port' ? true :", fails: 'protocol', check: 'protocol-port-served-by-name' },
+  { name: 'c0e-review-engine-timeout-may-fire-twice', origin: 'C0e review', file: ET, anchor: '    if (!timer || timer.cleared || (!timer.repeat && timer.fired > 0)) {', replacement: '    if (!timer || timer.cleared) {', fails: 'protocol', check: 'protocol-timeout-fires-once' },
+  { name: 'c0e-review-engine-unknown-clear-takes-last-id', origin: 'C0e review', file: ET, anchor: "      if (!known) { effect({ kind: 'timer.clear', id: null, handle: snap(handle) }); return; }", replacement: "      if (!known) { effect({ kind: 'timer.clear', id: kase.timerCount || null }); return; }", fails: 'closure', check: 'effects/value' },
+  { name: 'c0e-review-recorder-timer-position-counted-late', origin: 'C0e review', file: 'recorder.mjs', anchor: '        step.returnedAt = step.effects.length;\n        stateAfter(store.family, step, beforeState, store.case);', replacement: '        apply(PromiseThen, Promise.resolve(), [() => { step.returnedAt = step.effects.length; }]);\n        stateAfter(store.family, step, beforeState, store.case);', fails: 'closure', check: 'return-position' },
+  { name: 'c0e-review-recorder-timer-delay-zero', origin: 'C0e review', file: 'recorder.mjs', anchor: "record({ kind: 'timer.set', id, delay: ref(delay), repeat }, store)", replacement: "record({ kind: 'timer.set', id, delay: ref(0), repeat }, store)", fails: 'closure', check: 'effects/value at /steps/0/effects/0/delay' },
+  { name: 'c0e-review-recorder-notify-previous-is-state', origin: 'C0e review', file: 'recorder.mjs', anchor: 'previous: ref(previous, store.case) }, store); return; }', replacement: 'previous: ref(state, store.case) }, store); return; }', fails: 'closure', check: 'effects/identity' },
+  { name: 'c0e-review-recorder-no-state-after-timer', origin: 'C0e review', file: 'recorder.mjs', anchor: '        step.returnedAt = step.effects.length;\n        stateAfter(store.family, step, beforeState, store.case);', replacement: '        step.returnedAt = step.effects.length;', fails: 'closure', check: 'state/value' },
+  { name: 'c0e-review-recorder-during-call-dropped', origin: 'C0e review', file: 'recorder.mjs', anchor: '    if (opener.effect && opener.effect.call !== undefined) step.input.duringCall = opener.effect.call;', replacement: '', fails: 'closure', check: 'not-replayable' },
+  { name: 'c0e-review-recorder-handed-store-move-ignored', origin: 'C0e review', file: 'recorder.mjs', anchor: '    noteTouched(family, store);\n  })));', replacement: '  })));', fails: 'closure', check: 'handed-out-touched' },
+  { name: 'c0e-review-recorder-passthrough-move-ignored', origin: 'C0e review', file: 'recorder.mjs', anchor: "  const moved = () => { if (stateText(family) !== watched) noteMoved(family, { kind: 'passthrough', case: kase }); };", replacement: '  const moved = () => {};', fails: 'closure', check: 'state-moved' },
+  { name: 'c0e-review-codec-set-order-reversed', origin: 'C0e review', file: 'codec.mjs', anchor: "      return { kind: 'set', values, className: constructorName(item) };", replacement: "      return { kind: 'set', values: values.reverse(), className: constructorName(item) };", fails: 'closure', check: 'after/value' },
+  { name: 'c0e-review-replay-file-order-seeds-only-after-unjudged', origin: 'C0e review', file: RP, anchor: "        const seedIt = mode === 'isolated' || endedWith === null || !sameContent(endedWith, start);", replacement: "        const seedIt = mode === 'isolated' || endedWith === null;", fails: 'closure', check: 'entry-state/value' },
+  { name: 'c0e-review-compare-state-changes-order-ignored', origin: 'C0e review', file: RC, anchor: "['state', 'state'], ['stateChanges', 'state-changes']]", replacement: "['state', 'state']]", fails: 'compare', check: 'compare-state-changes' },
 ]);
 /** The replayer plants the per-push self-test runs: those its cheap parts (compare, judge) catch, and one each of the closure and the engines. */
 export const REPLAYER_PLANT_SAMPLE = Object.freeze([
   'replayer-identity-not-kept-on-rebuild', 'replayer-prefix-accepted',
   'review-effect-args-not-compared', 'review-after-not-compared', 'review-outside-not-compared', 'review-difference-exits-0', 'review-inconclusive-exits-0', 'review-nothing-replayed-passes', 'review-family-without-judged-case-passes',
   'review-tagged-numbers-equal', 'review-map-order-masked', 'review-holes-masked', 'review-identity-judge-per-step', 'review-thrown-class-name-not-compared', 'review-engine-loss-counted-reproduced', 'fix-case-id-sent',
+  'c0e-return-position-not-compared', 'c0e-entry-state-not-compared', 'c0e-timer-ids-not-paired', 'c0e-unknown-timer-not-refused',
+  // The C0e review's that the cheap parts catch, and its late-input plant (the closure, on the late loader fixture).
+  'c0e-review-compare-timer-delay-ignored', 'c0e-review-compare-extra-trailing-notify-ignored', 'c0e-review-engine-omits-position-and-compare-needs-both',
+  'c0e-review-compare-state-changes-order-ignored', 'c0e-review-replay-late-flag-not-sent',
 ]);
 
 /** The number of steps of every case of `containers`, counted from the recording itself. */
@@ -224,6 +285,45 @@ export function compareChecks(compare, codec) {
   checks.push(['compare-effect-order', reports(effects, { steps: [step(1, { effects: [{ kind: 'port', port: 'q', call: 1, args: [], answer: 2 }, { kind: 'port', port: 'p', call: 2, args: [], answer: 1 }] })], halt: null, outside: [] }, 'effects', 'order')]);
   const argued = { steps: [step(1, { effects: [{ kind: 'port', port: 'p', call: 1, args: ['a'], answer: 1 }] })] };
   checks.push(['compare-effect-args', reports(argued, { steps: [step(1, { effects: [{ kind: 'port', port: 'p', call: 1, args: ['b'], answer: 1 }] })], halt: null, outside: [] }, 'effects', 'value')]);
+  // Where the effects sit relative to the return (recording 7): one moved across it, in each direction, and one side silent.
+  const positioned = (returnedAt) => ({ steps: [step(1, { effects: [{ kind: 'port', port: 'p', call: 1, args: [], answer: 1 }], ...(returnedAt === undefined ? {} : { returnedAt }) })] });
+  checks.push(['compare-effect-moved-after-the-return', reports(positioned(1), { ...positioned(0), halt: null, outside: [] }, 'effects', 'return-position')]);
+  checks.push(['compare-effect-moved-before-the-return', reports(positioned(0), { ...positioned(1), halt: null, outside: [] }, 'effects', 'return-position')]);
+  checks.push(['compare-return-position-not-reported', reports(positioned(1), { ...positioned(undefined), halt: null, outside: [] }, 'effects', 'return-position')]);
+  checks.push(['compare-return-position-reproduced', compareReplayed(positioned(1), { ...positioned(1), halt: null, outside: [] }).differences.length === 0 ? null : 'the same return position differs']);
+  // A stateful family's states (C0e): the entry and end state, a step's state and its change set, each by its own check.
+  const stated = (extra = {}) => ({ entry: { now: 5, state: { module: { n: 1 } } }, end: { now: 6, state: { module: { n: 2 } } }, steps: [step(1, { state: { module: { n: 2 } }, stateChanges: [['module', 'n']], ...extra })] });
+  const replayedState = (over = {}) => ({ steps: [step(1, { state: over.state ?? { module: { n: 2 } }, stateChanges: over.changes ?? [['module', 'n']] })], entry: over.entry ?? { module: { n: 1 } }, end: over.end ?? { module: { n: 2 } }, halt: null, outside: [] });
+  checks.push(['compare-state-reproduced', compareReplayed(stated(), replayedState()).differences.length === 0 ? null : `the same states differ: ${JSON.stringify(compareReplayed(stated(), replayedState()).differences.slice(0, 1).map(({ raw: _raw, ...rest }) => rest))}`]);
+  checks.push(['compare-entry-state', reports(stated(), replayedState({ entry: { module: { n: 9 } } }), 'entry-state', 'value')]);
+  checks.push(['compare-entry-state-not-reported', reports(stated(), { ...replayedState(), entry: undefined }, 'entry-state', 'value')]);
+  checks.push(['compare-end-state-not-reported', reports(stated(), { ...replayedState(), end: undefined }, 'end-state', 'value')]);
+  checks.push(['compare-end-state', reports(stated(), replayedState({ end: { module: { n: 9 } } }), 'end-state', 'value')]);
+  checks.push(['compare-step-state', reports(stated(), replayedState({ state: { module: { n: 9 } } }), 'state', 'value')]);
+  checks.push(['compare-state-changes', reports(stated(), replayedState({ changes: [] }), 'state-changes', 'value')]);
+  // A timer's delay and a notification too many (C0e review): each by the effects check.
+  const delayed = (delay) => ({ steps: [step(1, { effects: [{ kind: 'timer.set', id: 1, delay, repeat: false }] })] });
+  checks.push(['compare-timer-delay', reports(delayed(5), { ...delayed(6), halt: null, outside: [] }, 'effects', 'value')]);
+  const notified = (count) => ({ steps: [step(1, { effects: Array.from({ length: count }, () => ({ kind: 'notify', state: { n: 1 }, previous: { n: 0 } })) })] });
+  checks.push(['compare-extra-notify', reports(notified(1), { ...notified(2), halt: null, outside: [] }, 'effects', 'extra')]);
+  // The timers pending at the test's end (C0e fix round): which, their delay, timeout or interval, the step that set them.
+  const pended = (items) => ({ steps: [step(1)], end: { now: 6, state: null, pending: items } });
+  const pendingOne = { timer: 1, delay: 500, repeat: false, step: 1 };
+  const replayedPending = (items) => ({ steps: [step(1)], pending: items, halt: null, outside: [] });
+  checks.push(['compare-pending-reproduced', compareReplayed(pended([pendingOne]), replayedPending([pendingOne])).differences.length === 0 ? null : 'the same pending timers differ']);
+  checks.push(['compare-pending-missing', reports(pended([pendingOne]), replayedPending([]), 'pending-timers', 'value')]);
+  checks.push(['compare-pending-extra', reports(pended([]), replayedPending([pendingOne]), 'pending-timers', 'value')]);
+  checks.push(['compare-pending-not-reported', reports(pended([pendingOne]), { steps: [step(1)], halt: null, outside: [] }, 'pending-timers', 'value')]);
+  checks.push(['compare-pending-delay', reports(pended([pendingOne]), replayedPending([{ ...pendingOne, delay: 501 }]), 'pending-timers', 'value')]);
+  checks.push(['compare-pending-step', reports(pended([pendingOne]), replayedPending([{ ...pendingOne, step: 2 }]), 'pending-timers', 'value')]);
+  checks.push(['compare-pending-repeat', reports(pended([pendingOne]), replayedPending([{ ...pendingOne, repeat: true }]), 'pending-timers', 'value')]);
+  checks.push(['compare-pending-other-timer', reports(pended([pendingOne]), replayedPending([{ ...pendingOne, timer: 2 }]), 'pending-timers', 'value')]);
+  // Port call numbers and timer ids are names paired across the case: a pairing that breaks is an identity difference.
+  const named = (first, second) => ({ steps: [step(1, { effects: [{ kind: 'timer.set', id: first, delay: 5, repeat: false }, { kind: 'timer.set', id: second, delay: 5, repeat: false }] })] });
+  checks.push(['compare-timer-ids-paired', reports(named(1, 2), { ...named(1, 1), halt: null, outside: [] }, 'effects', 'identity')]);
+  checks.push(['compare-timer-ids-renamed-reproduced', compareReplayed(named(1, 2), { ...named(7, 8), halt: null, outside: [] }).differences.length === 0 ? null : 'timers named otherwise by the engine differ']);
+  const calls = (first, second) => ({ steps: [step(1, { effects: [{ kind: 'port', port: 'p', call: first, args: [], answer: 1 }, { kind: 'port', port: 'p', call: second, args: [], answer: 1 }] })] });
+  checks.push(['compare-port-calls-paired', reports(calls(1, 2), { ...calls(3, 3), halt: null, outside: [] }, 'effects', 'identity')]);
   checks.push(['compare-site-not-compared', compareReplayed({ steps: [step(1, { effects: [{ kind: 'draw', source: 'Math.random', value: 0.5, site: 'a.mjs:1' }] })] }, { steps: [step(1, { effects: [{ kind: 'draw', source: 'Math.random', value: 0.5 }] })], halt: null, outside: [] }).differences.length === 0 ? null : 'a draw site was compared']);
   // Identity across steps: the recording hands step 2 the object step 1 returned; the replay hands it another one with
   // the same content. Only a judge that spans the case sees it.
@@ -423,7 +523,94 @@ export async function interruptTool(args, signal, { below = /bun$/, cwd = REPOSI
   }
 }
 
-const ALL_PARTS = Object.freeze(['closure', 'compare', 'judge', 'engines', 'toy-mutants']);
+/**
+ * Protocol 3 on fixed requests to the engine of `harnessDir` (package C0e): each `[name, problem or null]`. A timer
+ * the case never set, a settle of a call it never made, are refused by name; a seed is the entry state the engine
+ * reports; a store action's notification is an effect; a nested input is delivered inside its port call.
+ */
+export async function protocolChecks({ harnessDir, root }) {
+  const load = (name) => import(pathToFileURL(path.join(harnessDir, name)).href);
+  const { openEngine, PROTOCOL, typescriptEngine } = await load('engine.mjs');
+  const checks = [];
+  // A replayed tree with its identity numbers dropped, to read values from.
+  const plain = (node) => (Array.isArray(node) ? node.map(plain) : node && typeof node === 'object' ? (node.$dr === 'id' ? plain(node.value) : Object.fromEntries(Object.entries(node).map(([key, value]) => [key, plain(value)]))) : node);
+  const engine = openEngine({ ...typescriptEngine({ cwd: root }), deadlineMs: 120000 });
+  try {
+    const hello = await engine.request({ op: 'hello', protocol: PROTOCOL });
+    checks.push(['protocol-version', hello.ok && hello.protocol === PROTOCOL ? null : `the engine speaks ${hello.protocol}`]);
+    const family = { name: 'toy-store', module: path.join(harnessDir, 'toy/replay/toy-store.mjs'), store: 'counterStore', moduleState: { bindings: ['remembered', 'ticks'] }, entries: [], ports: [{ module: path.join(harnessDir, 'toy/toy-log.mjs'), export: 'log', name: 'module:toy-log#log' }],
+      injected: [{ entry: 'counterStore.subscribe', arg: 0, name: 'subscriber', perStep: true }] };
+    const opened = await engine.request({ op: 'open', unit: 1, family });
+    checks.push(['protocol-open-store', opened.ok ? null : opened.error]);
+    const step = (input, extra = {}) => engine.request({ op: 'step', unit: 1, step: { input: { now: 0, ...input }, env: [], bind: [], ...extra } });
+    // A timer this case never set: refused, never run.
+    await engine.request({ op: 'case', unit: 1 });
+    const unknownTimer = await step({ kind: 'timer', id: 7 });
+    checks.push(['protocol-fired-unknown-timer', unknownTimer.halted?.check === 'fired-unknown-timer' ? null : `halted ${JSON.stringify(unknownTimer.halted)}`]);
+    await engine.request({ op: 'end', unit: 1 });
+    // A settle of a call the case never made: refused.
+    await engine.request({ op: 'case', unit: 1 });
+    const unknownSettle = await step({ kind: 'settle', port: 'p', call: 3, outcome: 'fulfilled', value: 1 });
+    checks.push(['protocol-settled-unknown-call', unknownSettle.halted?.check === 'settled-unknown-call' ? null : `halted ${JSON.stringify(unknownSettle.halted)}`]);
+    await engine.request({ op: 'end', unit: 1 });
+    // A seed is the state the case starts from; an action's notification is an effect of its step, before its return.
+    await engine.request({ op: 'case', unit: 1 });
+    // A recorded state carries the store's actions (as functions); the seed keeps the module's own.
+    const actions = Object.fromEntries(['add', 'tag', 'keep', 'remember', 'recall', 'persist'].map((name) => [name, { $dr: 'function', name }]));
+    const storeState = (count) => ({ count, items: [], tags: { $dr: 'set', values: [] }, ...actions });
+    const seeded = await engine.request({ op: 'seed', unit: 1, state: { store: storeState(41), module: { remembered: { $dr: 'map', entries: [['k', 'seeded']] }, ticks: 3 } } });
+    checks.push(['protocol-seed', seeded.ok && seeded.seeded ? null : `seed answered ${JSON.stringify(seeded)}`]);
+    const added = await step({ kind: 'call', entry: 'counterStore.add', args: ['x'] });
+    checks.push(['protocol-store-action', added.halted === null ? null : `halted ${JSON.stringify(added.halted)}`]);
+    const ended = await engine.request({ op: 'end', unit: 1 });
+    const entry = plain(ended.replayed?.entry);
+    checks.push(['protocol-seeded-entry', entry?.store?.count === 41 && entry?.module?.ticks === 3 && JSON.stringify(entry?.module?.remembered).includes('seeded') ? null : `entry ${JSON.stringify(entry).slice(0, 200)}`]);
+    const first = plain(ended.replayed?.steps?.[0]);
+    checks.push(['protocol-notify-effect', first?.effects?.[0]?.kind === 'notify' && first.returnedAt === 1 && first.state?.store?.count === 42 ? null : `step ${JSON.stringify(first).slice(0, 300)}`]);
+    // An input the test makes inside a subscriber's call is delivered inside that call, as a step of its own.
+    await engine.request({ op: 'case', unit: 1 });
+    await engine.request({ op: 'seed', unit: 1, state: { store: storeState(0), module: { remembered: { $dr: 'map', entries: [] }, ticks: 0 } } });
+    await step({ kind: 'call', entry: 'counterStore.subscribe', args: [{ $dr: 'function', name: '' }] });
+    const nested = await step({ kind: 'call', entry: 'counterStore.add', args: ['y'] }, { env: [{ kind: 'port', port: 'subscriber@1', call: 1, answer: { $dr: 'undefined' } }], during: [{ call: 1, step: { input: { kind: 'call', entry: 'counterStore.tag', args: ['nested'], now: 0 }, env: [{ kind: 'port', port: 'subscriber@1', call: 2, answer: { $dr: 'undefined' } }], bind: [] } }] });
+    const nestedEnd = await engine.request({ op: 'end', unit: 1 });
+    const steps = plain(nestedEnd.replayed?.steps ?? []);
+    checks.push(['protocol-during', nested.halted === null && steps.length === 3 && steps[2].input.entry === 'counterStore.tag' && [...(steps[2].state?.store?.tags?.values ?? [])].includes('nested') ? null : `steps ${JSON.stringify(steps.map((item) => [item.input.entry, item.effects.map((effect) => effect.kind)]))}; halted ${JSON.stringify(nested.halted)}`]);
+    await engine.request({ op: 'close', unit: 1 });
+    // A fresh unit (no subscriber left from the cases above) for what the C0e review and fix round added.
+    const reopened = await engine.request({ op: 'open', unit: 2, family });
+    checks.push(['protocol-open-second-unit', reopened.ok ? null : reopened.error]);
+    const step2 = (input, extra = {}) => engine.request({ op: 'step', unit: 2, step: { input: { now: 0, ...input }, env: [], bind: [], ...extra } });
+    // A port call is served only by an env item of its own port (C0e review): another port's answer is never taken.
+    await engine.request({ op: 'case', unit: 2 });
+    const otherPort = await step2({ kind: 'call', entry: 'counterStore.persist', args: [] }, { env: [{ kind: 'port', port: 'module:other#call', call: 1, answer: 'not yours' }] });
+    checks.push(['protocol-port-served-by-name', otherPort.halted?.check === 'unanswered' ? null : `a log call was served another port's answer: halted ${JSON.stringify(otherPort.halted)}`]);
+    await engine.request({ op: 'end', unit: 2 });
+    // The timers still pending when the case ends are reported (C0e fix round): the recording's name the bind gave
+    // each, its delay, timeout or interval, the engine's count of the step that set it; a timeout that fired is not.
+    await engine.request({ op: 'case', unit: 2 });
+    await step2({ kind: 'call', entry: 'later', args: [250, 'kept'] }, { bind: [{ timer: 9, index: 0 }] });
+    await step2({ kind: 'call', entry: 'later', args: [5, 'second'] }, { bind: [{ timer: 10, index: 0 }] });
+    const pendingEnd = await engine.request({ op: 'end', unit: 2 });
+    const pending = plain(pendingEnd.replayed?.pending);
+    checks.push(['protocol-pending-timers', JSON.stringify(pending) === JSON.stringify([{ timer: 9, delay: 250, repeat: false, step: 1 }, { timer: 10, delay: 5, repeat: false, step: 2 }]) ? null : `pending ${JSON.stringify(pending)}`]);
+    // A timeout fires once: a second firing of it is refused (C0e review), and once fired it is no longer pending.
+    await engine.request({ op: 'case', unit: 2 });
+    await step2({ kind: 'call', entry: 'later', args: [5, 'fires'] }, { bind: [{ timer: 4, index: 0 }] });
+    const firstFiring = await step2({ kind: 'timer', id: 4 }, { env: [{ kind: 'port', port: 'module:toy-log#log', call: 1, answer: 'later:fires' }] });
+    const secondFiring = await step2({ kind: 'timer', id: 4 }, { env: [{ kind: 'port', port: 'module:toy-log#log', call: 2, answer: 'later:fires' }] });
+    const firedEnd = await engine.request({ op: 'end', unit: 2 });
+    checks.push(['protocol-timeout-fires-once', firstFiring.halted === null && secondFiring.halted?.check === 'fired-unknown-timer' ? null : `first ${JSON.stringify(firstFiring.halted)}, second ${JSON.stringify(secondFiring.halted)}`]);
+    checks.push(['protocol-fired-timer-not-pending', Array.isArray(firedEnd.replayed?.pending) && firedEnd.replayed.pending.length === 0 ? null : `pending ${JSON.stringify(firedEnd.replayed?.pending)}`]);
+    await engine.request({ op: 'close', unit: 2 });
+  } catch (error) {
+    checks.push(['protocol-engine', String(error?.message ?? error)]);
+  } finally {
+    await engine.stop();
+  }
+  return checks;
+}
+
+const ALL_PARTS = Object.freeze(['closure', 'compare', 'judge', 'engines', 'toy-mutants', 'protocol']);
 /**
  * The replayer's self-test, run by the copy in `harnessDir` (the repository's
  * own by default): `{ failures: [{ part, detail }] }`. `parts` limits it to
@@ -462,6 +649,7 @@ export async function replaySelfTest({ workDir, harnessDir = HARNESS_DIR, root =
     }
   }
   if (parts.includes('compare')) for (const [name, problem] of compareChecks(compare, codec)) if (problem) failures.push({ part: 'compare', detail: `${name}: ${problem}` });
+  if (parts.includes('protocol')) for (const [name, problem] of await protocolChecks({ harnessDir, root })) if (problem) failures.push({ part: 'protocol', detail: `${name}: ${problem}` });
   if (parts.includes('judge')) for (const [name, problem] of judgeChecks(replay, record.EXIT)) if (problem) failures.push({ part: 'judge', detail: `${name}: ${problem}` });
   if (parts.includes('engines')) {
     const checks = await engineChecks({ harnessDir, root, workDir: path.join(workDir, 'engines'), own, EXIT: record.EXIT });
@@ -512,7 +700,8 @@ export async function runReplayerPlants(given, { only = null, parallel = 4 } = {
         const toyMutant = plant.fails.startsWith('toy-mutants:') ? plant.fails.slice('toy-mutants:'.length) : null;
         const parts = toyMutant ? ['toy-mutants'] : [plant.fails];
         const { failures } = await replaySelfTest({ workDir: path.join(scratch, `${plant.name}-work`), harnessDir, root, parts, mutants: toyMutant ? [toyMutant] : [] });
-        results[index] = { plant, caught: failures.some((failure) => failure.part === plant.fails), failures };
+        // A plant that names its `check` is caught only by a failure of that part that names that check.
+        results[index] = { plant, caught: failures.some((failure) => failure.part === plant.fails && (plant.check === undefined || String(failure.detail).includes(plant.check))), failures };
       } catch (error) {
         results[index] = { plant, caught: false, failures: [], error: String(error?.stack ?? error) };
       }

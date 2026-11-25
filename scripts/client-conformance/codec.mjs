@@ -163,8 +163,8 @@ const isIndexKey = (key) => {
  * recorder wrapper stands for; `flags` collects what made a value
  * unrecordable (an accessor, a foreign Proxy, an unencodable value).
  */
-export function createCodecContext({ names, unwrap } = {}) {
-  return { tokens: new RealWeakMap(), symbolsByOrdinal: new RealMap(), names: names ?? new RealWeakMap(), unwrap: unwrap ?? null, leaves: new RealWeakMap(), flags: new RealSet() };
+export function createCodecContext({ names, unwrap, unifyWrapped = false } = {}) {
+  return { tokens: new RealWeakMap(), symbolsByOrdinal: new RealMap(), names: names ?? new RealWeakMap(), unwrap: unwrap ?? null, unifyWrapped: unifyWrapped === true, leaves: new RealWeakMap(), flags: new RealSet() };
 }
 
 /** How `key` resolves on `object` or its prototype chain, never calling a getter. */
@@ -238,10 +238,15 @@ export function snapshot(value, context = createCodecContext()) {
     if (typeof item === 'number') return numberTree(item);
     if (typeof item === 'bigint') return { [TAG]: 'bigint', value: item.toString() };
     if (typeof item === 'symbol') return symbolSlot(item);
-    const existing = apply(MapGet, nodes, [item]);
+    // With `unifyWrapped` (the client recorder's contexts, package C0e), a recorder wrapper that is no port (an entry's
+    // wrapper, engine code handed out, a store's state view) stands for what it wraps, identity included: the wrapper
+    // and its target are one object of the case.
+    const raw = context.unifyWrapped && context.unwrap && apply(WeakMapGet, context.names, [item]) === undefined ? context.unwrap(item) : undefined;
+    const identity = raw !== undefined && raw !== null && (typeof raw === 'object' || typeof raw === 'function') && apply(WeakMapGet, context.names, [raw]) === undefined ? raw : item;
+    const existing = apply(MapGet, nodes, [identity]);
     if (existing) { existing.seen += 1; return existing; }
-    const node = new ObjectNode(tokenOf(context, item));
-    apply(MapSet, nodes, [item, node]);
+    const node = new ObjectNode(tokenOf(context, identity));
+    apply(MapSet, nodes, [identity, node]);
     try {
       node.body = describe(item);
     } catch (error) {

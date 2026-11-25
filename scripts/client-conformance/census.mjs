@@ -436,10 +436,13 @@ export function runCensus({ portMap, census, containers, moduleExports, readSour
       for (const step of kase.steps) {
         const input = step.input;
         if ((input.kind === 'call' || input.kind === 'new' || input.kind === 'get') && typeof input.entry === 'string') {
-          const name = baseExport(input.entry);
-          bump(record.exports, name, 'called');
-          if (recorded) bump(record.exports, name, 'recorded');
-          if (recorded && step.returns !== undefined) bump(record.exports, name, 'returned');
+          // A store action (`<store>.<action>`) counts as itself and as its store.
+          const action = /^[^#.]+(?:\.[^#.]+)+$/.test(input.entry) ? input.entry : null;
+          for (const name of action ? [baseExport(input.entry), action] : [baseExport(input.entry)]) {
+            bump(record.exports, name, 'called');
+            if (recorded) bump(record.exports, name, 'recorded');
+            if (recorded && step.returns !== undefined) bump(record.exports, name, 'returned');
+          }
           const source = eventSources.get(`${family}:${input.entry}`);
           if (source && input.args !== undefined) {
             const args = plainOf(read.resolve(input.args));
@@ -639,6 +642,15 @@ export function mergeExports(raws) {
       if (JSON.stringify(out[module]) !== JSON.stringify(kinds)) problems.push({ check: 'census-exports-differ', detail: `${module}: two test files saw different exports` });
     }
   }
+  // A stateful family's store actions (`<store>.<action>`, read from the store when its module loaded) count as its exports.
+  const actions = {};
+  for (const raw of raws) {
+    for (const [module, kinds] of Object.entries(raw.actions ?? {})) {
+      if (!actions[module]) { actions[module] = kinds; continue; }
+      if (JSON.stringify(actions[module]) !== JSON.stringify(kinds)) problems.push({ check: 'census-exports-differ', detail: `${module}: two test files saw different store actions` });
+    }
+  }
+  for (const [module, kinds] of Object.entries(actions)) out[module] = { ...(out[module] ?? {}), ...kinds };
   return { exports: out, problems };
 }
 

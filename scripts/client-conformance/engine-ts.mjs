@@ -136,11 +136,13 @@ async function mainThread() {
 // ------------------------------------------------------------------ worker
 
 function workerThread() {
-  const unit = { open: false, family: null, namespace: null, entries: new RealMap(), between: [], portObjects: [], cases: 0 };
+  // Port names outlive a case (a port the module keeps in its state is still that port in the next case), as the recorder's do.
+  const unit = { open: false, family: null, namespace: null, entries: new RealMap(), between: [], portObjects: [], cases: 0, names: new RealWeakMap() };
   let kase = null; // the open case
   let current = null; // the step whose input is being delivered or quiesced
   let activity = 0;
   let jobOrigin = null; // the case whose job (setImmediate, queueMicrotask) is running
+  const timerHandles = new RealWeakMap(); // a Timeout handle -> { owner case, id }
 
   class ReplayHalt extends RealError {}
   defineProperty(ReplayHalt.prototype, 'name', { value: 'ReplayHalt', configurable: true, writable: true });
@@ -169,11 +171,11 @@ function workerThread() {
   const snap = (value) => new Taken(snapshot(value, kase.codec));
 
   // ------------------------------------------------------------- the env
-  const describeItem = (item) => (item ? `${item.kind} ${item.kind === 'port' ? item.port : item.source}` : 'nothing');
-  function take(kind, name) {
+  const describeItem = (item) => (item ? `${item.kind} ${item.kind === 'port' || item.kind === 'read' ? item.port : item.source}${item.kind === 'read' ? `.${String(item.key)}` : ''}` : 'nothing');
+  function take(kind, name, key) {
     const step = current;
     const items = step.env;
-    const matches = (item) => item.kind === kind && (kind === 'port' ? item.port === name : item.source === name);
+    const matches = (item) => item.kind === kind && (kind === 'port' ? item.port === name : kind === 'read' ? item.port === name && item.key === key : item.source === name);
     const unordered = kind === 'port' && unit.unordered.has(name);
     if (unordered) {
       const index = items.findIndex((item, at) => at >= step.envNext && !step.used.has(at) && matches(item));
@@ -219,11 +221,13 @@ function workerThread() {
     }
     return value;
   }
-  function bindSlot(slot, live) {
-    for (const request of current.bind) {
+  function bindSlot(slot, live, bind = current.bind, at = current?.n ?? null) {
+    for (const request of bind) {
       if (request.slot !== slot) continue;
       const found = atPath(live, request.path);
-      if (found === null || (typeof found !== 'object' && typeof found !== 'function')) { kase.bindFailures.push({ step: current.n, slot, path: request.path, n: request.n }); continue; }
+      if (found === null || (typeof found !== 'object' && typeof found !== 'function')) { kase.bindFailures.push({ step: at, slot, path: request.path, n: request.n, name: request.name }); continue; }
+      // A name binds what a step handed the test as engine code (`<entry>#<n>`), which later steps call by that name.
+      if (request.name !== undefined) { if (!kase.names.has(request.name)) kase.names.set(request.name, found); continue; }
       if (!kase.bound.has(request.n)) kase.bound.set(request.n, found);
     }
   }
@@ -278,6 +282,7 @@ function workerThread() {
           return { value: decode(shell) };
         }
         case 'function': return { value: functionStub(node.name, hasOwn(node, 'port') ? node.port : null), complete: true };
+        case 'port': return { value: portObjectStub(node.name), complete: true };
         case 'symbol': return { value: symbolOf(node), complete: true };
         case 'id': case 'ref': throw new RebuildError('an id or ref where a value was expected');
         default: return { value: decode(node), complete: true };
@@ -401,6 +406,9 @@ function workerThread() {
 
   // ------------------------------------------------------------- ports and platform sources
   function callPort(name, args) {
+    // While the module loads no case is open: a port it reads then (the storage principal, a stored cache) answers as
+    // the real module does, and the read is noted (reported, not compared: replay-compare.mjs NOT_COMPARED).
+    if (!unit.open && portReal.has(name)) { noteOutside(`port ${name} while the module loaded (answered by the module itself)`); return apply(portReal.get(name), undefined, args); }
     if (!current || !kase) { noteOutside(`port ${name}`); throw new ReplayHalt(`port ${name} used while no step is open`); }
     if (kase.halt) throw new ReplayHalt('the case has halted');
     kase.portCalls += 1;
@@ -409,14 +417,61 @@ function workerThread() {
     const record = effect({ kind: 'port', port: name, call: kase.portCalls, args: snap(list) });
     bindSlot(`effects.${current.effects.length - 1}.args`, list);
     const item = take('port', name);
+    // What the test did inside this call (a subscriber calling back into the store) is delivered before it answers.
+    if (current.nested.length && item.call !== undefined) deliverNested(item.call);
     if (hasOwn(item, 'throws')) {
       const error = rebuild(item.throws);
       record.throws = snap(error);
       throw error;
     }
+    // A promise answer settles later, by an input of its own (`settle`, naming this call by its number).
+    if (item.answer !== null && typeof item.answer === 'object' && !isArray(item.answer) && item.answer.$dr === 'promise' && objectKeys(item.answer).length === 1) {
+      let settle = null;
+      const promise = new RealPromise((resolve, reject) => { settle = { resolve, reject }; });
+      // Keyed by the recording's name of the call (env), which the `settle` input names; else by the engine's own count.
+      kase.deferred.set(item.call ?? record.call, settle);
+      record.answer = snap(promise);
+      return promise;
+    }
     const answer = rebuild(item.answer);
     record.answer = snap(answer);
     return answer;
+  }
+  /**
+   * A port object the recording answered (a storage a port gave the engine, say): its data reads are answered by
+   * the step's next `read` of that member, its methods are port calls `<port>.<member>`. A member the step neither
+   * reads nor calls next has no recorded answer.
+   */
+  function portObjectStub(name) {
+    const known = kase.portStubs.get(name);
+    if (known) return known;
+    const methods = new RealMap();
+    const stub = new RealProxy({}, {
+      get(object, key) {
+        // What the runtime reads on its own (an await's thenable check, conversions) is no read of the module's.
+        if (typeof key !== 'string' || key === 'then') return undefined;
+        if (!current || !kase) { noteOutside(`read ${name}.${key}`); return undefined; }
+        const items = current.env;
+        let found = null;
+        for (let at = current.envNext; at < items.length; at += 1) {
+          if (current.used.has(at)) continue;
+          const item = items[at];
+          if ((item.kind === 'read' && item.port === name && item.key === key) || (item.kind === 'port' && item.port === `${name}.${key}`)) { found = item; break; }
+        }
+        if (found && found.kind === 'port') {
+          if (!methods.has(key)) methods.set(key, { [key]: function (...args) { return callPort(`${name}.${key}`, args); } }[key]);
+          return methods.get(key);
+        }
+        const item = take('read', name, key);
+        const value = rebuild(item.value);
+        effect({ kind: 'read', port: name, key: snap(key), value: snap(value) });
+        return value;
+      },
+      set(object, key) { return halt('unanswered', `the engine wrote ${String(key)} on the port object ${name}, which this engine does not answer`); },
+    });
+    kase.codec.names.set(stub, name);
+    kase.portStubs.set(name, stub);
+    return stub;
   }
   const valueOf = (tree) => decode(tree);
   function readClock(source) {
@@ -462,13 +517,37 @@ function workerThread() {
       view.set(bytes);
       return array;
     }, writable: true, configurable: true });
-    let timers = 0;
-    const setTimer = (repeat) => function setTimer(callback, delay) {
-      timers += 1;
-      if (current) effect({ kind: 'timer.set', id: timers, delay: snap(delay), repeat }); else noteOutside('timer.set');
-      return timers;
+    // Timers never run on their own: a firing is an input (`timer`, the case's own id, numbered as the recorder numbers
+    // a family's timers: 1, 2, ... per case) delivered at the recorded point. A handle is an object of class Timeout
+    // with no own data, as Bun's is, so a state that holds one encodes alike.
+    class Timeout { unref() { return this; } ref() { return this; } hasRef() { return true; } refresh() { return this; } }
+    defineProperty(Timeout.prototype, RealSymbol.toPrimitive, { value() { return timerHandles.get(this)?.id ?? 0; }, configurable: true, writable: true });
+    const setTimer = (repeat) => function setTimer(callback, delay, ...rest) {
+      const handle = new Timeout();
+      if (!current || !kase) { noteOutside(repeat ? 'setInterval' : 'setTimeout'); return handle; }
+      kase.timerCount += 1;
+      const id = kase.timerCount;
+      const timer = { callback, args: rest, repeat, cleared: false, fired: 0, delay, step: current.n };
+      kase.timers.set(id, timer);
+      timerHandles.set(handle, { owner: kase, id });
+      // The step's j-th timer is the recording's timer the bind names: a `timer` input names it so.
+      const index = current.timerSets ?? 0;
+      current.timerSets = index + 1;
+      const named = current.bind.find((request) => request.timer !== undefined && request.index === index);
+      if (named && !kase.timerNames.has(named.timer)) kase.timerNames.set(named.timer, timer);
+      effect({ kind: 'timer.set', id, delay: snap(delay), repeat });
+      return handle;
     };
-    const clearTimer = function clearTimer(id) { if (current) effect({ kind: 'timer.clear', id: typeof id === 'number' ? id : null }); else noteOutside('timer.clear'); };
+    const clearTimer = function clearTimer(handle) {
+      if (handle === undefined || handle === null) return;
+      if (!current || !kase) { noteOutside('clearTimeout'); return; }
+      const known = typeof handle === 'object' ? timerHandles.get(handle) : undefined;
+      // A handle that is no timer of this case (the test's, one rebuilt from the recording) is named by itself.
+      if (!known) { effect({ kind: 'timer.clear', id: null, handle: snap(handle) }); return; }
+      if (known.owner !== kase) { effect({ kind: 'timer.clear', id: null, handle: snap(handle), earlier: true }); return; }
+      known.owner.timers.get(known.id).cleared = true;
+      effect({ kind: 'timer.clear', id: known.id });
+    };
     for (const [name, value] of [['setTimeout', setTimer(false)], ['setInterval', setTimer(true)], ['clearTimeout', clearTimer], ['clearInterval', clearTimer],
       ['fetch', function fetch(...args) { return callPort('fetch', args); }],
       ['WebSocket', function WebSocket() { return halt('unanswered', 'the engine opened a WebSocket, which the recording does not answer'); }],
@@ -523,14 +602,19 @@ function workerThread() {
     const ports = new RealMap(); // module -> [{ export, name }]
     for (const port of family.ports) { if (!ports.has(port.module)) ports.set(port.module, []); ports.get(port.module).push(port); }
     const planted = new RealMap(plants.map((plant) => [plant.module, plant.source]));
-    const files = [...new RealSet([...ports.keys(), ...planted.keys()])];
+    const ownState = family.moduleState ? family.module : null;
+    const files = [...new RealSet([...ports.keys(), ...planted.keys(), ...(ownState ? [ownState] : [])])];
     if (files.length === 0) return;
     const filter = new RegExp(`^(?:${files.map(escapeRegExp).join('|')})(?:\\?.*)?$`);
-    const hook = { portExport(name, value) {
-      if (typeof value === 'function') return functionStubFor(name, value.name);
-      unit.portObjects.push(name);
-      return value;
-    } };
+    const hook = {
+      portExport(name, value) {
+        if (typeof value === 'function') { portReal.set(name, value); return functionStubFor(name, value.name); }
+        unit.portObjects.push(name);
+        return value;
+      },
+      // The family module's own load registers how its module-state bindings are read and seeded.
+      moduleState(read, seed) { unit.moduleRead = read; unit.moduleSeed = seed; },
+    };
     globalThis[HOOK] = hook;
     Bun.plugin({
       name: 'devryan-client-conformance-replay',
@@ -538,6 +622,7 @@ function workerThread() {
         build.onLoad({ filter }, (args) => {
           const [file, query = ''] = args.path.split('?');
           const source = () => (planted.has(file) ? planted.get(file) : readFileSync(file, 'utf8'));
+          if (file === ownState && !query.includes(REAL_QUERY)) { const text = source(); return { contents: text + moduleStateSource(family, text), loader: loaderOf(file) }; }
           if (query.includes(REAL_QUERY) || !ports.has(file)) return { contents: source(), loader: loaderOf(file) };
           const real = JSONStringify(`${file}?${REAL_QUERY}`);
           const lines = [`import * as real from ${real};`, `export * from ${real};`];
@@ -552,6 +637,7 @@ function workerThread() {
   }
   // A module port's stub: one per port, made when its module loads; it answers from the open step.
   const portStubs = new RealMap();
+  const portReal = new RealMap(); // a module port's name -> the real export (what the module reads while it loads)
   function functionStubFor(name, functionName) {
     if (!portStubs.has(name)) {
       const stub = { [functionName]: function (...args) { return callPort(name, args); } }[functionName];
@@ -621,6 +707,20 @@ function workerThread() {
     const namespace = await import(family.module);
     unit.namespace = namespace;
     for (const name of objectKeys(namespace)) if (typeof namespace[name] === 'function') unit.entries.set(name, (family.entries ?? []).find((entry) => entry.export === name) ?? { export: name });
+    // The engine's own listener, subscribed first as the recorder's is: every notification is an effect of the open step.
+    if (family.store) {
+      const store = namespace[family.store];
+      if (store === null || store === undefined || typeof store.subscribe !== 'function') throw new Error(`the store ${family.store} of ${family.name} has no subscribe`);
+      store.subscribe((state, previous) => {
+        if (unit.seeding) return;
+        activity += 1;
+        if (!current || !kase) { noteOutside('notify'); return; }
+        current.effects.push({ kind: 'notify', state: snap(state), previous: snap(previous) });
+        // What the store notified with may be named again later (an object a later input holds): bound where it first shows.
+        bindSlot(`effects.${current.effects.length - 1}.state`, state);
+        bindSlot(`effects.${current.effects.length - 1}.previous`, previous);
+      });
+    }
     unit.open = true;
     // What module load did (a clock read, say) is reported, not charged to a case: no case was open (replay-compare.mjs NOT_COMPARED).
     return { exports: [...unit.entries.keys()], portObjects: unit.portObjects, load: takeBetween() };
@@ -631,50 +731,295 @@ function workerThread() {
   function openCase() {
     if (kase) throw new Error('a case is open: end it first');
     unit.cases += 1;
-    kase = { ordinal: unit.cases, codec: createCodecContext(), bound: new RealMap(), symbols: new RealMap(), steps: [], portCalls: 0, halt: null, outside: [], bindFailures: [], strings: [], jobs: 0, ended: false };
+    kase = { ordinal: unit.cases, codec: createCodecContext({ names: unit.names }), bound: new RealMap(), names: new RealMap(), symbols: new RealMap(), steps: [], portCalls: 0, halt: null, outside: [], bindFailures: [], strings: [], jobs: 0, ended: false,
+      timers: new RealMap(), timerNames: new RealMap(), timerCount: 0, deferred: new RealMap(), portStubs: new RealMap(), slots: {} };
     return { between: takeBetween() };
+  }
+  /** Seeds the state the case starts from (engine.mjs `seed`): before its first step, and then takes the entry state. */
+  function seed(message) {
+    if (!kase) throw new Error('no case is open');
+    if (!stateful()) throw new Error(`${unit.family.name} has no state to seed`);
+    if (kase.steps.length || kase.slots.entry !== undefined) throw new Error('a case is seeded before its first step');
+    for (const text of message.strings ?? []) kase.strings.push(text);
+    try { seedState(expandStrings(message.state, kase.strings)); } catch (error) {
+      kase.halt = { step: null, check: 'rebuild', detail: `the recorded entry state could not be seeded: ${String(error?.message ?? error)}` };
+      return { seeded: false };
+    }
+    takeEntry(message.bind ?? []);
+    return { seeded: true };
+  }
+  // The appended source that registers the family module's state bindings: read all, assign the `let` ones.
+  function moduleStateSource(family, text) {
+    const bindings = family.moduleState.bindings;
+    const kindOf = (name) => new RegExp(`^(?:export\\s+)?(const|let|var)\\s+${name}\\b`, 'm').exec(text)?.[1] ?? null;
+    const missing = bindings.filter((name) => kindOf(name) === null);
+    if (missing.length) throw new Error(`${family.name}: no top-level declaration of ${missing.join(', ')} in its module`);
+    unit.letBindings = bindings.filter((name) => kindOf(name) !== 'const');
+    const read = `() => ({ ${bindings.map((name) => `${JSONStringify(name)}: ${name}`).join(', ')} })`;
+    const assign = `(values) => { ${unit.letBindings.map((name) => `if (Object.prototype.hasOwnProperty.call(values, ${JSONStringify(name)})) ${name} = values[${JSONStringify(name)}];`).join(' ')} }`;
+    return `\n;globalThis[Symbol.for(${JSONStringify(HOOK.description)})].moduleState(${read}, ${assign});\n`;
+  }
+
+  // ------------------------------------------------------------- stateful families (C0e)
+  // A stateful family's state is `{ store?: getState(), module?: { binding: value } }`, read as the recorder reads it.
+  const stateful = () => Boolean(unit.family && (unit.family.store || unit.family.moduleState));
+  function familyState() {
+    const out = {};
+    if (unit.family.store) {
+      const store = unit.namespace[unit.family.store];
+      out.store = store !== null && store !== undefined && typeof store.getState === 'function' ? store.getState() : undefined;
+    }
+    if (unit.family.moduleState) {
+      if (!unit.moduleRead) throw new Error(`the module state of ${unit.family.name} was never registered`);
+      out.module = unit.moduleRead();
+    }
+    return out;
+  }
+  // The root and its `module` member are fresh objects at every read: no identity of the family's.
+  const freshPath = (where) => where.length === 0 || (where.length === 1 && where[0] === 'module');
+  const statePaths = () => identityPaths(familyState()).filter(([where]) => !freshPath(where));
+  /** After a step's synchronous part: its state and change set, taken as the recorder takes them. */
+  function takeState(record, before) {
+    const state = familyState();
+    record.slots.state = snap(state);
+    bindSlot('state', state);
+    const changes = changedPaths(before, state).filter((where) => !freshPath(where));
+    record.slots.stateChanges = snap(changes);
+  }
+  // The case's entry state, as the engine has it when the case's first input comes (after a seed, if any).
+  function takeEntry(bind = []) {
+    if (!stateful() || kase.slots.entry !== undefined) return;
+    const state = familyState();
+    kase.slots.entry = snap(state);
+    bindSlot('entry', state, bind, null);
+  }
+  /**
+   * Seeds the unit's state from a recorded state tree (a case alone, or a case in file order whose recorded entry
+   * is not where the case before it ended). What the module holds in `const` bindings (its Maps and Sets) is
+   * brought in place to the recorded content, its `let` bindings are assigned, and the store's state replaced,
+   * its actions kept as the module made them. No notification of the seeding is an effect.
+   */
+  function seedState(recorded) {
+    let tree = recorded;
+    const live = familyState();
+    const isId = (node) => node !== null && typeof node === 'object' && !isArray(node) && node.$dr === 'id';
+    const members = (node) => (node !== null && typeof node === 'object' && !isArray(node) && node.$dr === undefined ? node : null);
+    const given = members(tree.module);
+    // A `const` binding's container is brought in place: its node is bound to the live one (a node the tree names
+    // once only, with no id, gets a number of its own, below any the recording uses).
+    const moduleTree = given ? { ...given } : null;
+    if (moduleTree && live.module) {
+      let fresh = 0;
+      for (const name of objectKeys(moduleTree)) {
+        if ((unit.letBindings ?? []).includes(name)) continue;
+        const value = live.module[name];
+        if (value === null || typeof value !== 'object') continue;
+        if (!isId(moduleTree[name])) moduleTree[name] = { $dr: 'id', n: (fresh -= 1), value: moduleTree[name] };
+        kase.bound.set(moduleTree[name].n, value);
+      }
+      tree = { ...tree, module: moduleTree };
+    }
+    const storeTree = tree.store;
+    const liveStore = live.store;
+    // The store's actions (and its action groups' actions, one level down) are the live ones the module made.
+    const prebind = (node, live, depth) => {
+      const fields = isId(node) ? members(node.value) : members(node);
+      if (!fields || live === null || typeof live !== 'object') return;
+      for (const key of objectKeys(fields)) {
+        if (typeof live[key] === 'function') { if (isId(fields[key])) kase.bound.set(fields[key].n, live[key]); continue; }
+        if (depth > 0) prebind(fields[key], live[key], depth - 1);
+      }
+    };
+    const keepLive = (made, live, depth) => {
+      if (made === null || typeof made !== 'object' || live === null || typeof live !== 'object') return;
+      for (const key of objectKeys(made)) {
+        if (typeof made[key] === 'function' && typeof live[key] === 'function') made[key] = live[key];
+        else if (depth > 0) keepLive(made[key], live[key], depth - 1);
+      }
+    };
+    if (liveStore) prebind(storeTree, liveStore, 1);
+    const rebuilt = rebuild(tree);
+    unit.seeding = true;
+    try {
+      if (moduleTree && unit.moduleSeed) unit.moduleSeed(rebuilt.module);
+      if (unit.family.store && rebuilt.store !== null && typeof rebuilt.store === 'object') {
+        keepLive(rebuilt.store, liveStore, 1);
+        unit.namespace[unit.family.store].setState(rebuilt.store, true);
+      }
+    } finally { unit.seeding = false; }
+  }
+
+  // ------------------------------------------------------------- what a step's entry names
+  const STORE_API = new RealSet(['getState', 'setState', 'subscribe', 'getInitialState', 'destroy']);
+  const splitName = (segment) => { const at = segment.indexOf('#'); return at < 0 ? { key: segment, number: null } : { key: segment.slice(0, at), number: segment.slice(at + 1) }; };
+  /**
+   * The function a step's entry names, with its receiver: an export of the family's module; the store export's
+   * `setState`, `subscribe` or an action (`<store>.<action>`, read from getState()); or engine code a step handed
+   * the test (`<entry>#<n>`, bound by name), and members read from it (`.<member>`, `.<member>#<n>` naming what
+   * the read gave, the last one the method or getter). Null when nothing it names is there.
+   */
+  function resolveEntry(label, kind) {
+    const segments = String(label).split('.');
+    let holder;
+    let rest;
+    for (let length = segments.length; length >= 1; length -= 1) {
+      const prefix = segments.slice(0, length).join('.');
+      if (kase.names.has(prefix)) { holder = kase.names.get(prefix); rest = segments.slice(length); break; }
+    }
+    if (rest === undefined) {
+      const root = splitName(segments[0]);
+      if (root.number !== null || !hasOwn(unit.namespace, root.key)) return null;
+      holder = unit.namespace[root.key];
+      rest = segments.slice(1);
+      // A store's action (`<store>.<action>`, `<store>.<group>.<action>`) is read from its state, as the test reads it.
+      if (root.key === unit.family.store && rest.length >= 1 && !STORE_API.has(rest[0])) holder = holder.getState();
+    }
+    if (rest.length === 0) return typeof holder === 'function' || kind === 'get' ? { target: holder, receiver: undefined } : null;
+    for (let index = 0; index < rest.length - 1; index += 1) {
+      const { key, number } = splitName(rest[index]);
+      if (holder === null || (typeof holder !== 'object' && typeof holder !== 'function')) return null;
+      const value = holder[key];
+      if (number !== null) {
+        const name = segments.slice(0, segments.length - rest.length + index + 1).join('.');
+        if (!kase.names.has(name)) kase.names.set(name, value);
+      }
+      holder = value;
+    }
+    const last = splitName(rest[rest.length - 1]);
+    if (holder === null || (typeof holder !== 'object' && typeof holder !== 'function')) return null;
+    if (last.number !== null) { const value = holder[last.key]; kase.names.set(String(label), value); return typeof value === 'function' ? { target: value, receiver: undefined } : null; }
+    if (kind === 'get') {
+      for (let at = holder; at !== null; at = getPrototypeOf(at)) {
+        const descriptor = getOwnPropertyDescriptor(at, last.key);
+        if (descriptor) return typeof descriptor.get === 'function' ? { target: descriptor.get, receiver: holder } : null;
+      }
+      return null;
+    }
+    const method = holder[last.key];
+    return typeof method === 'function' ? { target: method, receiver: holder } : null;
+  }
+  // The ports a step's arguments carry: an injected item names an entry and, for engine code it handed out, a member.
+  function injectedFor(label) {
+    const segments = String(label).split('.');
+    const root = splitName(segments[0]).key;
+    const last = segments.length > 1 ? splitName(segments[segments.length - 1]).key : null;
+    return (unit.family.injected ?? []).filter((item) => (item.member === undefined ? item.entry === label : item.entry === root && item.member === last && segments.length > 1));
+  }
+
+  /** A step's record from its message: the input as the engine echoes it, the env, the bind plan, nested inputs. */
+  function makeRecord(message) {
+    for (const text of message.strings ?? []) kase.strings.push(text);
+    const given = message.input;
+    const input = { ...given, args: given.args === undefined ? undefined : expandStrings(given.args, kase.strings), value: given.value === undefined ? undefined : expandStrings(given.value, kase.strings), target: given.target === undefined ? undefined : expandStrings(given.target, kase.strings) };
+    const echo = { kind: input.kind, entry: input.entry, now: input.now };
+    for (const key of ['id', 'port', 'call', 'outcome']) if (hasOwn(input, key) && input[key] !== undefined) echo[key] = input[key];
+    const record = { n: kase.steps.length + 1, input: echo, given: input, effects: [], env: expandStrings(message.env ?? [], kase.strings), envNext: 0, used: new RealSet(), bind: message.bind ?? [], slots: {}, nested: message.during ?? [], parent: null };
+    kase.steps.push(record);
+    return record;
   }
 
   async function step(message) {
     if (!kase) throw new Error('no case is open');
     // The engine numbers the steps of a case itself: the replayer sends them in order and names none.
-    const n = kase.steps.length + 1;
-    for (const text of message.step.strings ?? []) kase.strings.push(text);
-    const input = { ...message.step.input, args: expandStrings(message.step.input.args, kase.strings) };
-    const env = expandStrings(message.step.env ?? [], kase.strings);
-    const bind = message.step.bind ?? [];
     if (kase.halt) return { halted: kase.halt, skipped: true };
-    const record = { n, input: { kind: input.kind, entry: input.entry, now: input.now }, effects: [], env, envNext: 0, used: new RealSet(), bind, slots: {} };
-    kase.steps.push(record);
-    const spec = unit.entries.get(input.entry);
-    if (input.kind !== 'call' || !spec) {
-      kase.halt = { step: n, check: 'unplaced', detail: `${input.kind} ${input.entry} is no call of an entry of ${unit.family.name}` };
-      return { halted: kase.halt };
-    }
+    takeEntry(message.step.entryBind ?? []);
+    // The test ended before this input (it came late): the case's end state, and its pending timers, are those the test ended with.
+    if (message.step.late && stateful() && kase.slots.end === undefined) kase.slots.end = snap(familyState());
+    if (message.step.late) kase.pendingAtEnd ??= pendingTimers();
+    const record = makeRecord(message.step);
+    const input = record.given;
+    if (input.kind === 'timer') return deliverTimer(record, input);
+    if (input.kind === 'settle') return deliverSettle(record, input);
     current = record;
+    if (input.kind === 'callback') deliverCallback(record); else deliverCall(record);
+    if (kase.halt && kase.halt.step === record.n && ['unplaced', 'rebuild'].includes(kase.halt.check)) { current = null; return { halted: kase.halt }; }
+    return finishStep(record);
+  }
+  /**
+   * Inputs the test made inside a port call of the open step (`during`: a subscriber's or a stub's call back into
+   * the family): delivered synchronously inside that very call, before it answers, each a step of its own.
+   */
+  function deliverNested(call) {
+    const outer = current;
+    for (const group of outer.nested) {
+      if (group.call !== call) continue;
+      const record = makeRecord(group.step);
+      record.parent = outer;
+      current = record;
+      try { deliverCall(record); } finally { current = outer; }
+    }
+  }
+  /**
+   * The test calls a function the engine handed a port (a scheduler's job, a listener): `target` names which, by the
+   * identity the recording gives it where the engine handed it out; it is called with the test's arguments.
+   */
+  function deliverCallback(record) {
+    const input = record.given;
+    let target;
     let args;
     try {
-      args = rebuild(input.args);
+      target = rebuild(input.target);
+      args = rebuild(input.args ?? []);
+      if (typeof target !== 'function' || stubs.has(target)) throw new RebuildError('the callback the test called is no function this engine handed a port');
       if (!isArray(args)) throw new RebuildError('the arguments are not a list');
-      for (const item of unit.family.injected ?? []) {
-        if (item.entry !== input.entry) continue;
+    } catch (error) {
+      kase.halt ??= { step: record.n, check: 'rebuild', detail: String(error?.message ?? error) };
+      return;
+    }
+    record.slots.args = snap(args);
+    record.slots.target = snap(target);
+    const beforeState = stateful() ? statePaths() : null;
+    let result;
+    let threw = false;
+    try { result = apply(target, undefined, args); } catch (error) { threw = true; result = error; }
+    record.returnedAt = record.effects.length;
+    if (beforeState) takeState(record, beforeState);
+    if (threw) { record.slots.throws = snap(result); bindSlot('throws', result); } else { record.slots.returns = snap(result); bindSlot('returns', result); }
+  }
+  /** The synchronous part of a call, `new` or `get` step: rebuild the arguments, call, take what it returned. */
+  function deliverCall(record) {
+    const input = record.given;
+    const n = record.n;
+    const unplaced = (detail) => { kase.halt ??= { step: n, check: 'unplaced', detail }; };
+    if (!['call', 'new', 'get'].includes(input.kind)) { unplaced(`an input of kind ${input.kind} is none this engine delivers`); return; }
+    const resolved = resolveEntry(input.entry, input.kind);
+    if (!resolved) { unplaced(`${input.kind} ${input.entry} names nothing ${unit.family.name} has (an entry, its store, or engine code a step handed out)`); return; }
+    const spec = unit.entries.get(input.entry) ?? { export: input.entry };
+    let args;
+    let finalArgs;
+    try {
+      args = rebuild(input.args ?? []);
+      if (!isArray(args)) throw new RebuildError('the arguments are not a list');
+      finalArgs = [...args];
+      for (const item of injectedFor(input.entry)) {
         const holder = item.key === undefined ? null : args[item.arg];
         const value = item.key === undefined ? args[item.arg] : holder !== null && typeof holder === 'object' ? getOwnPropertyDescriptor(holder, item.key)?.value : undefined;
         const info = typeof value === 'function' ? stubs.get(value) : undefined;
-        if (info) { info.port = item.name; kase.codec.names.delete(value); }
+        if (!info) continue;
+        // A per-step port (a store's subscriber) is named by the step that hands it in.
+        const portName = item.perStep ? `${item.name}@${n}` : item.name;
+        if (item.key !== undefined) { info.port = portName; kase.codec.names.delete(value); continue; }
+        // A function handed in whole is wrapped as the recorder wraps it: the module gets the port (named, an object
+        // of its own), the arguments as the test passed them keep the test's function.
+        const port = { [value.name]: function (...portArgs) { return callPort(portName, portArgs); } }[value.name];
+        kase.codec.names.set(port, portName);
+        finalArgs[item.arg] = port;
       }
     } catch (error) {
-      current = null;
-      kase.halt = { step: n, check: 'rebuild', detail: String(error?.message ?? error) };
-      return { halted: kase.halt };
+      kase.halt ??= { step: n, check: 'rebuild', detail: String(error?.message ?? error) };
+      return;
     }
     record.slots.args = snap(args);
     const draft = spec.draft;
     const before = draft !== undefined ? identityPaths(args[draft]) : null;
-    const entry = unit.namespace[input.entry];
+    const beforeState = stateful() ? statePaths() : null;
     let result;
     let threw = false;
-    try { result = apply(entry, undefined, args); } catch (error) { threw = true; result = error; }
+    try {
+      result = input.kind === 'new' ? construct(resolved.target, finalArgs) : apply(resolved.target, resolved.receiver, finalArgs);
+    } catch (error) { threw = true; result = error; }
+    // The effects made before the entry returned or threw; the rest come from the jobs it started.
+    record.returnedAt = record.effects.length;
     const list = [];
     for (let index = 0; index < args.length; index += 1) list[index] = args[index];
     if (threw) { record.slots.throws = snap(result); bindSlot('throws', result); } else { record.slots.returns = snap(result); bindSlot('returns', result); }
@@ -685,17 +1030,57 @@ function workerThread() {
       record.slots.changes = snap(changes);
       bindSlot('changes', changes);
     }
+    if (beforeState) takeState(record, beforeState);
     if (!threw && isPromise(result)) {
-      const settled = record;
+      // The promise settles in the step whose input made it settle (a timer firing, an answer settling), as the
+      // recorder places it; one an input made inside a port call settles in that input's own step while its outer
+      // step is still the open one (the recorder's chain of that input).
+      const target = () => (current && (current === record || current === record.parent) ? record : current);
       apply(RealPromise.prototype.then, result, [
-        (value) => { activity += 1; if (current === settled) settled.effects.push({ kind: 'settled', step: n, outcome: 'fulfilled', value: snap(value) }); else noteOutside('settled'); },
-        (reason) => { activity += 1; if (current === settled) settled.effects.push({ kind: 'settled', step: n, outcome: 'rejected', value: snap(reason) }); else noteOutside('settled'); },
+        (value) => { activity += 1; const into = target(); if (into) { into.effects.push({ kind: 'settled', step: n, outcome: 'fulfilled', value: snap(value) }); bindSlot(`effects.${into.effects.length - 1}.value`, value, into.bind, into.n); } else noteOutside('settled'); },
+        (reason) => { activity += 1; const into = target(); if (into) { into.effects.push({ kind: 'settled', step: n, outcome: 'rejected', value: snap(reason) }); bindSlot(`effects.${into.effects.length - 1}.value`, reason, into.bind, into.n); } else noteOutside('settled'); },
       ]);
     }
+  }
+  async function finishStep(record) {
     const quiet = await quiesce();
     current = null;
-    if (!quiet) kase.halt ??= { step: n, check: 'quiescence', detail: `the step was still running after ${MAX_ROUNDS} rounds of the event loop` };
+    if (!quiet) kase.halt ??= { step: record.n, check: 'quiescence', detail: `the step was still running after ${MAX_ROUNDS} rounds of the event loop` };
     return { halted: kase.halt };
+  }
+  /** A timer the case set fires: only one it set and has not cleared (an interval any number of times, a timeout once). */
+  async function deliverTimer(record, input) {
+    const timer = kase.timerNames.get(input.id);
+    if (!timer || timer.cleared || (!timer.repeat && timer.fired > 0)) {
+      kase.halt = { step: record.n, check: 'fired-unknown-timer', detail: `timer ${input.id} fired, but this case ${!timer ? 'never set it' : timer.cleared ? 'cleared it' : 'already ran it'}` };
+      return { halted: kase.halt };
+    }
+    timer.fired += 1;
+    current = record;
+    const beforeState = stateful() ? statePaths() : null;
+    try { apply(timer.callback, undefined, timer.args); } catch (error) { if (!(error instanceof ReplayHalt)) kase.outside.push({ what: `uncaught ${describeError(error)} (a timer callback)` }); }
+    record.returnedAt = record.effects.length;
+    if (beforeState) takeState(record, beforeState);
+    return finishStep(record);
+  }
+  /** A port's promise answer settles: the call it answered is named by the engine's own numbering of the case's port calls. */
+  async function deliverSettle(record, input) {
+    const settle = kase.deferred.get(input.call);
+    if (!settle || input.port === undefined) {
+      kase.halt = { step: record.n, check: 'settled-unknown-call', detail: `port call ${input.call} (${input.port}) settled, but this case made no such call with a promise answer` };
+      return { halted: kase.halt };
+    }
+    kase.deferred.delete(input.call);
+    current = record;
+    let value;
+    try { value = rebuild(input.value); } catch (error) {
+      current = null;
+      kase.halt = { step: record.n, check: 'rebuild', detail: String(error?.message ?? error) };
+      return { halted: kase.halt };
+    }
+    record.slots.value = snap(value);
+    if (input.outcome === 'rejected') settle.reject(value); else settle.resolve(value);
+    return finishStep(record);
   }
 
   // The jobs a case scheduled (setImmediate, queueMicrotask) run before it ends: what they do or throw is the case's.
@@ -708,45 +1093,73 @@ function workerThread() {
     if (owner.jobs > 0) owner.outside.push({ what: `${owner.jobs} jobs the case scheduled were still pending after ${MAX_ROUNDS} rounds of the event loop` });
   }
 
+  /**
+   * The case's timers still pending (set, not cleared, and for a timeout not fired), in the order they were set: the
+   * recording's name of each (its bind), the delay it was set with and the engine's count of the step that set it.
+   */
+  function pendingTimers() {
+    const names = new RealMap();
+    for (const [name, timer] of kase.timerNames) names.set(timer, name);
+    const out = [];
+    for (const timer of kase.timers.values()) {
+      if (timer.cleared || (!timer.repeat && timer.fired > 0)) continue;
+      out.push({ timer: names.get(timer) ?? null, delay: snap(timer.delay), repeat: timer.repeat, step: timer.step });
+    }
+    return out;
+  }
   async function endCase() {
     if (!kase) throw new Error('no case is open');
     await settleJobs(kase);
+    kase.pendingAtEnd ??= pendingTimers();
+    if (stateful() && !kase.halt) {
+      takeEntry();
+      if (kase.slots.end === undefined) kase.slots.end = snap(familyState());
+    }
     const slots = [];
     const put = (value) => { slots.push(value.taken); return slots.length - 1; };
+    // The case's value parts in the recorder's order: entry state, the steps, end state (one identity scope).
+    const entrySlot = kase.slots.entry !== undefined ? put(kase.slots.entry) : undefined;
     const shapes = kase.steps.map((record) => {
-      const shape = { n: record.n, input: { kind: record.input.kind, entry: record.input.entry, args: record.slots.args === undefined ? undefined : put(record.slots.args), now: record.input.now } };
+      const shape = { n: record.n, input: { ...record.input, args: record.slots.args === undefined ? undefined : put(record.slots.args), value: record.slots.value === undefined ? undefined : put(record.slots.value), target: record.slots.target === undefined ? undefined : put(record.slots.target) } };
       shape.effects = record.effects.map((item) => {
         const out = {};
         for (const key of objectKeys(item)) out[key] = item[key] instanceof Taken ? { slot: put(item[key]) } : item[key];
         return out;
       });
-      for (const key of ['returns', 'throws', 'after', 'changes']) if (record.slots[key] !== undefined) shape[key] = put(record.slots[key]);
+      if (record.returnedAt !== undefined) shape.returnedAt = record.returnedAt;
+      for (const key of ['returns', 'throws', 'after', 'changes', 'state', 'stateChanges']) if (record.slots[key] !== undefined) shape[key] = put(record.slots[key]);
       return shape;
     });
+    const endSlot = kase.slots.end !== undefined ? put(kase.slots.end) : undefined;
+    const pendingShapes = kase.pendingAtEnd.map((item) => ({ ...item, delay: put(item.delay) }));
     const trees = emitSlots(slots);
     const tree = (index) => (index === undefined ? undefined : trees[index]);
     const steps = shapes.map((shape) => {
-      const out = { n: shape.n, input: { kind: shape.input.kind, entry: shape.input.entry } };
-      if (shape.input.args !== undefined) out.input.args = tree(shape.input.args);
-      out.input.now = shape.input.now;
+      const out = { n: shape.n, input: {} };
+      for (const key of objectKeys(shape.input)) {
+        if (key === 'args' || key === 'value' || key === 'target') { if (shape.input[key] !== undefined) out.input[key] = tree(shape.input[key]); } else if (shape.input[key] !== undefined) out.input[key] = shape.input[key];
+      }
       out.effects = shape.effects.map((item) => {
         const effectOut = {};
         for (const key of objectKeys(item)) effectOut[key] = item[key] !== null && typeof item[key] === 'object' && !isArray(item[key]) && objectKeys(item[key]).length === 1 && hasOwn(item[key], 'slot') ? tree(item[key].slot) : item[key];
         return effectOut;
       });
-      for (const key of ['returns', 'throws', 'after', 'changes']) if (shape[key] !== undefined) out[key] = tree(shape[key]);
+      if (shape.returnedAt !== undefined) out.returnedAt = shape.returnedAt;
+      for (const key of ['returns', 'throws', 'after', 'changes', 'state', 'stateChanges']) if (shape[key] !== undefined) out[key] = tree(shape[key]);
       return out;
     });
     // Long strings are sent once each (a streamed text grows step by step and every step's arguments and
     // results hold it): `{"$dr":"slice","s":k}` stands for strings[k] (engine.mjs).
     const strings = [];
-    const replayed = { steps: shareStrings(steps, strings), strings, halt: kase.halt, outside: kase.outside, bindFailures: kase.bindFailures, flags: [...kase.codec.flags] };
+    const states = { entry: entrySlot === undefined ? undefined : tree(entrySlot), end: endSlot === undefined ? undefined : tree(endSlot) };
+    const pending = pendingShapes.map((item) => ({ ...item, delay: tree(item.delay) }));
+    const replayed = { steps: shareStrings(steps, strings), ...(states.entry !== undefined ? { entry: shareStrings(states.entry, strings) } : {}), ...(states.end !== undefined ? { end: shareStrings(states.end, strings) } : {}), pending, strings, halt: kase.halt, outside: kase.outside, bindFailures: kase.bindFailures, flags: [...kase.codec.flags] };
     kase.ended = true;
     kase = null;
     return { replayed };
   }
 
-  const handlers = { open, case: openCase, step, end: endCase, close: () => ({ between: takeBetween() }) };
+  const handlers = { open, case: openCase, seed, step, end: endCase, close: () => ({ between: takeBetween() }) };
   let queue = RealPromise.resolve();
   self.onmessage = (event) => {
     const message = event.data;

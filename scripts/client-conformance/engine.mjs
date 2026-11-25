@@ -5,15 +5,19 @@
 // that the replayer, its comparison and its outcomes stay as they are and only
 // the engine process changes (replay.mjs `--engine=` points it at another one).
 //
-// PROTOCOL 2: synchronous calls only. One engine process, one JSON request per
-// line on its stdin, one JSON response per line on its stdout, each response
-// carrying the `id` of its request. Values are codec trees (codec.mjs), never
-// live objects. The engine is told what a real engine needs to run a step and
+// PROTOCOL 3 (package C0e; 2 was synchronous calls only): calls, timers,
+// promise answers and state. One engine process, one JSON request per line on
+// its stdin, one JSON response per line on its stdout, each response carrying
+// the `id` of its request. Values are codec trees (codec.mjs), never live
+// objects. The engine is told what a real engine needs to run a step and
 // nothing that names or locates a recorded case: no case id, test file, test
 // name, container or recording path, no step number (steps are delivered in
 // order; the engine numbers them 1, 2, ... itself), and none of the recorded
-// outputs (returns, throws, after, changes, effect arguments). The mapping
-// from what the engine is sent to the recorded case stays in the replayer.
+// outputs (returns, throws, after, changes, states, effect arguments). The
+// mapping from what the engine is sent to the recorded case stays in the
+// replayer. What the engine is told of a recorded output is only where an
+// object it makes sits, so a later input can name it again (`bind`), and the
+// recording's own names for its port calls, timers and handed-out engine code.
 //
 //   {id, op:"hello", protocol}                  -> {id, ok, engine, protocol}
 //       The replayer refuses an engine whose `protocol` is not PROTOCOL.
@@ -22,99 +26,157 @@
 //       instance of a family, all of whose module state starts as the module's
 //       own load leaves it. Every case of the unit runs on it, in the order the
 //       replayer sends them. `family` is {name, module, entries: [{export,
-//       draft?}], injected: [{entry, arg, key?, name}], ports: [{module, export,
-//       name}], unordered: [port]}, module paths absolute (what a TypeScript
-//       engine loads; a Rust runner maps the family name to its module);
-//       `plants` is a list of {module, source}: the engine loads `source` in
-//       place of that module's file (a planted difference; never written).
+//       draft?}], injected: [{entry, member?, arg, key?, name}], ports:
+//       [{module, export, name}], unordered: [port], store?, moduleState?:
+//       {bindings}}, module paths absolute (what a TypeScript engine loads; a
+//       Rust runner maps the family name to its module); `plants` is a list of
+//       {module, source}: the engine loads `source` in place of that module's
+//       file (a planted difference; never written). A stateful family (`store`:
+//       a zustand store export; `moduleState`: module bindings no export
+//       exposes) has a state, `{store?: <the store's state>, module?:
+//       {<binding>: <value>}}`; the engine subscribes a listener of its own to
+//       the store before any case, so every notification is an effect.
 //   {id, op:"case", unit}                       -> {id, ok, between}
-//       Opens a case: a fresh identity scope, port-call numbering and halt
-//       state. `between` lists what the unit noted while no case was open since
-//       its previous case ended (an effect, an uncaught error): the replayer
-//       charges it to that previous case (check `outside`).
+//       Opens a case: a fresh identity scope, port-call, timer and handed-out
+//       numbering and halt state. `between` lists what the unit noted while no
+//       case was open since its previous case ended (an effect, an uncaught
+//       error): the replayer charges it to that previous case (check `outside`).
+//   {id, op:"seed", unit, state, bind?, strings?} -> {id, ok, seeded}
+//       Before a stateful case's first step: brings the family's state to the
+//       recorded `state` tree (its `const` containers in place, its `let`
+//       bindings assigned, the store's state replaced with its actions kept),
+//       none of it an effect. Sent for a case alone, and in file order where the
+//       recording says the state moved since the case before ended (the case
+//       before was not judged, or code no step holds moved it). The entry state
+//       the engine then holds is reported (`entry`) and compared.
 //   {id, op:"step", unit, step}                 -> {id, ok, halted}
-//       `step` is {input: {kind, entry, args, now}, env, bind, strings?}. The
-//       engine rebuilds the arguments from `input.args` (a tree whose `id`
-//       numbers are the recording's: an `id` n the case already bound is that
-//       very object, brought to the content the tree gives it; a new n is a new
-//       object, bound to n), calls the entry, and runs to quiescence (no job of
-//       the step left) before it answers. `now` is the clock value of the step.
-//       `env` is what the step's effects were answered with, in recorded order,
-//       and nothing else: {kind:"port", port, answer | throws}, {kind:"clock",
-//       source, value}, {kind:"draw", source, value}. A port call, clock read
-//       or draw is served the next item when that item is of its kind and name;
-//       anything else halts the case (check `effect-order` when what was asked
-//       is later in `env`, `unanswered` when it is not there). `bind` lists
-//       {slot, path, n}: when the engine takes that output slot (returns,
-//       throws, after, changes, effects.<i>.args), the object at `path` in it is
-//       the recording's n from then on, so a later input that names n gets it.
-//       Binding is how a value the engine made reaches a later input; it tells
-//       where an object sits in an output, never what the output holds. An
-//       answer the step did not consume is not reported: the effects
-//       comparison sees a missing effect. `strings` (optional) are long strings
-//       added to the case's string table (below), in order.
+//       `step` is {input, env, bind, during?, late?, entryBind?, strings?}.
+//       `input` is one of: {kind:"call"|"new"|"get", entry, args, now} (an
+//       export of the module; `<store>.<action>`, `<store>.setState`,
+//       `<store>.subscribe`; or engine code a step handed the test,
+//       `<entry>#<n>`, and members read from it, the last one the method or
+//       getter); {kind:"timer", id, now} (a timer this case set fires: `id` is
+//       the recording's name of it, which `bind` gave the engine when it set
+//       the timer; one it never set, cleared, or (a timeout) already ran halts
+//       the case `fired-unknown-timer`); {kind:"settle", port, call, outcome,
+//       value, now} (a port's promise answer settles: `call` is the
+//       recording's name of the port call, given in that call's env item; an
+//       unknown one halts `settled-unknown-call`); {kind:"callback", port,
+//       args, target, now} (the test calls a function the engine handed a port:
+//       `target` names it by identity). The engine rebuilds the arguments from
+//       the trees (an `id` n the case already bound is that very object,
+//       brought to the content the tree gives it; a new n is a new object,
+//       bound to n), delivers the input, and runs to quiescence (no job of the
+//       step left) before it answers. `now` is the clock value of the step.
+//       `env` is what the step's effects were answered with, in recorded
+//       order, and nothing else: {kind:"port", port, call, answer | throws},
+//       {kind:"read", port, key, value} (a data member of a port object the
+//       engine was answered with), {kind:"clock", source, value},
+//       {kind:"draw", source, value}. A port call, read, clock read or draw is
+//       served the next item when that item is of its kind and name; anything
+//       else halts the case (check `effect-order` when what was asked is later
+//       in `env`, `unanswered` when it is not there). An answer {"$dr":
+//       "promise"} is a promise the engine holds until a `settle` input names
+//       its call; an answer {"$dr":"port"} is a port object whose member reads
+//       are answered by `read` items and whose methods are port calls
+//       `<port>.<member>`. Timers never run on their own: `timer.set` and
+//       `timer.clear` are effects, and a firing is an input. `bind` lists
+//       {slot, path, n} (when the engine takes that output slot: returns,
+//       throws, after, changes, state, stateChanges, effects.<i>.args,
+//       effects.<i>.state, effects.<i>.value; the object at `path` in it is the
+//       recording's n from then on), {slot, path, name} (the value there is
+//       the handed-out engine code `name`) and {timer, index} (the step's
+//       index-th timer is the recording's timer `timer`). Binding tells where
+//       an object sits in an output, never what the output holds. `during`
+//       lists {call, step}: inputs the test made inside that port call of this
+//       step (a subscriber calling back into the store), each delivered,
+//       synchronously and as a step of its own, inside that call before it
+//       answers. `late` says the test had ended before this input came (the
+//       end state, and the pending timers, are those the test ended with); a
+//       timer firing is never late (one that fires after its test ended is no
+//       step: C0e fix round). `entryBind` binds the entry
+//       state. `strings` (optional) are long strings added to the case's
+//       string table (below), in order.
 //   {id, op:"end", unit}                        -> {id, ok, replayed}
-//       Closes the case: `replayed` is {steps, halt, outside, bindFailures,
-//       strings?} with every value slot of the case written in one identity
-//       scope (codec emitSlots), in the shape of a recorded case's steps (n the
-//       engine's own count, input args as the engine saw them, effects in
-//       observed order, returns or throws, after, changes). `halt` is
-//       {step, check, detail} (step: the engine's count) or null. `outside`
-//       lists what was made or thrown while no step of the case was open,
-//       charged to the case (an effect, an uncaught error from a job the case
-//       scheduled); before answering, the engine waits (bounded) for the jobs
-//       the case scheduled with setImmediate or queueMicrotask.
+//       Closes the case: `replayed` is {steps, entry?, end?, pending, halt,
+//       outside, bindFailures, strings?} with every value slot of the case written in one
+//       identity scope (codec emitSlots: the entry state, the steps, the end
+//       state), in the shape of a recorded case's steps (n the engine's own
+//       count, input args as the engine saw them, effects in observed order,
+//       `returnedAt`: how many of the step's effects came before its
+//       synchronous part returned or threw, returns or throws, after, changes,
+//       and for a stateful family `state` and `stateChanges` after the
+//       synchronous part); `entry` and `end` are a stateful family's state when
+//       the case began and ended. `pending` lists the case's timers still
+//       pending when its test ended (set, not cleared, a timeout not fired),
+//       in the order they were set: {timer (the recording's name its bind
+//       gave it, or null), delay (a codec tree), repeat, step (the engine's
+//       count of the step that set it)}; compared as `pending-timers`. A step
+//       that has no synchronous part of the module's own (`settle`) reports no
+//       `returnedAt`, as none is recorded. `halt` is {step, check, detail} (step: the
+//       engine's count) or null. `outside` lists what was made or thrown while
+//       no step of the case was open, charged to the case (an effect, an
+//       uncaught error from a job the case scheduled); before answering, the
+//       engine waits (bounded) for the jobs the case scheduled with
+//       setImmediate or queueMicrotask.
 //   {id, op:"close", unit, force?}              -> {id, ok, between}
 //       `force` stops the unit at once (its engine did not answer in time).
 //   {id, op:"stop"}                             -> {id, ok}, then the process exits.
 //
 // String tables. A string of 1,024 or more UTF-16 units may be sent once per
 // case and stand in a tree as {"$dr":"slice","s":k}: in requests, strings[k] is
-// the k-th string the case's steps added (`step.strings`); in an `end` answer,
-// `replayed.strings[k]`. No codec tree has an own "$dr" member unescaped, so
-// the node is never a value. Strings are JSON strings: a lone surrogate is a
-// `\uD800`-style escape, which a reader that is not JavaScript must accept and
-// keep as one UTF-16 unit (see ENGINE_ACCIDENTS). A line never holds a raw
-// U+2028 or U+2029 (both are written as escapes, `protocolLine`), so a reader
-// that ends lines there too reads one message per line; an engine must write
-// its answers the same way.
+// the k-th string the case's requests added (`step.strings`, `seed.strings`);
+// in an `end` answer, `replayed.strings[k]`. No codec tree has an own "$dr"
+// member unescaped, so the node is never a value. Strings are JSON strings: a
+// lone surrogate is a `\uD800`-style escape, which a reader that is not
+// JavaScript must accept and keep as one UTF-16 unit (see ENGINE_ACCIDENTS). A
+// line never holds a raw U+2028 or U+2029 (both are written as escapes,
+// `protocolLine`), so a reader that ends lines there too reads one message per
+// line; an engine must write its answers the same way.
 //
 // A failure is {id, ok:false, error}; a unit whose engine died answers every
 // later request so, with `lost: true`.
+//
+// What a non-JavaScript engine must implement, beyond the calls of protocol 2:
+// the store's state and its notifications (a `notify` effect for every
+// notification, with the state and the previous state, in order with the
+// subscribers' port calls, before or after the return as the module makes
+// them), the module state a family names, seeded and read as above, the
+// change set of the state (every path below its root whose object changed:
+// copy-on-write, `Arc` identity projected to paths), timers as effects and
+// firings as inputs (an interval fires any number of times until cleared, a
+// timeout once, and those still pending at the end are reported; a clear of a handle that is no timer of the case's own names
+// the handle itself), promise answers settled by inputs, port objects
+// answered member by member, engine code handed to the test and called by its
+// name, callbacks handed to ports called back by the test, inputs nested in a
+// port call, and `returnedAt` (what a step did before it returned, against
+// what its continuation did: a notification before the state is set, or one
+// delivered after the action returned, is a difference). What is an accident
+// of JavaScript it need not copy is ENGINE_ACCIDENTS below.
 //
 // What the interface can and cannot prove. The replayer judges what the engine
 // answers against the recording it keeps to itself: an engine that echoes what
 // it is sent, that answers a step with another step's recording, or that looks
 // a case up by anything the protocol carries fails the closure (replay.test.mjs
-// runs three such engines). It cannot prove anything against an engine that
-// reads the fixture files itself and matches a case by the content of its
-// inputs: that engine cheats on purpose, and only not giving it the files (a
-// runner that is not handed the recording directory) or reviewing its source
-// stops it. A Rust runner is a test program over the fixtures; it must keep the
-// part that reads recorded outputs (to compare) apart from the engine it runs.
+// runs three such engines, on the pure toy family and on the store and timer
+// toy family). It cannot prove anything against an engine that reads the
+// fixture files itself and matches a case by the content of its inputs: that
+// engine cheats on purpose, and only not giving it the files (a runner that is
+// not handed the recording directory) or reviewing its source stops it. A Rust
+// runner is a test program over the fixtures; it must keep the part that reads
+// recorded outputs (to compare) apart from the engine it runs.
 //
-// What PROTOCOL 3 must add before the store, time-driven and transport
-// families (packages C0e and C0f) can be replayed; none of it exists yet:
-// - entry state: an op to seed a unit's module or store state from a case's
-//   recorded `entry.state` (a case alone of a stateful family starts there),
-//   and `end` returning the projected `end.state` to compare;
-// - input kinds besides `call`: a timer firing (`{kind:"timer", id}`, the
-//   engine's own timer id paired with the recorded one, after advancing its
-//   clock to the recorded `now`), a promise settled by a later input
-//   (`settle`), an async iterable's item, close and error, a callback the
-//   engine handed to a port called back by the test (`callback`), and inputs
-//   delivered inside a port call (`during`);
-// - port answers besides a value or a throw: a promise (settled by a later
-//   input), an async iterable, a port object (whose member reads and calls are
-//   answered from the recording), and `new` of a port;
-// - effects the engine reports besides port calls, clock reads and draws:
-//   `new`, `read`, `set`, `settled` and timers that fire;
-// - a way to say which recorded timer a fired one is (ids are each side's own).
+// What the transport families (package C0f) still need, none of it here: an
+// async iterable as an answer and its item, close and error inputs; a port
+// object handed in (an SDK) rather than answered; a promise inside an answer;
+// `new` and `set` effects of port objects; reads of global port objects
+// (navigator, document); WebSocket, EventSource and fetch as answered ports;
+// a module the test mocked (its exports as ports the map does not list).
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnTracked } from './children.mjs';
 
-export const PROTOCOL = 2;
+export const PROTOCOL = 3;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPTS = path.resolve(HERE, '..');
 /** From this length (UTF-16 units) a string may travel once per case in a string table (see above). */
@@ -135,6 +197,9 @@ export const ENGINE_ACCIDENTS = Object.freeze([
   { what: 'object identity numbers', instead: 'the codec numbers objects a case reaches more than once; a Rust engine has `Arc` identity instead. Its runner compares identity structure (which positions hold the same object), never the numbers: the replayer pairs the two namings position by position (replay-compare.mjs createIdentityJudge)' },
   { what: 'binding of engine-made objects to recorded numbers', instead: 'JavaScript passes the very object a step returned to the next call. A Rust engine that owns its state needs no binding for state it keeps; it needs it only for values the test hands back (`bind`)' },
   { what: 'messages the JavaScript engine writes itself', instead: 'a native error the engine throws, not the module\'s code (a TypeError from reading a member of null), carries the engine\'s own text: JavaScriptCore writes "null is not an object (evaluating \'diff.additions\')" (two recorded session-diff-stats cases), V8 "Cannot read properties of null (reading \'additions\')", and a Rust module cannot write either. Its runner should compare the class, the `name` and the own data of such an error exactly and its message only as engine-made: a thrown native error whose message the module\'s source does not build is listed for review when the messages differ, never passed or failed silently. The TypeScript closure compares the message exactly (same engine)' },
+  { what: 'timer handles in values', instead: 'a module that keeps a timer handle in its state (the history budget\'s accounting timer) holds Bun\'s `Timeout` object, written `{"$dr":"class","name":"Timeout","value":{}}`; a Rust module holds a handle of its own. Its runner should compare a handle as a timer handle by its identity (which position holds which handle), not by its class name' },
+  { what: 'the numbers of port calls, timers and handed-out code', instead: 'a port call\'s `call`, a timer\'s `id` and the `<entry>#<n>` of engine code handed to the test are the recorder\'s counts in the order JavaScript made them (and, for handed-out code, of what it wrapped). They are names: the TypeScript closure compares port call numbers and timer ids as pairings across the case, and the replayer hands the engine the recording\'s names (`call` in env items, `{timer, index}` and `{name}` binds), so a Rust engine numbers its own and its runner maps them, never reproducing the counts' },
+  { what: 'a store\'s actions as values of its state', instead: 'a zustand store keeps its actions in its state, so a recorded state holds `{"$dr":"function","name":"saveX"}` members (and groups of them, `actions`); a Rust store has methods. Its runner should take those members as the store\'s action names, present in every state, and compare the rest of the state as data' },
   { what: 'lone surrogates in JSON text', instead: 'codec strings are UTF-16: containers and this protocol carry a lone surrogate as a `\\uD800`-style escape (the replayer\'s toy family records one). A JSON reader that decodes into UTF-8 strings (serde_json\'s `String`) rejects or replaces it. A Rust runner must read codec strings as UTF-16 code units (the `ledger-core` JSON parser into `JsStr`), and write them back the same way' },
 ]);
 

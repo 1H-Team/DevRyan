@@ -29,19 +29,19 @@
 export const NOT_COMPARED = Object.freeze([
   { what: 'the test-originated context of a case', why: 'what the test did around the engine (its own calls, effects and late inputs); it is never replayed, so there is nothing to compare it with' },
   { what: 'the source line of a draw (`site`)', why: 'a diagnostic of where JavaScript drew, not behaviour; a Rust engine has no such line' },
-  { what: 'where an effect sits relative to the step\'s return', why: 'the recording does not hold it: the recorder places an effect in the step of the engine chain that made it, whether the entry had returned or not, so an effect moved into a job after the return is not seen (C0d review, note 1). Comparing it needs the recorder to write, per step, how many of its effects were made before the entry returned (`returnedAt`, set when the synchronous call returns), a recording version up and toy/expected rewritten; the engine would then report the same count. For a sans-IO Rust step the distinction does not exist (a step returns its effects)' },
   { what: 'non-enumerable own properties', why: 'the codec writes enumerable own properties only (a codec limit); no module a mapped family reaches in packages/ui (or in shared-runtime) defines a property or reads one\'s enumerability, and orchestration-runtime, reached only for a predicate, freezes only its own constants (`replay-product.full.test.mjs` checks the sources); a Rust value has no such attribute' },
-  { what: 'whether an object is frozen, sealed or extensible, and whether a property is writable', why: 'the codec does not write it (a codec limit); no module a mapped family reaches in packages/ui freezes, seals or prevents extension (`replay-product.full.test.mjs` checks), and a Rust value has no such state' },
-  { what: 'case-level `flags`, `entry`, `end` and `status`, and the engine\'s codec `flags`', why: '`entry.state` and `end.state` are null for every family replayed today (a family with state is not replayable yet, C0e); flags and status are the recorder\'s and the engine\'s diagnostics' },
+  { what: 'whether an object is frozen, sealed or extensible, and whether a property is writable', why: 'the codec does not write it (a codec limit); the modules a mapped family reaches in packages/ui only freeze, and only those `replay-product.full.test.mjs` lists with their reasons (constants, and session-creation\'s captured attempt snapshot): a write to a frozen value throws in module code, so no recorded case makes one, and their content is compared; that test checks no other reached module seals, freezes or defines properties, and a Rust value has no such state' },
+  { what: 'case-level `flags` and `status`, `entry.now` and `end.now`, and the engine\'s codec `flags`', why: 'flags and status are the recorder\'s and the engine\'s diagnostics; the nominal times are inputs the replayer hands on (each step\'s `now` is compared as the engine echoes it, and stored times by the time oracle). A stateful family\'s `entry.state` and `end.state` are compared (`entry-state`, `end-state`); a stateless family\'s are null on both sides' },
   { what: 'what a unit noted while its module loaded', why: 'no case was open (a module-level clock read, say): it is reported as a note, never charged to a case; what is noted between two cases is charged to the case before (`outside`)' },
   { what: 'bindings the engine could not make', why: 'no difference by itself: a later input that names the object then holds another one and differs by identity; reported as a note' },
   { what: 'the step\'s `now` as a value of its own', why: 'the replayer sends it; it is compared only as what the engine says it was given (an echo), and stored times are judged by the time oracle' },
+  { what: 'what a timer still pending when its test ended does when it fires', why: 'whether it fires before the recording is written is decided by real time, so its firing is no step (C0e fix round, an owner decision); which timers are pending at the end, with the delay each was set with and the step that set it, is compared (`pending-timers`), and what such a timer changes is in the next case\'s entry state (seeded in file order when it differs)' },
 ]);
 
 // --------------------------------------------------------------- what can be replayed yet
 
 /** The later package that replays a feature this replayer does not. */
-export const LATER = Object.freeze({ store: 'C0e (store families)', timer: 'C0e (time-driven families)', transport: 'C0f (transport ports)' });
+export const LATER = Object.freeze({ state: 'a port-map change: the family names its store or module bindings (C0e\'s `store`, `moduleState`)', transport: 'C0f (transport ports)' });
 
 const tagOf = (node) => (node !== null && typeof node === 'object' && !Array.isArray(node) ? node.$dr : undefined);
 function holdsTag(tree, tags) {
@@ -62,27 +62,43 @@ function holdsTag(tree, tags) {
  * test made, every effect a synchronous port call answered by a value or a
  * throw, a clock read or a draw. `family` is the port map's family.
  */
-export function notReplayable(kase, family) {
-  if (family.state) return { feature: `the family snapshots module state (${family.state})`, later: LATER.store };
+export function notReplayable(kase, family, { resolve = null } = {}) {
+  // A case read from a container holds value slots (`=<hash>`): what a slot holds is looked at resolved.
+  const valueOf = (node) => (resolve && typeof node === 'string' && /^=[0-9a-f]{16}$/.test(node) ? resolve(node) : node);
+  // A state read through an export of the family (the toys' `state`) cannot be seeded: package C0e reads and seeds
+  // a store and module bindings (`store`, `moduleState`), which such a family does not name yet.
+  if (family.state) return { feature: `the family snapshots module state through an export (${family.state}) instead of naming its store or bindings`, later: LATER.state };
+  const promises = new Set(); // port calls of the case answered by a promise (a `settle` input names one)
+  const portObjects = new Set(); // port objects the case's port calls answered (their reads are answered from the recording)
   for (const step of kase.steps ?? []) {
     const { input } = step;
-    if (input.kind === 'timer') return { feature: 'a timer firing as input', later: LATER.timer };
-    if (step.late) return { feature: 'an input after its test ended', later: LATER.timer };
-    if (input.kind === 'get' || String(input.entry ?? '').includes('#')) return { feature: 'engine code the family handed out', later: LATER.store };
-    if (input.kind !== 'call') return { feature: `an input of kind ${input.kind}`, later: LATER.transport };
-    if (input.during !== undefined || input.caller !== undefined) return { feature: 'an input another family or a port call delivered', later: LATER.transport };
-    const held = holdsTag(input.args, ['promise', 'port', 'response', 'request', 'opaque', 'unencodable', 'weak']);
+    if (input.kind === 'settle' && !promises.has(`${input.port}#${input.call}`)) return { feature: 'a port answer settled that was no promise the engine got (an object\'s promise member, a derived answer)', later: LATER.transport };
+    if (!['call', 'new', 'get', 'timer', 'settle', 'callback'].includes(input.kind)) return { feature: `an input of kind ${input.kind}`, later: LATER.transport };
+    if (input.during !== undefined && input.duringCall === undefined) return { feature: 'an input delivered inside a port call of an earlier step that the recording does not name', later: LATER.transport };
+    const held = holdsTag(valueOf(input.args), ['promise', 'port', 'response', 'request', 'opaque', 'unencodable', 'weak']);
     if (held) return { feature: `an argument holding a ${held}`, later: LATER.transport };
     for (const item of step.effects) {
-      if (item.late) return { feature: 'an effect after its test ended', later: LATER.timer };
-      if (item.kind === 'timer.set' || item.kind === 'timer.clear') return { feature: `a ${item.kind} effect`, later: LATER.timer };
-      if (item.kind === 'clock' || item.kind === 'draw') continue;
+      if (['clock', 'draw', 'timer.set', 'timer.clear', 'notify', 'settled'].includes(item.kind)) continue;
+      // A read of a port object a port answered is answered from the recording; a global's (navigator, document) is a transport's.
+      if (item.kind === 'read') { if (portObjects.has(item.port)) continue; return { feature: `a read of the global port object ${item.port}`, later: LATER.transport }; }
       if (item.kind !== 'port') return { feature: `a ${item.kind} effect`, later: LATER.transport };
-      if (!item.port.startsWith('module:') && !(family.injectedNames ?? []).includes(item.port)) return { feature: `a call of port ${item.port}`, later: LATER.transport };
-      const answer = Object.prototype.hasOwnProperty.call(item, 'answer') ? item.answer : item.throws;
-      const answered = holdsTag(answer, ['promise', 'port', 'response', 'request', 'opaque', 'unencodable', 'weak', 'function']);
+      if (!item.port.startsWith('module:') && !(family.injectedNames ?? []).some((name) => item.port === name || (name.endsWith('@') && item.port.startsWith(name)))) return { feature: `a call of port ${item.port}`, later: LATER.transport };
+      // A module port the map does not list is a module the test mocked (mock.module): its exports answer from the test's factory.
+      if (item.port.startsWith('module:') && family.ports) {
+        const at = item.port.indexOf('#');
+        const base = at < 0 ? item.port : `${item.port.slice(0, at)}#${item.port.slice(at + 1).split('.')[0].split('#')[0]}`;
+        if (!family.ports.some((port) => port.name === base)) return { feature: `a call of a module the test mocked (${base})`, later: LATER.transport };
+      }
+      const given = valueOf(Object.prototype.hasOwnProperty.call(item, 'answer') ? item.answer : item.throws);
+      const answer = tagOf(given) === 'id' ? given.value : given;
+      // A promise as the whole answer is settled by an input of its own; one inside an answer is a transport's.
+      if (tagOf(answer) === 'promise' && Object.keys(answer).length === 1) { promises.add(`${item.port}#${item.call}`); continue; }
+      // A port object as the whole answer (a storage) is read and called through the port (package C0e).
+      if (tagOf(answer) === 'port') { portObjects.add(answer.name); continue; }
+      // A function inside an answer is the engine's own (a store's action in an updater's next state): it is bound where
+      // the engine made it, and one it never made is a stub that halts the case when called, never a silent pass.
+      const answered = holdsTag(answer, ['promise', 'port', 'response', 'request', 'opaque', 'unencodable', 'weak']);
       if (answered) return { feature: `a port answer holding a ${answered}`, later: LATER.transport };
-      if (holdsTag(item.args, ['function'])) return { feature: 'a function handed to a port (a callback)', later: LATER.transport };
     }
   }
   return null;
@@ -94,8 +110,11 @@ export function notReplayable(kase, family) {
 export function envOf(step) {
   const env = [];
   for (const item of step.effects) {
-    if (item.kind === 'port') env.push(Object.prototype.hasOwnProperty.call(item, 'throws') ? { kind: 'port', port: item.port, throws: item.throws } : { kind: 'port', port: item.port, answer: item.answer });
+    // `call` is the recording's own name for the call (a later `settle` input names it), never an output to echo.
+    if (item.kind === 'port') env.push(Object.prototype.hasOwnProperty.call(item, 'throws') ? { kind: 'port', port: item.port, call: item.call, throws: item.throws } : { kind: 'port', port: item.port, call: item.call, answer: item.answer });
     else if (item.kind === 'clock' || item.kind === 'draw') env.push({ kind: item.kind, source: item.source, value: item.value });
+    // A port object's data member the engine read (its methods are port calls): what the read answered.
+    else if (item.kind === 'read') env.push({ kind: 'read', port: item.port, key: item.key, value: item.value });
   }
   return env;
 }
@@ -103,11 +122,16 @@ export function envOf(step) {
 // The slots of a recorded step in written order, each `[key, tree, output]`: output slots are what the engine makes.
 function stepSlots(step) {
   const slots = [['input.args', step.input.args, false]];
+  if (Object.prototype.hasOwnProperty.call(step.input, 'value')) slots.push(['input.value', step.input.value, false]);
+  if (Object.prototype.hasOwnProperty.call(step.input, 'target')) slots.push(['input.target', step.input.target, false]);
   step.effects.forEach((item, index) => {
     if (item.args !== undefined) slots.push([`effects.${index}.args`, item.args, true]);
     for (const key of ['answer', 'throws', 'value']) if (Object.prototype.hasOwnProperty.call(item, key)) slots.push([`effects.${index}.${key}`, item[key], item.kind === 'settled']);
+    // What a store notified its listeners with is the engine's own state.
+    for (const key of ['state', 'previous']) if (item.kind === 'notify' && Object.prototype.hasOwnProperty.call(item, key)) slots.push([`effects.${index}.${key}`, item[key], true]);
+    if (item.kind === 'timer.clear' && Object.prototype.hasOwnProperty.call(item, 'handle')) slots.push([`effects.${index}.handle`, item.handle, false]);
   });
-  for (const key of ['returns', 'throws', 'after', 'changes']) if (Object.prototype.hasOwnProperty.call(step, key)) slots.push([key, step[key], true]);
+  for (const key of ['returns', 'throws', 'after', 'changes', 'state', 'stateChanges']) if (Object.prototype.hasOwnProperty.call(step, key)) slots.push([key, step[key], true]);
   return slots;
 }
 
@@ -156,17 +180,26 @@ export function forEachIdPath(tree, visit) {
  */
 export function bindPlan(kase) {
   const seen = new Set();
-  return kase.steps.map((step) => {
+  const visit = (bind, slot, tree, output) => forEachIdPath(tree, (n, path) => {
+    if (seen.has(n)) return;
+    seen.add(n);
+    if (output) bind.push({ slot, path, n });
+  });
+  // A stateful family's entry state is the engine's own (as it stands, or as seeded): its objects are bound first.
+  const entry = [];
+  if (kase.entry?.state) visit(entry, 'entry', kase.entry.state, true);
+  const plan = kase.steps.map((step) => {
     const bind = [];
-    for (const [slot, tree, output] of stepSlots(step)) {
-      forEachIdPath(tree, (n, path) => {
-        if (seen.has(n)) return;
-        seen.add(n);
-        if (output) bind.push({ slot, path, n });
-      });
-    }
+    for (const [slot, tree, output] of stepSlots(step)) visit(bind, slot, tree, output);
+    // What the step handed the test as engine code is named `<entry>#<n>` by later steps (recording 7: `handedOut`).
+    if (Number.isInteger(step.handedOut)) bind.push({ slot: 'returns', path: [], name: `${step.input.entry}#${step.handedOut}` });
+    // The j-th timer the step sets is the recording's timer `id`, which a later `timer` input names (ids are each side's own).
+    let sets = 0;
+    for (const item of step.effects) if (item.kind === 'timer.set') { bind.push({ timer: item.id, index: sets }); sets += 1; }
     return bind;
   });
+  plan.entry = entry;
+  return plan;
 }
 
 // --------------------------------------------------------------- the comparison
@@ -327,8 +360,8 @@ function oracleKind(found, supplied) {
   return found;
 }
 
-const EFFECT_SLOTS = Object.freeze(['args', 'answer', 'throws', 'value']);
-const RESULT_SLOTS = Object.freeze(['returns', 'throws', 'after', 'changes']);
+const EFFECT_SLOTS = Object.freeze(['args', 'answer', 'throws', 'value', 'state', 'previous', 'handle']);
+const RESULT_SLOTS = Object.freeze(['returns', 'throws', 'after', 'changes', 'state', 'stateChanges']);
 const stripSite = (item) => { const { site: _site, ...rest } = item; return rest; };
 const describeEffect = (item) => `${item.kind}${item.port ? ` ${item.port}` : ''}${item.source ? ` ${item.source}` : ''}`;
 
@@ -350,7 +383,7 @@ export function compareReplayed(recorded, replayed, { unordered = [] } = {}) {
     const trees = [];
     const at = (tree) => { trees.push(tree); return trees.length - 1; };
     const index = steps.slice(0, horizon).map((step) => {
-      const entry = { args: at(step.input.args), effects: [], parts: {} };
+      const entry = { args: at(step.input.args), value: Object.prototype.hasOwnProperty.call(step.input, 'value') ? at(step.input.value) : undefined, target: Object.prototype.hasOwnProperty.call(step.input, 'target') ? at(step.input.target) : undefined, effects: [], parts: {} };
       for (const item of step.effects) {
         const slots = {};
         for (const key of EFFECT_SLOTS) if (Object.prototype.hasOwnProperty.call(item, key)) slots[key] = at(item[key]);
@@ -365,7 +398,15 @@ export function compareReplayed(recorded, replayed, { unordered = [] } = {}) {
   const right = flatten(actualSteps);
   const supplied = { times: new Set(), draws: new Map() };
   const judge = createIdentityJudge();
+  const names = { call: createIdentityJudge().object, timer: createIdentityJudge().object };
   let stepsCompared = 0;
+  // A stateful family's case starts from its entry state (as the engine had it, or as it was seeded): compared first.
+  const recordedEntry = recorded.entry?.state ?? null;
+  if (recordedEntry !== null && recordedEntry !== undefined) {
+    supplied.times.add(recorded.entry.now);
+    const difference = replayed.entry === undefined ? { path: '/entry/state', kind: 'value', expected: 'the entry state', actual: '(none)', raw: [recordedEntry, undefined] } : compareValues(recordedEntry, replayed.entry, judge, '/entry/state');
+    if (difference) { differences.push({ check: 'entry-state', step: 0, ...oracleKind(difference, supplied) }); return { differences, stepsCompared }; }
+  }
   for (let index = 0; index < horizon; index += 1) {
     const expected = expectedSteps[index];
     const actual = actualSteps[index];
@@ -386,6 +427,14 @@ export function compareReplayed(recorded, replayed, { unordered = [] } = {}) {
     }
     const inputDifference = value(l.args, r.args, `/steps/${index}/input/args`);
     if (inputDifference) add('input', oracleKind(inputDifference, supplied));
+    if (l.target !== undefined || r.target !== undefined) {
+      const called = l.target === undefined || r.target === undefined ? { path: `/steps/${index}/input/target`, kind: 'value', expected: l.target === undefined ? '(none)' : 'a function', actual: r.target === undefined ? '(none)' : 'a function' } : value(l.target, r.target, `/steps/${index}/input/target`);
+      if (called) add('input', called);
+    }
+    if (l.value !== undefined || r.value !== undefined) {
+      const settled = l.value === undefined || r.value === undefined ? { path: `/steps/${index}/input/value`, kind: 'value', expected: l.value === undefined ? '(none)' : 'a value', actual: r.value === undefined ? '(none)' : 'a value' } : value(l.value, r.value, `/steps/${index}/input/value`);
+      if (settled) add('input', settled);
+    }
     // Effects, in order: their kinds and names first, then each one's members and payloads.
     const expectedEffects = expected.effects.map(stripSite);
     const actualEffects = actual.effects.map(stripSite);
@@ -408,6 +457,9 @@ export function compareReplayed(recorded, replayed, { unordered = [] } = {}) {
         const a = actualEffects[at];
         const memberKeys = [...new Set([...Object.keys(e), ...Object.keys(a)])].filter((key) => !EFFECT_SLOTS.includes(key));
         for (const key of memberKeys) {
+          // A port call's number and a timer's id are each side's own names: compared as a pairing across the case.
+          const paired = key === 'call' && e.kind === 'port' ? 'call' : key === 'id' && (e.kind === 'timer.set' || e.kind === 'timer.clear') && e[key] !== null && a[key] !== null ? 'timer' : null;
+          if (paired) { if (!names[paired](e[key], a[key])) add('effects', { kind: 'identity', path: `/steps/${index}/effects/${at}/${key}`, expected: show(e[key]), actual: show(a[key]), detail: `the recording's ${paired} ${show(e[key])} is paired with another ${paired} of the engine's already` }); continue; }
           if (JSON.stringify(e[key]) !== JSON.stringify(a[key])) add('effects', { kind: 'value', path: `/steps/${index}/effects/${at}/${key}`, expected: show(e[key]), actual: show(a[key]) });
         }
         const keys = Object.keys(l.effects[at]);
@@ -420,7 +472,7 @@ export function compareReplayed(recorded, replayed, { unordered = [] } = {}) {
       }
     }
     // The result: what the call returned or threw, the arguments after it, the change set.
-    for (const [key, check] of [['returns', 'result'], ['throws', 'result'], ['after', 'after'], ['changes', 'change-set']]) {
+    for (const [key, check] of [['returns', 'result'], ['throws', 'result'], ['after', 'after'], ['changes', 'change-set'], ['state', 'state'], ['stateChanges', 'state-changes']]) {
       const has = l.parts[key] !== undefined;
       const other = r.parts[key] !== undefined;
       if (has && other) {
@@ -429,6 +481,13 @@ export function compareReplayed(recorded, replayed, { unordered = [] } = {}) {
       } else if (has !== other) {
         add(check, { kind: key === 'returns' || key === 'throws' ? 'thrown' : 'value', path: `/steps/${index}/${key}`, expected: has ? show(left.trees[l.parts[key]]) : '(none)', actual: other ? show(right.trees[r.parts[key]]) : '(none)' });
       }
+    }
+    // Where the step's effects sit relative to its return (recording 7): how many came before the synchronous part
+    // returned or threw. Compared once the effects themselves agree, so a moved effect is told from a changed one.
+    if (!found.some((item) => item.check === 'effects') && (Object.prototype.hasOwnProperty.call(expected, 'returnedAt') || Object.prototype.hasOwnProperty.call(actual, 'returnedAt')) && expected.returnedAt !== actual.returnedAt) {
+      const position = (count) => (count === undefined ? '(not reported)' : `${count} of ${expectedEffects.length} effects before the return`);
+      add('effects', { kind: 'return-position', path: `/steps/${index}/returnedAt`, expected: position(expected.returnedAt), actual: position(actual.returnedAt),
+        detail: expected.returnedAt === undefined || actual.returnedAt === undefined ? 'one side does not say where the return was' : actual.returnedAt < expected.returnedAt ? 'an effect the recording made before the return came after it' : 'an effect the recording made after the return came before it' });
     }
     if (replayed.halt && replayed.halt.step === step) found.unshift({ check: 'halt', kind: replayed.halt.check, step, path: `/steps/${index}`, expected: 'the step answered from the recording', actual: replayed.halt.detail, detail: replayed.halt.detail });
     if (found.length) { differences.push(...found); return { differences, stepsCompared }; }
@@ -442,8 +501,39 @@ export function compareReplayed(recorded, replayed, { unordered = [] } = {}) {
     differences.push({ check: 'step-count', kind: 'value', step: horizon + 1, path: '/steps', expected: String(expectedSteps.length), actual: String(actualSteps.length) });
     return { differences, stepsCompared };
   }
+  // The state the case ended with (at its test's end; inputs that came later are its late steps).
+  const recordedEnd = recorded.end?.state ?? null;
+  if (recordedEnd !== null && recordedEnd !== undefined) {
+    const difference = replayed.end === undefined ? { path: '/end/state', kind: 'value', expected: 'the end state', actual: '(none)', raw: [recordedEnd, undefined] } : compareValues(recordedEnd, replayed.end, judge, '/end/state');
+    if (difference) { differences.push({ check: 'end-state', step: null, ...oracleKind(difference, supplied) }); return { differences, stepsCompared }; }
+  }
+  // The engine timers still pending when the test ended (C0e fix round): which (the recording's name, given by the
+  // bind of their set), the delay each was set with, timeout or interval, and the step that set it.
+  const difference = comparePending(recorded.end?.pending ?? [], replayed.pending, recorded.steps, judge);
+  if (difference) { differences.push({ check: 'pending-timers', step: null, ...difference }); return { differences, stepsCompared }; }
   if ((replayed.outside ?? []).length) {
     differences.push({ check: 'outside', kind: 'value', step: null, path: '/outside', expected: 'no effect while no step is open', actual: show(replayed.outside.map((item) => item.what)) });
   }
   return { differences, stepsCompared };
+}
+
+/**
+ * The first difference between the pending timers a case recorded at its end and those the engine reports
+ * (`{timer, delay, repeat, step}`, the engine's step being its own count, mapped to the recorded step number), or
+ * null. An engine that says nothing of them is a difference when the recording has any.
+ */
+export function comparePending(recorded, replayed, steps, judge) {
+  if (!Array.isArray(replayed)) return recorded.length ? { kind: 'value', path: '/end/pending', expected: show(recorded.map((item) => item.timer)), actual: '(not reported)' } : null;
+  const mapped = replayed.map((item) => ({ ...item, step: Number.isInteger(item?.step) ? (steps[item.step - 1]?.n ?? item.step) : item?.step }));
+  const length = Math.max(recorded.length, mapped.length);
+  for (let index = 0; index < length; index += 1) {
+    const left = recorded[index];
+    const right = mapped[index];
+    const where = `/end/pending/${index}`;
+    if (!left || !right) return { kind: 'value', path: where, expected: left ? show({ timer: left.timer, step: left.step }) : '(none)', actual: right ? show({ timer: right.timer, step: right.step }) : '(none)' };
+    for (const key of ['timer', 'repeat', 'step']) if (left[key] !== right[key]) return { kind: 'value', path: `${where}/${key}`, expected: show(left[key]), actual: show(right[key]) };
+    const found = compareValues(left.delay, right.delay, judge, `${where}/delay`);
+    if (found) return found;
+  }
+  return null;
 }

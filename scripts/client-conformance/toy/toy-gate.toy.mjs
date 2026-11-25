@@ -3,8 +3,9 @@
 // and a control that yields included), engine code the test runs later (a
 // closure, an iterator, a getter, a thenable, a port's stream) is an input of
 // its family, and what a test's engine does after the test ended is still that
-// test's (marked late). The self-test corpus of the client conformance harness
-// records them. Run only by the harness.
+// test's (marked late), except a timer that fires then: its case records it as
+// pending at its end, and its firing is no step (C0e fix round). The self-test
+// corpus of the client conformance harness records them. Run only by the harness.
 import { expect, test } from 'bun:test';
 import { arm, ask, drainOpen, eager, eagerLater, gateState, items, meter, poke, promiseLike, signal, signalResolvers, subscribe, wait, waitDeep, waitResolvers } from './toy-gate.mjs';
 
@@ -109,7 +110,7 @@ test('the program\'s own microtask order is the same as without the recorder', a
   expect(order).toEqual(['t1', 'q', 'own-resolve', 'after', 't2', 'own:own', 'woke:1', 't3']);
 });
 
-test('a timer that fires after its test ended is still that test\'s, marked late', () => {
+test('a timer that fires after its test ended is pending at its end, and its firing is no step', () => {
   arm('late', 20, 9);
   void wait('late');
   expect(gateState().waiting).toEqual(['late']);

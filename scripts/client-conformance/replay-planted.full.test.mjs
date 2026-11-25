@@ -1,8 +1,9 @@
 // The replayer's whole planted batch on the toys (docs/TESTING.md, package
 // C0d): every planted difference in the toy modules outside the per-push
 // sample, each reported by its own check, and every planted difference in the
-// replayer itself outside the sample (the package's own, the review's 21 and
-// the fix round's), each failing the copy's self-test where it names. Its name makes it a full-suite test (`validate:full`, `test:full`
+// replayer itself outside the sample (the package's own, the review's 21, the
+// fix round's, C0e's and the C0e review's 20), each failing the copy's
+// self-test where it names, and by the check it names where it names one. Its name makes it a full-suite test (`validate:full`, `test:full`
 // and CI's lanes run it; fast `validate` never does). The two files together
 // run every planted difference of replay-mutants.mjs once, which this one
 // checks. No product module or test runs here.
@@ -25,6 +26,9 @@ test('every planted difference of the replayer outside the per-push sample is re
   assert.equal(REPLAYER_PLANTS.filter((plant) => plant.origin === 'C0d').length, 13, 'the package\'s own 13');
   assert.equal(REPLAYER_PLANTS.filter((plant) => plant.origin === 'C0d review').length, 21, 'all 21 of the review');
   assert.equal(REPLAYER_PLANTS.filter((plant) => plant.origin === 'C0d fix').length, 5, 'the fix round\'s 5');
+  assert.ok(REPLAYER_PLANTS.filter((plant) => plant.origin === 'C0e').length >= 12, 'package C0e\'s, at least 12');
+  // The C0e review's 20, each caught by the check it names (runReplayerPlants matches `check` in the failure).
+  assert.equal(REPLAYER_PLANTS.filter((plant) => plant.origin === 'C0e review' && typeof plant.check === 'string').length, 20, 'all 20 of the C0e review, each naming its check');
   const recording = await recordReplayToys({ workDir: path.join(scratch.dir, 'record') });
   assert.deepEqual(recording.incomplete, []);
   const { failures } = await replaySelfTest({ workDir: path.join(scratch.dir, 'toys'), parts: ['toy-mutants'], mutants: toyRest, recording });
@@ -33,7 +37,7 @@ test('every planted difference of the replayer outside the per-push sample is re
   assert.equal(results.length, plantRest.length);
   for (const { plant, caught, failures: found, error } of results) {
     assert.equal(error, undefined, `${plant.name}: ${error}`);
-    assert.ok(caught, `${plant.name} must fail the self-test at ${plant.fails}; it failed at ${JSON.stringify(found.slice(0, 3))}`);
+    assert.ok(caught, `${plant.name} must fail the self-test at ${plant.fails}${plant.check ? ` by ${plant.check}` : ''}; it failed at ${JSON.stringify(found.slice(0, 3))}`);
   }
   status = 'passed';
 });
