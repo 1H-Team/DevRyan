@@ -280,11 +280,14 @@ test('under fake timers the recorder\'s own timer is no rest point either', asyn
 
 // Two real timers of the test's own, set before fake timers are installed and fired by the event loop while they are
 // (in one timer phase, before the recorder's next probe): while fake timers are installed no timer entry is a rest
-// point, so the second echo is busy.
+// point, so the second echo is busy. The thread is held until both timers are overdue, so that they fire in the same
+// timer phase on every machine: left to the clock, a slow runner fired them in two phases with a probe between, and
+// the second echo was then at rest in one recording and busy in the other.
 test('while fake timers are installed even a real timer\'s entry is no rest point', async () => {
   const s = harness().scheduler;
   await rest();
   const fired = new Promise((resolve) => { setTimeout(() => { s.echo('first real timer'); }, 1); setTimeout(() => { s.echo('second real timer'); resolve(); }, 1); });
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
   jest.useFakeTimers();
   try { await fired; } finally { jest.useRealTimers(); }
 });
