@@ -26,6 +26,7 @@
 // process; one JSON line.
 import { spawn } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { caseEvents, casePlacement, readContainer } from './trace.mjs';
@@ -414,23 +415,48 @@ export async function runDeliveryControl({ tests, root }) {
   return { cases: results.length, different: results.filter((result) => result.outcome === 'different').length, delivery: delivery ? { outcome: delivery.outcome, produced: delivery.produced, events: delivery.events } : null, failing: brief(firstFailing(results)) };
 }
 
-/** Runs one command, its stdout's last line parsed as JSON (bounded: the caller's timeout kills it). */
-const runJson = (args, { timeoutMs }) => new Promise((resolve) => {
+/**
+ * Runs one command, its stdout's last line parsed as JSON. Bounded: past `timeoutMs` the process is killed and the
+ * result is an error that names `what` (the plants it was running), so a stuck plant says which one it was.
+ */
+const runJson = (args, { timeoutMs, what }) => new Promise((resolve) => {
   const child = spawn('bun', args, { cwd: REPOSITORY, env: { ...process.env, TZ: 'UTC', LANG: 'C', LC_ALL: 'C' }, stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';
   let err = '';
-  const timer = setTimeout(() => { child.kill('SIGKILL'); }, timeoutMs);
+  let late = false;
+  const timer = setTimeout(() => { late = true; child.kill('SIGKILL'); }, timeoutMs);
   child.stdout.on('data', (chunk) => { out += chunk; });
   child.stderr.on('data', (chunk) => { err += chunk; });
   child.on('close', (code, signal) => {
     clearTimeout(timer);
-    try { resolve(JSON.parse(out.trim().split('\n').pop())); } catch { resolve({ error: `exit ${code ?? signal}: ${err.trim().split('\n').slice(-4).join(' | ')}` }); }
+    if (late) { resolve({ error: `${what} did not finish within ${timeoutMs} ms and was killed` }); return; }
+    try { resolve(JSON.parse(out.trim().split('\n').pop())); } catch { resolve({ error: `${what}: exit ${code ?? signal}: ${err.trim().split('\n').slice(-4).join(' | ')}` }); }
   });
 });
 
+/**
+ * How many plant processes run at once when the caller does not say: each replays the whole corpus it is given and
+ * keeps a core busy, so all of them at once (21) swamp a small machine. One core is left to the caller.
+ */
+export const defaultPlantWorkers = (cores = os.availableParallelism()) => Math.max(1, Math.min(4, cores - 1));
+
+/** At most `workers` of the given thunks run at once; resolves each thunk's own result. */
+export function limiter(workers) {
+  let active = 0;
+  const waiting = [];
+  const next = () => { if (active < workers && waiting.length) { active += 1; waiting.shift()(); } };
+  return (thunk) => new Promise((resolve, reject) => {
+    waiting.push(() => { Promise.resolve().then(thunk).then(resolve, reject).finally(() => { active -= 1; next(); }); });
+    next();
+  });
+}
+
 async function main(argv) {
   const options = Object.fromEntries(argv.map((arg) => /^--([a-z-]+)=(.*)$/.exec(arg)).filter(Boolean).map((match) => [match[1], match[2]]));
-  if (!options.scenarios) { console.error('usage: bun replay-mutants.mjs --scenarios=<container> [--tests=<container>,...] [--json=<out>] [--only=<replayer plant>]'); return 64; }
+  if (!options.scenarios) { console.error('usage: bun replay-mutants.mjs --scenarios=<container> [--tests=<container>,...] [--json=<out>] [--only=<replayer plant>] [--workers=N] [--deadline-ms=N]'); return 64; }
+  const workers = Number(options.workers ?? defaultPlantWorkers());
+  const deadlineMs = Number(options['deadline-ms'] ?? 600_000);
+  if (!Number.isInteger(workers) || workers < 1 || !Number.isInteger(deadlineMs) || deadlineMs < 1) { console.error('--workers and --deadline-ms must be positive integers'); return 64; }
   const tests = (options.tests ?? '').split(',').filter(Boolean);
   // Standalone, the scratch is a run root (removed on pass, failure and interruption, its children stopped first); under a caller, inside the caller's.
   const scratch = options.root ? null : (await import('./record.mjs')).createScratch('scheduler-conformance-plants');
@@ -454,15 +480,17 @@ async function main(argv) {
       return 0;
     }
     const args = [fileURLToPath(import.meta.url), `--scenarios=${options.scenarios}`, `--tests=${tests.join(',')}`, `--root=${root}`];
-    // The copy plants in four processes and each replayer plant in its own (a second replayer would install its hooks over this one's), all at once.
+    // The copy plants in four processes and each replayer plant in its own (a second replayer would install its hooks
+    // over this one's): at most `workers` of them at a time, each with a deadline that names its plants.
     const SHARES = 4;
     const shares = Array.from({ length: SHARES }, (_, index) => COPY_PLANTS.filter((_plant, at) => at % SHARES === index).map((plant) => plant.name));
-    const copyRuns = Promise.all(shares.map((names, index) => runJson([...args, `--copies=${names.join(',')}`, `--unchanged=${index === 0 ? 1 : 0}`], { timeoutMs: 1_200_000 })));
-    const replayerRuns = Promise.all(REPLAYER_PLANTS.map(async (plant) => {
-      const found = await runJson([...args, `--only=${plant.name}`], { timeoutMs: 1_200_000 });
+    const queued = limiter(workers);
+    const copyRuns = Promise.all(shares.map((names, index) => queued(() => runJson([...args, `--copies=${names.join(',')}`, `--unchanged=${index === 0 ? 1 : 0}`], { timeoutMs: deadlineMs, what: `the copy plants ${names.join(', ')}` }))));
+    const replayerRuns = Promise.all(REPLAYER_PLANTS.map((plant) => queued(async () => {
+      const found = await runJson([...args, `--only=${plant.name}`], { timeoutMs: deadlineMs, what: `the replayer plant ${plant.name}` });
       return found.error ? { name: plant.name, check: plant.check, caught: false, found: { detail: `the plant's process failed: ${found.error}` } } : found;
-    }));
-    const deliveryRun = runJson([...args, '--delivery-control=1'], { timeoutMs: 1_200_000 });
+    })));
+    const deliveryRun = queued(() => runJson([...args, '--delivery-control=1'], { timeoutMs: deadlineMs, what: 'the delivery control' }));
     const [tables, replayer, delivery] = await Promise.all([copyRuns, replayerRuns, deliveryRun]);
     const failed = tables.find((table) => table.error);
     const byName = new Map(tables.flatMap((table) => table.plants ?? []).map((entry) => [entry.name, entry]));

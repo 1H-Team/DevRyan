@@ -49,10 +49,16 @@ import { parseOptions, runBunTests } from '../client-conformance/record.mjs';
 import { CORPUS, recordCorpus, SCENARIO_ENV } from './drive.mjs';
 import { createScratch, judgeRecording, PACKAGE_DIR, RECORDER, recordFiles, REPOSITORY_ROOT, schedulerTestFiles } from './record.mjs';
 import { prepareCopy } from './replay.mjs';
+import { COPY_PLANTS, REPLAYER_PLANTS } from './replay-mutants.mjs';
 import { buildContainers, casePlacement, EXIT, formatIncomplete, readContainer, readRaws } from './trace.mjs';
 
 export const HARNESS_DIR = path.dirname(fileURLToPath(import.meta.url));
 export const REPLAY = path.join(HARNESS_DIR, 'replay.mjs');
+const PLANTS = path.join(HARNESS_DIR, 'replay-mutants.mjs');
+/** The awaiting shapes (a test file of this folder, named as the package's runner sees it). */
+const SHAPES = '../../scripts/scheduler-conformance/shapes.toy.mjs';
+/** How long one replay process or one plant process may take before it is killed and named. */
+export const CHILD_DEADLINE_MS = 600_000;
 export const SOURCES = Object.freeze(['tests', 'package', 'scenarios']);
 export const CASE_OUTCOMES = Object.freeze(['reproduced', 'partial', 'crossed', 'unrecordable', 'empty', 'different']);
 
@@ -111,19 +117,26 @@ export async function recordQuick({ workDir, tests = [], scenarios = [] }) {
 /** The containers already in a directory, for a source given with `--containers`. */
 export const containersIn = (directory) => readdirSync(directory).filter((name) => name.endsWith('.ndjson')).sort().map((name) => path.join(directory, name));
 
-/** Replays one container file in its own bun process (memory stays bounded by the largest file). */
-export function replayFile(file, { copyDir, workDir, replay = REPLAY }) {
+/**
+ * Replays one container file in its own bun process (memory stays bounded by the largest file). Bounded: a replay
+ * that has not finished after `deadlineMs` is killed, and the result is an error that names the container.
+ */
+export function replayFile(file, { copyDir, workDir, replay = REPLAY, deadlineMs = CHILD_DEADLINE_MS }) {
   const json = path.join(workDir, `replay-${path.basename(file)}.json`);
   return new Promise((resolve) => {
     const child = spawn('bun', [replay, `--copy=${copyDir}`, `--json=${json}`, file], {
       cwd: REPOSITORY_ROOT, env: { ...process.env, ...SCENARIO_ENV, TZ: 'UTC', LANG: 'C', LC_ALL: 'C' }, stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stderr = '';
+    let late = false;
+    const timer = setTimeout(() => { late = true; child.kill('SIGKILL'); }, deadlineMs);
     child.stdout.on('data', () => {});
     child.stderr.on('data', (chunk) => { stderr += chunk; });
-    child.on('error', (error) => resolve({ file, error: String(error.message) }));
+    child.on('error', (error) => { clearTimeout(timer); resolve({ file, error: String(error.message) }); });
     child.on('close', (status) => {
+      clearTimeout(timer);
       const recorded = recordedMarks(file);
+      if (late) { resolve({ file, recorded, error: `the replay of ${path.basename(file)} did not finish within ${deadlineMs} ms and was killed` }); return; }
       if (status !== 0 || !existsSync(json)) { resolve({ file, recorded, error: `the replay process exited ${status}: ${stderr.trim().split('\n').slice(-6).join(' | ')}` }); return; }
       try { resolve({ file, recorded, ...JSON.parse(readFileSync(json, 'utf8')) }); } catch (error) { resolve({ file, recorded, error: `unreadable replay result: ${error.message}` }); }
     });
@@ -257,25 +270,87 @@ export function tableLines(table) {
  * every container in its own bun process (`workers` at a time) and judges.
  * Returns `{ judged, containers }` (containers per source, for further use).
  */
-export async function runClosure({ sources = SOURCES, given = new Map(), workers = 4, workDir }) {
+export async function runClosure({ sources = SOURCES, given = new Map(), names = {}, workers = 4, workDir, deadlineMs = CHILD_DEADLINE_MS }) {
   const copyDir = prepareCopy(workDir);
   const recorded = [];
   for (const source of sources) {
     if (given.has(source)) recorded.push({ source, containers: containersIn(given.get(source)), recording: null });
-    else recorded.push(await recordSource(source, { workDir }));
+    else recorded.push(await recordSource(source, { workDir, names: names[source] ?? null }));
   }
   const replayDir = path.join(workDir, 'replays');
   mkdirSync(replayDir, { recursive: true });
-  const tasks = recorded.flatMap((entry) => entry.containers.map((file) => async () => ({ source: entry.source, replay: await replayFile(file, { copyDir, workDir: replayDir }) })));
+  const tasks = recorded.flatMap((entry) => entry.containers.map((file) => async () => ({ source: entry.source, replay: await replayFile(file, { copyDir, workDir: replayDir, deadlineMs }) })));
   const done = await pool(tasks, workers);
   const judged = judgeClosure(recorded.map((entry) => ({ ...entry, replays: done.filter((item) => item.source === entry.source).map((item) => item.replay) })));
   return { judged, containers: Object.fromEntries(recorded.map((entry) => [entry.source, entry.containers])) };
 }
 
-const USAGE = 'usage: closure.mjs [--sources=tests,package,scenarios] [--containers=<source>=<dir>,...] [--workers=N] [--json=<file>] [--keep-artifacts]';
+/**
+ * Runs every planted scheduler copy and replayer bug of the plant tool against `scenarios` (one container) and
+ * `tests` (containers), to which the awaiting shapes, recorded here, are added. At most `workers` plant processes
+ * at a time (the tool's default when not given), each bounded by `deadlineMs`; the whole run is bounded as well.
+ * Resolves the tool's result, or `{ error }`.
+ */
+export async function runPlants({ scenarios, tests = [], workDir, workers = null, deadlineMs = CHILD_DEADLINE_MS }) {
+  const shapes = await recordQuick({ workDir: path.join(workDir, 'shapes'), tests: [SHAPES] });
+  if (shapes.problems.length || shapes.tests.length !== 1) return { error: `the awaiting shapes did not record: ${shapes.problems.join('; ') || `${shapes.tests.length} containers`}` };
+  const args = [PLANTS, `--scenarios=${scenarios}`, `--tests=${[...tests, ...shapes.tests].join(',')}`, `--root=${workDir}`, `--deadline-ms=${deadlineMs}`, ...(workers ? [`--workers=${workers}`] : [])];
+  // Every plant process has its own deadline; this one is for the tool itself (every process in turn, and a minute).
+  const overallMs = deadlineMs * (4 + REPLAYER_PLANTS.length + 1) + 60_000;
+  return new Promise((resolve) => {
+    const child = spawn('bun', args, { cwd: REPOSITORY_ROOT, env: { ...process.env, TZ: 'UTC', LANG: 'C', LC_ALL: 'C' }, stdio: ['ignore', 'pipe', 'inherit'] });
+    let out = '';
+    let late = false;
+    const timer = setTimeout(() => { late = true; child.kill('SIGKILL'); }, overallMs);
+    child.stdout.on('data', (chunk) => { out += chunk; });
+    child.on('error', (error) => { clearTimeout(timer); resolve({ error: `the plant tool did not start: ${error.message}` }); });
+    child.on('close', (status) => {
+      clearTimeout(timer);
+      if (late) { resolve({ error: `the plant tool did not finish within ${overallMs} ms and was killed` }); return; }
+      try { resolve(JSON.parse(out.trim().split('\n').pop())); } catch (error) { resolve({ error: `the plant tool exited ${status} with no result: ${error.message}` }); }
+    });
+  });
+}
+
+/**
+ * Judges a plant run (pure: the self-test feeds it fixed inputs): the unchanged copy reproduces every case, every
+ * planted copy and every planted replayer bug is caught, none is missing, and the delivery copy is no difference.
+ * With `lateOnReal`, a settlement delivered late must also differ on a real recording (true of a corpus that holds
+ * the scheduler's own test recordings; an early delivery differs on none, only on the delivery copy). Returns
+ * `{ problems, lines }`: `problems` empty when everything holds, `lines` what the settle plants found on real recordings.
+ */
+export function judgePlants(plants, { copyPlants = COPY_PLANTS.length, replayerPlants = REPLAYER_PLANTS.length, lateOnReal = true } = {}) {
+  const problems = [];
+  const lines = [];
+  if (!plants || plants.error) return { problems: [plants?.error ?? 'no plant result'], lines };
+  const unchanged = plants.unchanged ?? {};
+  if (unchanged.error) problems.push(`the unchanged copy: ${unchanged.error}`);
+  else if (!Number.isInteger(unchanged.cases) || unchanged.cases === 0 || unchanged.reproduced !== unchanged.cases || unchanged.code !== EXIT.pass) problems.push(`the unchanged copy reproduced ${unchanged.reproduced} of ${unchanged.cases} cases (exit ${unchanged.code})`);
+  const copies = plants.plants ?? [];
+  for (const entry of copies.filter((item) => !item.caught)) problems.push(`the planted copy ${entry.name} was not caught: ${entry.outcome ?? 'no outcome'} ${entry.found?.check ?? ''} ${entry.found?.detail ?? ''} exit ${entry.code}`.replace(/\s+/g, ' ').trim());
+  if (copies.length !== copyPlants) problems.push(`${copies.length} planted copies were judged, ${copyPlants} exist`);
+  const replayer = plants.replayer ?? [];
+  for (const entry of replayer.filter((item) => !item.caught)) problems.push(`the planted replayer bug ${entry.name} was not caught${entry.found?.detail ? `: ${entry.found.detail}` : ''}`);
+  if (replayer.length !== replayerPlants) problems.push(`${replayer.length} planted replayer bugs were judged, ${replayerPlants} exist`);
+  const delivery = plants.delivery ?? {};
+  if (delivery.error) problems.push(`the delivery control: ${delivery.error}`);
+  else if (delivery.different !== 0 || delivery.failing !== null || delivery.delivery?.outcome !== 'reproduced') problems.push(`the delivery copy is a difference: ${delivery.different} cases differ, the delivery case is ${delivery.delivery?.outcome ?? 'missing'}`);
+  for (const entry of replayer.filter((item) => item.name.startsWith('settle-delivered-') && item.real)) {
+    lines.push(`${entry.name} on the real recordings: ${entry.real.different} of ${entry.real.cases} cases different (${entry.real.checks.join(', ') || 'none'})${entry.real.first ? `, first ${entry.real.first.case} [${entry.real.first.check}]` : ''}`);
+  }
+  if (lateOnReal) {
+    for (const name of ['settle-delivered-late-1', 'settle-delivered-late-2']) {
+      const entry = replayer.find((item) => item.name === name);
+      if (!(entry?.real?.different > 0)) problems.push(`${name} differs on no real recording`);
+    }
+  }
+  return { problems, lines };
+}
+
+const USAGE = 'usage: closure.mjs [--sources=tests,package,scenarios] [--containers=<source>=<dir>,...] [--workers=N] [--plants] [--json=<file>] [--keep-artifacts]';
 
 async function main(argv) {
-  const parsed = parseOptions(argv, { flags: ['keep-artifacts'], values: ['sources', 'containers', 'workers', 'json'] });
+  const parsed = parseOptions(argv, { flags: ['keep-artifacts', 'plants'], values: ['sources', 'containers', 'workers', 'json'] });
   if (parsed.error || parsed.positionals.length) { console.error(`${parsed.error ?? 'no positional arguments'}\n${USAGE}`); return EXIT.usage; }
   const { options } = parsed;
   const sources = options.sources ? options.sources.split(',') : [...SOURCES];
@@ -288,11 +363,12 @@ async function main(argv) {
   }
   const workers = Number(options.workers ?? 4);
   if (!Number.isInteger(workers) || workers < 1) { console.error(`--workers must be a positive integer\n${USAGE}`); return EXIT.usage; }
+  if (options.plants && !sources.includes('scenarios')) { console.error(`--plants needs the scenarios source\n${USAGE}`); return EXIT.usage; }
   const scratch = createScratch('scheduler-conformance-closure');
   let status = 'failed';
   try {
     const started = Date.now();
-    const { judged } = await runClosure({ sources, given, workers, workDir: scratch.dir });
+    const { judged, containers } = await runClosure({ sources, given, workers, workDir: scratch.dir });
     // One line per case: its outcome and, unless reproduced, its reason or check with the first differing event.
     for (const entry of judged.cases) console.log(`${entry.outcome === 'different' ? 'DIFFERENT' : entry.outcome} ${entry.id}${entry.outcome === 'reproduced' ? ` (${entry.produced} events)` : `: ${entry.check && entry.outcome === 'different' ? `(${entry.check}) ` : ''}${entry.reason ?? entry.detail ?? ''}`.slice(0, 600)}`);
     for (const problem of judged.problems) console.log(`${problem.kind === 'fail' ? 'FAILED' : 'inconclusive'} (${problem.check})${problem.source ? ` ${problem.source}` : ''}: ${problem.detail}`);
@@ -303,8 +379,19 @@ async function main(argv) {
     if (options.json) writeFileSync(options.json, `${JSON.stringify({ code: judged.code, table: judged.table, byFile: judged.byFile, problems: judged.problems, info: judged.info, cases: judged.cases }, null, 2)}\n`);
     const verdict = judged.code === EXIT.pass ? 'complete' : judged.code === EXIT.fail ? 'FAILED' : 'INCONCLUSIVE';
     console.log(`scheduler closure ${verdict}: ${judged.cases.length} cases (${sources.join(', ')}), ${Math.round((Date.now() - started) / 1000)} s; ${CASE_OUTCOMES.map((outcome) => `${judged.counts[outcome]} ${outcome}`).join(', ')}; ${judged.problems.length} problems`);
-    status = judged.code === EXIT.pass ? 'passed' : 'failed';
-    return judged.code;
+    if (judged.code !== EXIT.pass || !options.plants) {
+      status = judged.code === EXIT.pass ? 'passed' : 'failed';
+      return judged.code;
+    }
+    // The planted copies and replayer bugs against everything just recorded (minutes on the whole corpus).
+    const plantsStarted = Date.now();
+    const plants = await runPlants({ scenarios: containers.scenarios[0], tests: [...(containers.tests ?? []), ...(containers.package ?? [])], workDir: scratch.dir, workers: options.workers ? workers : null });
+    const found = judgePlants(plants, { lateOnReal: sources.includes('tests') });
+    for (const line of found.lines) console.log(line);
+    for (const problem of found.problems) console.log(`FAILED (plants): ${problem}`);
+    console.log(`scheduler plants ${found.problems.length ? 'FAILED' : 'complete'}: ${plants.plants?.length ?? 0} planted copies, ${plants.replayer?.length ?? 0} planted replayer bugs, ${Math.round((Date.now() - plantsStarted) / 1000)} s; ${found.problems.length} problems`);
+    status = found.problems.length ? 'failed' : 'passed';
+    return found.problems.length ? EXIT.fail : EXIT.pass;
   } finally {
     scratch.finish(status);
   }
