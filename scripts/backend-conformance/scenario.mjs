@@ -63,6 +63,17 @@ export const step = Object.freeze({
 });
 
 // ------------------------------------------------------------------ supplied values
+/**
+ * The spelling of canonical path `canonical` without the `/private` prefix,
+ * when its top directory is one the system links there (macOS's `/var`,
+ * `/tmp`, `/etc`: `realpath('/var')` is `/private/var`); otherwise null.
+ * Read from the file system, never assumed.
+ */
+export function firmlinkAlias(canonical) {
+  const match = /^\/private(\/[^/]+)(?:\/|$)/.exec(canonical ?? '');
+  if (!match) return null;
+  try { return fs.realpathSync(match[1]) === `/private${match[1]}` ? canonical.slice('/private'.length) : null; } catch { return null; }
+}
 export const VALUE_KINDS = Object.freeze(['id', 'text', 'time', 'token', 'path', 'port']);
 /**
  * The supplied-value registry (design §7, rule S; BH3 pairs by name). Every
@@ -91,7 +102,11 @@ export function createSuppliedValues(scope) {
     if (kind === 'path') {
       let canonical = value;
       try { canonical = fs.realpathSync(value); } catch { /* a path that does not exist yet is its own spelling */ }
-      entry.spellings = [...new Set([value, canonical, encodeURIComponent(value), encodeURIComponent(canonical)])];
+      // The other spelling of a path under a firmlinked top directory (macOS: /var is /private/var), when the system says so.
+      const alias = firmlinkAlias(canonical);
+      // `forms` keeps each spelling at a fixed name, so a comparer maps one arm's spelling to the other's.
+      entry.forms = { given: value, canonical, ...(alias ? { alias } : {}) };
+      entry.spellings = [...new Set([value, canonical, ...(alias ? [alias] : []), encodeURIComponent(value), encodeURIComponent(canonical), ...(alias ? [encodeURIComponent(alias)] : [])])];
     }
     entries.set(name, entry);
     return value;

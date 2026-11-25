@@ -5,13 +5,13 @@
 //   node scripts/test-isolation-guard.mjs node scripts/backend-conformance/conformance.mjs --group=<name>
 //       [--scenario=<id>,...] [--allow-inconclusive=<row>,...] [--keep-artifacts]
 //
-// BH0 to BH2 exist: the run root, the outcomes and exit codes, the report,
+// BH0 to BH4 exist: the run root, the outcomes and exit codes, the report,
 // the composition check (the server's composition text against the table,
 // the census's reach and layer stack, the edge probes), the group host, the
-// tap, and the scenario driver, which records the group's scenarios on the
-// reference arm. The comparer (BH3) and the closure check (BH4) do not exist
-// yet, so every recorded row is inconclusive, awaiting comparison, and a run
-// exits 2 with rows.
+// tap, the scenario driver, the comparer and the closure check: every
+// scenario of the group runs on the reference, on a second reference on a
+// fresh data root and on the JavaScript candidate adapter (closure.mjs), and
+// each step's row is judged from the comparisons (compare.mjs).
 // Exit codes (outcomes.mjs): 0 every row passed or waived and one passed;
 // 1 a failed row; 2 anything else not waived, a composition drift, or no
 // rows; 64 refused (usage, outside the isolation guard, an output path).
@@ -22,7 +22,7 @@ import { checkComposition } from './composition-drift.mjs';
 import { interruptTeardown } from './driver.mjs';
 import { produceScenarioRows } from './scenario-rows.mjs';
 
-export const main = (options = {}) => runMain({ checkComposition, produceRows: (context) => produceScenarioRows({ ...context, log: (line) => process.stdout.write(`${line}\n`) }), onInterrupt: interruptTeardown, ...options });
+export const main = (options = {}) => runMain({ checkComposition, produceRows: (context) => produceScenarioRows(context), onInterrupt: interruptTeardown, ...options });
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   process.exitCode = await main();

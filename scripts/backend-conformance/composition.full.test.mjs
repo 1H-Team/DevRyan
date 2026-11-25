@@ -262,26 +262,28 @@ test('each planted re-statement of the edge is caught by its probe, and a missin
   pass();
 });
 
-test('the command line refuses outside the guard and, on the real tree, records rows and judges none', { timeout: 900_000 }, async (t) => {
+test('the command line refuses outside the guard and, on the real tree, judges the rows through the closure check', { timeout: 900_000 }, async (t) => {
   const { run, pass } = runFor(t);
   const env = { ...process.env, TMPDIR: run.makeDirectory('foreign-tmp') };
   delete env.DEVRYAN_TEST_ISOLATION_ROOT;
   const [refused, real] = await Promise.all([
     runChild([path.join(HERE, 'conformance.mjs'), '--group=magic-prompts'], { env }),
-    // The pilot's scenarios start several group hosts: minutes under heavy load.
-    runChild([path.join(HERE, 'conformance.mjs'), '--group=magic-prompts'], { timeoutMs: 840_000 }),
+    // One scenario of the pilot (the whole pilot is the documented command, outside this file's CPU budget);
+    // it starts several group hosts: minutes under heavy load.
+    runChild([path.join(HERE, 'conformance.mjs'), '--group=magic-prompts', '--scenario=magic-prompts.write-lock'], { timeoutMs: 840_000 }),
   ]);
   assert.equal(refused.code, EXIT.refused, refused.stderr);
   assert.deepEqual(fs.readdirSync(env.TMPDIR), []);
-  assert.equal(real.code, EXIT.incomplete, real.stdout + real.stderr);
-  // No comparer exists (BH3): the rows are recorded and none is passed; on drift no row is produced at all.
-  const last = /backend conformance: (INCOMPLETE|COMPOSITION DRIFT) \((\d+) rows: (\d+) passed, (\d+) failed/.exec(real.stdout);
+  // The closure check (R, R' and J) judges the rows: every row of the write lock passes; on drift no row is produced at all.
+  const last = /backend conformance: (passed|INCOMPLETE|COMPOSITION DRIFT) \((\d+) rows: (\d+) passed, (\d+) failed, (\d+) inconclusive, (\d+) unstable, (\d+) unrecordable/.exec(real.stdout);
   assert.ok(last, real.stdout);
-  if (last[1] === 'COMPOSITION DRIFT') { t.diagnostic(real.stdout); assert.equal(last[2], '0'); } else {
-    assert.ok(Number(last[2]) > 0, 'rows recorded');
-    assert.deepEqual([last[3], last[4]], ['0', '0'], 'nothing passed, nothing failed');
-    assert.match(real.stdout, /^INCONCLUSIVE magic-prompts\.reads-and-writes\/get-empty: recorded on the reference arm; awaiting comparison/m);
-    assert.doesNotMatch(real.stdout, /^ok {2}/m);
+  if (last[1] === 'COMPOSITION DRIFT') { t.diagnostic(real.stdout); assert.equal(last[2], '0'); assert.equal(real.code, EXIT.incomplete); } else {
+    assert.equal(real.code, EXIT.passed, real.stdout + real.stderr);
+    assert.deepEqual([last[2], last[3], last[4], last[5], last[6], last[7]], ['5', '5', '0', '0', '0', '0'], real.stdout);
+    assert.match(real.stdout, /^ok {3}magic-prompts\.write-lock\/two-puts: the JavaScript candidate adapter equals the reference, and the reference is stable$/m);
+    // The named limit of what a candidate's observation cannot see is printed in the summary, with its count.
+    assert.match(real.stdout, /^LIMIT candidate-effects-unseen \([1-9]\d* candidate exchanges\): on a candidate, a child started by absolute path/m);
+    assert.doesNotMatch(real.stdout, /^(FAIL|UNSTABLE|UNRECORDABLE|INCONCLUSIVE) /m);
   }
   pass();
 });

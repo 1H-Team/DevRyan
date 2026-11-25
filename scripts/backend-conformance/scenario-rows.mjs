@@ -1,18 +1,20 @@
-// The rows of a harness run (BH2): every scenario of the group, run against the
-// reference arm, recorded into the run's scratch and turned into rows. With no
-// comparer (BH3) and no closure check (BH4) every recorded row is inconclusive,
-// awaiting comparison, so a run exits 2 with rows; nothing here passes a row.
-import { referenceArm } from './arms.mjs';
-import { recordingJson, rowsFromRecording, runScenario } from './driver.mjs';
+// The rows of a harness run (BH4): every scenario of the group through the
+// closure check (closure.mjs): the reference (R), a second reference on a
+// fresh data root (R') and the JavaScript candidate adapter (J), each
+// recorded into the run's scratch, compared by the comparer (compare.mjs),
+// and turned into one row per step plus one per scenario for what belongs to
+// the whole recording (`<scenario>/recording`).
+import { runClosure } from './closure.mjs';
+import { CANDIDATE_EFFECT_LIMIT } from './observe.mjs';
 import { SCENARIOS as MAGIC_PROMPTS } from './scenarios/magic-prompts.mjs';
 
 /** The scenarios of each group the harness has scenarios for. */
 export const SCENARIOS_BY_GROUP = Object.freeze({ 'magic-prompts': MAGIC_PROMPTS });
 
 /**
- * runMain's produceRows: `{ rows, waivers }` for `name`'s scenarios (those
- * named by --scenario, or all). Each recording is written to
- * `recordings/<scenario>/reference.json` in the run (scratch only, never kept
+ * runMain's produceRows: `{ rows, waivers, gaps }` for `name`'s scenarios
+ * (those named by --scenario, or all). Each arm's recording is written to
+ * `recordings/<scenario>/<arm>.json` in the run (scratch only, never kept
  * unless the run is). A group without scenarios produces no rows; an unknown
  * --scenario id is a census gap.
  */
@@ -22,15 +24,16 @@ export async function produceScenarioRows({ run, group, name, options = {}, log 
   const chosen = asked.length ? scenarios.filter((scenario) => asked.includes(scenario.id)) : scenarios;
   const rows = [];
   const waivers = {};
+  let observedExchanges = 0;
   for (const scenario of chosen) {
-    const label = `scenarios/${scenario.id}`;
-    const arm = referenceArm({ run, name, group, label: `${label}/reference` });
-    const recording = await runScenario({ scenario, arm, run, label: `${label}/reference`, limits });
-    run.writeFile(`recordings/${scenario.id}/reference.json`, recordingJson(recording));
-    const produced = rowsFromRecording(recording);
-    log(`recorded ${scenario.id}: ${produced.length} rows on the reference arm`);
-    rows.push(...produced);
+    const { rows: produced, recordings } = await runClosure({ run, scenario, name, group, limits });
+    // The candidate arms' exchanges, each observed from outside under the named limit (observe.mjs).
+    for (const key of ['js', 'candidate']) observedExchanges += recordings[key]?.observation?.exchanges ?? 0;
+    const counts = {};
+    for (const row of produced) counts[row.outcome] = (counts[row.outcome] ?? 0) + 1;
+    log(`compared ${scenario.id}: ${produced.length} rows (R, R' and J): ${Object.entries(counts).map(([outcome, count]) => `${count} ${outcome}`).join(', ')}`);
+    rows.push(...produced.map(({ id, outcome, reason, checks, differences, inconclusive, nondeterministic, judged, whole }) => ({ id, outcome, reason, checks, differences: [...differences, ...inconclusive.map((line) => `(inconclusive) ${line}`)], nondeterministic, judged, whole })));
     for (const [stepId, waiver] of Object.entries(scenario.waivers ?? {})) waivers[`${scenario.id}/${stepId}`] = waiver;
   }
-  return { rows, waivers, gaps };
+  return { rows, waivers, gaps, limits: [{ ...CANDIDATE_EFFECT_LIMIT, count: observedExchanges, unit: 'candidate exchanges' }] };
 }

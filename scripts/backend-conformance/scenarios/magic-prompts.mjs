@@ -9,14 +9,19 @@
 // tunnel boundary refuses it, an edge exchange). The reference produces the
 // first and the last; the managed classes need the Supabase-backed runtime,
 // so their steps are waived on the reference with that reason (design §6).
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import zlib from 'node:zlib';
 import { PRINCIPALS, defineScenario, jsonBody, rawBody, step } from '../scenario.mjs';
 
 const principals = Object.fromEntries(['local-admin', 'managed-admin', 'managed-developer', 'remote-unauthenticated'].map((name) => [name, PRINCIPALS[name]]));
 const JSON_TYPE = [['Content-Type', 'application/json']];
 const BASE = '/api/magic-prompts';
 const MANAGED_WAIVER = { outcome: 'inconclusive', checks: ['principal-unavailable'], reason: 'managed principals need the Supabase-backed runtime, which the reference group host does not run (design §6, pilot scope; inventory B12)' };
+// Edge exchanges are recorded on the reference only and never sent to a candidate (design §2.1): a stable one has
+// nothing of the group's to judge. The waiver covers that check alone; an edge row that is unstable stays open.
+const EDGE_WAIVER = { outcome: 'inconclusive', checks: ['edge-exchange'], reason: 'an edge exchange: the edge answers it before the group (design §2.1); it is compared reference against reference only, and no candidate is sent it' };
 const DEPRECATED = ['git.commit.draft.visible', 'git.commit.draft.instructions', 'git.commit.plan.visible', 'git.commit.plan.instructions'];
 
 const get = (principal = 'local-admin', extra = {}) => ({ method: 'GET', target: BASE, principal, ...extra });
@@ -83,7 +88,10 @@ export const READS_AND_WRITES = defineScenario({
       step.exchange('get-after-reset', get()),
     ];
   },
-  waivers: Object.fromEntries(['get-managed-admin', 'put-managed-admin', 'get-managed-developer', 'put-managed-developer', 'delete-managed-developer'].map((id) => [id, MANAGED_WAIVER])),
+  waivers: Object.fromEntries([
+    ...['get-managed-admin', 'put-managed-admin', 'get-managed-developer', 'put-managed-developer', 'delete-managed-developer'].map((id) => [id, MANAGED_WAIVER]),
+    ...['put-body-null', 'put-malformed-json', 'get-remote', 'put-remote'].map((id) => [id, EDGE_WAIVER]),
+  ]),
 });
 
 /** The write lock: concurrent PUTs, and a PUT with a DELETE of the same id (§5.6). */
@@ -131,4 +139,47 @@ export const RESTARTS = defineScenario({
   },
 });
 
-export const SCENARIOS = Object.freeze([READS_AND_WRITES, WRITE_LOCK, RESTARTS]);
+/** Express's weak ETag of a body (etag 1.8: the length in hex, then 27 characters of its SHA-1 in base64). */
+const weakEtag = (text) => `W/"${Buffer.byteLength(text).toString(16)}-${crypto.createHash('sha1').update(text, 'utf8').digest('base64').slice(0, 27)}"`;
+const EMPTY_STATE = '{"version":1,"overrides":{}}';
+
+/**
+ * What Express and the shared body parser give the JavaScript group for free, and a port must give itself
+ * (S3 of the BH3/BH4 review). Each step states who answers it in the reference (the tap says: the group, or
+ * the edge with `edge: true`). An edge step is never sent to a candidate, so its neighbour that the group
+ * answers is here too (an explicit UTF-8 charset beside latin1; the body limit is crossed at 200 000
+ * characters of reads-and-writes with 50 MB allowed, and refused here by the declared length alone).
+ */
+export const REQUEST_FORMS = defineScenario({
+  id: 'magic-prompts.request-forms', group: 'magic-prompts',
+  description: 'a conditional GET, a trailing slash, another letter case, HEAD, a query, charsets, a gzip body, a body over the limit, a BOM, an empty JSON body and an application/*+json type',
+  principals,
+  fixture: () => {},
+  steps: (v) => {
+    const id = v.id('id.visible', 'git.pr.generate.visible');
+    const etag = v.token('etag.empty', weakEtag(EMPTY_STATE));
+    const body = (name, text) => `{"text":"${v.text(name, text)}"}`;
+    const putAs = (contentType, bytes, extra = []) => ({ method: 'PUT', target: `${BASE}/${id}`, headers: [...(contentType ? [['Content-Type', contentType]] : []), ...extra], body: rawBody(bytes), principal: 'local-admin' });
+    return [
+      step.exchange('get-etag', get()),
+      step.exchange('get-if-none-match', get('local-admin', { headers: [['If-None-Match', etag]] })),
+      step.exchange('get-trailing-slash', { ...get(), target: `${BASE}/` }),
+      step.exchange('get-other-case', { ...get(), target: '/API/Magic-Prompts' }),
+      step.exchange('head', { ...get(), method: 'HEAD' }),
+      step.exchange('get-query', { ...get(), target: `${BASE}?x=1` }),
+      step.exchange('put-charset-latin1', { ...putAs('application/json; charset=latin1', body('text.latin1', 'latin1 charset')), edge: true }),
+      step.exchange('put-charset-utf8', putAs('application/json; charset=utf-8', body('text.utf8', 'explicit utf-8'))),
+      step.exchange('put-gzip', putAs('application/json', zlib.gzipSync(Buffer.from(body('text.gzip', 'inflated by the parser'))), [['Content-Encoding', 'gzip']])),
+      // One byte over the path's 50 MB: the shared parser reads the whole body before it answers (body-parser drains
+      // it), so the bytes are really sent. Not a supplied value: the edge refuses it and nothing can echo it.
+      step.exchange('put-over-limit', { ...putAs('application/json', Buffer.alloc(50 * 1024 * 1024 + 1, 0x20)), edge: true }),
+      step.exchange('put-bom', putAs('application/json', Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(body('text.bom', 'after a byte-order mark'))]))),
+      step.exchange('put-empty-json', putAs('application/json', '')),
+      step.exchange('put-plus-json', putAs('application/merge-patch+json', body('text.plus-json', 'a +json type'))),
+      step.exchange('get-after', get()),
+    ];
+  },
+  waivers: Object.fromEntries(['put-charset-latin1', 'put-over-limit'].map((id) => [id, EDGE_WAIVER])),
+});
+
+export const SCENARIOS = Object.freeze([READS_AND_WRITES, WRITE_LOCK, RESTARTS, REQUEST_FORMS]);

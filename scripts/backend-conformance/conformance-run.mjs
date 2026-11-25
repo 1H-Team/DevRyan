@@ -10,6 +10,20 @@ import { EXIT, judgeRun, lastLine, reportLines } from './outcomes.mjs';
 import { RunRefused, createBackendRun, isolationRefusal } from './run-scratch.mjs';
 import { GROUPS } from './groups.mjs';
 
+/**
+ * The run's output after an interrupt (SIGINT, SIGTERM, SIGHUP): once `interrupt(signal)` is called, one line
+ * says so and every later line is dropped, so a summary made from the teardown's half-finished
+ * recordings (an arm killed under it) is never printed as if it were a result.
+ */
+export function interruptGate(log) {
+  let signal = null;
+  return {
+    log: (line) => { if (signal === null) log(line); },
+    interrupt: (name) => { if (signal !== null) return; signal = name; log(`backend conformance: interrupted by ${name}; nothing recorded is judged, and no summary is printed`); },
+    get interrupted() { return signal; },
+  };
+}
+
 export const USAGE = 'usage: --group=<name> [--scenario=<id>,...] [--allow-inconclusive=<row>,...] [--keep-artifacts]';
 
 export function parseArguments(argv, groups = GROUPS) {
@@ -47,13 +61,15 @@ export async function runMain({ argv = process.argv.slice(2), env = process.env,
   const parsed = parseArguments(argv);
   if (parsed.error) { error(`backend conformance: ${parsed.error}\n${USAGE}`); return EXIT.refused; }
   const { options } = parsed;
+  const gate = interruptGate(log);
+  const interrupted = async (signal) => { gate.interrupt(signal); await onInterrupt?.(signal); };
   let run;
   // `parent`: the self-test's private scratch parent (no other run's sweep reaches it); the command never passes one.
-  try { run = createBackendRun({ env, argv, keepArtifacts: options.keepArtifacts, onInterrupt, parent }); } catch (failure) {
+  try { run = createBackendRun({ env, argv, keepArtifacts: options.keepArtifacts, onInterrupt: interrupted, parent }); } catch (failure) {
     if (failure instanceof RunRefused) { error(`backend conformance: ${failure.message}`); return EXIT.refused; }
     throw failure;
   }
-  const exit = await judgedRun({ run, options, produceRows, checkComposition, log, error });
+  const exit = await judgedRun({ run, options, produceRows, checkComposition, log: gate.log, error });
   try { run.finish(exit === EXIT.passed ? 'passed' : 'failed'); } catch (failure) {
     error(`backend conformance: ${failure.message}; the run directory ${run.dir} was left in place`);
     return EXIT.refused;
@@ -74,7 +90,7 @@ async function judgedRun({ run, options, produceRows, checkComposition, log, err
       log(lastLine(judgement));
       return judgement.exit;
     }
-    const produced = await produceRows({ run, group, name: options.group, options });
+    const produced = await produceRows({ run, group, name: options.group, options, log });
     const waivers = { ...(produced.waivers ?? {}) };
     for (const id of options.allowInconclusive) {
       if (Object.hasOwn(waivers, id)) { error(`backend conformance: --allow-inconclusive=${id} repeats a waiver of the table`); return EXIT.refused; }
@@ -84,7 +100,7 @@ async function judgedRun({ run, options, produceRows, checkComposition, log, err
     // A table waiver of a row awaiting comparison waives nothing judged: it is dropped and counted as a gap.
     const gaps = [...(produced.gaps ?? [])];
     for (const row of produced.rows) if (row.awaiting && Object.hasOwn(waivers, row.id)) { delete waivers[row.id]; gaps.push(`waiver ${row.id} covers a row awaiting comparison (nothing judged it)`); }
-    const judgement = judgeRun({ rows: produced.rows, waivers, gaps });
+    const judgement = judgeRun({ rows: produced.rows, waivers, gaps, limits: produced.limits ?? [] });
     run.writeFile('report.json', `${JSON.stringify({ group: options.group, ...judgement }, null, 2)}\n`);
     for (const line of reportLines(judgement)) log(line);
     return judgement.exit;

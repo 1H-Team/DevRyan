@@ -34,11 +34,13 @@
 // group it started SIGCONTed and SIGKILLed, every connection closed, every held
 // descriptor released) runs at process exit and from interruptTeardown(), which the
 // run root calls on SIGINT, SIGTERM and SIGHUP before it removes the scratch.
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { forgetRecord, keepRecord, killRecorded, processFacts, recordFor } from './arm-groups.mjs';
 import { openExchange, sseItems } from './http-exchange.mjs';
+import { createObservation } from './observe.mjs';
 import { HARNESS_HEADERS, PRINCIPALS, createSuppliedValues, envelopeFor, validateSteps } from './scenario.mjs';
 import {
   DeadlineError, copyTree, escapedDescendants, groupGone, groupMembers, liveOnly, holdDescriptors, openFilesUnder, releaseAllHeld, restoreTree, signalGroup,
@@ -109,6 +111,30 @@ export async function interruptTeardown() {
 export const liveGroups = () => [...live.groups.keys()];
 
 // ------------------------------------------------------------------ helpers
+/**
+ * How far the file system's mtimes may lag Date.now(), in ms, measured once per process (one run): files
+ * written and stated against the clock read just before (Linux stamps mtimes from the coarse clock, up to a
+ * tick behind). The comparer widens the lower bound of its mtime window by it (rule W).
+ */
+let measuredLag = null;
+function mtimeGranularity(ctx) {
+  if (measuredLag !== null) return measuredLag;
+  const dir = ctx.run.makeDirectory(`${ctx.label}/mtime-probe`);
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  let lag = 0;
+  try {
+    for (let index = 0; index < 40; index += 1) {
+      const file = path.join(dir, `probe-${index}`);
+      const before = Date.now();
+      fs.writeFileSync(file, 'x');
+      lag = Math.max(lag, before - fs.statSync(file).mtimeMs);
+      Atomics.wait(pause, 0, 0, 1);
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  measuredLag = Math.ceil(Math.max(0, lag));
+  return measuredLag;
+}
+
 const permutations = (list) => (list.length <= 1 ? [list] : list.flatMap((item, index) => permutations([...list.slice(0, index), ...list.slice(index + 1)]).map((rest) => [item, ...rest])));
 const b64 = (buffer) => (buffer ? Buffer.from(buffer).toString('base64') : null);
 const problem = (result, check, text) => {
@@ -131,7 +157,7 @@ const withDeadline = (promise, ms, fallback) => new Promise((resolve, reject) =>
 });
 
 function newContext({ scenario, arm, run, label, limits, hooks }) {
-  return { scenario, arm, run, label, limits, hooks, trace: [], seq: 0, proc: null, processes: [], dead: false, stopping: false, last: null, streams: new Map(), processSeqs: [], starts: 0, held: new Set(), escaped: new Map(), keys: new Map() };
+  return { scenario, arm, run, label, limits, hooks, trace: [], seq: 0, proc: null, processes: [], dead: false, stopping: false, last: null, streams: new Map(), processSeqs: [], starts: 0, held: new Set(), escaped: new Map(), keys: new Map(), blobs: new Map() };
 }
 const trace = (ctx, event) => { ctx.trace.push(event); };
 
@@ -139,7 +165,7 @@ async function startArm(ctx, result) {
   trace(ctx, 'start');
   ctx.starts += 1;
   let proc;
-  try { proc = await ctx.arm.start({ dataRoot: ctx.dataRoot, home: ctx.home, stubs: ctx.stubUrls }); } catch (error) {
+  try { proc = await ctx.arm.start({ dataRoot: ctx.dataRoot, home: ctx.home, stubs: ctx.stubUrls, environment: ctx.observation?.environment() ?? {} }); } catch (error) {
     problem(result, 'arm-start', errorText(error));
     ctx.dead = true;
     return false;
@@ -249,17 +275,55 @@ async function frozenSnapshot(ctx, result, what) {
 }
 /** The walk of both tracked roots and the files `pids` hold open under them. */
 function trackedSnapshot(ctx, result, what, pids) {
+  const start = Date.now();
   const tree = snapshotTree(ctx.dataRoot, { others: { home: ctx.home } });
   if (!tree.stable) problem(result, 'snapshot-unstable', `${what}: the two walks of the tracked roots disagree${pids.length ? '' : ' with the arm gone'}`);
+  keepBlobs(ctx, ctx.dataRoot, tree.entries);
+  keepBlobs(ctx, ctx.home, tree.roots?.home?.entries ?? []);
+  // The walks' own window (the comparer's mtime rule: a file changed between two snapshots has its mtime between them).
+  tree.takenAt = { start, end: Date.now() };
   markEdge(ctx, tree);
   const roots = [['', fs.realpathSync(ctx.dataRoot)], ['home:', fs.realpathSync(ctx.home)]];
   const label = (file) => { for (const [prefix, root] of roots) if (file === root || file.startsWith(`${root}${path.sep}`)) return `${prefix}${path.relative(root, file) || '.'}`; return file; };
-  return { ...tree, openByArm: openFilesUnder(pids, [ctx.dataRoot, ctx.home]).map(({ pid, file }) => ({ pid, file: label(file) })) };
+  // The process-group look (observe.mjs): a member other than the arm itself is a child it started.
+  const others = ctx.arm.capabilities.observedFromOutside && ctx.proc ? pids.filter((pid) => pid !== ctx.proc.pid) : [];
+  const facts = others.length ? processFacts(others) : new Map();
+  const groupOthers = others.map((pid) => ({ pid, command: facts.get(pid)?.command ?? '(gone)' }));
+  return { ...tree, openByArm: openFilesUnder(pids, [ctx.dataRoot, ctx.home]).map(({ pid, file }) => ({ pid, file: label(file) })), ...(ctx.arm.capabilities.observedFromOutside ? { groupOthers } : {}) };
+}
+/**
+ * A candidate's effects as observed from outside since the last look (observe.mjs): requests to its stubs,
+ * children through its PATH shim and members of its process group in `snapshots`. Undefined for an arm the
+ * tap observes from inside. Hub events are not read (null: not observed).
+ */
+function observedEffects(ctx, snapshots = []) {
+  if (!ctx.arm.capabilities.observedFromOutside || !ctx.observation) return undefined;
+  const others = new Map();
+  for (const snapshot of snapshots) for (const item of snapshot?.groupOthers ?? []) others.set(item.pid, item);
+  const seen = ctx.observation.collect([...others.values()]);
+  return { seenBy: ctx.observation.seenBy, events: null, outbound: seen.outbound, children: seen.children };
+}
+const effectNames = (effects) => [...effects.outbound.map((effect) => `${effect.method} ${effect.target} (stub ${effect.stub})`), ...effects.children.map((effect) => `child ${effect.file} ${JSON.stringify(effect.args).slice(0, 200)} (${effect.seenBy})`)];
+/**
+ * The bytes of every file of a snapshot (BLOB_LIMIT or smaller), once per
+ * digest, for the comparer (supplied values inside a file are substituted, so
+ * a digest alone cannot be compared). Read while the walk's conditions hold
+ * (the arm frozen or gone); bytes whose digest is not the walk's are not kept
+ * (the comparer then says the file's bytes are unknown).
+ */
+export const BLOB_LIMIT = 1024 * 1024;
+function keepBlobs(ctx, root, entries) {
+  for (const entry of entries) {
+    if (entry.type !== 'file' || !entry.sha256 || entry.size > BLOB_LIMIT || ctx.blobs.has(entry.sha256)) continue;
+    let bytes;
+    try { bytes = fs.readFileSync(path.join(root, ...entry.path.split('/'))); } catch { continue; }
+    if (crypto.createHash('sha256').update(bytes).digest('hex') === entry.sha256) ctx.blobs.set(entry.sha256, bytes.toString('base64'));
+  }
 }
 /** Marks the entries the arm's edge writes (they are not the group's). */
 function markEdge(ctx, tree) { const edge = new Set(ctx.arm.capabilities.edgeFiles ?? []); for (const entry of tree.entries) if (edge.has(entry.path)) entry.edge = true; }
 /** The fingerprint of the group's part of a tree (the edge's files left out). */
-const groupFingerprint = (tree) => treeFingerprint({ entries: tree.entries.filter((entry) => !entry.edge), order: Object.fromEntries(Object.entries(tree.order).map(([dir, names]) => [dir, dir === '.' ? names.filter((name) => !tree.entries.some((entry) => entry.edge && entry.path === name)) : names])), roots: tree.roots });
+const groupFingerprint = (tree) => treeFingerprint({ entries: tree.entries.filter((entry) => !entry.edge), order: Object.fromEntries(Object.entries(tree.order).map(([dir, names]) => [dir, dir === '.' ? names.filter((name) => !tree.entries.some((entry) => entry.edge && entry.path === name)) : names])), rootMode: tree.rootMode, roots: tree.roots });
 /** A snapshot of trees no process can change (the arm gone); a walk that fails is a problem of the step. */
 function restingSnapshot(ctx, result, what) {
   trace(ctx, what);
@@ -427,6 +491,8 @@ async function recheck(ctx, current) {
       last.result.lateTree = snapshot;
     }
     if (snapshot.openByArm.length) problem(last.result, 'open-files', `at the next step the arm still holds ${snapshot.openByArm.map((entry) => entry.file).join(', ')}`);
+    const late = observedEffects(ctx, [snapshot]);
+    if (late && (late.outbound.length || late.children.length)) problem(last.result, 'late-effect', `effects observed after the quiescence claim: ${effectNames(late).join('; ')}`);
     ctx.last = { ...last, snapshot };
   } finally { idle.close(); }
 }
@@ -463,6 +529,8 @@ async function singleExchange(ctx, result, spec, { member = null } = {}) {
     record.s2 = await frozenSnapshot(ctx, result, 'S2');
     if (record.s2?.openByArm.length) problem(result, 'open-files', `after its quiescence claim the arm holds ${record.s2.openByArm.map((entry) => entry.file).join(', ')}`);
     record.tap = tapChecks(ctx, result, armSeq, spec, ctx.arm.records());
+    const effects = observedEffects(ctx, [record.s1, record.s2]);
+    if (effects) record.effects = effects;
     if (record.s2) ctx.last = { result, snapshot: record.s2, armSeq };
     return record;
   } finally {
@@ -518,6 +586,9 @@ async function concurrentStep(ctx, result, entry) {
     if (result.s2?.openByArm.length) problem(result, 'open-files', `after its quiescence claims the arm holds ${result.s2.openByArm.map((item) => item.file).join(', ')}`);
     const recordsNow = ctx.arm.records();
     records.forEach((record, index) => { record.tap = tapChecks(ctx, result, record.armSeq, members[index].request, recordsNow); });
+    // Observed from outside, a concurrent step's effects cannot be told apart by member: all go to the first.
+    const effects = observedEffects(ctx, [result.s1, result.s2]);
+    if (effects) records.forEach((record, index) => { record.effects = index === 0 ? effects : { ...effects, outbound: [], children: [] }; record.effectsOfStep = index === 0; });
     if (result.s2) ctx.last = { result, snapshot: result.s2, armSeq: records.at(-1).armSeq };
   } finally {
     trace(ctx, 'release');
@@ -551,6 +622,8 @@ async function admissibleSet(ctx, result, entry, members, before) {
   restoreRoots(ctx, after);
   if (!(await startArm(ctx, result))) return;
   const back = await frozenSnapshot(ctx, result, 'restored');
+  // Kept for the comparer: the next step's snapshots follow this one (the restore made new inodes and kept mtimes).
+  result.restored = back;
   if (back && groupFingerprint(back) !== groupFingerprint(concurrentState)) problem(result, 'restore', 'the tree restored after the serialisations is not the concurrent step\'s S2');
   ctx.last = { result, snapshot: back, armSeq: null };
   if (!result.admissible.some((serial) => serial.outcome === own)) problem(result, 'not-linearisable', `the concurrent result is none of the ${result.admissible.length} serialisations`);
@@ -585,6 +658,8 @@ async function killAfterStep(ctx, result, entry) {
     record.tap = ctx.arm.capabilities.tap && record.armSeq !== null ? ctx.arm.records().find((item) => item.type === 'exchange' && item.seq === record.armSeq) ?? null : null;
     result.nondeterministic = entry.point === 'response-end' ? null : `a kill at ${entry.point} races the arm: where it lands is the scheduler's (classified by a second reference, BH4)`;
     await stopArm(ctx, result, { kill: true });
+    const effects = observedEffects(ctx);
+    if (effects) record.effects = effects;
     record.s1 = restingSnapshot(ctx, result, 'S1');
   } finally {
     trace(ctx, 'release');
@@ -689,6 +764,8 @@ async function streamCloseStep(ctx, result, entry) {
   const answer = await claim(ctx, result, armSeq, `stream ${entry.stream}`);
   result.claim = answer;
   result.tree = await frozenSnapshot(ctx, result, 'S2');
+  const effects = observedEffects(ctx, [result.tree]);
+  if (effects) result.exchanges.at(-1).effects = effects;
   if (result.tree) ctx.last = { result, snapshot: result.tree, armSeq };
 }
 
@@ -714,7 +791,11 @@ export async function runScenario({ scenario, arm, run, label, limits = DRIVER_L
   ctx.home = run.makeDirectory(`${label}/home`);
   ctx.armValues.path('data-root', ctx.dataRoot);
   ctx.armValues.path('home', ctx.home);
-  ctx.stubUrls = {};
+  // Every arm gets the stubs, a candidate also the PATH shim and the process-group look (observe.mjs).
+  ctx.observation = await createObservation({ run, label, children: Boolean(arm.capabilities.observedFromOutside) });
+  ctx.stubUrls = ctx.observation.stubUrls;
+  for (const [name, port] of Object.entries(ctx.observation.stubPorts)) ctx.armValues.port(`stub.${name}`, port);
+  recording.mtimeGranularityMs = mtimeGranularity(ctx);
   // The fixture registers what it writes (an arm may echo it), so it runs before the registry is closed.
   await scenario.fixture(ctx.dataRoot, ctx.values);
   // The principals' own request headers are supplied values too (an arm may echo a forwarded address).
@@ -796,8 +877,17 @@ async function finishRecording(ctx, recording) {
     if (before && after) { const changes = treeChanges(before, after); if (changes.length) problem(last, 'final-tree', `the data root changed between the last step and the arm's exit: ${changes.join(', ')}`); }
   }
   if (ctx.held.size !== 0) { problem(last, 'held-descriptors', `${ctx.held.size} sets of descriptors still held at the end`); for (const held of ctx.held) held.release(); ctx.held.clear(); }
+  if (ctx.observation) {
+    const after = observedEffects(ctx);
+    if (after && (after.outbound.length || after.children.length)) problem(last, 'late-effect', `effects observed after the last step: ${effectNames(after).join('; ')}`);
+    await ctx.observation.close();
+    const sent = recording.steps.flatMap((step) => step.exchanges ?? []).filter((record) => record.response || record.point).length;
+    recording.observation = { seenBy: ctx.observation.seenBy, stubs: Object.keys(ctx.observation.stubUrls), shimmedNames: ctx.observation.shimmedNames, fromOutside: Boolean(ctx.arm.capabilities.observedFromOutside), exchanges: sent };
+  }
   recording.values = { scenario: ctx.values?.list() ?? [], arm: ctx.armValues?.list() ?? [] };
   recording.processes = ctx.processes;
+  recording.blobs = Object.fromEntries(ctx.blobs);
+  recording.edgeFiles = [...(ctx.arm.capabilities.edgeFiles ?? [])];
   recording.tapFiles = ctx.arm.tapFiles();
   recording.endedAt = Date.now();
   return recording;

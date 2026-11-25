@@ -9,7 +9,8 @@
 //   unrecordable  the reference against the JavaScript candidate adapter differs,
 //                 or the reference is not linearisable
 // Exit codes:
-//   0   every row passed or waived, and at least one row passed
+//   0   every row passed or waived, and at least one row that judged an exchange passed (a row
+//       about the whole recording, `whole: true`, never counts for that)
 //   1   any failed row (a failure is never waivable)
 //   2   anything else not waived: an inconclusive, unstable or unrecordable row,
 //       a census gap, a waiver that waives nothing, or zero rows
@@ -67,7 +68,7 @@ export function waiverProblems(waivers) {
  * `waived` (the reason) or null, and `problems` lists waiver and census
  * problems in the order they decide the exit.
  */
-export function judgeRun({ rows, waivers = {}, gaps = [] }) {
+export function judgeRun({ rows, waivers = {}, gaps = [], limits = [] }) {
   validateRows(rows);
   const tableProblems = waiverProblems(waivers);
   const byId = new Map(rows.map((row) => [row.id, row]));
@@ -79,6 +80,8 @@ export function judgeRun({ rows, waivers = {}, gaps = [] }) {
     used.add(row.id);
     if (row.outcome === 'passed') { waiverFailures.push(`waiver ${row.id} waives nothing: the row passed`); return { ...row, waived: null }; }
     if (row.outcome === 'failed') { waiverFailures.push(`waiver ${row.id} cannot waive a failure`); return { ...row, waived: null }; }
+    // What the judged arm did is never waived: a row with any of its differences or faults stays open.
+    if (row.judged && (row.judged.differences > 0 || row.judged.faults?.length)) { waiverFailures.push(`waiver ${row.id} cannot cover a row with ${row.judged.differences} differences and faults [${(row.judged.faults ?? []).join(', ')}] of the judged arm`); return { ...row, waived: null }; }
     if (waiver.outcome !== row.outcome) { waiverFailures.push(`waiver ${row.id} covers ${waiver.outcome}, but the row is ${row.outcome}`); return { ...row, waived: null }; }
     if (waiver.checks) {
       const checks = row.checks ?? [];
@@ -91,6 +94,8 @@ export function judgeRun({ rows, waivers = {}, gaps = [] }) {
   const counts = Object.fromEntries(OUTCOMES.map((outcome) => [outcome, 0]));
   let waived = 0;
   for (const row of judged) { counts[row.outcome] += 1; if (row.waived) waived += 1; }
+  // "At least one passed" means a row that judged an exchange: a row about the whole recording (`whole`) never counts.
+  const passedExchanges = judged.filter((row) => row.outcome === 'passed' && !row.whole).length;
   const census = gaps.map((gap) => `census gap: ${gap}`);
   const open = judged.filter((row) => row.outcome !== 'passed' && row.outcome !== 'failed' && !row.waived);
   let exit;
@@ -98,9 +103,9 @@ export function judgeRun({ rows, waivers = {}, gaps = [] }) {
   if (counts.failed) { exit = EXIT.failed; verdict = 'FAILED'; }
   else if (judged.length === 0) { exit = EXIT.incomplete; verdict = 'NOTHING RECORDED'; }
   else if (open.length || waiverFailures.length || census.length) { exit = EXIT.incomplete; verdict = 'INCOMPLETE'; }
-  else if (counts.passed === 0) { exit = EXIT.incomplete; verdict = 'NOTHING JUDGED'; }
+  else if (passedExchanges === 0) { exit = EXIT.incomplete; verdict = 'NOTHING JUDGED'; }
   else { exit = EXIT.passed; verdict = 'passed'; }
-  return { exit, verdict, counts: { rows: judged.length, ...counts, waived, waivers: Object.keys(waivers).length, gaps: gaps.length }, rows: judged, problems: [...waiverFailures, ...census] };
+  return { exit, verdict, counts: { rows: judged.length, ...counts, waived, waivers: Object.keys(waivers).length, gaps: gaps.length }, rows: judged, problems: [...waiverFailures, ...census], limits };
 }
 
 const MARK = Object.freeze({ passed: 'ok  ', failed: 'FAIL', inconclusive: 'INCONCLUSIVE', unstable: 'UNSTABLE', unrecordable: 'UNRECORDABLE' });
@@ -119,6 +124,8 @@ export function reportLines(judgement, options) {
     for (const difference of row.differences ?? []) lines.push(`    ${typeof difference === 'string' ? difference : JSON.stringify(difference)}`);
   }
   for (const problem of judgement.problems) lines.push(`PROBLEM ${problem}`);
+  // What the run cannot see is said in every summary, with how many judged things it applies to: never implied covered.
+  for (const limit of judgement.limits ?? []) lines.push(`LIMIT ${limit.name} (${limit.count} ${limit.unit ?? 'rows'}): ${limit.text}`);
   lines.push(lastLine(judgement, options));
   return lines;
 }

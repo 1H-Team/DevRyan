@@ -25,8 +25,8 @@ const TYPE = (stat) => (stat.isSymbolicLink() ? 'symlink' : stat.isDirectory() ?
 const digestFile = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
 /**
- * One walk of `root`: every entry below it (not the root itself) with its
- * relative path, type, permission bits, size, content digest (files), link
+ * One walk of `root`: the root's own permission bits (`rootMode`), and
+ * every entry below it with its relative path, type, permission bits, size, content digest (files), link
  * target (links), inode and mtime (recorded, never compared as values), and
  * each directory's names in the order the OS listed them. Links are never
  * followed.
@@ -51,12 +51,12 @@ export function walkTree(root, { digests = true } = {}) {
     }
   };
   visit('');
-  return { entries, order };
+  return { entries, order, rootMode: fs.lstatSync(root).mode & 0o7777 };
 }
 
 const factsOf = ({ ino: _ino, mtimeMs: _mtime, ...rest }) => rest;
 /** The part of a walk that two consistent walks must share (inode and mtime are facts of the walk, compared elsewhere by rule); the other tracked roots included. */
-export const treeFingerprint = (tree) => JSON.stringify({ entries: tree.entries.map(factsOf), order: tree.order, ...(tree.roots ? { roots: Object.fromEntries(Object.entries(tree.roots).map(([name, other]) => [name, { entries: other.entries.map(factsOf), order: other.order }])) } : {}) });
+export const treeFingerprint = (tree) => JSON.stringify({ entries: tree.entries.map(factsOf), order: tree.order, rootMode: tree.rootMode ?? null, ...(tree.roots ? { roots: Object.fromEntries(Object.entries(tree.roots).map(([name, other]) => [name, { entries: other.entries.map(factsOf), order: other.order, rootMode: other.rootMode ?? null }])) } : {}) });
 
 /**
  * A consistent snapshot: two walks that agree. Taken only when nothing can
@@ -87,6 +87,7 @@ export function treeChanges(before, after) {
     for (const [file, value] of was) if (now.get(file) !== value) changed.push(`${prefix}${file}`);
     for (const file of now.keys()) if (!was.has(file)) changed.push(`${prefix}${file}`);
     if (JSON.stringify(left?.order ?? {}) !== JSON.stringify(right?.order ?? {})) changed.push(`${prefix}(listing order)`);
+    if ((left?.rootMode ?? null) !== (right?.rootMode ?? null)) changed.push(`${prefix}(root mode)`);
   };
   compare(before, after, '');
   for (const name of new Set([...Object.keys(before.roots ?? {}), ...Object.keys(after.roots ?? {})])) compare(before.roots?.[name], after.roots?.[name], `${name}:`);
@@ -103,6 +104,7 @@ export function copyTree(root, into) {
 export function restoreTree(from, root) {
   for (const name of fs.readdirSync(root)) fs.rmSync(path.join(root, name), { recursive: true, force: true });
   for (const name of fs.readdirSync(from)) fs.cpSync(path.join(from, name), path.join(root, name), { recursive: true, verbatimSymlinks: true, preserveTimestamps: true });
+  fs.chmodSync(root, fs.statSync(from).mode & 0o7777);
 }
 
 // ------------------------------------------------------------------ held descriptors

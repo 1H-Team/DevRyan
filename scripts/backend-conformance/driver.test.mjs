@@ -162,7 +162,7 @@ test('every step kind against the fake: the driver\'s own sequence and the exact
   // The concurrent members overlapped on the wire; the kill was SIGKILL; HOME is a tracked root; the late window is named.
   assert.ok(steps.both.overlap.lastSent < steps.both.overlap.firstAnswer, JSON.stringify(steps.both.overlap));
   assert.deepEqual(steps.kill.exchanges[0].exit, { code: null, signal: 'SIGKILL' });
-  assert.deepEqual(steps.put.exchanges[0].s2.roots.home, { entries: [], order: { '.': [] } });
+  assert.deepEqual(steps.put.exchanges[0].s2.roots.home, { entries: [], order: { '.': [] }, rootMode: 0o700 });
   assert.equal(steps.put.lateUntil, 'get-managed');
   assert.equal(recording.steps.at(-1).lateUntil, '(the arm\'s exit)');
   // Every row is recorded and awaiting comparison; none passed.
@@ -208,7 +208,8 @@ test('each misbehaviour of the arm is caught by its named check', DEADLINE, asyn
     { name: 'a descriptor kept after the claim', scenario: PUT_GET, misbehave: ['leak-descriptor'], expect: ['put:open-files', 'put:open-files', 'get:open-files', 'get:open-files'] },
     { name: 'a crash in the middle of a request', scenario: PUT_GET, misbehave: ['crash-on-put'], expect: ['put:response-incomplete', 'put:arm-died', 'get:arm-died'], outcomes: { put: 'failed', get: 'failed' } },
     { name: 'a write after the last step', scenario: PUT_GET, misbehave: ['write-at-exit'], expect: ['get:final-tree'] },
-    { name: 'a process that survives a restart', scenario: RESTART, misbehave: ['survive-restart'], expect: ['restart:group-survived', 'restart:group-survived'] },
+    { name: 'a process that survives a restart', scenario: RESTART, misbehave: ['survive-restart'], expect: ['(start):late-effect', 'restart:group-survived', 'restart:group-survived', 'restart:late-effect'] },
+    // (the survivor is also a child the candidate started: the process-group look sees it after the start and after the restart)
     { name: 'a stream with items after its barrier', scenario: TRAILING, misbehave: [], expect: ['close:stream-trailing'] },
     // The fake never ends this stream: the deadline names it, and the stream is still open at the end.
     { name: 'a stream that never ends', scenario: ENDLESS, misbehave: [], limits: { streamEndMs: 500 }, expect: ['end:deadline', 'open:stream-unclosed'] },

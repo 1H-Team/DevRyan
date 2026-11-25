@@ -10,7 +10,9 @@
 //                         group's exchange from inside), admissible (the driver may run every order of a
 //                         concurrent step on it), envelope (it takes the principal as an envelope header),
 //                         edgeFiles (data-root files its edge writes, not the group) }
-//   start({ dataRoot, home, stubs }) -> { pid, pgid, listen }   on the same roots after a restart
+//   start({ dataRoot, home, stubs, environment }) -> { pid, pgid, listen }   on the same roots after a
+//                         restart; `environment` is the observation's (observe.mjs: the stubs' addresses and,
+//                         for a candidate, the PATH shim), added to the arm's own
 //   prepare(request, { seq, envelope }) -> request      what goes on the wire (a candidate gets the
 //                         envelope and sequence headers; the reference gets the request as the client sent it)
 //   seqFor(result)        the arm's sequence number of an exchange the driver made (the reference:
@@ -64,6 +66,16 @@ export function readRecords(file) {
  * serialisations) leave them out, and so must a comparer of R against C.
  */
 export const REFERENCE_EDGE_FILES = Object.freeze(['multi-user-vault.json']);
+/**
+ * Files the reference's edge writes once, at the first start of a data root,
+ * and never again: the vault's key (random bytes, so a second reference on a
+ * fresh root has other bytes). They are not the group's, a candidate has no
+ * edge to write them, and the comparer leaves them out of every
+ * comparison of trees after checking, in each reference recording, that no
+ * step after the first start changed them (a change is a difference of that
+ * step); a candidate that writes one fails (`tree.<path>`, extra).
+ */
+export const REFERENCE_EDGE_STARTUP_FILES = Object.freeze(['multi-user-vault.key']);
 
 /**
  * The reference arm: the landed group host (BH1) with the tap, for group
@@ -76,10 +88,10 @@ export function referenceArm({ run, name, group, table = null, label, env = proc
   return {
     role: 'reference', label,
     capabilities: { principals: new Set(['local-admin', 'remote-unauthenticated']), tap: true, admissible: true, envelope: false, edgeFiles: REFERENCE_EDGE_FILES },
-    async start({ dataRoot, home, stubs = {} }) {
+    async start({ dataRoot, home, stubs = {}, environment = {} }) {
       starts += 1;
       // The host checks the guard's isolation with the guard's HOME, then takes the run's (--home): group-host.mjs.
-      host = await withArmUmask(() => startGroupHost({ run, name, group, label: `${label}/process-${starts}`, table, env: { ...env, ...ARM_ENVIRONMENT }, dataRoot, home, stubs, processGroup: true, limits: { readyMs: limits.readyMs, controlMs: limits.controlMs, stopMs: limits.stopMs } }));
+      host = await withArmUmask(() => startGroupHost({ run, name, group, label: `${label}/process-${starts}`, table, env: { ...env, ...ARM_ENVIRONMENT, ...environment }, dataRoot, home, stubs, processGroup: true, limits: { readyMs: limits.readyMs, controlMs: limits.controlMs, stopMs: limits.stopMs } }));
       tapFiles.push(host.tapFile);
       return { pid: host.child.pid, pgid: host.child.pid, listen: host.ready.listen, control: host.ready.control };
     },
@@ -143,11 +155,11 @@ export function candidateArm({ command, label, env = process.env, principals = [
   const waitExit = (ms) => Promise.race([exited, new Promise((resolve) => { const timer = setTimeout(() => resolve(null), ms); timer.unref?.(); })]);
   return {
     role: 'candidate', label,
-    capabilities: { principals: new Set(principals), tap: false, admissible: false, envelope: true, edgeFiles: [] },
-    async start({ dataRoot, home, stubs = {} }) {
+    capabilities: { principals: new Set(principals), tap: false, admissible: false, envelope: true, edgeFiles: [], observedFromOutside: true },
+    async start({ dataRoot, home, stubs = {}, environment = {} }) {
       const [file, ...args] = command;
       child = withArmUmask(() => spawn(file, [...args, '--listen', '127.0.0.1:0', '--control', '127.0.0.1:0', '--data-root', dataRoot, '--home', home, ...Object.entries(stubs).flatMap(([name, url]) => ['--stub', `${name}=${url}`])],
-        { cwd: REPOSITORY_ROOT, env: { ...env, ...ARM_ENVIRONMENT, ...homeVariables(home) }, stdio: ['pipe', 'pipe', 'pipe'], detached: true }));
+        { cwd: REPOSITORY_ROOT, env: { ...env, ...ARM_ENVIRONMENT, ...homeVariables(home), ...environment }, stdio: ['pipe', 'pipe', 'pipe'], detached: true }));
       child.stdin.on('error', () => {});
       let stderr = '';
       child.stderr.setEncoding('utf8');
