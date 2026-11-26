@@ -25,12 +25,19 @@
 // settlement the scheduler gave), for every other item its first event. A
 // member called inside the prefix whose result lies past it is `call-only`,
 // counted apart and never judged. A case that shows an item only at or after
-// its first busy input, or is not compared at all, only recorded it.
+// its first busy input, or is not compared at all, only recorded it. A member
+// or control method whose every compared answer, over the whole corpus, is a
+// refusal (a throw or a rejection) or one and the same value given with
+// nothing of the call's work between the call and its answer (no port call,
+// timer, abort, settlement or other answer of its construction: only the
+// clock, options and environment read) is `shallow`: its answers do not show
+// that it does its work (a refusal at the door, or a constant, would give the
+// same), so it is counted and printed apart and never judged.
 //
 // What fails (exit 1): an item of the contract with no judged case and no
-// waiver; a waiver of an item some case judges, of nothing the contract lists,
+// waiver, a shallow one among them; a waiver of an item some case judges, of nothing the contract lists,
 // not in the baseline (the waiver list only shrinks), or whose stated class
-// (unreached, past-busy, call-only, uncompared) the corpus does not bear out;
+// (unreached, past-busy, call-only, uncompared, shallow) the corpus does not bear out;
 // a contract that is not the scheduler's (its members and control methods, as
 // an instance it builds has them; its ports and options, as the source reads
 // them; the event kinds the recorder writes; the placement marks of the trace
@@ -74,28 +81,17 @@ export const WAIVER_CLASSES = Object.freeze({
   'past-busy': { means: 'every compared case shows it only at or after its first busy input', needs: ['placed test', 'scenario'] },
   'call-only': { means: 'a compared prefix holds its call, none its result', needs: ['placed test', 'scenario'] },
   uncompared: { means: 'only cases the closure did not compare show it', needs: ['placed test', 'scenario'] },
+  shallow: { means: 'every compared answer is a refusal or one value answered with nothing of its work between', needs: ['placed test', 'scenario'] },
 });
 
 /**
  * The waivers that may exist (`kind:name`): the waiver list only shrinks. A
  * waiver not named here fails `waiver-new`; one named here that is gone is fine.
- * `member:confirmAgentHandoff` joined at fix round 1, when a member came to be
- * judged by its result instead of its call.
+ * Package O0e2 gave every other waived item a judged scenario and removed it
+ * from this list (55 to 1), so a closed waiver cannot come back unreviewed.
  */
 export const WAIVER_BASELINE = Object.freeze([
-  'member:acceptPrimaryPrompt', 'member:cancelAutoResumeForSession', 'member:claimPrimaryStepBudgetWarning', 'member:confirmAgentHandoff',
-  'member:claimProviderRecoveryContinuation', 'member:getObjectiveRequiredChecks', 'member:inspectAgentHandoff', 'member:inspectDispatchBarrier',
-  'member:listReadyProviderRecoveryContinuations', 'member:listResultEnvelopes', 'member:readOperatorStop', 'member:recordPrimaryStep',
-  'member:releaseProviderRecoveryContinuation', 'member:setResultAutoResume', 'member:verifyRecoveredCollection', 'member:verifyTaskDispatch',
-  'member:verifyTaskSettlement', 'member:waitForAnyTask', 'member:waitForResultAction', 'member:waitForResultCommit',
-  'member:withNativePromptContext', 'member:withdrawOperatorStop', 'member:getChildAssignment', 'member:getRequiredCheckTask',
-  'member:recordRequiredCheck', 'member:recordRequiredChecks', 'member:waiveRequiredChecks', 'member:getRequiredCheckTasks',
-  'control:readPriorFailureReason', 'control:assertPrerequisites', 'control:recordTransportRecovery', 'control:readPrimaryStepBudget',
-  'port:logger.error', 'port:onBarrierChange', 'port:onRequiredCheckReceipt', 'port:inspectRequiredChecks', 'port:onPersistenceObservation',
-  'option:inspectRequiredChecks', 'option:onBarrierChange', 'option:onRequiredCheckReceipt', 'option:startingLeaseTimeoutMs',
-  'option:onPersistenceObservation', 'input:in callback', 'input:out throw', 'gap:reconcile-retry-pending', 'gap:handoff-abort-timeout',
-  'gap:restart-starting-with-deadline', 'gap:getTask-missing', 'gap:initialize-after-shutdown', 'gap:publish-failure', 'gap:failed-mutation-timing',
-  'gap:fake-timers-case', 'gap:publication-beside-launch', 'gap:restart-with-operator-stop', 'gap:restart-during-runtime-restart',
+  'gap:fake-timers-case',
 ]);
 
 /** Every named check of a census run: the failures (exit 1) and what is inconclusive (exit 2). */
@@ -108,11 +104,12 @@ export const CENSUS_CHECKS = Object.freeze({
   'census-place': 'a placement mark that no judged case holds inside its compared prefix',
   'census-launch': 'a launch situation the oracles need that no judged case shows',
   'census-gap': 'a code path a review found unreached that no judged case reaches',
+  'census-shallow': 'a member or control method whose every compared answer is a refusal or one value answered with nothing of its work between (shallow), with no waiver',
   'waiver-exercised': 'a waiver of an item a judged case exercises: remove it (stale)',
   'waiver-unknown': 'a waiver of nothing the contract lists (stale)',
   'waiver-new': 'a waiver that is not in the baseline: the waiver list only shrinks',
   'waiver-invalid': 'a waiver without a kind, a name, a class, a fitting need or a reason, or one given twice',
-  'waiver-class': 'a waiver whose stated class (unreached, past-busy, call-only, uncompared) the corpus does not bear out',
+  'waiver-class': 'a waiver whose stated class (unreached, past-busy, call-only, uncompared, shallow) the corpus does not bear out',
   'contract-invalid': 'the contract file is not well formed',
   'contract-members': 'the contract\'s members are not the members an instance of the scheduler has',
   'contract-control': 'the contract\'s control methods are not the methods of the control object the scheduler hands its executor',
@@ -369,6 +366,27 @@ export function caseItems(view) {
   return found;
 }
 
+/** The inputs a call may read between its call and its answer and still be answered with nothing of its work between. */
+const BARE_READS = new Set(['read', 'clock', 'env']);
+/**
+ * How the answer of one call shows its work: `refusal` (a throw or a rejection), `bare` (nothing of the call's
+ * construction between the call and its answer but what it read, other inputs of its group and promise returns),
+ * or `deep` (a port call, a timer, an abort, a draw, another answer or settlement lies between).
+ */
+export function answerKind(view, call) {
+  if (call.outcome === 'throw' || call.outcome === 'reject') return 'refusal';
+  for (let index = call.start + 1; index < call.end; index += 1) {
+    const event = view.events[index];
+    if (event.c !== call.event.c || BARE_READS.has(event.kind)) continue;
+    if (event.dir === 'in' && ['call', 'control', 'callback', 'step'].includes(event.kind)) continue;
+    if (event.kind === 'return' && (event.head.promise || event.head.call === call.event.head.call)) continue;
+    return 'deep';
+  }
+  return 'bare';
+}
+/** A bare answer's value as one comparable text (a value that cannot be written is its own). */
+const valueKey = (value, index) => { try { return JSON.stringify(value, (key, item) => (item === undefined ? '$undefined' : item)) ?? '$undefined'; } catch { return `$unwritable ${index}`; } };
+
 // ------------------------------------------------------------------ the contract
 
 /** Reads and checks a contract file (`checkContract`). Returns `{ contract, problems }`. */
@@ -419,6 +437,7 @@ export function checkWaivers(parsed) {
     if (!Object.hasOwn(WAIVER_CLASSES, waiver.class)) { problems.push(`${label} (${key}): a class of ${Object.keys(WAIVER_CLASSES).join(', ')} is required`); continue; }
     if (!kind.needs.includes(waiver.needs)) { problems.push(`${label} (${key}): class ${waiver.class} is closed by ${kind.needs.join(' or ')}, not ${JSON.stringify(waiver.needs)}`); continue; }
     if (waiver.class === 'call-only' && !ANSWERED.has(waiver.kind)) { problems.push(`${label} (${key}): only a member or a control method can be call-only`); continue; }
+    if (waiver.class === 'shallow' && !ANSWERED.has(waiver.kind)) { problems.push(`${label} (${key}): only a member or a control method can be shallow`); continue; }
     if (seen.has(key)) { problems.push(`${label}: ${key} is waived twice`); continue; }
     seen.add(key);
     waivers.push({ ...waiver, key });
@@ -571,8 +590,8 @@ function checkSurface(contract, surface, fail) {
   if (!sameSet(contract.places, surface.places)) fail('contract-places', '(places)', drift(`the trace format has ${surface.places.length} marks a compared prefix can hold, the contract lists ${contract.places.length}`, surface.places, contract.places));
 }
 
-/** The class the corpus gives an item that no case judges (WAIVER_CLASSES). */
-const classOf = (item) => (item.cases === 0 ? 'unreached' : item.callOnly > 0 ? 'call-only' : item.pastBusy > 0 ? 'past-busy' : 'uncompared');
+/** The class the corpus gives an item that no case judges, or that is shallow (WAIVER_CLASSES). */
+const classOf = (item) => (item.shallow ? 'shallow' : item.cases === 0 ? 'unreached' : item.callOnly > 0 ? 'call-only' : item.pastBusy > 0 ? 'past-busy' : 'uncompared');
 /** Whether a part of the corpus already refutes a waiver's class (each refutation holds on the whole corpus too). */
 const refutes = (stated, item) => (stated === 'unreached' ? item.cases > 0 : stated === 'past-busy' || stated === 'uncompared' ? item.callOnly > 0 || (stated === 'uncompared' && item.pastBusy > 0) : false);
 
@@ -593,8 +612,9 @@ export function runCensus({ contract, waivers = [], waiverProblems = [], contain
   const problems = [];
   const fail = (check, name, detail) => failures.push({ check, name, detail });
   const inconclusive = (check, detail) => problems.push({ check, detail });
-  const items = new Map(); // `kind:name` -> { kind, name, cases, judged, callOnly, pastBusy, uncompared, recorded, example }
-  for (const kind of KINDS) for (const name of contract[LISTS[kind]]) items.set(`${kind}:${name}`, { kind, name, cases: 0, judged: 0, callOnly: 0, pastBusy: 0, uncompared: 0, recorded: 0, example: null });
+  const items = new Map(); // `kind:name` -> { kind, name, cases, judged, callOnly, pastBusy, uncompared, recorded, example, answers?, shallow? }
+  for (const kind of KINDS) for (const name of contract[LISTS[kind]]) items.set(`${kind}:${name}`, { kind, name, cases: 0, judged: 0, callOnly: 0, pastBusy: 0, uncompared: 0, recorded: 0, example: null, ...(ANSWERED.has(kind) ? { answers: { refusal: 0, bare: 0, deep: 0 }, shallow: false } : {}) });
+  const bareValues = new Map(); // `kind:name` -> the texts of its bare answers
   const unknown = new Map(); // `kind:name` -> cases
   const varies = { cases: 0, compared: 0, whole: 0, keys: {} };
   const info = { notes: {}, busy: 0, statuses: {}, transitions: {}, errors: {}, outcomes: {} };
@@ -655,6 +675,19 @@ export function runCensus({ contract, waivers = [], waiverProblems = [], contain
         if (judged && at < limit) { item.judged += 1; item.example ??= record.id; } else if (judged && call < limit) item.callOnly += 1;
         else if (judged) { item.pastBusy += 1; item.recorded += 1; } else { item.uncompared += 1; item.recorded += 1; }
       }
+      // Every compared answer of a member or a control method, by how it shows the call's work.
+      if (judged) {
+        for (const [kind, list, field] of [['member', view.calls.filter((entry) => entry.event.head.call > 0), 'member'], ['control', view.controls, 'method']]) {
+          for (const entry of list) {
+            const key = `${kind}:${entry[field]}`;
+            const item = items.get(key);
+            if (!item || !(entry.end < limit)) continue;
+            const how = answerKind(view, entry);
+            item.answers[how] += 1;
+            if (how === 'bare') { if (!bareValues.has(key)) bareValues.set(key, new Set()); bareValues.get(key).add(valueKey(entry.value, entry.end)); }
+          }
+        }
+      }
       // OD2: a compared prefix that reads one key with two values.
       if (judged) {
         varies.compared += 1;
@@ -702,6 +735,9 @@ export function runCensus({ contract, waivers = [], waiverProblems = [], contain
   if (damaged.length) inconclusive('corpus-manifest', `${damaged.length} problem(s) with the containers against their recording's manifest: ${damaged.slice(0, 6).join('; ')}${damaged.length > 6 ? '; …' : ''}`);
   const complete = missing.length === 0 && damaged.length === 0 && recordedCases > 0;
 
+  // Shallow: judged, but every compared answer a refusal or one bare value.
+  for (const [key, item] of items) if (item.answers) item.shallow = item.judged > 0 && item.answers.deep === 0 && (bareValues.get(key)?.size ?? 0) <= 1;
+
   // Waivers.
   for (const problem of waiverProblems) fail('waiver-invalid', '(waivers)', problem);
   const waived = new Map(waivers.map((waiver) => [waiver.key, waiver]));
@@ -709,13 +745,18 @@ export function runCensus({ contract, waivers = [], waiverProblems = [], contain
     const item = items.get(waiver.key);
     if (baseline && !baseline.includes(waiver.key)) fail('waiver-new', waiver.key, `${waiver.key} is waived but not in the baseline: the waiver list only shrinks; give the item a judged case instead`);
     if (!item) { fail('waiver-unknown', waiver.key, `${waiver.key} is waived, but the contract lists no such ${waiver.kind}: remove the waiver`); continue; }
-    if (item.judged > 0) { fail('waiver-exercised', waiver.key, `${waiver.key} is waived ("${waiver.reason}") but ${item.judged} judged case(s) exercise it (first ${item.example}): remove the waiver`); continue; }
+    if (item.judged > 0 && !item.shallow) { fail('waiver-exercised', waiver.key, `${waiver.key} is waived ("${waiver.reason}") but ${item.judged} judged case(s) exercise it (first ${item.example}): remove the waiver`); continue; }
     const counts = `${item.cases} case(s), ${item.callOnly} call-only, ${item.pastBusy} past a busy input, ${item.uncompared} uncompared`;
     if (complete ? classOf(item) !== waiver.class : refutes(waiver.class, item)) fail('waiver-class', waiver.key, `${waiver.key} is waived as ${waiver.class} (${WAIVER_CLASSES[waiver.class]?.means}), but the corpus shows ${counts}${complete ? `: it is ${classOf(item)}` : ''}`);
   }
-  // Items with no judged case: failures on the whole corpus only.
-  const unjudged = [...items.values()].filter((item) => item.judged === 0 && !waived.has(`${item.kind}:${item.name}`));
-  if (complete) for (const item of unjudged) fail(`census-${item.kind}`, `${item.kind}:${item.name}`, `${item.kind} ${item.name} has no judged case (${item.cases} case(s) show it: ${item.callOnly} call-only, ${item.pastBusy} past a busy input, ${item.uncompared} uncompared; class ${classOf(item)}) and no waiver`);
+  // Items with no judged case, and shallow ones: failures on the whole corpus only.
+  const unjudged = [...items.values()].filter((item) => (item.judged === 0 || item.shallow) && !waived.has(`${item.kind}:${item.name}`));
+  if (complete) {
+    for (const item of unjudged) {
+      if (item.shallow) fail('census-shallow', `${item.kind}:${item.name}`, `${item.kind} ${item.name} is shallow: its ${item.judged} judged case(s) answer only ${item.answers.refusal} refusal(s) and ${item.answers.bare} bare answer(s) of one value, nothing that shows its work, and it has no waiver`);
+      else fail(`census-${item.kind}`, `${item.kind}:${item.name}`, `${item.kind} ${item.name} has no judged case (${item.cases} case(s) show it: ${item.callOnly} call-only, ${item.pastBusy} past a busy input, ${item.uncompared} uncompared; class ${classOf(item)}) and no waiver`);
+    }
+  }
 
   if (closureCode === EXIT.fail) fail('closure', '(closure)', 'the closure check failed: see its problems');
   else if (closureCode !== EXIT.pass) inconclusive('closure-inconclusive', `the closure check exited ${closureCode}`);
@@ -734,12 +775,15 @@ export function censusLines(report, { waivers = [], plants = null, code = report
   const waived = new Map(waivers.map((waiver) => [waiver.key, waiver]));
   for (const kind of KINDS) {
     const list = report.items.filter((item) => item.kind === kind);
-    const judged = list.filter((item) => item.judged > 0).length;
+    const judged = list.filter((item) => item.judged > 0 && !item.shallow).length;
+    const shallow = list.filter((item) => item.shallow).length;
     const callOnly = list.filter((item) => item.judged === 0 && item.callOnly > 0).length;
-    lines.push(`${kind} (${judged} of ${list.length} judged${ANSWERED.has(kind) ? `, ${callOnly} call-only` : ''}):`);
+    lines.push(`${kind} (${judged} of ${list.length} judged${ANSWERED.has(kind) ? `, ${shallow} shallow, ${callOnly} call-only` : ''}):`);
     for (const item of list) {
       const waiver = waived.get(`${item.kind}:${item.name}`);
-      lines.push(`  ${item.name}: ${item.cases} cases, ${item.judged} judged, ${ANSWERED.has(kind) ? `${item.callOnly} call-only, ` : ''}${item.pastBusy} past busy, ${item.uncompared} uncompared${item.judged ? '' : waiver ? ` (waived ${waiver.class}, needs ${waiver.needs}: ${waiver.reason})` : ' (NOT JUDGED)'}`);
+      const answers = item.answers ? `; answers ${item.answers.deep} deep, ${item.answers.bare} bare, ${item.answers.refusal} refusals` : '';
+      const verdict = item.judged && !item.shallow ? '' : waiver ? ` (waived ${waiver.class}, needs ${waiver.needs}: ${waiver.reason})` : item.shallow ? ' (SHALLOW)' : ' (NOT JUDGED)';
+      lines.push(`  ${item.name}: ${item.cases} cases, ${item.judged} judged, ${ANSWERED.has(kind) ? `${item.callOnly} call-only, ` : ''}${item.pastBusy} past busy, ${item.uncompared} uncompared${answers}${verdict}`);
     }
   }
   lines.push(`option-varies: ${report.varies.cases} of ${report.varies.compared} judged cases read a key with two values in their compared prefix (${report.varies.whole} counting events past a busy input)${Object.keys(report.varies.keys).length ? `; by key ${JSON.stringify(report.varies.keys)}` : ''}`);
@@ -748,11 +792,12 @@ export function censusLines(report, { waivers = [], plants = null, code = report
   lines.push(`error codes ${JSON.stringify(report.info.errors)}`);
   for (const failure of report.failures) lines.push(`FAILED (${failure.check}) ${failure.name}: ${failure.detail}`);
   for (const problem of report.problems) lines.push(`inconclusive (${problem.check}): ${problem.detail}`);
-  const judgedItems = report.items.filter((item) => item.judged > 0).length;
+  const judgedItems = report.items.filter((item) => item.judged > 0 && !item.shallow).length;
+  const shallowItems = report.items.filter((item) => item.shallow).length;
   const callOnly = report.items.filter((item) => item.judged === 0 && item.callOnly > 0).length;
   const verdict = code === EXIT.pass ? 'complete' : code === EXIT.fail ? 'FAILED' : 'INCONCLUSIVE';
   const planted = !plants ? '' : plants.notRun ? '; plants not run' : `; plants: ${plants.copies} planted copies, ${plants.replayer} planted replayer bugs, ${plants.problems} problems`;
-  lines.push(`scheduler census ${verdict}: ${report.cases.all} cases, ${report.cases.recorded} recorded, ${report.cases.judged} judged; items ${judgedItems} of ${report.items.length} judged, ${callOnly} call-only, ${waivers.length} waived, ${report.unjudged.length} unjudged without a waiver; option-varies ${report.varies.cases}; ${report.failures.length} failures, ${report.problems.length} inconclusive${planted}; exit ${code}`);
+  lines.push(`scheduler census ${verdict}: ${report.cases.all} cases, ${report.cases.recorded} recorded, ${report.cases.judged} judged; items ${judgedItems} of ${report.items.length} judged, ${shallowItems} shallow, ${callOnly} call-only, ${waivers.length} waived, ${report.unjudged.length} unjudged without a waiver; option-varies ${report.varies.cases}; ${report.failures.length} failures, ${report.problems.length} inconclusive${planted}; exit ${code}`);
   return lines;
 }
 

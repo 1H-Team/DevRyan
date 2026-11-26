@@ -283,6 +283,42 @@ const CHECKS = {
     return want(on(late), 'member', 'confirmAgentHandoff', 0, 1) ?? want(on(late), 'control', 'markAccepted', 0, 1) ?? want(on(early), 'member', 'confirmAgentHandoff', 1, 0)
       ?? want(on(early), 'control', 'markAccepted', 1, 0) ?? want(on(never), 'member', 'confirmAgentHandoff', 0, 1);
   },
+  // Fix round 1 of O0e2: a member or control method whose compared answers are only refusals, or one value answered with
+  // nothing of its work between, is shallow: counted apart, never judged, failing census-shallow on the whole corpus unless waived.
+  shallow: async (module) => {
+    const barrier = (value, { outcome = 'resolve', between = null } = {}) => (x) => { const h = helpers(x); const call = h.call('inspectDispatchBarrier'); if (between) between(h); h.settle(call, outcome, value); };
+    const clear = { state: 'clear', taskIds: [] };
+    const on = (...builds) => {
+      const reads = builds.map((build, index) => handCase(`shallow ${index}`, build));
+      const report = module.runCensus({ contract: realContract.contract, containers: reads.map((read) => ({ source: 'hand', read })), results: new Map(reads.flatMap((read) => [...handResults(read)])), expected: null, surface: null, baseline: null });
+      return item(report, 'member', 'inspectDispatchBarrier');
+    };
+    const want = (got, shallow, what) => (got?.judged > 0 && got.shallow === shallow ? null : `${what}: ${JSON.stringify(got && { judged: got.judged, shallow: got.shallow, answers: got.answers })}, want shallow ${shallow}`);
+    const found = want(on(barrier(error('missing_root_session_id', 'x'), { outcome: 'reject' })), true, 'refusals only')
+      ?? want(on(barrier(clear), barrier(clear)), true, 'one value twice, nothing between')
+      ?? want(on(barrier(clear), barrier({ state: 'active', taskIds: ['dvr_task_a'] })), false, 'two values')
+      ?? want(on(barrier(clear, { between: (h) => h.port('persistence.save', [{}], { answer: 'return', value: null }) })), false, 'one value with a port call between')
+      ?? want(on(barrier(clear, { between: (h) => h.read('now', 1) })), true, 'one value with only a read between')
+      ?? want(on(barrier(clear), barrier(error('missing_root_session_id', 'x'), { outcome: 'reject' })), true, 'one value and a refusal');
+    if (found) return found;
+    // The toy's shallow members (waived as shallow), on the whole toy: judged by cases, never counted judged, and failing census-shallow without their waiver.
+    const corpus = await toyCorpus();
+    const report = toyCensus(module, corpus);
+    if (report.failures.length) return `the toy with its shallow waivers fails: ${JSON.stringify(report.failures.slice(0, 2))}`;
+    for (const name of ['copy', 'fail', 'ownWork']) if (!item(report, 'member', name)?.shallow) return `the toy's ${name} is not shallow: ${JSON.stringify(item(report, 'member', name))}`;
+    if (item(report, 'member', 'echo')?.shallow !== false) return 'the toy\'s echo, answered with several values, is shallow';
+    const unwaived = toyCensus(module, corpus, { waivers: toyWaivers.waivers.filter((waiver) => waiver.key !== 'member:fail') });
+    if (!has(unwaived, 'census-shallow', 'member:fail') || unwaived.code !== EXIT.fail) return 'a shallow member without its waiver does not fail census-shallow';
+    const misclassed = toyCensus(module, corpus, { waivers: toyWaivers.waivers.map((waiver) => (waiver.key === 'member:fail' ? { ...waiver, class: 'past-busy' } : waiver)) });
+    if (!has(misclassed, 'waiver-class', 'member:fail')) return 'a shallow member waived as past-busy is accepted';
+    const stale = [...toyWaivers.waivers, { kind: 'member', name: 'echo', class: 'shallow', needs: 'placed test', reason: 'planted', key: 'member:echo' }];
+    if (!has(toyCensus(module, corpus, { waivers: stale, baseline: stale.map((waiver) => waiver.key) }), 'waiver-exercised', 'member:echo')) return 'a shallow waiver of a judged member is accepted';
+    const lines = module.censusLines(report, { waivers: toyWaivers.waivers });
+    const judged = report.items.filter((entry) => entry.judged > 0 && !entry.shallow).length;
+    const members = report.items.filter((entry) => entry.kind === 'member' && entry.judged > 0 && !entry.shallow).length;
+    return lines.at(-1).includes(`items ${judged} of ${report.items.length} judged, 3 shallow, `) && lines.some((line) => line.startsWith(`member (${members} of `) && line.includes(' judged, 3 shallow, '))
+      ? null : `the shallow members are not printed apart: ${lines.at(-1)}`;
+  },
   // A member called by a later construction (after a restart) counts like one called by the first.
   'later-construction': async (module) => {
     const read = handCase('member after restart', (x) => { const h = helpers(x); x.construct(2); h.call('getTask', { promise: false, value: null }, 2); });
@@ -589,14 +625,15 @@ const CHECKS = {
  * that must fail on it: the builder's sixteen, the review's thirty-four (its last-index plant split in two, one
  * per index an item keeps; two of them, `judged-without-prefix` and `has-read-counted`, change nothing on the
  * scheduler's corpus, since a closure never calls a case with an empty prefix partial and the scheduler's source
- * never probes an option with `in`: a fixed input and the toy pin them), and fix round 1's thirty-seven.
+ * never probes an option with `in`: a fixed input and the toy pin them), fix round 1's thirty-seven, and the eight
+ * of O0e2's fix round 1 (the shallow class).
  */
 const PLANTS = [
   // O0e.
   { name: 'member-dropped', check: 'member-count', purpose: 'the first member call of each construction not counted', anchor: "for (const call of view.calls) if (call.event.head.call > 0) note('member',", with: "for (const call of view.calls) if (call.event.head.call > 1) note('member'," },
   { name: 'judged-past-busy', check: 'busy-point', purpose: 'an item counted judged although it shows only after the first busy input', anchor: 'if (judged && at < limit) { item.judged += 1;', with: 'if (judged) { item.judged += 1;' },
   { name: 'launch-at-zero', check: 'busy-point-launch', purpose: 'a launch situation counted where the case begins, not where it is completed', anchor: "if (Number.isFinite(index) && index >= 0) note('launch', name, index); }", with: "if (Number.isFinite(index) && index >= 0) note('launch', name, 0); }" },
-  { name: 'stale-waiver-accepted', check: 'waiver-stale', purpose: 'a waiver of a judged item accepted', anchor: "    if (item.judged > 0) { fail('waiver-exercised',", with: "    if (false) { fail('waiver-exercised'," },
+  { name: 'stale-waiver-accepted', check: 'waiver-stale', purpose: 'a waiver of a judged item accepted', anchor: "    if (item.judged > 0 && !item.shallow) { fail('waiver-exercised',", with: "    if (false) { fail('waiver-exercised'," },
   { name: 'unknown-waiver-accepted', check: 'waiver-stale', purpose: 'a waiver of nothing the contract lists accepted', anchor: "    if (!item) { fail('waiver-unknown',", with: "    if (!item) { void ('waiver-unknown'," },
   { name: 'new-waiver-accepted', check: 'waiver-baseline', purpose: 'a waiver outside the baseline accepted (the list could grow)', anchor: '    if (baseline && !baseline.includes(waiver.key)) fail(', with: '    if (false) fail(' },
   { name: 'empty-corpus-passes', check: 'empty-corpus', purpose: 'an empty corpus exits 0', anchor: "  if (recordedCases === 0) inconclusive('empty-corpus',", with: "  if (false) inconclusive('empty-corpus'," },
@@ -619,7 +656,7 @@ const PLANTS = [
   { name: 'argument-ports-counted', check: 'toy-whole', purpose: 'functions handed in member arguments counted as ports', anchor: "&& !/#\\d+\\./.test(head.name) && !/#\\d+$/.test(head.name)) note('port'", with: ") note('port'" },
   { name: 'last-result', check: 'member-count', purpose: 'a member judged by its last answer in the case, not its first', anchor: '    if (at < entry.at) entry.at = at;', with: '    entry.at = at;' },
   { name: 'last-call', check: 'toy-fingerprint', purpose: 'an item placed at its last event in the case, not its first', anchor: '    if (call < entry.call) entry.call = call;', with: '    entry.call = call;' },
-  { name: 'waiver-stale-by-cases', check: 'toy-whole', purpose: 'a waiver failed as stale when the item is only recorded past busy', anchor: "if (item.judged > 0) { fail('waiver-exercised'", with: "if (item.cases > 0) { fail('waiver-exercised'" },
+  { name: 'waiver-stale-by-cases', check: 'toy-whole', purpose: 'a waiver failed as stale when the item is only recorded past busy', anchor: "if (item.judged > 0 && !item.shallow) { fail('waiver-exercised'", with: "if (item.cases > 0 && !item.shallow) { fail('waiver-exercised'" },
   { name: 'missing-verdict-accepted', check: 'census-results', purpose: 'a recorded case with no closure verdict accepted', anchor: "if (results && !result) fail('census-results'", with: "if (false) fail('census-results'" },
   { name: 'extra-verdict-accepted', check: 'census-results', purpose: 'a verdict for a case no container holds accepted', anchor: 'if (results) for (const id of results.keys()) if (!seenIds.has(id)) fail(', with: 'if (false) for (const id of results.keys()) if (!seenIds.has(id)) fail(' },
   { name: 'duplicate-case-accepted', check: 'census-results', purpose: 'a case id twice in the corpus accepted', anchor: "if (seenIds.has(record.id)) fail('census-results'", with: "if (false) fail('census-results'" },
@@ -684,6 +721,15 @@ const PLANTS = [
   { name: 'needs-unchecked', check: 'waiver-file', purpose: 'a need its class does not allow accepted', anchor: '    if (!kind.needs.includes(waiver.needs)) {', with: '    if (false) {' },
   { name: 'call-only-any-kind', check: 'waiver-file', purpose: 'a port waived as call-only accepted', anchor: "    if (waiver.class === 'call-only' && !ANSWERED.has(waiver.kind)) {", with: '    if (false) {' },
   { name: 'data-list-optional', check: 'contract-file', purpose: 'a contract without its data list accepted', anchor: "  for (const list of [...Object.values(LISTS), 'data']) {", with: '  for (const list of Object.values(LISTS)) {' },
+  // O0e2 fix round 1: the shallow class.
+  { name: 'shallow-never', check: 'shallow', purpose: 'no item ever shallow (refusals and constants counted judged)', anchor: 'item.shallow = item.judged > 0 && item.answers.deep === 0', with: 'item.shallow = false && item.answers.deep === 0' },
+  { name: 'refusal-shows-work', check: 'shallow', purpose: 'a refusal counted as an answer that shows the call\'s work', anchor: "if (call.outcome === 'throw' || call.outcome === 'reject') return 'refusal';", with: "if (call.outcome === 'throw' || call.outcome === 'reject') return 'deep';" },
+  { name: 'values-uncounted', check: 'shallow', purpose: 'two bare values taken as one (a member that answers by state taken for a constant)', anchor: '&& (bareValues.get(key)?.size ?? 0) <= 1;', with: ';' },
+  { name: 'effects-unseen', check: 'shallow', purpose: 'a port call between a call and its answer not seen (a member that does its work taken for a constant)', anchor: "    if (event.c !== call.event.c || BARE_READS.has(event.kind)) continue;", with: '    continue;' },
+  { name: 'reads-as-effects', check: 'shallow', purpose: 'a clock or option read between a call and its answer taken for its work', anchor: "const BARE_READS = new Set(['read', 'clock', 'env']);", with: 'const BARE_READS = new Set([]);' },
+  { name: 'shallow-unwaived-ok', check: 'shallow', purpose: 'a shallow item without a waiver not failing the whole corpus', anchor: "      if (item.shallow) fail('census-shallow',", with: "      if (item.shallow) void ('census-shallow'," },
+  { name: 'shallow-counted-judged', check: 'shallow', purpose: 'shallow items counted among the judged on the last line', anchor: 'const judgedItems = report.items.filter((item) => item.judged > 0 && !item.shallow).length;', with: 'const judgedItems = report.items.filter((item) => item.judged > 0).length;' },
+  { name: 'shallow-not-a-class', check: 'shallow', purpose: 'a shallow item classed by its cases, so a shallow waiver of it fails and another class passes', anchor: "const classOf = (item) => (item.shallow ? 'shallow' : ", with: 'const classOf = (item) => (' },
   // Fix round 1: S4, the last line.
   { name: 'plants-left-out', check: 'printed', purpose: 'the last line without the plants\' counts', anchor: "  const planted = !plants ? '' :", with: "  const planted = true ? '' :" },
   { name: 'census-verdict-only', check: 'printed', purpose: 'the last line\'s verdict the census\'s alone, the plants\' failure left out', anchor: '  const verdict = code === EXIT.pass ?', with: '  const verdict = report.code === EXIT.pass ?' },

@@ -13,7 +13,9 @@
 // the write never landed) and restarting a fresh instance from what was on
 // disk. `saves` on a scenario is its number of saves when run through; the
 // self-test checks it, and the crash points are 1..saves.
+import { REQUIRED_CHECK_CORRECTION } from '../../packages/orchestration-runtime/check-correction.js';
 import { encodeLedgerSnapshot } from '../../packages/orchestration-runtime/codec.js';
+import { USER_CHECK_WAIVER } from '../../packages/orchestration-runtime/required-checks.js';
 import { createManagedTaskScheduler } from '../../packages/orchestration-runtime/scheduler.js';
 import * as DRIVER from './driver.mjs';
 import { EPOCH } from './trace.mjs';
@@ -58,6 +60,23 @@ const queuedRecord = (taskId, key, ago) => ({
 });
 /** Two queued tasks of one sequence: the later task ID (`b…`) created first, so createdAt and the task ID disagree. */
 const TIED_LEDGER = Object.freeze({ version: 1, tasks: [queuedRecord(`dvr_task_${'a'.repeat(32)}`, 'tie-created-second', 1_000), queuedRecord(`dvr_task_${'b'.repeat(32)}`, 'tie-created-first', 2_000)], resultEnvelopes: [] });
+/** provider-recovery-unlinked: a settled record of the recovery group as the scheduler saves one (codec.js; queuedRecord's fields). */
+const settledRecord = (taskId, key, overrides) => ({
+  ...queuedRecord(taskId, key, 0), dispatchGroupId: 'msg_recovery_01', dispatchWaveId: `dvr_wave_${'c'.repeat(32)}`, childSessionId: 'ses_child_1', status: 'completed', startedAt: EPOCH, finishedAt: EPOCH, ...overrides,
+});
+/** provider-recovery-unlinked: a result envelope of `task` as the scheduler saves one (result-envelope.js). */
+const savedEnvelope = (task, overrides) => ({
+  owner: 'devryan', envelopeId: `dvr_result_${task.taskId.slice('dvr_task_'.length)}_${overrides.sequence}`, taskId: task.taskId, rootSessionId: task.rootSessionId, parentTaskId: null, childSessionId: task.childSessionId,
+  directory: task.directory, status: task.status, partial: task.partial, failureReason: task.failureReason, attempt: task.attempt, priorTaskId: task.priorTaskId, executionKind: task.executionKind,
+  recoverablePreview: task.recoverablePreview, canonicalRefs: [], resumable: false, createdAt: EPOCH, acknowledgedAt: null, action: null, followUpTaskId: null, providerResetAt: null, autoResume: null, ...overrides,
+});
+const RECOVERY_SOURCE = settledRecord(`dvr_task_${'d'.repeat(32)}`, 'recovering', { sequence: 1, status: 'failed', leaseToken: `dvr_lease_${'1'.repeat(32)}`, failureReason: 'harness failure', partial: true, recoverablePreview: 'half' });
+const RECOVERY_FOLLOW_UP = settledRecord(`dvr_task_${'e'.repeat(32)}`, 'recover-1', { sequence: 2, attempt: 2, priorTaskId: RECOVERY_SOURCE.taskId, executionKind: 'retry_in_place', recoveryLineageId: `dvr_lineage_${'d'.repeat(32)}`, leaseToken: `dvr_lease_${'2'.repeat(32)}`, recoverablePreview: 'done' });
+/** A ledger whose recovery source names another follow-up than the one that names it (as no commit of the scheduler writes, but a ledger on disk can hold). */
+const UNLINKED_LEDGER = Object.freeze({ version: 1, tasks: [RECOVERY_SOURCE, RECOVERY_FOLLOW_UP], resultEnvelopes: [
+  savedEnvelope(RECOVERY_SOURCE, { sequence: 2, resumable: true, acknowledgedAt: EPOCH, action: 'retry_in_place', followUpTaskId: `dvr_task_${'f'.repeat(32)}` }),
+  savedEnvelope(RECOVERY_FOLLOW_UP, { sequence: 3 }),
+] });
 
 /** F1: N submits in one group, one root. */
 const fanOut = (count, { samePrompt = false, allowDuplicate } = {}) => async (d) => {
@@ -454,7 +473,664 @@ const DEFINED = [
       await d.step(d.call('shutdown'));
     },
   },
+  // Package O0e2: the members, control methods, ports, options and gaps the census waived, each with its answer inside
+  // a compared case (every input of a scenario is delivered at rest), on its ordinary path and the edge paths a port
+  // would get wrong (an unknown id, a wrong lease or state, a double call, a call after shutdown, a rejecting port).
+  {
+    name: 'prerequisites-assert-at-launch',
+    purpose: 'control.assertPrerequisites through a launch: while starting it rechecks the prerequisites (verifyTaskPrerequisites) and resolves, then rejects task_prerequisites_unverified once the evidence is gone; once running it does not recheck; once terminal it rejects task_lease_stale',
+    async run(d) {
+      const gate = { ready: true };
+      await boot(d, { options: { verifyTaskPrerequisites: () => gate.ready } });
+      await d.step(d.call('submit', taskInput('asserted', { taskPrerequisites: PREREQUISITE })));
+      const [start] = starts(d);
+      await d.step(d.control(start, 'assertPrerequisites'));
+      gate.ready = false;
+      await d.step(d.control(start, 'assertPrerequisites'));
+      await d.step(d.control(start, 'setChildSessionId', 'ses_child_asserted'));
+      await d.step(d.control(start, 'markAccepted'));
+      await d.step(d.control(start, 'assertPrerequisites'));
+      await d.step(d.answer(start, completed));
+      await d.step(d.control(start, 'assertPrerequisites'));
+    },
+  },
+  {
+    name: 'restart-starting-lease-retry', crash: { index: 4, mode: 'durable' },
+    purpose: 'Restart on a starting task with a deadline, under a 1,500 ms starting lease (startingLeaseTimeoutMs), 1,000 ms after its start: the task starts at +0, records progress at +1000 and the crash lands on that save; initialize reconciles it (transient: the 1,000 ms retry), then arms its deadline (599,000 ms: from its timeoutAt, not its creation) and then its lease (500 ms: from its start, not now); the lease and the retry each reconcile it again while both answers are held, and the second transient answer finds the retry already armed and arms none',
+    config: { options: { startingLeaseTimeoutMs: 1_500 }, ports: { 'executor.reconcile': { mode: 'hold' } } },
+    async run(d) {
+      await boot(d, this.config);
+      await d.step(d.call('submit', taskInput('lease-restart', { timeoutAt: d.time + 10 * MINUTE })));
+      await d.advance(1_000);
+      await d.step(d.control(starts(d)[0], 'recordProgress', { childPromptedAt: d.time }));
+    },
+    async restart(d) {
+      d.restart(createManagedTaskScheduler, this.config);
+      await d.step(d.call('initialize'));
+      await d.step(d.answer(d.pending('executor.reconcile')[0], { state: 'transient' }));
+      await d.advance(500);
+      await d.advance(500);
+      const [byLease, byRetry] = d.pending('executor.reconcile');
+      await d.step(d.answer(byLease, { state: 'transient' }));
+      await d.step(d.answer(byRetry, { state: 'transient' }));
+      await d.advance(1_000);
+      for (const pending of d.pending('executor.reconcile')) await d.step(d.answer(pending, { state: 'terminal', result: completed }));
+    },
+  },
+  {
+    name: 'retry-reads-prior-failure',
+    purpose: 'control.readPriorFailureReason and control.recordTransportRecovery: a first attempt reads no prior failure; its retry (acknowledgeResult retry) reads the failure it follows; the retry records a transport recovery at the next revision (true), again at a stale revision (false), with a skipped revision (TypeError), and the settled first attempt records none (false)',
+    async run(d) {
+      await boot(d);
+      const submitted = await d.step(d.call('submit', taskInput('prior')));
+      const [first] = starts(d);
+      await d.step(d.control(first, 'readPriorFailureReason'));
+      await acceptAll(d);
+      await d.step(d.answer(first, { status: 'failed', failureReason: 'harness failure', partial: true, recoverablePreview: 'half', canonicalRefs: [], resumable: true }));
+      await d.step(d.call('acknowledgeResult', submitted.value?.taskId, { action: 'retry', idempotencyKey: 'retry-prior' }));
+      const [retry] = starts(d);
+      await d.step(d.control(retry, 'readPriorFailureReason'));
+      await d.step(d.control(retry, 'recordTransportRecovery', transportRecovery(1), 0));
+      await d.step(d.control(retry, 'recordTransportRecovery', transportRecovery(1), 0));
+      await d.step(d.control(retry, 'recordTransportRecovery', transportRecovery(3), 1));
+      await d.step(d.control(first, 'recordTransportRecovery', transportRecovery(1), 0));
+    },
+  },
+  {
+    name: 'handoff-clear',
+    purpose: 'confirmAgentHandoff settling clear: inspectAgentHandoff before (confirmation_required) and after (clear) and with a bad scope (invalid_handoff_scope); confirmAgentHandoff without a key (missing_idempotency_key), then twice with one key and once with another in one group (the second joins the first, the third is handoff_conflict); both grouped tasks are aborted and abandoned; the pump after the lock admits a held task whose admission save fails (the only logger.error), and the admission retry then launches it',
+    config: {
+      // The driver's logger has only warn; this one has error too (the scheduler's only logger.error is here).
+      options: { verifyTaskPrerequisites: (entry) => entry.index >= HANDOFF_READY_FROM, logger: { warn: () => undefined, error: () => undefined } },
+      ports: { 'persistence.save': { mode: 'auto', answer: (entry) => (entry.index === HANDOFF_FAILED_SAVE ? { $reject: Object.assign(new Error('harness: save refused'), { code: 'harness_save_refused' }) } : undefined) } },
+    },
+    async run(d) {
+      await boot(d, this.config);
+      await d.step(...range(2).map((index) => d.call('submit', taskInput(`grouped-${index}`, { dispatchGroupId: 'msg_dispatch_01' }))));
+      await acceptAll(d);
+      await d.step(d.call('submit', taskInput('held', { taskPrerequisites: PREREQUISITE })));
+      await d.step(d.call('inspectAgentHandoff', HANDOFF));
+      await d.step(d.call('inspectAgentHandoff', { ...HANDOFF, toMode: 'orchestrator' }));
+      await d.step(d.call('confirmAgentHandoff', HANDOFF));
+      await d.step(d.call('confirmAgentHandoff', { ...HANDOFF, idempotencyKey: 'switch-01' }), d.call('confirmAgentHandoff', { ...HANDOFF, idempotencyKey: 'switch-01' }), d.call('confirmAgentHandoff', { ...HANDOFF, idempotencyKey: 'switch-02' }));
+      await d.step(d.call('inspectAgentHandoff', HANDOFF));
+      await d.advance(1_000);
+    },
+  },
+  {
+    name: 'handoff-abort-timeout',
+    purpose: 'confirmAgentHandoff settling blocked: the first grouped task\'s abort never answers, so the abort race times out at 5,000 ms (its signal aborted with "Managed task abort exceeded"), the task stays running and is reported as a cleanup failure; the second is aborted and abandoned; inspectAgentHandoff then still requires confirmation',
+    config: { ports: { 'executor.abort': { mode: (entry) => (entry.index === 1 ? 'never' : 'auto'), answer: () => ({ aborted: true }) } } },
+    async run(d) {
+      await boot(d, this.config);
+      await d.step(...range(2).map((index) => d.call('submit', taskInput(`grouped-${index}`, { dispatchGroupId: 'msg_dispatch_01' }))));
+      await acceptAll(d);
+      await d.step(d.call('confirmAgentHandoff', { ...HANDOFF, idempotencyKey: 'switch-01' }));
+      await d.advance(5_000);
+      await d.step(d.call('inspectAgentHandoff', HANDOFF));
+    },
+  },
+  {
+    name: 'runtime-restart-crash', crash: { index: 7, mode: 'torn' },
+    purpose: 'Crash during withRuntimeRestart after replacementStarted: the running task reconciles terminal inside the restart, its run cleanup (stopAttemptRuns) is held, the replacement action is called and held; the cleanup answer\'s save is torn. The fresh instance loads the terminal save with the cleanup pending, re-arms it at 0 ms and stops the runs again',
+    config: { options: { stopAttemptRuns: () => ({ stopped: 1 }), onRunCleanup: () => undefined }, ports: { stopAttemptRuns: { mode: 'hold' }, 'executor.reconcile': { mode: 'auto', answer: () => ({ state: 'terminal', result: completed }) } } },
+    async run(d) {
+      await boot(d, this.config);
+      await d.step(d.call('submit', taskInput('replaced')));
+      await acceptAll(d);
+      const action = d.hook('restartAction');
+      await d.step(d.call('withRuntimeRestart', action));
+      const [stop] = d.pending('stopAttemptRuns');
+      if (!stop || d.pending('restartAction').length !== 1) throw new Error('runtime-restart-crash: the run cleanup and the replacement action were not both pending');
+      await d.step(d.answer(stop, { stopped: 1 }));
+    },
+    async restart(d) {
+      d.restart(createManagedTaskScheduler, this.config);
+      await d.step(d.call('initialize'));
+      await d.advance(1);
+      for (const stop of d.pending('stopAttemptRuns')) await d.step(d.answer(stop, { stopped: 2 }));
+    },
+  },
+  {
+    name: 'operator-stop-restart', crash: { index: 7, mode: 'durable' },
+    purpose: 'Crash with an operator stop pending, 2,000 ms after it was requested: the stop is recorded at +0, the task records progress at +2000 and the process dies on that save. The fresh instance re-arms the stop\'s expiry for what is left of its 5,000 ms (3,000 ms: from requestedAt, not now), reconciles the task (unavailable) but leaves it running while the stop is pending; readOperatorStop finds it (and no other session); withdrawOperatorStop with a wrong request is refused, with the right one withdraws it (expiry cleared, reconciliation retry armed); readOperatorStop then finds nothing and acceptOperatorStop is refused; the retry settles the task interrupted',
+    async run(d) {
+      await boot(d);
+      await d.step(d.call('submit', taskInput('stopped')));
+      await acceptAll(d, starts(d), () => 'ses_stop_child');
+      await d.step(d.call('recordOperatorStop', { sessionId: 'ses_stop_child', directory: '/workspace', requestedAt: d.time, requestId: 'stop_harness_1' }));
+      await d.advance(2_000);
+      await d.step(d.control(starts(d)[0], 'recordProgress', { childPromptedAt: d.time }));
+    },
+    async restart(d) {
+      const [task] = JSON.parse(d.crashed.state).tasks;
+      const stop = { taskId: task.taskId, leaseToken: task.leaseToken, requestedAt: task.operatorStop.requestedAt, requestId: 'stop_harness_1' };
+      d.restart(createManagedTaskScheduler, {});
+      await d.step(d.call('initialize'));
+      await d.step(d.call('readOperatorStop', { sessionId: 'ses_stop_child', directory: '/workspace' }));
+      await d.step(d.call('readOperatorStop', { sessionId: 'ses_other_child', directory: '/workspace' }));
+      await d.step(d.call('withdrawOperatorStop', { ...stop, requestId: 'stop_harness_wrong' }));
+      await d.step(d.call('withdrawOperatorStop', stop));
+      await d.step(d.call('readOperatorStop', { sessionId: 'ses_stop_child', directory: '/workspace' }));
+      await d.step(d.call('acceptOperatorStop', stop));
+      await d.advance(1_000);
+    },
+  },
+  {
+    name: 'native-prompt-context',
+    purpose: 'verifyTaskDispatch and verifyTaskSettlement with the current lease (the task) and a wrong one or an unknown task (native_managed_task_lease_invalid); getTask of an unknown task (null); withNativePromptContext around a terminal task: its action reads the dispatch barrier (authorize called again), marks the prompt observed with a stale attempt (native_prompt_context_revision_conflict, thrown synchronously) and then the right one, and resolves after one save; the barrier read after the action ends is fenced. (A context without authorize is not called: no caller can pass one, and what it would pin is the test runner\'s engine\'s TypeError text; native-prompt-context-fenced and native-prompt-context-refusals hold the refusals real callers meet)',
+    async run(d) {
+      await boot(d);
+      await d.step(d.call('submit', taskInput('context')));
+      const [start] = starts(d);
+      const { taskId, leaseToken } = start.args[0];
+      await d.step(d.call('verifyTaskDispatch', taskId, leaseToken));
+      await d.step(d.call('verifyTaskDispatch', taskId, 'dvr_lease_wrong'));
+      await d.step(d.call('verifyTaskSettlement', taskId, leaseToken));
+      await d.step(d.call('verifyTaskSettlement', 'dvr_task_missing', leaseToken));
+      await d.step(d.call('getTask', 'dvr_task_missing'));
+      await acceptAll(d);
+      await d.step(d.answer(start, completed));
+      const authorize = d.hook('authorize', { mode: 'auto', answer: () => undefined });
+      const scope = { rootSessionId: 'ses_root', directory: '/workspace' };
+      await d.step(d.call('withNativePromptContext', { ...scope, authorize }, d.hook('promptAction')));
+      const [context] = d.pending('promptAction');
+      if (!context) throw new Error('native-prompt-context: the action was not called');
+      const sequence = context.args[0].envelopes[0]?.sequence;
+      await d.step(d.callback(context, '0.readBarrier', scope));
+      await d.step(d.callback(context, '0.markPromptObserved', { taskId, attempt: 2, sequence }));
+      await d.step(d.callback(context, '0.markPromptObserved', { taskId, attempt: 1, sequence }));
+      await d.step(d.answer(context, 'observed'));
+      await d.step(d.callback(context, '0.readBarrier', scope));
+    },
+  },
+  {
+    name: 'provider-recovery-continuation',
+    purpose: 'Provider recovery continuations: a grouped task fails resumable and is retried in place with an explicit model; the completed follow-up is listed ready (not for another session); claimed (true), claimed again by another claimant (false, the first expiry), refused for a bad input, an unknown task and another directory; verifyRecoveredCollection answers only its claimant; a release by another claimant is refused, by the claimant released; afterwards nothing verifies, and the source (already acknowledged) is not claimable',
+    async run(d) {
+      await boot(d);
+      const submitted = await d.step(d.call('submit', taskInput('recovering', { dispatchGroupId: 'msg_recovery_01' })));
+      await acceptAll(d);
+      await d.step(d.answer(starts(d)[0], { status: 'failed', failureReason: 'harness failure', partial: true, recoverablePreview: 'half', canonicalRefs: [], resumable: true }));
+      const source = submitted.value?.taskId;
+      const acknowledged = await d.step(d.call('acknowledgeResult', source, { action: 'retry_in_place', idempotencyKey: 'recover-1', providerId: 'github-copilot', modelId: 'gpt-4.1', variant: null }));
+      const [inPlace] = d.pending('executor.retryInPlace');
+      if (!inPlace) throw new Error('provider-recovery-continuation: the retry in place was not launched');
+      await d.step(d.control(inPlace, 'markAccepted'));
+      await d.step(d.answer(inPlace, completed));
+      const followUp = acknowledged.value?.followUpTask?.taskId;
+      const claim = (claimantId, over = {}) => ({ taskId: followUp, rootSessionId: 'ses_root', directory: '/workspace', claimantId, ...over });
+      await d.step(d.call('listReadyProviderRecoveryContinuations', {}));
+      await d.step(d.call('listReadyProviderRecoveryContinuations', { sessionId: 'ses_other' }));
+      await d.step(d.call('claimProviderRecoveryContinuation', claim('claimant-1')));
+      await d.step(d.call('claimProviderRecoveryContinuation', claim('claimant-2')));
+      await d.step(d.call('claimProviderRecoveryContinuation', claim('claimant-2', { taskId: '' })));
+      await d.step(d.call('claimProviderRecoveryContinuation', claim('claimant-2', { taskId: 'dvr_task_missing' })));
+      await d.step(d.call('claimProviderRecoveryContinuation', claim('claimant-2', { directory: '/elsewhere' })));
+      await d.step(d.call('verifyRecoveredCollection', claim('claimant-2')));
+      await d.step(d.call('verifyRecoveredCollection', claim('claimant-1')));
+      await d.step(d.call('releaseProviderRecoveryContinuation', claim('claimant-2')));
+      await d.step(d.call('releaseProviderRecoveryContinuation', claim('claimant-1')));
+      await d.step(d.call('verifyRecoveredCollection', claim('claimant-1')));
+      await d.step(d.call('claimProviderRecoveryContinuation', claim('claimant-1', { taskId: source })));
+    },
+  },
+  {
+    name: 'auto-resume-opt-out',
+    purpose: 'setResultAutoResume and cancelAutoResumeForSession on a result parked on a provider usage limit: a non-boolean request and an unknown task are refused; disabling switches the automatic resume off, disabling again changes nothing, enabling plans it again (a 0 ms planning timer); cancelling for the session needs a session and a known reason, cancels the planned resume and then finds nothing more to cancel',
+    async run(d) {
+      const resetAt = d.time + 30 * MINUTE;
+      await boot(d, { options: { autoResume: { resolveOwnerKey: () => 'owner-a', resolveBackupExecution: () => null, resolveProviderReset: () => ({ resetAt, limited: true }), attempt: () => undefined } }, ports: { 'autoResume.attempt': { mode: 'hold' } } });
+      const submitted = await d.step(d.call('submit', taskInput('parked', { dispatchGroupId: 'msg_parent', providerId: 'anthropic', modelId: 'claude-opus' })));
+      await acceptAll(d);
+      await d.step(d.answer(starts(d)[0], { status: 'failed', failureReason: LIMIT, partial: true, recoverablePreview: 'partial work', canonicalRefs: [], resumable: true, providerResetAt: resetAt }));
+      const taskId = submitted.value?.taskId;
+      await d.step(d.call('setResultAutoResume', taskId, { enabled: 'yes' }));
+      await d.step(d.call('setResultAutoResume', 'dvr_task_missing', { enabled: false }));
+      await d.step(d.call('setResultAutoResume', taskId, { enabled: false }));
+      await d.step(d.call('setResultAutoResume', taskId, { enabled: false }));
+      await d.step(d.call('setResultAutoResume', taskId, { enabled: true }));
+      await d.step(d.call('cancelAutoResumeForSession', ' ', 'cancelled'));
+      await d.step(d.call('cancelAutoResumeForSession', 'ses_root', 'forgotten'));
+      await d.step(d.call('cancelAutoResumeForSession', 'ses_root', 'cancelled'));
+      await d.step(d.call('cancelAutoResumeForSession', 'ses_root', 'session_deleted'));
+    },
+  },
+  {
+    name: 'persistence-observation',
+    purpose: 'A save that stalls, a publication that fails and mutations that fail, with every observer passed: the queued save of a grouped submit is held; persistence.save\'s onProgress is called back (started, completed: the 1,000 ms stall watch re-armed; an unknown phase ignored); the stall watch fires (onPersistenceObservation needs_attention, logger.warn); the answer reports it settled; the first publication throws (logger.warn); onBarrierChange sees the group go active; releaseModeLease is refused for another mode and for the active one, each mutation timed failed',
+    config: {
+      options: { persistenceStallMs: 1_000, onPersistenceObservation: () => undefined, onMutationTiming: () => undefined, onBarrierChange: () => undefined },
+      ports: { 'persistence.save': { mode: (entry) => (entry.index === 2 ? 'hold' : 'auto') }, publishEvent: { mode: 'sync', answer: (entry) => { if (entry.index === 1) throw Object.assign(new Error('harness: publish refused'), { code: 'harness_publish_refused' }); } } },
+    },
+    async run(d) {
+      await boot(d, this.config);
+      await d.step(d.call('submit', taskInput('observed', { dispatchGroupId: 'msg_observed' })));
+      const [held] = d.pending('persistence.save');
+      if (!held) throw new Error('persistence-observation: the queued save was not held');
+      await d.step(d.callback(held, '1.onProgress', { phase: 'write', state: 'started' }));
+      await d.step(d.callback(held, '1.onProgress', { phase: 'write', state: 'completed' }));
+      await d.step(d.callback(held, '1.onProgress', { phase: 'harness_phase', state: 'completed' }));
+      await d.advance(1_000);
+      await d.step(d.answer(held, undefined));
+      await d.step(d.call('releaseModeLease', 'ses_root', 'builder'));
+      await d.step(d.call('releaseModeLease', 'ses_root', 'orchestrator'));
+    },
+  },
+  {
+    name: 'designer-step-budget',
+    purpose: 'The primary-prompt step budget of a designer task: control.readPrimaryStepBudget before and after; acceptPrimaryPrompt (true, again true without a save, a wrong lease null); recordPrimaryStep with 179 historical steps and one new (180 used) and for an unknown prompt (null); claimPrimaryStepBudgetWarning while starting (null), once running (the notice), and again (null)',
+    async run(d) {
+      await boot(d);
+      await d.step(d.call('submit', taskInput('designed', { agent: 'designer' })));
+      const [start] = starts(d);
+      const { taskId, leaseToken } = start.args[0];
+      const base = { taskId, leaseToken, sessionId: 'ses_child_designer', directory: '/workspace' };
+      await d.step(d.control(start, 'readPrimaryStepBudget'));
+      await d.step(d.control(start, 'setChildSessionId', 'ses_child_designer'));
+      await d.step(d.call('acceptPrimaryPrompt', { ...base, createdAt: d.time, userMessageId: 'msg_user_1' }));
+      await d.step(d.call('acceptPrimaryPrompt', { ...base, createdAt: d.time, userMessageId: 'msg_user_1' }));
+      await d.step(d.call('acceptPrimaryPrompt', { ...base, leaseToken: 'dvr_lease_wrong', createdAt: d.time, userMessageId: 'msg_user_2' }));
+      const historicalSteps = range(179).map((index) => ({ messageId: `msg_step_${String(index).padStart(3, '0')}`, createdAt: d.time }));
+      await d.step(d.call('recordPrimaryStep', { ...base, createdAt: d.time, userMessageId: 'msg_user_1', messageId: 'msg_step_180', historicalSteps }));
+      await d.step(d.call('recordPrimaryStep', { ...base, createdAt: d.time, userMessageId: 'msg_user_unknown', messageId: 'msg_step_181' }));
+      await d.step(d.control(start, 'readPrimaryStepBudget'));
+      await d.step(d.call('claimPrimaryStepBudgetWarning', { ...base, messageId: 'msg_step_180' }));
+      await d.step(d.control(start, 'markAccepted'));
+      await d.step(d.call('claimPrimaryStepBudgetWarning', { ...base, messageId: 'msg_step_180' }));
+      await d.step(d.call('claimPrimaryStepBudgetWarning', { ...base, messageId: 'msg_step_180' }));
+    },
+  },
+  {
+    name: 'waits-and-reads',
+    purpose: 'The waits and reads with their refusals: waitForAnyTask (pending, then resolved by a completion; no task ids, another root, an aborted signal refused); waitForResultCommit (pending, then resolved; no directory refused); waitForResultAction (pending until the result is collected; a result not yet there and an unknown task refused); listResultEnvelopes, inspectDispatchBarrier (no root refused), getObjectiveRequiredChecks of a declared objective and of another; after shutdown initialize and waitForAnyTask reject scheduler_shut_down',
+    async run(d) {
+      await boot(d);
+      const [first, second] = await d.step(d.call('submit', taskInput('wait-a')), d.call('submit', taskInput('wait-b')));
+      const [a, b] = [first.value?.taskId, second.value?.taskId];
+      const aborted = new AbortController();
+      aborted.abort(new Error('harness: aborted before the wait'));
+      await d.step(d.call('waitForAnyTask', { rootSessionId: 'ses_root', taskIds: [a, b], timeoutMs: 3_000 }));
+      await d.step(d.call('waitForAnyTask', { rootSessionId: 'ses_root', taskIds: [] }));
+      await d.step(d.call('waitForAnyTask', { rootSessionId: 'ses_other', taskIds: [a] }));
+      await d.step(d.call('waitForAnyTask', { rootSessionId: 'ses_root', taskIds: [a], signal: aborted.signal }));
+      await d.step(d.call('waitForResultCommit', { directory: '/workspace', timeoutMs: 3_000 }));
+      await d.step(d.call('waitForResultCommit', {}));
+      await acceptAll(d);
+      await d.step(d.answer(starts(d)[0], completed));
+      await d.step(d.call('waitForResultAction', a));
+      await d.step(d.call('waitForResultAction', b));
+      await d.step(d.call('waitForResultAction', 'dvr_task_missing'));
+      await d.step(d.call('listResultEnvelopes', {}));
+      await d.step(d.call('listResultEnvelopes', { rootSessionId: 'ses_other' }));
+      await d.step(d.call('inspectDispatchBarrier', 'ses_root'));
+      await d.step(d.call('inspectDispatchBarrier', ''));
+      await d.step(d.call('acknowledgeResult', a, { action: 'collect', idempotencyKey: 'collect-a' }));
+      const objective = { rootSessionId: 'ses_root', directory: '/workspace', objectiveId: 'objective-1' };
+      await d.step(d.call('declareObjectiveChecks', objective, [CHECK], [], d.hook('authorize', { mode: 'auto', answer: () => undefined })));
+      await d.step(d.call('getObjectiveRequiredChecks', objective));
+      await d.step(d.call('getObjectiveRequiredChecks', { ...objective, objectiveId: 'objective-2' }));
+      await d.step(d.call('shutdown'));
+      await d.step(d.call('initialize'));
+      await d.step(d.call('waitForAnyTask', { rootSessionId: 'ses_root', taskIds: [b] }));
+    },
+  },
+  {
+    name: 'required-checks',
+    purpose: 'Required checks of a task: getRequiredCheckTask (its directory, not another), getRequiredCheckTasks (by child and by root), getChildAssignment (active, later the settled one; an unknown session null); recordRequiredCheck start (true, again false, a wrong lease false), recordRequiredChecks with an unknown phase (TypeError), bind and complete (true; onRequiredCheckReceipt each); waiveRequiredChecks without authority (TypeError); after completion acknowledgeResult continue is refused while inspectRequiredChecks reports work remaining, then accepted',
+    config: { options: { inspectRequiredChecks: (entry) => (entry.index === 1 ? { ready: false, remaining: [CHECK] } : { ready: true }), onRequiredCheckReceipt: () => undefined } },
+    async run(d) {
+      await boot(d, this.config);
+      await d.step(d.call('submit', taskInput('checked', { requiredChecks: [CHECK] })));
+      const [start] = starts(d);
+      const { taskId, leaseToken } = start.args[0];
+      await d.step(d.control(start, 'setChildSessionId', 'ses_child_checked'));
+      await d.step(d.call('getRequiredCheckTask', 'ses_child_checked', '/workspace'));
+      await d.step(d.call('getRequiredCheckTask', 'ses_child_checked', '/elsewhere'));
+      await d.step(d.call('getRequiredCheckTasks', 'ses_child_checked', '/workspace'));
+      await d.step(d.call('getRequiredCheckTasks', 'ses_root', '/workspace'));
+      await d.step(d.call('getChildAssignment', 'ses_child_checked', '/workspace'));
+      await d.step(d.call('getChildAssignment', 'ses_child_unknown', '/workspace'));
+      await d.step(d.call('recordRequiredCheck', taskId, leaseToken, receipt(), 'start'));
+      await d.step(d.call('recordRequiredCheck', taskId, leaseToken, receipt(), 'start'));
+      await d.step(d.call('recordRequiredCheck', taskId, 'dvr_lease_wrong', receipt(), 'start'));
+      await d.step(d.call('recordRequiredChecks', taskId, leaseToken, [receipt()], 'finish'));
+      await d.step(d.call('recordRequiredCheck', taskId, leaseToken, receipt({ messageId: 'msg_check' }), 'bind'));
+      await d.step(d.call('recordRequiredChecks', taskId, leaseToken, [receipt({ messageId: 'msg_check', status: 'passed', exitCode: 0, contentHash: 'b'.repeat(64) })], 'complete'));
+      await d.step(d.call('waiveRequiredChecks', taskId, [receipt()], {}));
+      await d.step(d.control(start, 'markAccepted'));
+      await d.step(d.answer(start, completed));
+      await d.step(d.call('getChildAssignment', 'ses_child_checked', '/workspace'));
+      await d.step(d.call('acknowledgeResult', taskId, { action: 'continue', idempotencyKey: 'continue-1' }));
+      await d.step(d.call('acknowledgeResult', taskId, { action: 'continue', idempotencyKey: 'continue-2' }));
+    },
+  },
+  {
+    name: 'publication-beside-launch',
+    purpose: 'A launch right after a publication: a collected task ages out (maxHistoryAgeMs 2,000) while the admission save of a second is refused (save 9: logger.warn, the 5,000 ms admission retry); the retry\'s admission save also removes the aged task, so two publications follow that one commit (the removal, then the admission), and the second falls between the starting lease and executor.start',
+    config: { options: { maxHistoryAgeMs: 2_000 }, ports: { 'persistence.save': { mode: 'auto', answer: (entry) => (entry.index === 9 ? { $reject: Object.assign(new Error('harness: save refused'), { code: 'harness_save_refused' }) } : undefined) } } },
+    async run(d) {
+      await boot(d, this.config);
+      const aged = await d.step(d.call('submit', taskInput('aged')));
+      await acceptAll(d);
+      await d.step(d.answer(starts(d)[0], completed));
+      await d.step(d.call('acknowledgeResult', aged.value?.taskId, { action: 'collect', idempotencyKey: 'collect-aged' }));
+      await d.step(d.call('submit', taskInput('retried')));
+      await d.advance(5_000);
+    },
+  },
+  // Package O0e2's fix round: the branches behind the door of what the scenarios above newly judge (the O0e2 review's
+  // planted mistakes in them), so each such member rests on a second case: what it answers by state, not only its
+  // refusals, and the re-armed timers of a restart measured from stored times after virtual time passed.
+  {
+    name: 'required-checks-waived',
+    purpose: 'Required checks past their door: receipts of one check (lint) started and bound, a completion for another message refused, a bind to another message marking an identity conflict (false, committed); the user\'s waiver of another (unit, with the package\'s waiver authority) accepted, after which a bind of it is refused; the host runner\'s correction of a third (edge) accepted, so getRequiredCheckTask answers the corrected command; once completed, getRequiredCheckTasks by child answers nothing and by root the task, and getChildAssignment the settled task',
+    config: { options: { onRequiredCheckReceipt: () => undefined } },
+    async run(d) {
+      await boot(d, this.config);
+      await d.step(d.call('submit', taskInput('waived', { dispatchGroupId: 'msg_objective', requiredChecks: [CHECK, LINT_CHECK, EDGE_CHECK] })));
+      const [start] = starts(d);
+      const { taskId, leaseToken } = start.args[0];
+      const recheck = d.hook('recheck', { mode: 'auto', answer: () => undefined });
+      await d.step(d.control(start, 'setChildSessionId', 'ses_child_waived'));
+      await d.step(d.call('recordRequiredCheck', taskId, leaseToken, lintReceipt(), 'start'));
+      await d.step(d.call('recordRequiredCheck', taskId, leaseToken, lintReceipt({ messageId: 'msg_lint' }), 'bind'));
+      await d.step(d.call('recordRequiredChecks', taskId, leaseToken, [lintReceipt({ messageId: 'msg_other', status: 'passed', exitCode: 0, contentHash: 'b'.repeat(64) })], 'complete'));
+      await d.step(d.call('recordRequiredCheck', taskId, leaseToken, lintReceipt({ messageId: 'msg_other' }), 'bind'));
+      await d.step(d.call('recordRequiredCheck', taskId, leaseToken, receipt(), 'start'));
+      await d.step(d.call('waiveRequiredChecks', taskId, [WAIVED_RECEIPT], { [USER_CHECK_WAIVER]: true, recheck }));
+      await d.step(d.call('recordRequiredCheck', taskId, leaseToken, receipt({ messageId: 'msg_check' }), 'bind'));
+      await d.step(d.call('correctRequiredCheck', taskId, EDGE_CORRECTION, { [REQUIRED_CHECK_CORRECTION]: true, rootSessionId: 'ses_root', directory: '/workspace', objectiveId: 'msg_objective', recheck }));
+      await d.step(d.call('getRequiredCheckTask', 'ses_child_waived', '/workspace'));
+      await d.step(d.call('childAttempt', 'ses_child_waived', '/workspace'));
+      await d.step(d.control(start, 'markAccepted'));
+      await d.step(d.answer(start, completed));
+      await d.step(d.call('getRequiredCheckTasks', 'ses_child_waived', '/workspace'));
+      await d.step(d.call('getRequiredCheckTasks', 'ses_root', '/workspace'));
+      await d.step(d.call('getChildAssignment', 'ses_child_waived', '/workspace'));
+      await d.step(d.call('childAttempt', 'ses_child_waived', '/workspace'));
+      await d.step(d.call('childAttempt', 'ses_child_unknown', '/workspace'));
+      const objective = { rootSessionId: 'ses_root', directory: '/workspace', objectiveId: 'objective-waived' };
+      await d.step(d.call('declareObjectiveChecks', objective, [CHECK], [], d.hook('authorize', { mode: 'auto', answer: () => undefined })));
+      await d.step(d.call('recordRequiredCheck', objective, null, receipt({ callId: 'call_objective' }), 'start'));
+      await d.step(d.call('getObjectiveRequiredChecks', objective));
+    },
+  },
+  {
+    name: 'dispatch-barrier-states',
+    purpose: 'inspectDispatchBarrier through a group\'s life, and a handoff of a result not yet collected: two grouped tasks running (active, both), one completed (active, the other), both completed (awaiting_acknowledgement, both), one collected (awaiting_acknowledgement, the other); inspectAgentHandoff then requires confirmation for the uncollected one, confirmAgentHandoff abandons it without an abort and settles clear, and the barrier is clear',
+    async run(d) {
+      await boot(d);
+      await d.step(...range(2).map((index) => d.call('submit', taskInput(`grouped-${index}`, { dispatchGroupId: 'msg_dispatch_01' }))));
+      const [first, second] = starts(d);
+      await acceptAll(d);
+      const inspect = () => d.call('inspectDispatchBarrier', 'ses_root');
+      await d.step(inspect());
+      await d.step(d.call('waitForDispatchBarrier', 'ses_root'));
+      await d.step(d.answer(first, completed));
+      await d.step(inspect());
+      await d.step(d.answer(second, completed));
+      await d.step(inspect());
+      await d.step(d.call('acknowledgeResult', first.args[0].taskId, { action: 'collect', idempotencyKey: 'collect-grouped-1' }));
+      await d.step(inspect());
+      await d.step(d.call('inspectAgentHandoff', HANDOFF));
+      await d.step(d.call('confirmAgentHandoff', { ...HANDOFF, idempotencyKey: 'switch-01' }));
+      await d.step(inspect());
+      await d.step(d.call('getSnapshot'));
+    },
+  },
+  {
+    name: 'persistence-stall-deadline',
+    purpose: 'The stall watch against a task deadline: the queued save of a submit whose deadline is 1,500 ms on is held under a 1,000 ms stall watch; at +600 a completed onProgress phase moves the progress mark, so the watch is re-armed for the deadline (+1500, before the stall at +1600); at the deadline it reports needs_attention with reason task_deadline; the answer then reports it settled, and the deadline, already passed, ends the task',
+    config: { options: { persistenceStallMs: 1_000, onPersistenceObservation: () => undefined }, ports: { 'persistence.save': { mode: (entry) => (entry.index === 2 ? 'hold' : 'auto') } } },
+    async run(d) {
+      await boot(d, this.config);
+      await d.step(d.call('submit', taskInput('due', { timeoutAt: d.time + 1_500 })));
+      const [held] = d.pending('persistence.save');
+      if (!held) throw new Error('persistence-stall-deadline: the queued save was not held');
+      await d.step(d.call('flush'));
+      await d.advance(600);
+      await d.step(d.callback(held, '1.onProgress', { phase: 'write', state: 'completed' }));
+      await d.advance(900);
+      await d.step(d.answer(held, undefined));
+      await d.advance(1);
+    },
+  },
+  {
+    name: 'provider-recovery-expiry',
+    purpose: 'Provider recovery continuation claims over time: a grouped task fails resumable at +0 and is retried in place at +1000, its follow-up in the same child session; once the follow-up completes it is listed ready for that child session, and getChildAssignment answers the later of the child\'s two settled tasks; a claim at +1000 lasts 60,000 ms: at its expiry another claimant takes it over, verifyRecoveredCollection answers that claimant until its own claim expires at +121000 and nothing after; listResultEnvelopes then lists both results',
+    async run(d) {
+      await boot(d);
+      const submitted = await d.step(d.call('submit', taskInput('recovering', { dispatchGroupId: 'msg_recovery_01' })));
+      await acceptAll(d);
+      await d.step(d.answer(starts(d)[0], { status: 'failed', failureReason: 'harness failure', partial: true, recoverablePreview: 'half', canonicalRefs: [], resumable: true }));
+      await d.advance(1_000);
+      const source = submitted.value?.taskId;
+      const acknowledged = await d.step(d.call('acknowledgeResult', source, { action: 'retry_in_place', idempotencyKey: 'recover-1', providerId: 'github-copilot', modelId: 'gpt-4.1', variant: null }));
+      const [inPlace] = d.pending('executor.retryInPlace');
+      if (!inPlace) throw new Error('provider-recovery-expiry: the retry in place was not launched');
+      await d.step(d.control(inPlace, 'markAccepted'));
+      await d.step(d.answer(inPlace, completed));
+      const followUp = acknowledged.value?.followUpTask?.taskId;
+      const claim = (claimantId) => ({ taskId: followUp, rootSessionId: 'ses_root', directory: '/workspace', claimantId });
+      await d.step(d.call('listReadyProviderRecoveryContinuations', { sessionId: 'ses_child_1' }));
+      await d.step(d.call('getChildAssignment', 'ses_child_1', '/workspace'));
+      await d.step(d.call('claimProviderRecoveryContinuation', claim('claimant-1')));
+      await d.advance(MINUTE);
+      await d.step(d.call('claimProviderRecoveryContinuation', claim('claimant-2')));
+      await d.step(d.call('verifyRecoveredCollection', claim('claimant-2')));
+      await d.advance(MINUTE);
+      await d.step(d.call('verifyRecoveredCollection', claim('claimant-2')));
+      await d.step(d.call('releaseProviderRecoveryContinuation', claim('claimant-2')));
+      await d.step(d.call('listResultEnvelopes', { rootSessionId: 'ses_root' }));
+    },
+  },
+  {
+    name: 'provider-recovery-unlinked',
+    purpose: 'verifyRecoveredCollection on a loaded ledger whose recovery source names another follow-up than the completed retry in place that names it: the follow-up is listed ready and claimed, but nothing verifies (the link is checked both ways); the claim is released',
+    config: { load: UNLINKED_LEDGER },
+    async run(d) {
+      await boot(d, this.config);
+      const claim = { taskId: RECOVERY_FOLLOW_UP.taskId, rootSessionId: 'ses_root', directory: '/workspace', claimantId: 'claimant-1' };
+      await d.step(d.call('listReadyProviderRecoveryContinuations', {}));
+      await d.step(d.call('claimProviderRecoveryContinuation', claim));
+      await d.step(d.call('verifyRecoveredCollection', claim));
+      await d.step(d.call('releaseProviderRecoveryContinuation', claim));
+    },
+  },
+  {
+    name: 'auto-resume-child-cancel',
+    purpose: 'The automatic resume cancelled by the child session and re-enabled at its time cap: a result parked on a provider usage limit at +0 plans its resume; cancelAutoResumeForSession for its child session (not its root) cancels it; at exactly the lineage\'s time cap, 6 h on, setResultAutoResume enabling it again finds it expired (exhausted, time_cap) and plans nothing',
+    async run(d) {
+      const resetAt = d.time + 30 * MINUTE;
+      await boot(d, { options: { autoResume: { resolveOwnerKey: () => 'owner-a', resolveBackupExecution: () => null, resolveProviderReset: () => ({ resetAt, limited: true }), attempt: () => undefined } }, ports: { 'autoResume.attempt': { mode: 'hold' } } });
+      const submitted = await d.step(d.call('submit', taskInput('parked', { dispatchGroupId: 'msg_parent', providerId: 'anthropic', modelId: 'claude-opus' })));
+      await acceptAll(d);
+      await d.step(d.answer(starts(d)[0], { status: 'failed', failureReason: LIMIT, partial: true, recoverablePreview: 'partial work', canonicalRefs: [], resumable: true, providerResetAt: resetAt }));
+      const taskId = submitted.value?.taskId;
+      await d.step(d.call('cancelAutoResumeForSession', 'ses_child_1', 'cancelled'));
+      const envelope = await d.step(d.call('getResultEnvelope', taskId));
+      const expiresAt = envelope.value?.autoResume?.expiresAt;
+      if (!Number.isSafeInteger(expiresAt) || expiresAt <= d.time) throw new Error('auto-resume-child-cancel: no time cap ahead');
+      await d.advance(expiresAt - d.time);
+      await d.step(d.call('setResultAutoResume', taskId, { enabled: true }));
+    },
+  },
+  {
+    name: 'operator-stop-read',
+    purpose: 'readOperatorStop and withdrawOperatorStop around an accepted stop: a recorded stop is not read with an `after` past its request and is read (pending) with `after` at it; acceptOperatorStop accepts it; readOperatorStop then reads it accepted, and withdrawOperatorStop of an accepted stop is refused; the accepted stop\'s reconciliation retry then settles the task',
+    async run(d) {
+      await boot(d);
+      await d.step(d.call('submit', taskInput('stopped')));
+      await acceptAll(d, starts(d), () => 'ses_stop_child');
+      const recorded = await d.step(d.call('recordOperatorStop', { sessionId: 'ses_stop_child', directory: '/workspace', requestedAt: d.time, requestId: 'stop_harness_1' }));
+      const stop = { taskId: recorded.value?.taskId, leaseToken: recorded.value?.leaseToken, requestedAt: recorded.value?.requestedAt, requestId: 'stop_harness_1' };
+      const read = (after) => d.call('readOperatorStop', { sessionId: 'ses_stop_child', directory: '/workspace', after });
+      await d.step(read(stop.requestedAt + 1));
+      await d.step(read(stop.requestedAt));
+      await d.step(d.call('acceptOperatorStop', stop));
+      await d.step(read(stop.requestedAt));
+      await d.step(d.call('withdrawOperatorStop', stop));
+      await d.advance(1_000);
+    },
+  },
+  {
+    name: 'designer-step-budget-next-prompt',
+    purpose: 'The designer step budget across two prompts: two prompts accepted with one creation time (the second is not older than the first, so it is accepted); the first prompt\'s steps counted once each though its history repeats one (2); the first step of the second prompt counts afresh (181 with its 180 historical steps); the warning names the 181 steps; once the task completed, readPrimaryStepBudget answers nothing',
+    async run(d) {
+      await boot(d);
+      await d.step(d.call('submit', taskInput('designed', { agent: 'designer' })));
+      const [start] = starts(d);
+      const { taskId, leaseToken } = start.args[0];
+      const base = { taskId, leaseToken, sessionId: 'ses_child_designer', directory: '/workspace' };
+      await d.step(d.control(start, 'setChildSessionId', 'ses_child_designer'));
+      await d.step(d.call('acceptPrimaryPrompt', { ...base, createdAt: d.time, userMessageId: 'msg_user_1' }));
+      await d.step(d.call('acceptPrimaryPrompt', { ...base, createdAt: d.time, userMessageId: 'msg_user_2' }));
+      const repeated = [{ messageId: 'msg_step_a', createdAt: d.time }, { messageId: 'msg_step_a', createdAt: d.time }];
+      await d.step(d.call('recordPrimaryStep', { ...base, createdAt: d.time, userMessageId: 'msg_user_1', messageId: 'msg_step_b', historicalSteps: repeated }));
+      const history = range(180).map((index) => ({ messageId: `msg_history_${String(index).padStart(3, '0')}`, createdAt: d.time }));
+      await d.step(d.call('recordPrimaryStep', { ...base, createdAt: d.time, userMessageId: 'msg_user_2', messageId: 'msg_step_181', historicalSteps: history }));
+      await d.step(d.control(start, 'markAccepted'));
+      await d.step(d.call('claimPrimaryStepBudgetWarning', { ...base, messageId: 'msg_step_181' }));
+      await d.step(d.answer(start, completed));
+      await d.step(d.control(start, 'readPrimaryStepBudget'));
+    },
+  },
+  {
+    name: 'waits-time-out',
+    purpose: 'The waits that end without what they wait for, and one that waits past a change: waitForAnyTask and waitForResultCommit with 1,000 ms timeouts answer their snapshots when their timers fire; waitForAnyTask until settled on two tasks is not answered when one completes (a ready result, no attention) and is answered when the second does; waitForResultAction on an uncollected result waits and rejects when its signal aborts; listResultEnvelopes lists both results',
+    async run(d) {
+      await boot(d);
+      const [first, second] = await d.step(d.call('submit', taskInput('wait-a')), d.call('submit', taskInput('wait-b')));
+      const [a, b] = [first.value?.taskId, second.value?.taskId];
+      await acceptAll(d);
+      const [startA, startB] = starts(d);
+      await d.step(d.call('waitForAnyTask', { rootSessionId: 'ses_root', taskIds: [a], timeoutMs: 1_000 }));
+      await d.step(d.call('waitForResultCommit', { directory: '/workspace', timeoutMs: 1_000 }));
+      await d.advance(1_000);
+      await d.step(d.call('waitForAnyTask', { rootSessionId: 'ses_root', taskIds: [a, b], until: 'settled' }));
+      await d.step(d.answer(startA, completed));
+      await d.step(d.answer(startB, completed));
+      const controller = new AbortController();
+      await d.step(d.call('waitForResultAction', a, { signal: controller.signal }));
+      await d.step(d.abort(controller, new Error('harness: action wait aborted'), 'action signal'));
+      await d.step(d.call('listResultEnvelopes', { rootSessionId: 'ses_root' }));
+    },
+  },
+  {
+    name: 'native-prompt-context-fenced',
+    purpose: 'Native dispatch verification during a cancellation, and prompt contexts that cannot open: while a running task\'s cancellation waits on its abort, verifyTaskDispatch refuses it (native_managed_task_lease_invalid) and verifyTaskSettlement still answers it; withNativePromptContext is fenced for a root with tasks in two directories (native_prompt_context_fenced) and unavailable for an empty directory (native_prompt_context_unavailable), each after one authorize',
+    config: { ports: { 'executor.abort': { mode: 'hold' } } },
+    async run(d) {
+      await boot(d, this.config);
+      await d.step(d.call('submit', taskInput('cancelled')));
+      const [start] = starts(d);
+      const { taskId, leaseToken } = start.args[0];
+      await acceptAll(d);
+      await d.step(d.call('verifyTaskDispatch', taskId, leaseToken));
+      await d.step(d.call('cancelTask', taskId));
+      const [abort] = d.pending('executor.abort');
+      if (!abort) throw new Error('native-prompt-context-fenced: the abort was not pending');
+      await d.step(d.call('verifyTaskDispatch', taskId, leaseToken));
+      await d.step(d.call('verifyTaskSettlement', taskId, leaseToken));
+      await d.step(d.answer(abort, { aborted: true }));
+      await d.step(d.call('submit', taskInput('split-a', { rootSessionId: 'ses_split' })));
+      await d.step(d.call('submit', taskInput('split-b', { rootSessionId: 'ses_split', directory: '/elsewhere' })));
+      const authorize = d.hook('authorize', { mode: 'auto', answer: () => undefined });
+      await d.step(d.call('withNativePromptContext', { rootSessionId: 'ses_split', directory: '/workspace', authorize }, d.hook('promptAction')));
+      await d.step(d.call('withNativePromptContext', { rootSessionId: 'ses_root', directory: '', authorize }, d.hook('promptAction')));
+    },
+  },
+  {
+    name: 'native-prompt-context-refusals',
+    purpose: 'withNativePromptContext when its caller\'s checks fail, around a completed task: authorize rejecting before the context opens (the call rejects with that error, the action is never called); an action that rejects (its error, no further authorize, nothing saved); authorize rejecting after the action marked the prompt observed (nothing saved); the observation\'s save failing (the envelope put back, the call rejects with the save\'s error), so a later context saves nothing and the collect\'s save holds the result without the observation',
+    config: { ports: { 'persistence.save': { mode: 'auto', answer: (entry) => (entry.args[0]?.resultEnvelopes?.some((envelope) => envelope.promptObserved) ? { $reject: Object.assign(new Error('harness: save refused'), { code: 'harness_save_refused' }) } : undefined) } } },
+    async run(d) {
+      await boot(d, this.config);
+      await d.step(d.call('submit', taskInput('context')));
+      const [start] = starts(d);
+      const { taskId } = start.args[0];
+      await acceptAll(d);
+      await d.step(d.answer(start, completed));
+      const scope = { rootSessionId: 'ses_root', directory: '/workspace', authorize: d.hook('authorize', { mode: 'hold' }) };
+      const pendingOne = (port) => {
+        const [entry, more] = d.pending(port);
+        if (!entry || more) throw new Error(`native-prompt-context-refusals: not one ${port} pending`);
+        return entry;
+      };
+      const refused = () => Object.assign(new Error('harness: root revoked'), { code: 'harness_root_revoked' });
+      const open = async () => { await d.step(d.call('withNativePromptContext', scope, d.hook('promptAction'))); await d.step(d.answer(pendingOne('authorize'), undefined)); return pendingOne('promptAction'); };
+      await d.step(d.call('withNativePromptContext', scope, d.hook('promptAction')));
+      await d.step(d.answer(pendingOne('authorize'), refused(), 'reject'));
+      const failing = await open();
+      await d.step(d.answer(failing, Object.assign(new Error('harness: action failed'), { code: 'harness_action_failed' }), 'reject'));
+      const revoked = await open();
+      const sequence = revoked.args[0].envelopes[0]?.sequence;
+      await d.step(d.callback(revoked, '0.markPromptObserved', { taskId, attempt: 1, sequence }));
+      await d.step(d.answer(revoked, 'observed'));
+      await d.step(d.answer(pendingOne('authorize'), refused(), 'reject'));
+      const unsaved = await open();
+      await d.step(d.callback(unsaved, '0.markPromptObserved', { taskId, attempt: 1, sequence }));
+      await d.step(d.answer(unsaved, 'observed'));
+      await d.step(d.answer(pendingOne('authorize'), undefined));
+      const after = await open();
+      await d.step(d.answer(after, 'read'));
+      await d.step(d.answer(pendingOne('authorize'), undefined));
+      // The next save holds the envelope as it was put back: without the observation whose save failed.
+      await d.step(d.call('acknowledgeResult', taskId, { action: 'collect', idempotencyKey: 'collect-context' }));
+    },
+  },
+  {
+    name: 'retry-transport-recovery',
+    purpose: 'control.recordTransportRecovery against what it recorded: a first attempt (readPriorFailureReason: none) records revision 1 with its backup attempt spent; revision 2 that gives the backup attempt back is refused inside the lock (TypeError, nothing saved); revision 2 that keeps it spent is recorded (the same-model count is always 1: transport-recovery.js)',
+    async run(d) {
+      await boot(d);
+      await d.step(d.call('submit', taskInput('transport')));
+      const [start] = starts(d);
+      await d.step(d.control(start, 'readPriorFailureReason'));
+      await d.step(d.control(start, 'recordTransportRecovery', transportRecovery(1, { backupAttempts: 1 }), 0));
+      await d.step(d.control(start, 'recordTransportRecovery', transportRecovery(2, { backupAttempts: 0 }), 1));
+      await d.step(d.control(start, 'recordTransportRecovery', transportRecovery(2, { backupAttempts: 1, phase: 'submitted', submittedAt: EPOCH }), 1));
+    },
+  },
+  {
+    name: 'prerequisites-assert-cancelled',
+    purpose: 'control.assertPrerequisites refused by its final fence: while its recheck of the prerequisites is held the task is cancelled (its abort held); the recheck then answers true and the assertion rejects task_lease_stale, the task being cancelled; the abort then settles the task',
+    config: { options: { verifyTaskPrerequisites: () => true }, ports: { verifyTaskPrerequisites: { mode: (entry) => (entry.index === 3 ? 'hold' : 'auto'), answer: () => true }, 'executor.abort': { mode: 'hold' } } },
+    async run(d) {
+      await boot(d, this.config);
+      await d.step(d.call('submit', taskInput('asserted', { taskPrerequisites: PREREQUISITE })));
+      const [start] = starts(d);
+      await d.step(d.control(start, 'assertPrerequisites'));
+      const [recheck] = d.pending('verifyTaskPrerequisites');
+      if (!recheck) throw new Error('prerequisites-assert-cancelled: the recheck was not held');
+      await d.step(d.call('cancelTask', start.args[0].taskId));
+      await d.step(d.answer(recheck, true));
+      const [abort] = d.pending('executor.abort');
+      if (!abort) throw new Error('prerequisites-assert-cancelled: the abort was not pending');
+      await d.step(d.answer(abort, { aborted: true }));
+    },
+  },
 ];
+const HANDOFF = Object.freeze({ rootSessionId: 'ses_root', fromMode: 'orchestrator', toMode: 'builder' });
+// handoff-clear: the held task's prerequisites verify from this call on, and this save (its admission in the pump
+// after the handoff lock) is refused. Both read from a run of today's scheduler.
+const HANDOFF_READY_FROM = 4;
+const HANDOFF_FAILED_SAVE = 18;
+const CHECK = Object.freeze({ name: 'unit', command: 'bun test', paths: ['src/a.js'] });
+/** required-checks: a receipt of CHECK as recorded at start (overrides for bind and complete). */
+const receipt = (overrides = {}) => ({ name: 'unit', callId: 'call_unit', messageId: null, status: 'not-observed', exitCode: null, contentHash: null, observedAt: EPOCH, ...overrides });
+/** required-checks-waived: a second command check, a check the host runner corrects (check-correction.js), the user's waiver of unit and the correction. */
+const LINT_CHECK = Object.freeze({ name: 'lint', command: 'bun run lint', paths: ['src/a.js'] });
+const lintReceipt = (overrides = {}) => receipt({ name: 'lint', callId: 'call_lint', ...overrides });
+const EDGE_CHECK = Object.freeze({ name: 'edge', command: 'npx vitest run supabase/functions/booking-documents/__tests__', paths: ['supabase/functions/booking-documents'] });
+const WAIVED_RECEIPT = Object.freeze({ ...receipt(), status: 'waived', contentHash: 'c'.repeat(64), waiver: { source: 'authenticated-user', userId: 'user_harness', reason: 'The harness user waives the unit check.' } });
+const EDGE_CORRECTION = Object.freeze({
+  name: 'edge', previousCommand: EDGE_CHECK.command, command: 'npm run test:edge -- --function booking-documents', reason: 'repository_edge_deno_runner', observedAt: EPOCH,
+  runnerIdentity: { kind: 'edge-deno-function-v1', packagePath: 'package.json', packageSha256: 'd'.repeat(64), scriptPath: 'scripts/testing/run-deno-tests.mjs', scriptSha256: 'e'.repeat(64), functionName: 'booking-documents', selector: '--function', testPath: 'supabase/functions/booking-documents/__tests__', coverageHash: 'f'.repeat(64), verifiedBy: 'host-policy' },
+});
+/** retry-reads-prior-failure, retry-transport-recovery: a transport recovery receipt at `revision`. */
+const transportRecovery = (revision, overrides = {}) => ({ revision, phase: 'reserved', kind: 'request_timeout', sameModelAttempts: 1, backupAttempts: 0, failedMessageId: 'msg_failed', failedUserMessageId: null, recoveryMessageId: 'msg_recovery', eventId: null, reservedAt: EPOCH, submittedAt: null, ...overrides });
 /** The driver's native job proof shard store (its disk): it outlives a crashed instance, as a file would. */
 const shardStore = (driver) => { driver.shardStore ??= new Map(); return driver.shardStore; };
 
@@ -914,6 +1590,412 @@ const FACTS = {
     timers: { '300000 at +0 cleared +0': 8, '60000 at +0 cleared +0': 1, '5000 at +0 cleared +0': 1, '1000 at +0 cleared +0': 1 },
     outcomes: ['initialize resolved', 'submit resolved starting', 'control.setChildSessionId resolved true', 'control.markAccepted resolved true', 'recordOperatorStop resolved <object>', 'acceptOperatorStop resolved true'],
     final: { aborted: 'stopped' },
+  },
+  // The pump verifies the prerequisites (step 5) and launch rechecks them (:1767, step 7) before executor.start; each
+  // assertPrerequisites while starting runs assertLaunchPrerequisites (:1274-1283), so verifies once more (9, 11), the second
+  // time false; once running it skips the recheck (:1278) and resolves; once terminal it rejects task_lease_stale (:1277).
+  'prerequisites-assert-at-launch': {
+    steps: 20,
+    clock: ['+0 1-20'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4 6 13 15 18', publishEvent: '5 7 14 16 19', verifyTaskPrerequisites: '5 7 9 11', 'executor.start': '8' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5 7 14 16 19', verifyTaskPrerequisites: '6 8 10 12', 'executor.start': '18' },
+    launches: ['asserted @8 after 3'],
+    timers: { '300000 at +0 cleared +0': 6, '60000 at +0 cleared +0': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.assertPrerequisites resolved', 'control.assertPrerequisites rejected task_prerequisites_unverified', 'control.setChildSessionId resolved true', 'control.markAccepted resolved true', 'control.assertPrerequisites resolved', 'control.assertPrerequisites rejected task_lease_stale'],
+    final: { completed: 'asserted' },
+  },
+  // Instance 1 admits the task at +0 (its startedAt) and crashes at +1000 on the save of recordProgress (save 4, :1310-1348).
+  // Instance 2 reconciles the loaded starting task (step 10, answered transient: the 1,000 ms retry, :1914-1937), then
+  // arms its deadline and its lease (:2374-2375, in that order): the deadline from timeoutAt (599,000 ms, :2141), the
+  // lease from startedAt (500 ms, :2125); the lease fires at +1500 (reconcile 12), the retry at +2000 (reconcile 13); the
+  // first transient answer arms the retry again, the second finds it armed (:1916) and arms none (one 1,000 ms timer at
+  // +2000); the retry at +3000 reconciles terminal: markAccepted and the completed save (:1856-1859).
+  'restart-starting-lease-retry': {
+    steps: 19,
+    clock: ['+0 1-6', '+1000 7-11', '+1500 12', '+2000 13-15', '+3000 16-19'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-5 7', publishEvent: '5-6', 'executor.start': '6', 'i2 persistence.load': '8', 'i2 persistence.save': '9 17-18', 'i2 executor.reconcile': '10 12-13 16', 'i2 publishEvent': '18-19' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-6', 'i2 persistence.load': '9', 'i2 persistence.save': '10 18-19', 'i2 executor.reconcile': '11 14-15 17' },
+    launches: ['lease-restart @6 after 3'],
+    timers: { '300000 at +0 cleared +0': 3, '600000 at +0 live': 1, '1500 at +0 live': 1, '300000 at +1000 live': 1, 'i2 300000 at +1000 cleared +1000': 1, 'i2 1000 at +1000 fired +2000': 1, 'i2 599000 at +1000 cleared +3000': 1, 'i2 500 at +1000 fired +1500': 1, 'i2 1000 at +2000 fired +3000': 1, 'i2 300000 at +3000 cleared +3000': 2 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.recordProgress pending', 'i2 initialize resolved'],
+    final: { completed: 'lease-restart' },
+    restart: { crashedAfterSave: 4, portsAfterIt: [], loads: 'save 4' },
+  },
+  // readPriorFailureReason is synchronous (:1231-1235): null for the first attempt, the source's failureReason for its
+  // retry; recordTransportRecovery commits a same-status update at revision 1 (:1236-1255, the save in step 18), refuses a stale
+  // expected revision (false), throws on a skipped revision before the lock, and answers false for a terminal task.
+  'retry-reads-prior-failure': {
+    steps: 22,
+    clock: ['+0 1-22'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-5 8 10 12 14-15 18', publishEvent: '5-6 9 11 13 15x2 16 19', 'executor.start': '6 16' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-6 9 11 13 15-16 19', 'executor.start': '12' },
+    launches: ['prior @6 after 3', 'prior @16 after 8'],
+    timers: { '300000 at +0 cleared +0': 9, '60000 at +0 cleared +0': 1, '60000 at +0 live': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.readPriorFailureReason returned', 'control.setChildSessionId resolved true', 'control.markAccepted resolved true', 'acknowledgeResult resolved <object>', 'control.readPriorFailureReason returned harness failure', 'control.recordTransportRecovery resolved true', 'control.recordTransportRecovery resolved false', 'control.recordTransportRecovery rejected TypeError', 'control.recordTransportRecovery resolved false'],
+    final: { failed: 'prior', starting: 'prior' },
+  },
+  // confirmAgentHandoff (:3899-3979): the three calls of step 22 resume in order; the second finds the lock with its own
+  // key and awaits the first's promise, the third is handoff_conflict (:3905-3910). Each grouped task is aborted
+  // (cancelTaskForAgentHandoff, :2730-2818) and abandoned; the held task's prerequisites re-save its hold as the active
+  // count falls. The pump in the finally (:3972) verifies it ready (its fourth call, step 34); its admission save (the
+  // 18th, called in step 35) is refused in step 36: logger.error there (:3973). The pump threw before it could clear the
+  // 1,000 ms admission retry (:2086-2087), so the retry at +1000 admits and launches it.
+  'handoff-clear': {
+    steps: 41,
+    clock: ['+0 1-37', '+1000 38-41'],
+    groups: ['4: call submit x2', '9: control setChildSessionId of executor.start#1..2', '12: control markAccepted of executor.start#1..2', '22: call confirmAgentHandoff x3'],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-7 9-10 12-13 15 17 24 26-27 30 32-33 35 39', publishEvent: '5-8 10-11 13-14 16 18 25 27-28 31 33-34 40', 'executor.start': '8x2 41', verifyTaskPrerequisites: '16 25 31 34 38 40', 'executor.getLastRecoverableResult': '22 28', 'executor.abort': '22 28', 'executor.readRecoverableResult': '23 29', 'logger.error': '36' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-8 10-11 13-14 16 18 25 27-28 31 33-34 40 rejected 36', verifyTaskPrerequisites: '17 26 32 35 39 41', 'executor.abort': '23 29', 'executor.readRecoverableResult': '24 30' },
+    launches: ['grouped-1..2 @8 after 5', 'held @41 after 19'],
+    timers: { '300000 at +0 cleared +0': 18, '60000 at +0 cleared +0': 2, '1000 at +0 fired +1000': 1, '5000 at +0 cleared +0': 2, '300000 at +1000 cleared +1000': 1, '60000 at +1000 live': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting x2', 'control.setChildSessionId resolved true x2', 'control.markAccepted resolved true x2', 'submit resolved queued', 'inspectAgentHandoff resolved <object>', 'inspectAgentHandoff rejected invalid_handoff_scope', 'confirmAgentHandoff rejected missing_idempotency_key', 'confirmAgentHandoff resolved <object> x2', 'confirmAgentHandoff rejected handoff_conflict', 'inspectAgentHandoff resolved <object>'],
+    final: { aborted: 'grouped-1..2', starting: 'held' },
+  },
+  // The first abort never answers: the 5,000 ms race (:2577-2596) fires at +5000, aborts its signal, and
+  // cancelTaskForAgentHandoff throws handoff_abort_unconfirmed (:2783-2788), a cleanup failure; the second task is aborted
+  // and abandoned; the handoff resolves (blocked) and inspectAgentHandoff still lists the running first task.
+  'handoff-abort-timeout': {
+    steps: 21,
+    clock: ['+0 1-15', '+5000 16-21'],
+    groups: ['4: call submit x2', '9: control setChildSessionId of executor.start#1..2', '12: control markAccepted of executor.start#1..2'],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-7 9-10 12-13 18-19', publishEvent: '5-8 10-11 13-14 19-20', 'executor.start': '8x2', 'executor.getLastRecoverableResult': '15-16', 'executor.abort': '15-16', 'executor.readRecoverableResult': '17' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-8 10-11 13-14 19-20', 'executor.abort': '17', 'executor.readRecoverableResult': '18' },
+    launches: ['grouped-1..2 @8 after 5'],
+    timers: { '300000 at +0 cleared +0': 9, '60000 at +0 cleared +0': 2, '5000 at +0 fired +5000': 1, '5000 at +5000 cleared +5000': 1, '300000 at +5000 cleared +5000': 2 },
+    outcomes: ['initialize resolved', 'submit resolved starting x2', 'control.setChildSessionId resolved true x2', 'control.markAccepted resolved true x2', 'confirmAgentHandoff resolved <object>', 'inspectAgentHandoff resolved <object>'],
+    final: { aborted: 'grouped-2', running: 'grouped-1' },
+  },
+  // withRuntimeRestart (:3302-3355) reconciles the running task terminal (step 11) and commits it (the 6th save), whose run
+  // cleanup (:867) calls stopAttemptRuns (held, step 13) after the lock; replacementStarted, the action is called (13).
+  // The cleanup answer's save (the 7th) is torn; instance 2 loads save 6 (cleanup pending), re-arms it at 0 ms (:2383; fires at
+  // +1, the platform clamp) and stops the runs again (onRunCleanup, step 20).
+  'runtime-restart-crash': {
+    steps: 20,
+    clock: ['+0 1-17', '+1 18-20'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-5 7 9 12 14', publishEvent: '5-6 8 10 13', 'executor.start': '6', 'executor.reconcile': '11', stopAttemptRuns: '13', restartAction: '13', 'i2 persistence.load': '15', 'i2 persistence.save': '16 19', 'i2 stopAttemptRuns': '18', 'i2 publishEvent': '20', 'i2 onRunCleanup': '20' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-6 8 10 13', 'executor.reconcile': '12', stopAttemptRuns: '14', 'i2 persistence.load': '16', 'i2 persistence.save': '17 20', 'i2 stopAttemptRuns': '19' },
+    launches: ['replaced @6 after 3'],
+    timers: { '300000 at +0 cleared +0': 6, '60000 at +0 cleared +0': 1, '300000 at +0 live': 1, 'i2 300000 at +0 cleared +0': 1, 'i2 0 at +0 fired +1': 1, 'i2 300000 at +1 cleared +1': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.setChildSessionId resolved true', 'control.markAccepted resolved true', 'withRuntimeRestart pending', 'i2 initialize resolved'],
+    final: { completed: 'replaced' },
+    restart: { crashedAfterSave: 7, portsAfterIt: [], loads: 'save 6' },
+  },
+  // The stop is recorded at +0 (the 6th save); at +2000 the save of recordProgress (the 7th) lands and the process dies.
+  // Instance 2 arms the expiry for what is left of abortTimeoutMs from requestedAt (3,000 ms, :2353, :2176), reconciles the
+  // task (unavailable, default) but finishTask returns while the stop is pending (:1140); the right withdrawal saves (step
+  // 22), clears the expiry and arms the reconciliation retry (:4187), which at +3000 settles the task interrupted.
+  'operator-stop-restart': {
+    steps: 29,
+    clock: ['+0 1-12', '+2000 13-25', '+3000 26-29'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-5 7 9 11 13', publishEvent: '5-6 8 10 12', 'executor.start': '6', 'i2 persistence.load': '14', 'i2 persistence.save': '15 22 28', 'i2 executor.reconcile': '16 26', 'i2 executor.readRecoverableResult': '17 27', 'i2 publishEvent': '23 29' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-6 8 10 12', 'i2 persistence.load': '15', 'i2 persistence.save': '16 23 29', 'i2 executor.reconcile': '17 27', 'i2 executor.readRecoverableResult': '18 28' },
+    launches: ['stopped @6 after 3'],
+    timers: { '300000 at +0 cleared +0': 6, '60000 at +0 cleared +0': 1, '5000 at +0 live': 1, '300000 at +2000 live': 1, 'i2 300000 at +2000 cleared +2000': 2, 'i2 3000 at +2000 cleared +2000': 1, 'i2 1000 at +2000 fired +3000': 1, 'i2 300000 at +3000 cleared +3000': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.setChildSessionId resolved true', 'control.markAccepted resolved true', 'recordOperatorStop resolved <object>', 'control.recordProgress pending', 'i2 initialize resolved', 'i2 readOperatorStop returned <object>', 'i2 readOperatorStop returned', 'i2 withdrawOperatorStop resolved false', 'i2 withdrawOperatorStop resolved true', 'i2 readOperatorStop returned', 'i2 acceptOperatorStop resolved false'],
+    final: { interrupted: 'stopped' },
+    restart: { crashedAfterSave: 7, portsAfterIt: [], loads: 'save 7' },
+  },
+  // verifyTaskDispatch and verifyTaskSettlement run in the lock (:4379-4389, :4432-4444); getTask of an unknown task is
+  // null (cloneTask(undefined)). withNativePromptContext (:4451-4499) calls authorize (18), the action (19); readBarrier
+  // authorizes again (20); a stale markPromptObserved throws synchronously (:4480-4483); the action's answer authorizes a
+  // third time (step 24) and saves once (25).
+  'native-prompt-context': {
+    steps: 27,
+    clock: ['+0 1-27'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-5 12 14 16 25', publishEvent: '5-6 13 15 17', 'executor.start': '6', authorize: '18 20 24', promptAction: '19' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-6 13 15 17 26', 'executor.start': '16', authorize: '19 21 25', promptAction: '24' },
+    launches: ['context @6 after 3'],
+    timers: { '300000 at +0 cleared +0': 7, '60000 at +0 cleared +0': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'verifyTaskDispatch resolved starting', 'verifyTaskDispatch rejected native_managed_task_lease_invalid', 'verifyTaskSettlement resolved starting', 'verifyTaskSettlement rejected native_managed_task_lease_invalid', 'getTask returned', 'control.setChildSessionId resolved true', 'control.markAccepted resolved true', 'withNativePromptContext resolved observed', 'callback.readBarrier resolved <object>', 'callback.markPromptObserved threw native_prompt_context_revision_conflict', 'callback.markPromptObserved returned', 'callback.readBarrier rejected native_prompt_context_fenced'],
+    final: { completed: 'context' },
+  },
+  // The retry in place (:3568-3578, :3616-3657) launches executor.retryInPlace (step 15); once completed the follow-up
+  // is ready (:3133-3170). Claims and releases (:3186-3238) save nothing; the claim lasts 60,000 ms
+  // (providerRecoveryContinuationLeaseMs); verifyRecoveredCollection (:3240-3259) needs the claimant's live claim.
+  'provider-recovery-continuation': {
+    steps: 32,
+    clock: ['+0 1-32'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-5 7 9 11 13-14 16 18', publishEvent: '5-6 8 10 12 14x2 15 17 19', 'executor.start': '6', 'executor.retryInPlace': '15' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-6 8 10 12 14-15 17 19', 'executor.start': '11', 'executor.retryInPlace': '18' },
+    launches: ['recovering @6 after 3', 'retryInPlace recovering @15 after 8'],
+    timers: { '300000 at +0 cleared +0': 10, '60000 at +0 cleared +0': 2 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.setChildSessionId resolved true', 'control.markAccepted resolved true', 'acknowledgeResult resolved <object>', 'control.markAccepted resolved true', 'listReadyProviderRecoveryContinuations returned <array 1>', 'listReadyProviderRecoveryContinuations returned <array 0>', 'claimProviderRecoveryContinuation resolved <object> x2', 'claimProviderRecoveryContinuation rejected invalid_recovery_continuation_claim', 'claimProviderRecoveryContinuation rejected task_not_found', 'claimProviderRecoveryContinuation rejected task_scope_mismatch', 'verifyRecoveredCollection resolved', 'verifyRecoveredCollection resolved <object>', 'releaseProviderRecoveryContinuation resolved <object> x2', 'verifyRecoveredCollection resolved', 'claimProviderRecoveryContinuation resolved <object>'],
+    final: { completed: 'recovering', failed: 'recovering' },
+  },
+  // The usage-limit failure parks the result (a 0 ms planning timer); disabling clears it and saves (:3748-3751), the
+  // second disable is unchanged (:3745-3746, no save), enabling saves and arms a 0 ms planning timer (:3775-3776), which
+  // cancelAutoResumeForSession clears (:3798); the second cancel finds nothing active.
+  'auto-resume-opt-out': {
+    steps: 25,
+    clock: ['+0 1-25'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-5 7 9 11-12 16 19 23', publishEvent: '5-6 8 10 12-13 17 20 24', 'executor.start': '6' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-6 8 10 12-13 17 20 24', 'executor.start': '11' },
+    launches: ['parked @6 after 3'],
+    timers: { '300000 at +0 cleared +0': 10, '60000 at +0 cleared +0': 1, '0 at +0 cleared +0': 2 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.setChildSessionId resolved true', 'control.markAccepted resolved true', 'setResultAutoResume rejected invalid_auto_resume_request', 'setResultAutoResume rejected result_not_found', 'setResultAutoResume resolved <object> x3', 'cancelAutoResumeForSession rejected missing_session_id', 'cancelAutoResumeForSession rejected invalid_auto_resume_reason', 'cancelAutoResumeForSession resolved <object> x2'],
+    final: { failed: 'parked' },
+  },
+  // Save 2 is held: its stall watch (persistenceStallMs 1,000, :569-574) is re-armed by the completed onProgress
+  // (:581-584), not by the started one or an unknown phase (:578); at +1000 it reports needs_attention and warns
+  // (:557-568); the answer reports settled (:592). The first publication throws (logger.warn, :417-426); onBarrierChange
+  // sees the group active (:431-439); onMutationTiming is called for every mutation, the two refused releases failed.
+  'persistence-observation': {
+    steps: 12,
+    clock: ['+0 1-7', '+1000 8-12'],
+    groups: [],
+    ports: { 'persistence.load': '1', onMutationTiming: '2 3x2 9-12', 'persistence.save': '2 4 9', onPersistenceObservation: '8-9', 'logger.warn': '8-9', onBarrierChange: '9', publishEvent: '9-10', 'executor.start': '10' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 9-10' },
+    launches: ['observed @10 after 3'],
+    timers: { '1000 at +0 cleared +0': 2, '1000 at +0 fired +1000': 1, '1000 at +1000 cleared +1000': 1, '60000 at +1000 live': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'callback.onProgress returned x3', 'releaseModeLease rejected mode_lease_conflict', 'releaseModeLease rejected mode_lease_active'],
+    final: { starting: 'observed' },
+  },
+  // acceptPrimaryPrompt saves once (:4210-4235), a repeat is true without a save, a wrong lease null; recordPrimaryStep
+  // saves 180 steps (:4237-4267); the warning (DESIGNER_PRIMARY_STEP_WARNING 180) is claimed only while running (:4273)
+  // and only once (:4277).
+  'designer-step-budget': {
+    steps: 23,
+    clock: ['+0 1-23'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-5 8 10 14 19 21', publishEvent: '5-6 9 11 15 20 22', 'executor.start': '6' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-6 9 11 15 20 22' },
+    launches: ['designed @6 after 3'],
+    timers: { '300000 at +0 cleared +0': 8, '60000 at +0 cleared +0': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.readPrimaryStepBudget resolved <object>', 'control.setChildSessionId resolved true', 'acceptPrimaryPrompt resolved true x2', 'acceptPrimaryPrompt resolved', 'recordPrimaryStep resolved <object>', 'recordPrimaryStep resolved', 'control.readPrimaryStepBudget resolved <object>', 'claimPrimaryStepBudgetWarning resolved', 'control.markAccepted resolved true', 'claimPrimaryStepBudgetWarning resolved <object>', 'claimPrimaryStepBudgetWarning resolved'],
+    final: { running: 'designed' },
+  },
+  // Both timed waits register (3,000 ms timers) and resolve at the completion's commit (:870-871, :687), clearing their
+  // timers; the refusals reject before or inside the lock. After shutdown (:3357-3424) initialize and every wait reject
+  // scheduler_shut_down (:2313-2317, :2395-2400).
+  'waits-and-reads': {
+    steps: 41,
+    clock: ['+0 1-41'],
+    groups: ['4: call submit x2', '15: control setChildSessionId of executor.start#1..2', '18: control markAccepted of executor.start#1..2'],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-7 15-16 18-19 21 30 33 37', publishEvent: '5-8 16-17 19-20 22 31', 'executor.start': '8x2', authorize: '32', 'executor.shutdown': '38' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-8 16-17 19-20 22 31 34 38', 'executor.start': '21', authorize: '33', 'executor.shutdown': '39' },
+    launches: ['wait-a @8 after 5', 'wait-b @8 after 5'],
+    timers: { '300000 at +0 cleared +0': 13, '60000 at +0 cleared +0': 2, '3000 at +0 cleared +0': 2 },
+    outcomes: ['initialize resolved', 'submit resolved starting x2', 'waitForAnyTask resolved <object>', 'waitForAnyTask rejected TypeError', 'waitForAnyTask rejected task_scope_mismatch', 'waitForAnyTask rejected Error', 'waitForResultCommit resolved <object>', 'waitForResultCommit rejected TypeError', 'control.setChildSessionId resolved true x2', 'control.markAccepted resolved true x2', 'waitForResultAction resolved completed', 'waitForResultAction rejected result_not_found', 'waitForResultAction rejected task_not_found', 'listResultEnvelopes returned <array 1>', 'listResultEnvelopes returned <array 0>', 'inspectDispatchBarrier resolved <object>', 'inspectDispatchBarrier rejected missing_root_session_id', 'acknowledgeResult resolved <object>', 'declareObjectiveChecks resolved <object>', 'getObjectiveRequiredChecks returned <object>', 'getObjectiveRequiredChecks returned', 'shutdown resolved', 'initialize rejected scheduler_shut_down', 'waitForAnyTask rejected scheduler_shut_down'],
+    final: { completed: 'wait-a', running: 'wait-b' },
+  },
+  // Receipts commit same-status updates (:4083-4139), onRequiredCheckReceipt once per accepted receipt (16, 21, 23);
+  // a repeated start and a wrong lease are false without a save; an unknown phase and a waiver without authority are
+  // TypeErrors (:4084, :4303). acknowledgeResult continue calls inspectRequiredChecks (:3483-3487): not ready, refused
+  // required_verification_pending; ready, the result is dispositioned (the save in step 33).
+  'required-checks': {
+    steps: 34,
+    clock: ['+0 1-34'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-5 7 15 20 22 25 27 33', publishEvent: '5-6 8 16 21 23 26 28 34', 'executor.start': '6', onRequiredCheckReceipt: '16 21 23', inspectRequiredChecks: '30 32' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-6 8 16 21 23 26 28 34', 'executor.start': '27', inspectRequiredChecks: '31 33' },
+    launches: ['checked @6 after 3'],
+    timers: { '300000 at +0 cleared +0': 10, '60000 at +0 cleared +0': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.setChildSessionId resolved true', 'getRequiredCheckTask returned <object>', 'getRequiredCheckTask returned', 'getRequiredCheckTasks returned <array 1> x2', 'getChildAssignment returned starting', 'getChildAssignment returned', 'recordRequiredCheck resolved true', 'recordRequiredCheck resolved false x2', 'recordRequiredChecks rejected TypeError', 'recordRequiredCheck resolved true', 'recordRequiredChecks resolved true', 'waiveRequiredChecks rejected TypeError', 'control.markAccepted resolved true', 'getChildAssignment returned completed', 'acknowledgeResult rejected required_verification_pending', 'acknowledgeResult resolved <object>'],
+    final: { completed: 'checked' },
+  },
+  // The collect at +0 leaves the aged task acknowledged. The second task's admission save (the 9th) is refused: the pump
+  // throws, launchCommittedTask warns and arms the 5,000 ms admission retry (:2540-2543), and submit answers it queued.
+  // At +5000 the retry admits it: that save (the 10th) compacts the aged task away (maxHistoryAgeMs), so the commit queues its
+  // removal publication and then its own (:618-623, :659); both publish in step 19, the second after the starting lease
+  // and right before executor.start.
+  'publication-beside-launch': {
+    steps: 19,
+    clock: ['+0 1-17', '+5000 18-19'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-5 7 9 11 13 15-16 18', publishEvent: '5-6 8 10 12 14 16 19x2', 'executor.start': '6 19', 'logger.warn': '17' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-6 8 10 12 14 16 19 rejected 17', 'executor.start': '11' },
+    launches: ['aged @6 after 3', 'retried @19 after 10'],
+    timers: { '300000 at +0 cleared +0': 9, '60000 at +0 cleared +0': 1, '5000 at +0 fired +5000': 1, '300000 at +5000 cleared +5000': 1, '60000 at +5000 live': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.setChildSessionId resolved true', 'control.markAccepted resolved true', 'acknowledgeResult resolved <object>', 'submit resolved queued'],
+    final: { starting: 'retried' },
+  },
+  // recordRequiredChecks (:4083-4139): a completion for another message than the bound one is false without a save (:4124-4125);
+  // a bind to another message commits the identity conflict and answers false (:4120-4123); a bind of a waived receipt is
+  // false (:4117-4118). waiveRequiredChecks (:4302-4318) and correctRequiredCheck (:4282-4301) read their authority's symbol,
+  // call its recheck (steps 18, 22) and commit. Settled, the task leaves getRequiredCheckTasks by child (:4206-4209) and
+  // childAttempt answers none (:4332-4341); the objective's receipt commits through the root scope (:4088-4091, :4131).
+  'required-checks-waived': {
+    steps: 41,
+    clock: ['+0 1-41'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-5 7 9 11 14 16 19 23 27 29 37 39', publishEvent: '5-6 8 10 12 15 17 20 24 28 30', 'executor.start': '6', onRequiredCheckReceipt: '10 12 15 17', recheck: '18 22', authorize: '36' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-6 8 10 12 15 17 20 24 28 30 38 40', recheck: '19 23', 'executor.start': '29', authorize: '37' },
+    launches: ['waived @6 after 3'],
+    timers: { '300000 at +0 cleared +0': 14, '60000 at +0 cleared +0': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.setChildSessionId resolved true', 'recordRequiredCheck resolved true x2', 'recordRequiredChecks resolved false', 'recordRequiredCheck resolved false', 'recordRequiredCheck resolved true', 'waiveRequiredChecks resolved starting', 'recordRequiredCheck resolved false', 'correctRequiredCheck resolved starting', 'getRequiredCheckTask returned <object>', 'childAttempt returned <object>', 'control.markAccepted resolved true', 'getRequiredCheckTasks returned <array 0>', 'getRequiredCheckTasks returned <array 1>', 'getChildAssignment returned completed', 'childAttempt returned <object>', 'childAttempt returned', 'declareObjectiveChecks resolved <object>', 'recordRequiredCheck resolved true', 'getObjectiveRequiredChecks returned <object>'],
+    final: { completed: 'waived' },
+  },
+  // getDispatchBarrierStateLocked (:1035-1075): active while a grouped task is not terminal, then awaiting_acknowledgement
+  // for the uncollected ones, clear once none is; waitForDispatchBarrier (:3092-3109) waits on the running tasks and answers
+  // awaiting_acknowledgement; confirmAgentHandoff (:3899-3979) abandons the terminal uncollected task without an abort.
+  'dispatch-barrier-states': {
+    steps: 30,
+    clock: ['+0 1-30'],
+    groups: ['4: call submit x2', '9: control setChildSessionId of executor.start#1..2', '12: control markAccepted of executor.start#1..2'],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-7 9-10 12-13 17 20 23 27', publishEvent: '5-8 10-11 13-14 18 21 24 28', 'executor.start': '8x2' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-8 10-11 13-14 18 21 24 28', 'executor.start': '17 20' },
+    launches: ['grouped-1..2 @8 after 5'],
+    timers: { '300000 at +0 cleared +0': 13, '60000 at +0 cleared +0': 2 },
+    outcomes: ['initialize resolved', 'submit resolved starting x2', 'control.setChildSessionId resolved true x2', 'control.markAccepted resolved true x2', 'inspectDispatchBarrier resolved <object>', 'waitForDispatchBarrier resolved <object>', 'inspectDispatchBarrier resolved <object> x2', 'acknowledgeResult resolved <object>', 'inspectDispatchBarrier resolved <object>', 'inspectAgentHandoff resolved <object>', 'confirmAgentHandoff resolved <object>', 'inspectDispatchBarrier resolved <object>', 'getSnapshot returned <object>'],
+    final: { completed: 'grouped-1..2' },
+  },
+  // persistLocked (:543-594): the stall watch of save 2 is armed for the stall (+1000), re-armed at +600 by the completed
+  // phase for the earlier of the stall (+1600) and the deadline (+1500, :569-573); at the deadline it reports task_deadline
+  // (:559-563); flush (:3981-3987) waits behind the held save; the deadline timer armed after the commit (0 ms, fires at +1,
+  // the platform clamp) fails the starting task.
+  'persistence-stall-deadline': {
+    steps: 13,
+    clock: ['+0 1-5', '+600 6', '+1500 7-9', '+1501 10-13'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4 8 12', onPersistenceObservation: '7-8', 'logger.warn': '7', publishEvent: '8-9 13', 'executor.start': '9', 'executor.getLastRecoverableResult': '10', 'executor.abort': '10', 'executor.readRecoverableResult': '11' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 8-9 13', 'executor.abort': '11', 'executor.readRecoverableResult': '12' },
+    launches: ['due @9 after 3'],
+    timers: { '1000 at +0 cleared +0': 1, '1000 at +0 cleared +600': 1, '900 at +600 fired +1500': 1, '0 at +1500 fired +1501': 1, '0 at +1500 cleared +1500': 1, '60000 at +1500 cleared +1501': 1, '5000 at +1501 cleared +1501': 1, '0 at +1501 cleared +1501': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'flush resolved', 'callback.onProgress returned'],
+    final: { failed: 'due' },
+  },
+  // The child filter of listReadyProviderRecoveryContinuations (:3145-3151); getChildAssignment takes the later settled task
+  // (:4348); a claim blocks another claimant only while it has not expired (:3214); verifyRecoveredCollection needs the
+  // claimant's unexpired claim (:3254). Claims, releases and reads save nothing.
+  'provider-recovery-expiry': {
+    steps: 27,
+    clock: ['+0 1-12', '+1000 13-22', '+61000 23-24', '+121000 25-27'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-5 7 9 11 13-14 16 18', publishEvent: '5-6 8 10 12 14x2 15 17 19', 'executor.start': '6', 'executor.retryInPlace': '15' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-6 8 10 12 14-15 17 19', 'executor.start': '11', 'executor.retryInPlace': '18' },
+    launches: ['recovering @6 after 3', 'retryInPlace recovering @15 after 8'],
+    timers: { '300000 at +0 cleared +0': 6, '60000 at +0 cleared +0': 1, '300000 at +1000 cleared +1000': 4, '60000 at +1000 cleared +1000': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.setChildSessionId resolved true', 'control.markAccepted resolved true', 'acknowledgeResult resolved <object>', 'control.markAccepted resolved true', 'listReadyProviderRecoveryContinuations returned <array 1>', 'getChildAssignment returned completed', 'claimProviderRecoveryContinuation resolved <object> x2', 'verifyRecoveredCollection resolved <object>', 'verifyRecoveredCollection resolved', 'releaseProviderRecoveryContinuation resolved <object>', 'listResultEnvelopes returned <array 2>'],
+    final: { completed: 'recovering', failed: 'recovering' },
+  },
+  // The loaded source names another follow-up (:3252), so verifyRecoveredCollection answers null; listing, claiming and
+  // releasing do not look at the link (:3133-3238).
+  'provider-recovery-unlinked': {
+    steps: 7,
+    clock: ['+0 1-7'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3' },
+    launches: [],
+    timers: { '300000 at +0 cleared +0': 1 },
+    outcomes: ['initialize resolved', 'listReadyProviderRecoveryContinuations returned <array 1>', 'claimProviderRecoveryContinuation resolved <object>', 'verifyRecoveredCollection resolved', 'releaseProviderRecoveryContinuation resolved <object>'],
+    final: { completed: 'recover-1', failed: 'recovering' },
+  },
+  // cancelAutoResumeForSession matches the root or the child session (:3795) and clears the planning timer; re-enabled at
+  // expiresAt (the lineage's start + AUTO_RESUME_MAX_LINEAGE_MS), the state is exhausted (:3770-3772) and nothing is planned.
+  'auto-resume-child-cancel': {
+    steps: 18,
+    clock: ['+0 1-16', '+21600000 17-18'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-5 7 9 11-12 14 17', publishEvent: '5-6 8 10 12-13 15 18', 'executor.start': '6' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-6 8 10 12-13 15 18', 'executor.start': '11' },
+    launches: ['parked @6 after 3'],
+    timers: { '300000 at +0 cleared +0': 8, '60000 at +0 cleared +0': 1, '0 at +0 cleared +0': 1, '300000 at +21600000 cleared +21600000': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.setChildSessionId resolved true', 'control.markAccepted resolved true', 'cancelAutoResumeForSession resolved <object>', 'getResultEnvelope returned failed', 'setResultAutoResume resolved <object>'],
+    final: { failed: 'parked' },
+  },
+  // readOperatorStop (:4191-4200) reads a stop at or after `after` and its state; acceptOperatorStop commits accepted and
+  // arms the deadline and the reconciliation retry (:4159-4176); withdrawOperatorStop refuses an accepted stop (:4182).
+  'operator-stop-read': {
+    steps: 22,
+    clock: ['+0 1-18', '+1000 19-22'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-5 7 9 11 15 21', publishEvent: '5-6 8 10 12 16 22', 'executor.start': '6', 'executor.reconcile': '19', 'executor.readRecoverableResult': '20' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-6 8 10 12 16 22', 'executor.reconcile': '20', 'executor.readRecoverableResult': '21' },
+    launches: ['stopped @6 after 3'],
+    timers: { '300000 at +0 cleared +0': 7, '60000 at +0 cleared +0': 1, '5000 at +0 cleared +0': 1, '1000 at +0 fired +1000': 1, '300000 at +1000 cleared +1000': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.setChildSessionId resolved true', 'control.markAccepted resolved true', 'recordOperatorStop resolved <object>', 'readOperatorStop returned', 'readOperatorStop returned <object>', 'acceptOperatorStop resolved true', 'readOperatorStop returned <object>', 'withdrawOperatorStop resolved false'],
+    final: { interrupted: 'stopped' },
+  },
+  // acceptPrimaryPrompt refuses only an older prompt (:4221); recordPrimaryStep counts each message once (:4258) and starts a
+  // new prompt afresh (:4251); the warning notice names the steps used (:4279); readPrimaryStepBudget answers null once the
+  // task is terminal (:1303-1309).
+  'designer-step-budget-next-prompt': {
+    steps: 23,
+    clock: ['+0 1-23'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-5 7 9 11 13 15 17 19 21', publishEvent: '5-6 8 10 12 14 16 18 20 22', 'executor.start': '6' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-6 8 10 12 14 16 18 20 22', 'executor.start': '21' },
+    launches: ['designed @6 after 3'],
+    timers: { '300000 at +0 cleared +0': 11, '60000 at +0 cleared +0': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.setChildSessionId resolved true', 'acceptPrimaryPrompt resolved true x2', 'recordPrimaryStep resolved <object> x2', 'control.markAccepted resolved true', 'claimPrimaryStepBudgetWarning resolved <object>', 'control.readPrimaryStepBudget resolved'],
+    final: { completed: 'designed' },
+  },
+  // The timeouts of waitForAnyTask and waitForResultCommit answer the snapshot (:3027-3031, :2966-2968); until settled
+  // waits for attention or settlement, not a ready result (:2997-2998); waitForResultAction rejects with its signal's
+  // reason (:3078-3088).
+  'waits-time-out': {
+    steps: 26,
+    clock: ['+0 1-16', '+1000 17-26'],
+    groups: ['4: call submit x2', '9: control setChildSessionId of executor.start#1..2', '12: control markAccepted of executor.start#1..2'],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-7 9-10 12-13 20 22', publishEvent: '5-8 10-11 13-14 21 23', 'executor.start': '8x2' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-8 10-11 13-14 21 23', 'executor.start': '20 22' },
+    launches: ['wait-a @8 after 5', 'wait-b @8 after 5'],
+    timers: { '300000 at +0 cleared +0': 9, '60000 at +0 cleared +0': 2, '1000 at +0 fired +1000': 2, '300000 at +1000 cleared +1000': 2 },
+    outcomes: ['initialize resolved', 'submit resolved starting x2', 'control.setChildSessionId resolved true x2', 'control.markAccepted resolved true x2', 'waitForAnyTask resolved <object>', 'waitForResultCommit resolved <object>', 'waitForAnyTask resolved <object>', 'waitForResultAction rejected Error', 'listResultEnvelopes returned <array 2>'],
+    final: { completed: 'wait-a, wait-b' },
+  },
+  // verifyTaskDispatch refuses a task whose cancellation is in progress (:4382), verifyTaskSettlement does not (:4437);
+  // withNativePromptContext authorizes (:4464) and then refuses a root with another directory (fenced, :4460) or an
+  // empty directory (unavailable, :4456-4458).
+  'native-prompt-context-fenced': {
+    steps: 27,
+    clock: ['+0 1-27'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-5 7 9 16 18-19 21-22', publishEvent: '5-6 8 10 17 19-20 22-23', 'executor.start': '6 20 23', 'executor.getLastRecoverableResult': '12', 'executor.abort': '12', 'executor.readRecoverableResult': '15', authorize: '24 26' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-6 8 10 17 19-20 22-23', 'executor.abort': '15', 'executor.readRecoverableResult': '16', authorize: '25 27' },
+    launches: ['cancelled @6 after 3', 'split-a @20 after 8', 'split-b @23 after 10'],
+    timers: { '300000 at +0 cleared +0': 10, '60000 at +0 cleared +0': 1, '5000 at +0 cleared +0': 1, '60000 at +0 live': 2 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.setChildSessionId resolved true', 'control.markAccepted resolved true', 'verifyTaskDispatch resolved running', 'cancelTask resolved aborted', 'verifyTaskDispatch rejected native_managed_task_lease_invalid', 'verifyTaskSettlement resolved running', 'submit resolved starting x2', 'withNativePromptContext rejected native_prompt_context_fenced', 'withNativePromptContext rejected native_prompt_context_unavailable'],
+    final: { aborted: 'cancelled', starting: 'split-a, split-b' },
+  },
+  // withNativePromptContext (:4451-4499): a rejected authorize ends it before the action (:4464); a rejected action ends it
+  // without the last authorize (:4468-4487); a rejected last authorize drops the observations (:4488); a failed save puts
+  // the envelope back (:4490-4493), so the collect's save holds the result without promptObserved.
+  'native-prompt-context-refusals': {
+    steps: 34,
+    clock: ['+0 1-34'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-5 7 9 11 27 33', publishEvent: '5-6 8 10 12 34', 'executor.start': '6', authorize: '13 15 18 21 23 26 29 31', promptAction: '16 19 24 30' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-6 8 10 12 34 rejected 28', 'executor.start': '11', authorize: '16 19 24 27 30 32 rejected 14 22', promptAction: '21 26 31 rejected 17' },
+    launches: ['context @6 after 3'],
+    timers: { '300000 at +0 cleared +0': 8, '60000 at +0 cleared +0': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.setChildSessionId resolved true', 'control.markAccepted resolved true', 'withNativePromptContext rejected harness_root_revoked', 'withNativePromptContext rejected harness_action_failed', 'withNativePromptContext rejected harness_root_revoked', 'callback.markPromptObserved returned', 'withNativePromptContext rejected harness_save_refused', 'callback.markPromptObserved returned', 'withNativePromptContext resolved read', 'acknowledgeResult resolved <object>'],
+    final: { completed: 'context' },
+  },
+  // recordTransportRecovery (:1236-1255) refuses, in the lock, attempts fewer than recorded (:1247-1251); the same-model
+  // count is validated to be 1 (transport-recovery.js), so only a backup attempt can be given back.
+  'retry-transport-recovery': {
+    steps: 12,
+    clock: ['+0 1-12'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-5 8 11', publishEvent: '5-6 9 12', 'executor.start': '6' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-6 9 12' },
+    launches: ['transport @6 after 3'],
+    timers: { '300000 at +0 cleared +0': 5, '60000 at +0 live': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.readPriorFailureReason returned', 'control.recordTransportRecovery resolved true', 'control.recordTransportRecovery rejected TypeError', 'control.recordTransportRecovery resolved true'],
+    final: { starting: 'transport' },
+  },
+  // assertPrerequisites (:1274-1283) rechecks while starting (its third verifyTaskPrerequisites, held); the cancellation
+  // takes the task's owner meanwhile, so the final fence (:1281-1282) rejects task_lease_stale.
+  'prerequisites-assert-cancelled': {
+    steps: 14,
+    clock: ['+0 1-14'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4 6 13', publishEvent: '5 7 14', verifyTaskPrerequisites: '5 7 9', 'executor.start': '8', 'executor.getLastRecoverableResult': '10', 'executor.abort': '10', 'executor.readRecoverableResult': '12' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5 7 14', verifyTaskPrerequisites: '6 8 11', 'executor.abort': '12', 'executor.readRecoverableResult': '13' },
+    launches: ['asserted @8 after 3'],
+    timers: { '300000 at +0 cleared +0': 4, '60000 at +0 cleared +0': 1, '5000 at +0 cleared +0': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.assertPrerequisites rejected task_lease_stale', 'cancelTask resolved aborted'],
+    final: { aborted: 'asserted' },
   },
 };
 

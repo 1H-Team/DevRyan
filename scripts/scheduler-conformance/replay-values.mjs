@@ -7,12 +7,18 @@ import { decode, emitSlots, stringifyTree } from '../client-conformance/codec.mj
 export const TAG = '$dr';
 const LEAF_TAGS = new Set(['undefined', 'number', 'bigint', 'date', 'regexp', 'bytes', 'typed', 'arraybuffer', 'dataview', 'url', 'searchparams', 'headers', 'response', 'request', 'symbol', 'promise', 'weak', 'opaque', 'unencodable']);
 
-/** A value's tree with identity numbers taken out (`id` -> its content, `ref` -> a bare marker): what one value alone is. */
+/**
+ * A value's tree with identity numbers taken out (`id` -> its content, `ref` -> a bare marker, an unregistered
+ * symbol's ordinal dropped, its description kept): what one value alone is. A symbol's ordinal is its identity in
+ * the scope it was emitted in, like an object's number, so it is compared where identity is: at the end of the case,
+ * in one scope (a value emitted alone numbers its first symbol 1 whatever the case's scope numbered it).
+ */
 export function shape(tree) {
   if (Array.isArray(tree)) return tree.map(shape);
   if (tree === null || typeof tree !== 'object') return tree;
   if (tree[TAG] === 'id') return shape(tree.value);
   if (tree[TAG] === 'ref') return { [TAG]: 'ref' };
+  if (tree[TAG] === 'symbol' && Object.hasOwn(tree, 'n')) return Object.hasOwn(tree, 'description') ? { [TAG]: 'symbol', description: tree.description } : { [TAG]: 'symbol' };
   const out = {};
   for (const key of Object.keys(tree)) out[key] = shape(tree[key]);
   return out;

@@ -123,7 +123,7 @@ const parseDrain = (mode) => {
   throw new TypeError(`scheduler driver: unknown drain mode ${mode}`);
 };
 
-const SYNC_PORTS = new Set(['publishEvent', 'logger.warn', 'executor.getLastRecoverableResult', 'resolveExecutionBackend', 'onBarrierChange', 'onRequiredCheckReceipt', 'onRunCleanup', 'onPersistenceObservation', 'onMutationTiming']);
+const SYNC_PORTS = new Set(['publishEvent', 'logger.warn', 'logger.error', 'executor.getLastRecoverableResult', 'resolveExecutionBackend', 'onBarrierChange', 'onRequiredCheckReceipt', 'onRunCleanup', 'onPersistenceObservation', 'onMutationTiming']);
 /** The policies every instance starts from; a scenario overrides them per port. */
 export const DEFAULT_PORTS = Object.freeze({
   'executor.start': { mode: 'hold' },
@@ -486,6 +486,22 @@ export class Driver {
       label: `control ${method} of ${entry.name}#${entry.index}`,
       describe: () => ({ kind: 'control', construction: inst.n, method, of: entry.recorded, call: this.nextCall(inst) }),
       run: () => this.track(inst, `control.${method}`, () => entry.args[1][method](...args)),
+    };
+  }
+
+  /**
+   * A call of a function the scheduler handed port call `entry` inside one of
+   * its arguments (`path` `<argument>.<key>`: persistence.save's `1.onProgress`),
+   * called as a method of the object that holds it.
+   */
+  callback(entry, path, ...args) {
+    this.alive();
+    const inst = this.instances[entry.inst - 1];
+    const [index, key] = path.split('.');
+    return {
+      label: `callback ${path} of ${entry.name}#${entry.index}`,
+      describe: () => ({ kind: 'callback', construction: inst.n, of: entry.recorded, path, call: this.nextCall(inst) }),
+      run: () => this.track(inst, `callback.${key}`, () => entry.args[Number(index)][key](...args)),
     };
   }
 

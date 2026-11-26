@@ -7,6 +7,9 @@
     { "kind": "member", "name": "open", "class": "past-busy", "needs": "placed test", "reason": "called only after its case's first busy input" },
     { "kind": "member", "name": "submit", "class": "call-only", "needs": "placed test", "reason": "every call lies inside a compared prefix, but the toy's submit settles only after the executor's answer, which arrives at or after the case's first busy input" },
     { "kind": "member", "name": "waitForSignals", "class": "call-only", "needs": "placed test", "reason": "called inside the compared prefix; it settles only past the case's first busy input" },
+    { "kind": "member", "name": "copy", "class": "shallow", "needs": "placed test", "reason": "both its compared calls copy the same object, so they answer one value, with no port call between call and answer" },
+    { "kind": "member", "name": "fail", "class": "shallow", "needs": "placed test", "reason": "its only call throws the toy's error: a refusal" },
+    { "kind": "member", "name": "ownWork", "class": "shallow", "needs": "placed test", "reason": "its one compared answer comes with nothing between call and answer; its other call lies past a busy input" },
     { "kind": "port", "name": "persistence.putShard", "class": "unreached", "needs": "test", "reason": "the toy checks whether its persistence has it, and no toy test gives one" },
     { "kind": "input", "name": "in step", "class": "unreached", "needs": "none", "reason": "only the scripted driver writes input groups; the toy is recorded from its tests, never driven" },
     { "kind": "place", "name": "group", "class": "unreached", "needs": "none", "reason": "only the scripted driver places an input in a group; the toy is recorded from its tests, never driven" }

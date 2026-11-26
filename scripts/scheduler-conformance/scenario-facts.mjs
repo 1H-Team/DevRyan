@@ -220,7 +220,7 @@ const inputKey = (item) => (item.kind === 'answer' ? `${item.construction} answe
 function eventKey(event) {
   if (event.kind === 'answer') return event.outcome === 'resolve' || event.outcome === 'reject' ? `${event.construction} answer ${event.port} ${event.outcome}` : null;
   if (event.kind === 'abort') return `${event.construction} abort ${event.signal}`;
-  if (event.kind === 'call' || event.kind === 'control' || event.kind === 'fire') return `${event.construction} ${event.kind} ${event.call}`;
+  if (event.kind === 'call' || event.kind === 'control' || event.kind === 'callback' || event.kind === 'fire') return `${event.construction} ${event.kind} ${event.call}`;
   return null;
 }
 
