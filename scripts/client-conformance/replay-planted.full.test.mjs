@@ -29,6 +29,8 @@ test('every planted difference of the replayer outside the per-push sample is re
   assert.ok(REPLAYER_PLANTS.filter((plant) => plant.origin === 'C0e').length >= 12, 'package C0e\'s, at least 12');
   // The C0e review's 20, each caught by the check it names (runReplayerPlants matches `check` in the failure).
   assert.equal(REPLAYER_PLANTS.filter((plant) => plant.origin === 'C0e review' && typeof plant.check === 'string').length, 20, 'all 20 of the C0e review, each naming its check');
+  assert.equal(REPLAYER_PLANTS.filter((plant) => plant.origin === 'C0f' && typeof plant.check === 'string').length, 9, 'package C0f\'s nine on the transport paths, each naming its check');
+  assert.equal(REPLAYER_PLANTS.filter((plant) => plant.origin === 'C0f fix' && typeof plant.check === 'string').length, 4, 'the C0f fix round\'s four: an immediate answer a generation late or early, wrappers not unified, new calls not paired');
   const recording = await recordReplayToys({ workDir: path.join(scratch.dir, 'record') });
   assert.deepEqual(recording.incomplete, []);
   const { failures } = await replaySelfTest({ workDir: path.join(scratch.dir, 'toys'), parts: ['toy-mutants'], mutants: toyRest, recording });

@@ -123,6 +123,29 @@ export const TOOL_CHECKS = Object.freeze([
       recordedOutput: '(pass) t\nRan 1 test across 1 file. [912.00ms]\n' });
     return timed.differences.length === 0 && hasCheck(counted.differences, 'output');
   }],
+  // The facade's query in a recorded stack frame (C0f fix round): removed there only. The same frame at another line,
+  // the query in a line that is no frame, or on the plain side, still differ.
+  ['parity-output-facade-frame', () => {
+    const base = { baseline: [junitTest('a.test.ts', 1, 't')], recorded: [junitTest('a.test.ts', 1, 't')], raws: [rawOf('a.test.ts', ['test'])] };
+    const frame = (query, line = 28) => `      at unwrap (/repo/src/sync/bootstrap.ts${query}:${line}:21)\n      at /repo/src/sync/bootstrap.ts${query}:123:81\n`;
+    const plain = { baselineOutput: frame(''), secondBaselineOutput: frame('') };
+    const same = judgeParity({ ...base, ...plain, recordedOutput: frame('?conformance-real') });
+    const moved = judgeParity({ ...base, ...plain, recordedOutput: frame('?conformance-real', 29) });
+    const prose = judgeParity({ ...base, baselineOutput: 'loaded /repo/src/sync/bootstrap.ts:28:21\n', secondBaselineOutput: 'loaded /repo/src/sync/bootstrap.ts:28:21\n', recordedOutput: 'loaded /repo/src/sync/bootstrap.ts?conformance-real:28:21\n' });
+    const plainSide = judgeParity({ ...base, baselineOutput: frame('?conformance-real'), secondBaselineOutput: frame('?conformance-real'), recordedOutput: frame('') });
+    return same.differences.length === 0 && hasCheck(moved.differences, 'output') && hasCheck(prose.differences, 'output') && hasCheck(plainSide.differences, 'output');
+  }],
+  // A duration a test prints from timed busy work (TIMED_IN_TEST_CODE, C0f fix round): only that duration of that line
+  // is #; the line's sample count, the same words with another ending, and a duration in any other line still differ.
+  ['parity-output-timed-in-test-code', () => {
+    const base = { baseline: [junitTest('a.test.ts', 1, 't')], recorded: [junitTest('a.test.ts', 1, 't')], raws: [rawOf('a.test.ts', ['test'])] };
+    const bench = (samples, max, tail = '') => `Session promotion benchmark: ${samples} samples, max ${max} ms${tail}\n`;
+    const judge = (plain, recorded) => judgeParity({ ...base, baselineOutput: plain, secondBaselineOutput: plain, recordedOutput: recorded });
+    return judge(bench(30, 1), bench(30, 0)).differences.length === 0
+      && hasCheck(judge(bench(30, 1), bench(31, 0)).differences, 'output')
+      && hasCheck(judge(bench(30, 1, ' (slow)'), bench(30, 0, ' (slow)')).differences, 'output')
+      && hasCheck(judge('Other benchmark: max 1 ms\n', 'Other benchmark: max 0 ms\n').differences, 'output');
+  }],
   ['parity-output-learned', () => {
     const judged = judgeParity({ baseline: [junitTest('a.test.ts', 1, 't')], recorded: [junitTest('a.test.ts', 1, 't')], raws: [rawOf('a.test.ts', ['test'])], baselineOutput: 'took 3 ms\nsame\n', secondBaselineOutput: 'took 5 ms\nsame\n', recordedOutput: 'took 9 ms\nsame\n' });
     return judged.differences.length === 0 && judged.masked === 2;
@@ -155,6 +178,14 @@ export const TOOL_CHECKS = Object.freeze([
     const built = buildContainers({ raws: [rawOf('a.test.ts', ['hooks', 'test', 'test'])], junit: [junitTest('a.test.ts', 1, 't'), junitTest('a.test.ts', 2, 'skipped', 'skipped'), junitTest('a.test.ts', 3, 'v')] });
     const ids = built.containers.flatMap((entry) => readContainer(entry.text).cases.map((record) => record.id));
     return built.incomplete.length === 0 && ids.join('|') === 'a.test.ts #hooks:0/toy|a.test.ts:1 t #1/toy|a.test.ts:3 v #1/toy';
+  }],
+  // A real-transport case (C0f fix round) is written with that flag alone and nothing it did; any other unrecordable
+  // case keeps its flags and steps.
+  ['record-real-transport-alone', () => {
+    const cases = (flags) => readContainer(buildContainers({ raws: [rawOf('a.test.ts', ['test'], { flags })], junit: [junitTest('a.test.ts', 1, 't')] }).containers[0].text).cases;
+    const [refused] = cases(['opaque', 'real-transport']);
+    const [kept] = cases(['opaque']);
+    return refused.flags.join() === 'real-transport' && refused.steps.length === 0 && refused.context.length === 0 && kept.flags.join() === 'opaque' && kept.steps.length === 1;
   }],
   ['record-empty', () => hasCheck(buildContainers({ raws: [rawOf('a.test.ts', ['test'], { families: [] })], junit: [junitTest('a.test.ts', 1, 't')] }).incomplete, 'empty')
     && hasCheck(buildContainers({ raws: [], junit: [] }).incomplete, 'empty')],

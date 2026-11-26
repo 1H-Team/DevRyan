@@ -30,9 +30,9 @@ import { compareRecordings } from './stability.mjs';
 import { checkVectors } from './vectors.mjs';
 
 // The toy corpus: its cases, the fixtures TOY_UNRECORDABLE lists and the unrecordable cases they make (one per family line).
-const TOY_CASES = 117;
-const TOY_FIXTURES = 28;
-const TOY_UNRECORDABLE_CASES = 32;
+const TOY_CASES = 148;
+const TOY_FIXTURES = 33;
+const TOY_UNRECORDABLE_CASES = 37;
 const toyFiles = () => TOY_FILES.map((name) => `scripts/client-conformance/toy/${name}`);
 // Two recordings of the toy corpus, made once and shared by the tests that judge them (corpus, census, family command).
 let shared = null;
@@ -170,8 +170,8 @@ describe('client conformance self-test', { concurrency: true }, () => {
     const toys = await passSetParity({ targets: toyFiles(), cwd: REPOSITORY_ROOT, portMap: path.join(HARNESS_DIR, 'toy/port-map.json'), workDir: path.join(scratch.dir, 'toys'), parallel: 1 });
     // One worker: what the runner prints is then in one order on every machine, so this test cannot turn on scheduling.
     assert.deepEqual([...toys.differences, ...toys.incomplete], []);
-    assert.equal(toys.runs[0].recordedPassed, 104);
-    assert.equal(toys.runs[0].baselinePassed, 104);
+    assert.equal(toys.runs[0].recordedPassed, 135);
+    assert.equal(toys.runs[0].baselinePassed, 135);
     scratch.pass();
   });
 

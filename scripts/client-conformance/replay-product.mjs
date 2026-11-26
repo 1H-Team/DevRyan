@@ -205,6 +205,39 @@ export const PRODUCT_PLANTS = Object.freeze([
     anchor: '  clearAttachment: (sessionId) =>\n    set((s) => {\n      const next = new Map(s.attachments);\n      next.delete(sessionId);\n      return { attachments: next };\n    }),\n',
     replacement: '  clearAttachment: (sessionId) =>\n    void Promise.resolve().then(() => set((s) => {\n      const next = new Map(s.attachments);\n      next.delete(sessionId);\n      return { attachments: next };\n    })),\n',
     expect: { check: 'effects', kind: 'return-position', family: 'session-worktree-store' } },
+  // Package C0f: the transport families (event-pipeline, bootstrap). Design mutant 8 on the pipeline. Open (C0f fix
+  // round, named so no plant counts under a mutation it does not make): 7 as written (FLUSH_FRAME_MS 33 -> 34, by the
+  // timer delay) escapes, since no product test flushes within a frame of the last flush (a tests-only package's);
+  // 9 (a loader page limit) waits for the loader's family; 10 as written (effect order on session actions) waits for
+  // that family. In their place, on the pipeline, the flush clamp and two cleanup calls swapped, counted as C0f's.
+  { name: 'c0f-flush-delay-clamp-off-by-one', origin: 'C0f', file: `${SYNC}/event-pipeline.ts`, families: ['event-pipeline'],
+    anchor: 'Math.max(0, flushFrameMs - elapsed)', replacement: 'Math.max(1, flushFrameMs - elapsed)', expect: { check: 'effects', kind: 'value', family: 'event-pipeline' } },
+  { name: 'c0f-design-8-deltas-coalesced-across-fields', origin: 'design 8', file: `${SYNC}/event-pipeline.ts`, families: ['event-pipeline'],
+    anchor: '      return `message.part.delta:${props.messageID}:${props.partID}:${props.field}`', replacement: '      return `message.part.delta:${props.messageID}:${props.partID}`',
+    expect: { check: 'effects', kind: 'value', family: 'event-pipeline' } },
+  // Two port calls swapped, as design mutant 10's, but on the pipeline's cleanup, and caught as a missing effect (the
+  // swapped removal no longer matches at its position), not by the effect-order check design 10 names.
+  { name: 'c0f-cleanup-calls-swapped', origin: 'C0f', file: `${SYNC}/event-pipeline.ts`, families: ['event-pipeline'],
+    anchor: '      document.removeEventListener("visibilitychange", onVisibility)\n      window.removeEventListener("pageshow", onPageShow)', replacement: '      window.removeEventListener("pageshow", onPageShow)\n      document.removeEventListener("visibilitychange", onVisibility)',
+    expect: { check: 'effects', kind: 'missing', family: 'event-pipeline' } },
+  { name: 'c0f-heartbeat-default-off-by-one', origin: 'C0f', file: `${SYNC}/event-pipeline.ts`, families: ['event-pipeline'],
+    anchor: 'const DEFAULT_HEARTBEAT_TIMEOUT_MS = 30_000', replacement: 'const DEFAULT_HEARTBEAT_TIMEOUT_MS = 30_001', expect: { check: 'effects', kind: 'value', family: 'event-pipeline' } },
+  // The WebSocket URL's cursor and the WebSocket gap frame escape: no product test reconnects a socket after an event
+  // id or sends a gap frame (C0f.md lists the tests). These two are the SSE paths that are tested.
+  { name: 'c0f-reconnect-header-loses-the-cursor', origin: 'C0f', file: `${SYNC}/event-pipeline.ts`, families: ['event-pipeline'],
+    anchor: '{ "Last-Event-ID": lastEventId }', replacement: '{ "Last-Event-Id": lastEventId }', expect: { check: 'effects', kind: 'members', family: 'event-pipeline' } },
+  { name: 'c0f-replay-gap-header-dropped', origin: 'C0f', file: `${SYNC}/event-pipeline.ts`, families: ['event-pipeline'],
+    anchor: '"X-DevRyan-Replay-Gap": "1", ', replacement: '', expect: { check: 'effects', kind: 'members', family: 'event-pipeline' } },
+  { name: 'c0f-reconnect-event-not-dispatched', origin: 'C0f', file: `${SYNC}/event-pipeline.ts`, families: ['event-pipeline'],
+    anchor: '    globalThis.window?.dispatchEvent(new globalThis.Event("devryan:primary-recovery-reconnect"))', replacement: '', expect: { check: 'effects', kind: 'missing', family: 'event-pipeline' } },
+  { name: 'c0f-reconnect-event-renamed', origin: 'C0f', file: `${SYNC}/event-pipeline.ts`, families: ['event-pipeline'],
+    anchor: 'new globalThis.Event("devryan:primary-recovery-reconnect")', replacement: 'new globalThis.Event("devryan:primary-recovery-reconnected")', expect: { check: 'effects', kind: 'value', family: 'event-pipeline' } },
+  { name: 'c0f-sse-gap-not-reported', origin: 'C0f', file: `${SYNC}/event-pipeline.ts`, families: ['event-pipeline'],
+    anchor: '        if (event.event === "devryan.replay-gap") {\n          onReplayGap?.()', replacement: '        if (event.event === "devryan.replay-gap") {', expect: { check: 'effects', kind: 'missing', family: 'event-pipeline' } },
+  { name: 'c0f-bootstrap-retry-backoff-off-by-one', origin: 'C0f', file: `${SYNC}/retry.ts`, families: ['bootstrap'],
+    anchor: '    delay = 500,', replacement: '    delay = 501,', expect: { check: 'effects', kind: 'value', family: 'bootstrap' } },
+  { name: 'c0f-bootstrap-partial-status-not-set', origin: 'C0f', file: `${SYNC}/bootstrap.ts`, families: ['bootstrap'],
+    anchor: '  if (loading) set({ status: "partial" })', replacement: '', expect: { check: 'effects', kind: 'missing', family: 'bootstrap' } },
 ]);
 
 /** The planted copy's source (`anchor` exactly once), or an error naming the plant. */

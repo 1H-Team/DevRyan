@@ -25,6 +25,7 @@
 //   {"$dr":"response","status":503,"statusText":"","url":"","type":"default","redirected":false,"bodyUsed":false,"headers":[[n, v], ...]}
 //   {"$dr":"request","method":"GET","url":"...","bodyUsed":false,"headers":[[n, v], ...]}   (bodies are never read)
 //   {"$dr":"abortsignal","aborted":true,"reason":<tree>}
+//   {"$dr":"event","type":"x","bubbles":false,"cancelable":false,"composed":false,"defaultPrevented":false}   a plain Event (codec 4)
 //   {"$dr":"symbol","n":1,"description":"x"} | {"$dr":"symbol","key":"k"} | {"$dr":"symbol","wellKnown":"iterator"}
 //   {"$dr":"function","name":"f","port":"fetch"?}
 //   {"$dr":"accessor","get":true,"set":false}   an own accessor: never invoked
@@ -62,7 +63,8 @@ import { createHash } from 'node:crypto';
 import { types as utilTypes } from 'node:util';
 
 export const TAG = '$dr';
-export const CODEC_VERSION = 3;
+// 4 (package C0f): a plain Event (one the engine dispatches on a platform object) is a value, `event`, not opaque.
+export const CODEC_VERSION = 4;
 
 // Intrinsics, captured before any test can replace a global.
 const ObjectRef = Object;
@@ -94,6 +96,7 @@ const RealHeaders = typeof Headers === 'function' ? Headers : null;
 const RealResponse = typeof Response === 'function' ? Response : null;
 const RealRequest = typeof Request === 'function' ? Request : null;
 const RealDOMException = typeof DOMException === 'function' ? DOMException : null;
+const RealEvent = typeof Event === 'function' ? Event : null;
 const BufferRef = typeof Buffer === 'function' ? Buffer : null;
 const isProxy = typeof utilTypes?.isProxy === 'function' ? utilTypes.isProxy : () => false;
 const MapForEach = Map.prototype.forEach;
@@ -132,6 +135,8 @@ const headersForEach = RealHeaders?.prototype.forEach;
 const domName = getter(RealDOMException?.prototype, 'name');
 const domMessage = getter(RealDOMException?.prototype, 'message');
 const domCode = getter(RealDOMException?.prototype, 'code');
+const EVENT_FIELDS = ['type', 'bubbles', 'cancelable', 'composed', 'defaultPrevented'];
+const eventGetters = EVENT_FIELDS.map((key) => [key, getter(RealEvent?.prototype, key)]);
 const RESPONSE_FIELDS = ['status', 'statusText', 'url', 'type', 'redirected', 'bodyUsed'];
 const REQUEST_FIELDS = ['method', 'url', 'bodyUsed'];
 const responseGetters = RESPONSE_FIELDS.map((key) => [key, getter(RealResponse?.prototype, key)]);
@@ -395,6 +400,14 @@ export function snapshot(value, context = createCodecContext()) {
       tree.headers = headerEntries(apply(requestHeaders, item, []));
       return { kind: 'leaf', tree };
     }
+    // A plain Event (its prototype is Event's own, and it has no own string member but the platform's isTrusted; the
+    // symbol members Node keeps on it are its internals) is its state; a subclass (CustomEvent, MessageEvent) holds
+    // more than these and stays opaque.
+    if (RealEvent && getPrototypeOf(item) === RealEvent.prototype && ownKeys(item).every((key) => typeof key === 'symbol' || key === 'isTrusted') && eventGetters.every(([, get]) => typeof get === 'function')) {
+      const tree = { [TAG]: 'event' };
+      for (const [key, get] of eventGetters) tree[key] = apply(get, item, []);
+      return { kind: 'leaf', tree };
+    }
     for (const [name, constructor] of PLATFORM_OPAQUE) {
       if (apply(isPrototypeOf, constructor.prototype, [item])) return { kind: 'leaf', tree: { [TAG]: 'opaque', name: constructorName(item) ?? name } };
     }
@@ -549,7 +562,8 @@ const SHAPES = {
   searchparams: { keys: ['entries'], required: ['entries'] }, headers: { keys: ['entries'], required: ['entries'] },
   response: { keys: ['status', 'statusText', 'url', 'type', 'redirected', 'bodyUsed', 'headers'], required: ['status', 'statusText', 'url', 'type', 'redirected', 'bodyUsed', 'headers'] },
   request: { keys: ['method', 'url', 'bodyUsed', 'headers'], required: ['method', 'url', 'bodyUsed', 'headers'] },
-  abortsignal: { keys: ['aborted', 'reason'], required: ['aborted', 'reason'] }, symbol: { keys: ['n', 'description', 'key', 'wellKnown'] },
+  abortsignal: { keys: ['aborted', 'reason'], required: ['aborted', 'reason'] },
+  event: { keys: ['type', 'bubbles', 'cancelable', 'composed', 'defaultPrevented'], required: ['type', 'bubbles', 'cancelable', 'composed', 'defaultPrevented'] }, symbol: { keys: ['n', 'description', 'key', 'wellKnown'] },
   function: { keys: ['name', 'port'], required: ['name'] }, accessor: { keys: ['get', 'set'], required: ['get', 'set'] },
   class: { keys: ['name', 'error', 'primitive', 'value', 'cause', 'errors'], required: ['name', 'value'] }, port: { keys: ['name'], required: ['name'] },
   promise: { keys: [] }, weak: { keys: ['type'], required: ['type'] }, opaque: { keys: ['name'], required: ['name'] }, unencodable: { keys: ['reason'], required: ['reason'] },
@@ -734,6 +748,12 @@ export function decode(tree, context = createCodecContext()) {
         return made;
       }
       case 'abortsignal': return item.aborted ? RealAbortSignal.abort(visit(item.reason)) : new AbortController().signal;
+      case 'event': {
+        if (typeof item.type !== 'string' || EVENT_FIELDS.slice(1).some((key) => typeof item[key] !== 'boolean')) throw new TypeError('client-conformance codec: event fields have the wrong types');
+        const made = new RealEvent(item.type, { bubbles: item.bubbles, cancelable: item.cancelable, composed: item.composed });
+        if (item.defaultPrevented) made.preventDefault();
+        return made;
+      }
       case 'symbol': {
         if (item.wellKnown !== undefined) return WELL_KNOWN_BY_NAME.get(item.wellKnown);
         if (item.key !== undefined) return RealSymbol.for(item.key);

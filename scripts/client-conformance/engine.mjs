@@ -5,8 +5,9 @@
 // that the replayer, its comparison and its outcomes stay as they are and only
 // the engine process changes (replay.mjs `--engine=` points it at another one).
 //
-// PROTOCOL 3 (package C0e; 2 was synchronous calls only): calls, timers,
-// promise answers and state. One engine process, one JSON request per line on
+// PROTOCOL 4 (package C0f; 3 was calls, timers, promise answers and state, 2
+// synchronous calls only): transports, and inputs placed in their microtask
+// drain. One engine process, one JSON request per line on
 // its stdin, one JSON response per line on its stdout, each response carrying
 // the `id` of its request. Values are codec trees (codec.mjs), never live
 // objects. The engine is told what a real engine needs to run a step and
@@ -21,7 +22,7 @@
 //
 //   {id, op:"hello", protocol}                  -> {id, ok, engine, protocol}
 //       The replayer refuses an engine whose `protocol` is not PROTOCOL.
-//   {id, op:"open", unit, family, plants?}      -> {id, ok, exports}
+//   {id, op:"open", unit, family, plants?, load?} -> {id, ok, exports}
 //       `unit` is an opaque number of the run. A unit is one fresh module
 //       instance of a family, all of whose module state starts as the module's
 //       own load leaves it. Every case of the unit runs on it, in the order the
@@ -31,7 +32,13 @@
 //       {bindings}}, module paths absolute (what a TypeScript engine loads; a
 //       Rust runner maps the family name to its module); `plants` is a list of
 //       {module, source}: the engine loads `source` in place of that module's
-//       file (a planted difference; never written). A stateful family (`store`:
+//       file (a planted difference; never written). `load` (protocol 4) is
+//       what the family's module graph took when it loaded, the same for every
+//       case of the container: `portData`, a data port export's value by port
+//       name (a client id the module drew), which the module must get instead
+//       of what the engine's own load made. `family.wrapAnswers` names the ports
+//       whose answers with behaviour are port objects a microtask later (and
+//       every port named after one of them). A stateful family (`store`:
 //       a zustand store export; `moduleState`: module bindings no export
 //       exposes) has a state, `{store?: <the store's state>, module?:
 //       {<binding>: <value>}}`; the engine subscribes a listener of its own to
@@ -50,7 +57,7 @@
 //       before was not judged, or code no step holds moved it). The entry state
 //       the engine then holds is reported (`entry`) and compared.
 //   {id, op:"step", unit, step}                 -> {id, ok, halted}
-//       `step` is {input, env, bind, during?, late?, entryBind?, strings?}.
+//       `step` is {input, env, bind, during?, late?, hold?, entryBind?, strings?}.
 //       `input` is one of: {kind:"call"|"new"|"get", entry, args, now} (an
 //       export of the module; `<store>.<action>`, `<store>.setState`,
 //       `<store>.subscribe`; or engine code a step handed the test,
@@ -72,14 +79,26 @@
 //       order, and nothing else: {kind:"port", port, call, answer | throws},
 //       {kind:"read", port, key, value} (a data member of a port object the
 //       engine was answered with), {kind:"clock", source, value},
-//       {kind:"draw", source, value}. A port call, read, clock read or draw is
+//       {kind:"draw", source, value}, and (protocol 4) {kind:"new", port, call,
+//       answer | throws} (a port function constructed: a socket) and reads of
+//       the port `globalThis` (`key` a transport or DOM global the engine reads
+//       itself: fetch, WebSocket, EventSource, localStorage, sessionStorage,
+//       document, window, navigator; `value` undefined, a port function or a
+//       port object). A port call, read, clock read or draw is
 //       served the next item when that item is of its kind and name; anything
 //       else halts the case (check `effect-order` when what was asked is later
 //       in `env`, `unanswered` when it is not there). An answer {"$dr":
 //       "promise"} is a promise the engine holds until a `settle` input names
 //       its call; an answer {"$dr":"port"} is a port object whose member reads
 //       are answered by `read` items and whose methods are port calls
-//       `<port>.<member>`. Timers never run on their own: `timer.set` and
+//       `<port>.<member>` (a symbol-keyed method too: `<port>.Symbol(Symbol.
+//       asyncIterator)`, so an answered async iterator is driven by `next`
+//       calls whose promise answers settle with `{value, done}`); writing a
+//       member is a `set` effect {port, key, value}, and a function written so
+//       (a socket's onmessage) is the engine's own, called back by a
+//       `callback` input. A function node with a `port` is a port function:
+//       calling it is a port call, `new` a `new` effect, and its members
+//       (`<port>.<member>`) port functions. Timers never run on their own: `timer.set` and
 //       `timer.clear` are effects, and a firing is an input. `bind` lists
 //       {slot, path, n} (when the engine takes that output slot: returns,
 //       throws, after, changes, state, stateChanges, effects.<i>.args,
@@ -94,7 +113,24 @@
 //       answers. `late` says the test had ended before this input came (the
 //       end state, and the pending timers, are those the test ended with); a
 //       timer firing is never late (one that fires after its test ended is no
-//       step: C0e fix round). `entryBind` binds the entry
+//       step: C0e fix round). `hold` (protocol 4) says the next input arrived
+//       in the same microtask drain in a way the engine must reproduce, so it
+//       keeps this one and delivers the group when a step comes without
+//       `hold`: an input with `together` (it arrived before any microtask the
+//       one before it started had run) is delivered right after the one
+//       before it opened, and the one before forwards to it (what lands there
+//       afterwards is the later input's); a settle with `immediate: g` (its
+//       port's own promise settled g microtask generations after the call, in
+//       the call's drain) is given by the call itself, through the same
+//       promises as the recorder's (the port's own, then for a wrapAnswers
+//       port the one the module holds a microtask later), g generations of a
+//       no-op marker chain after the call, and never before a call or
+//       callback of the group before it; any other input is delivered once
+//       the engine has run out. An input opens when it is delivered (a call,
+//       callback or timer: before its synchronous part; a settle: at the first
+//       reaction of its promise, which the engine registers before the
+//       module's). Steps are numbered in the recording's order, a step's
+//       nested inputs right after it. `entryBind` binds the entry
 //       state. `strings` (optional) are long strings added to the case's
 //       string table (below), in order.
 //   {id, op:"end", unit}                        -> {id, ok, replayed}
@@ -166,17 +202,37 @@
 // runner is a test program over the fixtures; it must keep the part that reads
 // recorded outputs (to compare) apart from the engine it runs.
 //
-// What the transport families (package C0f) still need, none of it here: an
-// async iterable as an answer and its item, close and error inputs; a port
-// object handed in (an SDK) rather than answered; a promise inside an answer;
-// `new` and `set` effects of port objects; reads of global port objects
-// (navigator, document); WebSocket, EventSource and fetch as answered ports;
-// a module the test mocked (its exports as ports the map does not list).
+// What protocol 4 still lacks (package C0f report, "Not done"): a module the
+// test mocked (its exports as ports the map does not list, answered by the
+// test's factory); a promise or a body inside an answer; inputs a drain places
+// some generations after the one before them other than a port's own answer
+// (they come once the engine ran out, which the replay judges); the abort of
+// a signal the test handed in (flagged `signal-aborted`).
+//
+// What a comparer must allow a runner that is no JavaScript executor (the C0f
+// fix round, from the review's S6; for package C0g). Inside a `together`
+// group, what an earlier member's continuations do after the later member
+// opened is recorded in the later member's step (forwarding), because the
+// group is delivered at once and no input of the protocol can tell them
+// apart; a sans-IO Rust engine will attribute those effects to the member
+// whose continuation made them. So a comparer must compare a group's effects
+// as one sequence, in order, keeping each member's synchronous part and its
+// `returnedAt`, and not by step; the TypeScript replay is unaffected, since it
+// delivers a group as the recorder saw it. Likewise `immediate: g` asks for
+// JavaScript's promise generations (counted up to IMMEDIATE_GENERATIONS, 64;
+// an answer later in its call's drain is refused, `immediate-expired`): a
+// runner without them may give an immediate answer before the engine runs
+// out, in recorded order, and be judged on the group's sequence. The counts
+// themselves belong to the JavaScript engine (a Bun upgrade can move them,
+// and the recorder's own promise wrappers move them by a generation in some
+// patterns: the immediates toy), so a change of Bun regenerates the corpus.
+// `load.portData` is drawn per test file, so with a case's ordinal it names
+// the container: never hand a runner the recording.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnTracked } from './children.mjs';
 
-export const PROTOCOL = 3;
+export const PROTOCOL = 4;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPTS = path.resolve(HERE, '..');
 /** From this length (UTF-16 units) a string may travel once per case in a string table (see above). */

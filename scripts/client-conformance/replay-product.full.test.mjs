@@ -3,7 +3,7 @@
 // recording's manifest), every recorded case replayed against the TypeScript
 // modules in file order and alone and reproduced exactly, and every planted
 // difference in copies of the product modules (replay-product.mjs
-// PRODUCT_PLANTS: the design's mutants 1 to 6 and the harness's own) caught by
+// PRODUCT_PLANTS: the design's mutants 1 to 6 and 8 and the harness's own) caught by
 // its named check. It also checks that no module a mapped family reaches in
 // packages/ui uses what the codec does not carry (replay-compare.mjs
 // NOT_COMPARED), and that the closure command interrupted while it records
@@ -104,9 +104,11 @@ test('every recorded product case is reproduced, and every planted difference is
   assert.deepEqual(result.cases.filter((kase) => kase.outcome === 'not-replayable').map((kase) => kase.id), []);
   // Every case the manifest lists as recorded was judged and reproduced, in both modes.
   assert.equal(result.cases.filter((kase) => kase.outcome === 'reproduced').length, listed.reduce((sum, entry) => sum + (entry.outcomes.recorded ?? 0), 0));
-  assert.equal(PRODUCT_PLANTS.filter((plant) => plant.origin.startsWith('design ')).length, 6, 'the design\'s mutants 1 to 6');
+  // Design mutants 7 and 10 as written and 9 are open (PRODUCT_PLANTS says why); none is counted under a substitute.
+  assert.equal(PRODUCT_PLANTS.filter((plant) => plant.origin.startsWith('design ')).length, 7, 'the design\'s mutants 1 to 6 and 8 (8 on the event pipeline since package C0f)');
   assert.ok(PRODUCT_PLANTS.filter((plant) => plant.origin === 'C0d').length >= 15);
   assert.ok(PRODUCT_PLANTS.filter((plant) => plant.origin === 'C0e').length >= 25, 'package C0e\'s, at least 25, on the store and time-driven families');
+  assert.equal(PRODUCT_PLANTS.filter((plant) => plant.origin === 'C0f').length, 10, 'package C0f\'s ten on the transport families (event pipeline, bootstrap), the flush clamp and the swapped cleanup calls among them');
   const plants = await runProductPlants({ directory, workDir: scratch.dir });
   assert.equal(plants.length, PRODUCT_PLANTS.length);
   for (const { plant, caught, differences, inconclusive, error } of plants) {

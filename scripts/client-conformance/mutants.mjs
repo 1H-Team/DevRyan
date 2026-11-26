@@ -48,7 +48,9 @@ export const PLANTED = Object.freeze([
     anchor: '        const slot = accessorSlot(descriptor);', replacement: "        const slot = typeof descriptor.get === 'function' ? build(apply(descriptor.get, object, [])) : accessorSlot(descriptor);" },
   { name: 'recorder-misses-assigned-global', toys: ['toy-timers.toy.mjs'], origin: 'builder', file: R, tool: 'corpus', expect: { case: toyCase('a timer trap the test assigns is still recorded'), check: 'effects', step: 2 },
     anchor: '    set(value) {\n      assign(value);', replacement: '    set(value) {\n      raw = value; wrapped = value;' },
-  { name: 'recorder-wrong-step', toys: ['toy-timers.toy.mjs'], origin: 'builder', file: R, tool: 'corpus', expect: { case: toyCase('a pushed item flushes after the delay'), check: 'effects', step: 1 },
+  // Since package C0f an effect placed in an earlier step after a later step of its family opened in the same drain
+  // is flagged `interleaved`: the case this plant misplaces into is unrecordable now, no longer recorded wrong.
+  { name: 'recorder-wrong-step', toys: ['toy-timers.toy.mjs'], origin: 'builder', file: R, tool: 'corpus', expect: { case: toyCase('a pushed item flushes after the delay'), check: 'flags' },
     anchor: '    return isLate(store) ? false : place(step, store.case, effect);', replacement: '    return isLate(store) ? false : place(familyRecord(store.family, store.case).steps[0], store.case, effect);' },
   { name: 'recorder-reads-real-clock', toys: ['toy-reducer.toy.mjs'], origin: 'builder', file: R, tool: 'stability', expect: { case: toyCase('adds a message with a clock time'), check: 'input', step: 1 },
     anchor: 'const readNow = (kase = caseOf(storeNow())) => (fakeTimersOn() ? apply(RealDateNow, RealDate, []) : kase.clock.now);', replacement: 'const readNow = () => apply(RealDateNow, RealDate, []);' },
@@ -97,7 +99,7 @@ export const PLANTED = Object.freeze([
   { name: 'attribution-test-call-numbering', toys: ['toy-transport.toy.mjs'], origin: 'review: attribution, test call numbering', file: R, tool: 'corpus', expect: { case: toyCase('load answers through fetch and the response body'), check: 'effects' },
     anchor: ": `t${(caseOf(store).testCalls += 1)}`, args: ref(listOf(args)) }), null);", replacement: ': (familyRecord(\'toy-transport\').portCalls += 1), args: ref(listOf(args)) }), null);' },
   { name: 'attribution-settle-step', toys: ['toy-flow.toy.mjs'], origin: 'review: attribution, settle step', file: R, tool: 'corpus', expect: { case: toyCase('an answer belongs to the call that waited for it'), check: 'flags' },
-    anchor: "  const step = openStep(chain.family, { kind: 'settle', port: name, call, outcome, value: ref(value, chain.case) }, null, chain.case);\n  if (step) chain.step = step;", replacement: '' },
+    anchor: "  const step = openStep(chain.family, { kind: 'settle', port: name, call, outcome, value: ref(value, chain.case), ...(immediate !== null ? { immediate } : {}) }, null, chain.case);\n  if (step) chain.step = step;", replacement: '' },
   { name: 'attribution-callback-step', toys: ['toy-transport.toy.mjs'], origin: 'review: attribution, callback step', file: R, tool: 'corpus', expect: { case: toyCase('socket messages reach onEvent with a log tag'), check: 'flags' },
     anchor: "      if (origin === 'engine' || origin === 'harness') return apply(target, thisArg, args);\n      // Late code", replacement: "      if (true) return apply(target, thisArg, args);\n      // Late code" },
   { name: 'attribution-port-code-effects', toys: ['toy-clock.toy.mjs'], origin: 'review: attribution, effects recorded from port code', file: R, tool: 'corpus', expect: { case: toyCase('a stub that itself sets a timer records only what the engine did'), check: 'context' },
@@ -156,7 +158,10 @@ export const PLANTED = Object.freeze([
     anchor: "  return record.kind === 'test' || ownKeys(families).length > 0 || record.out.contextRecords > 0 || flags.length > 0;", replacement: "  return record.kind === 'test';" },
   { name: 'fix-s3-crossing-ignored', toys: ['toy-flow.toy.mjs'], origin: 'fix S3: a port that is another family\'s entry is recorded', file: R, tool: 'corpus', expect: { case: toyCase('a port that is another family\'s entry is a port call'), check: 'effects', step: 2 },
     anchor: '    if (store.family === family || !crossing || !apply(SetHas, crossing.families, [store.family])) {', replacement: '    if (true) {' },
-  { name: 'fix-s4-most-recent-step', toys: ['toy-flow.toy.mjs'], origin: 'fix S4: effects belong to the input that caused them', file: R, tool: 'corpus', expect: { case: toyCase('a microtask continuation belongs to its own call'), check: 'effects', step: 2 },
+  // Since package C0f the toy-flow case's two calls arrive together, so the first forwards to the second and the most
+  // recent step is where its continuation belongs: the plant now shows on a call still running when a later call comes
+  // in its drain, which the recorder flags `interleaved` and the plant records in the later call's step.
+  { name: 'fix-s4-most-recent-step', toys: ['toy-arrivals.toy.mjs'], origin: 'fix S4: effects belong to the input that caused them', file: R, tool: 'corpus', expect: { case: toyCase('a call still running when the next call comes in its drain is interleaved'), check: 'effects', step: 1 },
     anchor: '    return isLate(store) ? false : place(step, store.case, effect);', replacement: '    const steps = familyRecord(store.family, store.case).steps;\n    return isLate(store) ? false : place(steps[steps.length - 1], store.case, effect);' },
   { name: 'fix-s4-no-during', toys: ['toy-flow.toy.mjs'], origin: 'fix S4: a re-entrant input is marked during its step', file: R, tool: 'corpus', expect: { case: toyCase('a callback a port invokes re-entrantly'), check: 'input', step: 3 },
     anchor: '  if (caller && caller.kind === \'engine\' && caller.case === owner && caller.family === family) {', replacement: '  if (false) {' },
@@ -192,14 +197,19 @@ export const PLANTED = Object.freeze([
     anchor: 'step.input.during = caller.step.n;', replacement: 'step.input.during = caller.step.n + 1;' },
 
   // ------------------------------------------------------------ the second review's fixes
-  { name: 'fix2-b1-windows-off', toys: ['toy-gate.toy.mjs'], origin: 'fix B1: a continuation belongs to the input that released it', file: R, tool: 'corpus', expect: { case: toyCase('a waiter wakes in the step of the signal'), check: 'effects', step: 1 },
+  // Since package C0f the gate toy's waiter and signal arrive together (the waiter forwards to the signal); the release
+  // window alone decides only when the signal comes after the waiter ran out (toy-arrivals), as for the next three.
+  { name: 'fix2-b1-windows-off', toys: ['toy-arrivals.toy.mjs'], origin: 'fix B1: a continuation belongs to the input that released it', file: R, tool: 'corpus', expect: { case: toyCase('a waiter wakes in the step of a signal that came after the waiter ran out'), check: 'flags' },
     anchor: 'function windowStart(window, generation) {\n  if (window.done) return;', replacement: 'function windowStart(window, generation) {\n  if (true) return;' },
   { name: 'fix2-b1-module-does-not-wait', toys: ['toy-gate.toy.mjs'], origin: 'fix B1: a module whose wait never waits records differently', file: 'toy/toy-gate.mjs', tool: 'corpus', expect: { case: toyCase('a waiter wakes in the step of the signal'), check: 'effects', step: 1 },
     anchor: "  const value = await gateFor(key).promise;\n  log('woke', `${key}:${value}`);", replacement: "  const value = 1;\n  log('woke', `${key}:${value}`);" },
-  { name: 'fix2-b1-one-generation', toys: ['toy-gate.toy.mjs'], origin: 'fix B1: a window follows every generation the release queued', file: R, tool: 'corpus', expect: { case: toyCase('many promise generations from its gate'), check: 'effects', step: 1 },
+  { name: 'fix2-b1-one-generation', toys: ['toy-arrivals.toy.mjs'], origin: 'fix B1: a window follows every generation the release queued', file: R, tool: 'corpus', expect: { case: toyCase('wakes in the step of a later signal'), check: 'flags' },
     anchor: '  if (generation - window.lastActive >= SILENT_GENERATIONS) { window.done = true; noteExpired(window); return; }', replacement: '  if (true) { window.done = true; return; }' },
-  { name: 'fix2-b1-late-registration-off', toys: ['toy-gate.toy.mjs'], origin: 'fix B1: a reaction registered after the release joins it', file: R, tool: 'corpus', expect: { case: toyCase('many promise generations from its gate'), check: 'effects', step: 1 },
-    anchor: '      return tag ? inWindow(tag, () => apply(target, thisArg, args)) : apply(target, thisArg, args);', replacement: '      return apply(target, thisArg, args);' },
+  // fix2-b1-late-registration-off (a reaction registered after the release joins it: the join removed) was retired by
+  // package C0f as equivalent on everything recorded: the corpus makes a late registration only where the releasing
+  // input arrived together with the waiter's, whose step now forwards to it, so the waiter's continuation lands in the
+  // same step with or without the join; and an engine chain that registers on its gate after a release that came later
+  // (not together) is `outside-chain` with the join too (checked against the recorder at HEAD, C0f.md).
   { name: 'fix2-b1-released-unflagged', toys: ['toy-unrecordable.toy.mjs'], origin: 'fix B1: a continuation test code released is unrecordable', file: R, tool: 'corpus', expect: { case: toyCase('a promise the test resolves releases no input'), check: 'flags' },
     anchor: "    } else if (seq <= window.openSeq) { store.case.flags.add('released'); placed = true; }", replacement: '    }' },
   { name: 'fix2-b2-late-dropped', toys: ['toy-stray.toy.mjs'], origin: 'fix B2: effects after a test ended stay in its case (C0e fix round: a timer firing then is no step, so judged on the input an I/O job of the test makes then)', file: R, tool: 'corpus', expect: { case: toyCase('leaves an I/O job behind that calls the engine'), check: 'step-count' },
@@ -244,11 +254,16 @@ export const PLANTED = Object.freeze([
     anchor: "  if (origin === 'harness' || stepSeq === 0) return null;", replacement: "  if (origin === 'harness' || origin === 'test' || stepSeq === 0) return null;" },
   { name: 'r3-late-timer-to-current', toys: ['toy-gate.toy.mjs'], origin: 'review 3: a late timer is judged by the current case (C0e fix round: whether it fired after its own test ended is asked of the current case, so it opens a step again)', file: R, tool: 'corpus', expect: { case: toyCase('fires after its test ended'), check: 'step-count' },
     anchor: '      if (counted && timed.endNow !== null) return runLate(', replacement: '      if (counted && current.endNow !== null) return runLate(' },
-  { name: 'r3-oldest-window', toys: ['toy-gate.toy.mjs'], origin: 'review 3: the oldest active window wins', file: R, tool: 'corpus', expect: { case: toyCase('a release inside another release window'), check: 'effects', step: 3 },
+  // Since package C0f the misplaced continuation lands in an earlier step after a later one opened in its drain: the
+  // case is flagged `interleaved` (here and in r3-backward-move), no longer recorded with the effect in the wrong step.
+  { name: 'r3-oldest-window', toys: ['toy-gate.toy.mjs'], origin: 'review 3: the oldest active window wins', file: R, tool: 'corpus', expect: { case: toyCase('a release inside another release window'), check: 'flags' },
     anchor: '  for (const entry of activeWindows) if (!window || entry.id > window.id) window = entry;', replacement: '  for (const entry of activeWindows) if (!window || entry.id < window.id) window = entry;' },
-  { name: 'r3-window-never-closes', toys: ['toy-gate.toy.mjs'], origin: 'review 3: windows never leave the active list', file: R, tool: 'corpus', expect: { case: toyCase('a control that yields twice before acting'), check: 'effects', step: 1 },
+  // Since package C0f the control's call and signal arrive together, so a window left open changes nothing there; the
+  // microtask-order case, where the window outlives its release, is flagged `interleaved`.
+  { name: 'r3-window-never-closes', toys: ['toy-gate.toy.mjs'], origin: 'review 3: windows never leave the active list', file: R, tool: 'corpus', expect: { case: toyCase('microtask order is the same as without the recorder'), check: 'flags' },
     anchor: '  if (index >= 0) activeWindows.splice(index, 1);', replacement: '' },
-  { name: 'r3-withresolvers-raw', toys: ['toy-gate.toy.mjs'], origin: 'review 3: Promise.withResolvers hands out the raw resolve', file: R, tool: 'corpus', expect: { case: toyCase('a gate made by Promise.withResolvers'), check: 'effects', step: 1 },
+  // Re-pinned by package C0f, as fix2-b1-windows-off.
+  { name: 'r3-withresolvers-raw', toys: ['toy-arrivals.toy.mjs'], origin: 'review 3: Promise.withResolvers hands out the raw resolve', file: R, tool: 'corpus', expect: { case: toyCase('releases its waiter in a later signal step'), check: 'flags' },
     anchor: '      made.resolve = pair.resolve;\n', replacement: '' },
   { name: 'r3-late-effect-unmarked', toys: ['toy-unrecordable.toy.mjs'], origin: 'review 3: an effect after the test ended, in a step opened before, is not marked late', file: R, tool: 'corpus', expect: { case: toyCase('a waiter the next test releases stays in its own case'), check: 'effects', step: 1 },
     anchor: '  if (owner.endNow !== null && step.late !== true) effect.late = true;', replacement: '' },
@@ -258,7 +273,7 @@ export const PLANTED = Object.freeze([
     anchor: '    return isLate(store) ? false : place(step, store.case, effect);', replacement: '    return isLate(store) ? false : place(step, current, effect);' },
   { name: 'r3-cross-family-moved', toys: ['toy-unrecordable.toy.mjs'], origin: 'review 3: a window moves chains of any family or case', file: R, tool: 'corpus', expect: { case: toyCase('a waiter another family releases'), check: 'flags' },
     anchor: '    if (window.step !== null && window.case === store.case && window.family === store.family) {', replacement: '    if (window.step !== null) {' },
-  { name: 'r3-backward-move', toys: ['toy-gate.toy.mjs'], origin: 'review 3: a window may move a chain backward', file: R, tool: 'corpus', expect: { case: toyCase('a release inside another release window'), check: 'effects', step: 3 },
+  { name: 'r3-backward-move', toys: ['toy-gate.toy.mjs'], origin: 'review 3: a window may move a chain backward', file: R, tool: 'corpus', expect: { case: toyCase('a release inside another release window'), check: 'flags' },
     anchor: '      if (seq < stepNumber(window.step)) store.step = window.step;', replacement: '      store.step = window.step;' },
 
   // ------------------------------------------------------------ the third review's fixes
@@ -277,11 +292,12 @@ export const PLANTED = Object.freeze([
   { name: 'fix3-s2-port-release-unflagged', toys: ['toy-unrecordable.toy.mjs'], origin: 'fix 3 S2: a promise port code resolves opens a window', file: R, tool: 'corpus', expect: { case: toyCase('a promise a port resolves on its own'), check: 'flags' },
     anchor: "  if (origin === 'harness' || stepSeq === 0) return null;", replacement: "  if (origin === 'harness' || origin === 'port' || stepSeq === 0) return null;" },
   // Re-pinned by package C0e: the settle input holds the raw value either way, so the stream read without its wrapper shows first in step 2's effects.
-  { name: 'fix3-s3-injected-answers-raw', toys: ['toy-gate.toy.mjs'], origin: 'fix 3 S3: an injected port may wrap its answers', file: R, tool: 'corpus', expect: { case: toyCase('a stream a port answers'), check: 'effects', step: 2 },
+  // Since package C0f a wrapped answer's settle input is the port object the engine got: unwrapped, the input differs.
+  { name: 'fix3-s3-injected-answers-raw', toys: ['toy-gate.toy.mjs'], origin: 'fix 3 S3: an injected port may wrap its answers', file: R, tool: 'corpus', expect: { case: toyCase('a stream a port answers'), check: 'input', step: 2 },
     anchor: '    const options = { wrapAnswers: item.wrapAnswers === true, plainAnswers: item.plainAnswers === true };', replacement: '    const options = { wrapAnswers: false, plainAnswers: item.plainAnswers === true };' },
   // Re-pinned by package C0e, as fix3-s3-injected-answers-raw above.
-  { name: 'fix3-s3-answer-members-raw', toys: ['toy-gate.toy.mjs'], origin: 'fix 3 S3: a wrapped answer whose member has behaviour is a port object', file: R, tool: 'corpus', expect: { case: toyCase('a stream a port answers'), check: 'effects', step: 2 },
-    anchor: '      if (wrapAnswers) return apply(PromiseThen, result, [(value) => (answerLike(value) ?', replacement: '      if (wrapAnswers) return apply(PromiseThen, result, [(value) => (portLike(value) ?' },
+  { name: 'fix3-s3-answer-members-raw', toys: ['toy-gate.toy.mjs'], origin: 'fix 3 S3: a wrapped answer whose member has behaviour is a port object', file: R, tool: 'corpus', expect: { case: toyCase('a stream a port answers'), check: 'input', step: 2 },
+    anchor: '      const held = wrapAnswers ? apply(PromiseThen, result, [(value) => (answerLike(value) ?', replacement: '      const held = wrapAnswers ? apply(PromiseThen, result, [(value) => (portLike(value) ?' },
   { name: 'fix3-s5-plain-unchecked', origin: 'fix 3 S5: a recording is gated on the plain pass set', file: 'record.mjs', tool: 'tools', expect: { check: 'record-plain-differs' },
     anchor: '    if (!before || before.status !== test.status) differences.push(', replacement: '    if (false) differences.push(' },
 
@@ -485,6 +501,70 @@ export const PLANTED = Object.freeze([
     anchor: '        if (known && !known.ambiguous && known.family !== null && known.case.endNow === null) apply(MapDelete, familyRecord(known.family, known.case).live, [known.id]);', replacement: '' },
   { name: 'c0e-fix-pending-step-off-by-one', toys: ['toy-gate.toy.mjs'], origin: 'C0e fix: a pending timer names the step after the one that set it', file: R, tool: 'corpus', expect: { case: toyCase('fires after its test ended'), check: 'state' },
     anchor: 'step: store.step ? store.step.n : null }]); });', replacement: 'step: store.step ? store.step.n + 1 : null }]); });' },
+  // ------------------------------------------------------------ package C0f: the transport paths
+  { name: 'c0f-recorder-timers-in-real-order', toys: ['toy-clock.toy.mjs'], origin: 'C0f: timer order', file: R, tool: 'corpus', expect: { case: toyCase('timers fire in nominal order whatever real time does'), check: 'input', step: 3 },
+    anchor: '    const fire = gateEntry ? function (...args) {', replacement: '    const fire = false ? function (...args) {' },
+  { name: 'c0f-recorder-global-reads-unrecorded', toys: ['toy-clock.toy.mjs'], origin: 'C0f: global reads', file: R, tool: 'corpus', expect: { case: toyCase('reads of navigator are inputs'), check: 'effects', step: 1 },
+    anchor: "      if (readsAreInputs) guard('global.read', () => noteGlobalRead(label, wrapped));", replacement: '' },
+  { name: 'c0f-recorder-real-transport-unflagged', toys: ['toy-transport-fixtures.toy.mjs'], origin: 'C0f: real transport', file: R, tool: 'corpus', expect: { case: toyCase('the platform fetch is a real transport'), check: 'flags' },
+    anchor: "    if (engine && realTransport) guard('port', () => familyRecord(store.family, store.case).flags.add('real-transport'));", replacement: '' },
+  { name: 'c0f-recorder-together-unmarked', toys: ['toy-transport.toy.mjs'], origin: 'C0f: together', file: R, tool: 'corpus', expect: { case: toyCase('two frames a fake emits at once are delivered together'), check: 'input' },
+    anchor: '    step.input.together = true;\n', replacement: '' },
+  { name: 'c0f-recorder-wrapped-answer-settles-raw', toys: ['toy-transport.toy.mjs'], origin: 'C0f: wrapped answers', file: R, tool: 'corpus', expect: { case: toyCase('load answers through fetch and the response body'), check: 'input', step: 3 },
+    anchor: "      guard('port', () => observeSettle(held, (outcome, value) => settleStep(store, name, effect.call, outcome, value, probe)));", replacement: "      guard('port', () => observeSettle(result, (outcome, value) => settleStep(store, name, effect.call, outcome, value, probe)));" },
+  { name: 'c0f-recorder-port-data-unrecorded', toys: ['toy-transport.toy.mjs'], origin: 'C0f: port data', file: R, tool: 'corpus', expect: { container: /toy-transport\.toy\.mjs\.toy-transport/, check: 'header' },
+    anchor: "      if (port) guard('port.data', () => { if (!apply(MapHas, portData, [port.name]))", replacement: "      if (false) guard('port.data', () => { if (!apply(MapHas, portData, [port.name]))" },
+  { name: 'c0f-recorder-load-draws-from-the-current-case', toys: ['toy-transport.toy.mjs'], origin: 'C0f: draw sites', file: R, tool: 'corpus', expect: { container: /toy-transport\.toy\.mjs\.toy-transport/, check: 'header' },
+    anchor: "  if (file === null || file === '<unknown>' || file === '<outside>' || isTestPath(file)) return current.random;", replacement: '  return current.random;' },
+  { name: 'c0f-recorder-immediate-unrecorded', toys: ['toy-transport.toy.mjs'], origin: 'C0f: immediate answers', file: R, tool: 'corpus', expect: { case: toyCase('answers awaited in two rounds, each at once or a hop later, are immediate answers'), check: 'input' },
+    anchor: '...(immediate !== null ? { immediate } : {})', replacement: '...{}' },
+  { name: 'c0f-recorder-option-callbacks-unwrapped', toys: ['toy-transport.toy.mjs'], origin: 'C0f: callbacks in options', file: R, tool: 'corpus', expect: { case: toyCase('a callback inside an options object the sdk is handed is an input'), check: 'flags' },
+    anchor: ': callbacksIn(store, `${name}:${index}`, arg))) : args;', replacement: ': arg)) : args;' },
+  { name: 'c0f-recorder-answered-function-raw', toys: ['toy-transport.toy.mjs'], origin: 'C0f: answered functions', file: R, tool: 'corpus', expect: { case: toyCase('a callback inside an options object the sdk is handed is an input'), check: 'effects' },
+    anchor: "    if (!plainAnswers && typeof result === 'function' && !apply(WeakMapHas, rawOf, [result])", replacement: "    if (false && typeof result === 'function' && !apply(WeakMapHas, rawOf, [result])" },
+  { name: 'c0f-recorder-signal-abort-unflagged', toys: ['toy-transport-fixtures.toy.mjs'], origin: 'C0f: signals', file: R, tool: 'corpus', expect: { case: toyCase('a signal the test aborts after handing it in is flagged'), check: 'flags' },
+    anchor: "  if (record.signals.some((signal) => abortedOf(signal) === true)) record.flags.add('signal-aborted');", replacement: '' },
+  { name: 'c0f-recorder-interleaved-unflagged', toys: ['toy-arrivals.toy.mjs'], origin: 'C0f: interleaved inputs', file: R, tool: 'corpus', expect: { case: toyCase('a call still running when the next call comes in its drain is interleaved'), check: 'flags' },
+    anchor: "apply(WeakMapGet, outerOf, [latest]) === undefined) record.flags.add('interleaved');", replacement: "apply(WeakMapGet, outerOf, [latest]) === undefined) void record;" },
+  { name: 'c0f-codec-event-opaque', origin: 'C0f: codec 4', file: C, tool: 'vectors', expect: { vector: 'plain-events' },
+    anchor: '    if (RealEvent && getPrototypeOf(item) === RealEvent.prototype', replacement: '    if (false && getPrototypeOf(item) === RealEvent.prototype' },
+
+  // ------------------------------------------------------------ the C0f fix round: the review's S1, S2, S4 and S7
+  // S1: an answer past the count, in its call's drain, written at the cap as before the fix.
+  { name: 'c0f-fix-immediate-clamped-at-the-cap', toys: ['toy-immediates.toy.mjs'], origin: 'C0f fix: S1, an answer past the cap is written at the cap', file: R, tool: 'corpus', expect: { case: toyCase('two answers past the generation cap in their calls\' drain are flagged'), check: 'flags' },
+    anchor: '        if (probe.generations <= IMMEDIATE_GENERATIONS) probe.raw = probe.generations; else probe.expired = true;', replacement: '        probe.raw = Math.min(probe.generations, IMMEDIATE_GENERATIONS);' },
+  // S1: the count stopping at the cap, so one past it reads as the cap.
+  { name: 'c0f-fix-count-stops-at-the-cap', toys: ['toy-immediates.toy.mjs'], origin: 'C0f fix: S1, the count stops at the cap', file: R, tool: 'corpus', expect: { case: toyCase('an answer one generation past the cap is flagged'), check: 'flags' },
+    anchor: 'probe.generations += 1; if (probe.generations <= IMMEDIATE_GENERATIONS) enqueue(tick);', replacement: 'probe.generations += 1; if (probe.generations < IMMEDIATE_GENERATIONS) enqueue(tick);' },
+  // S7 (the review's h-immediate-limit-63): the cap one lower.
+  { name: 'c0f-fix-immediate-cap-63', toys: ['toy-immediates.toy.mjs'], origin: 'C0f fix: S7, the cap one lower', file: R, tool: 'corpus', expect: { case: toyCase('an answer at the generation cap is an immediate answer'), check: 'flags' },
+    anchor: 'export const IMMEDIATE_GENERATIONS = 64;', replacement: 'export const IMMEDIATE_GENERATIONS = 63;' },
+  // S4 (the review's h-gate-zero-floor): no floor on the timer clock, so a zero-delay poll holds a longer timer for ever:
+  // the poll gives up and the test fails (the comparer reports a case's status with its naming members).
+  { name: 'c0f-fix-gate-zero-floor', toys: ['toy-clock.toy.mjs'], origin: 'C0f fix: S4, the timer clock without its floor', file: R, tool: 'corpus', expect: { case: toyCase('a zero-delay poll of the test waits out a longer engine timer'), check: 'naming' },
+    anchor: 'const gateSpan = Math.max(1, span);', replacement: 'const gateSpan = Math.max(0, span);' },
+  // S7 (the review's h-mock-port-data-first-wins): the first mock's data export kept.
+  { name: 'c0f-fix-mock-port-data-first-wins', toys: ['toy-mocked.toy.mjs'], origin: 'C0f fix: S7, a data export of the first mock kept', file: R, tool: 'corpus', expect: { container: /toy-mocked\.toy\.mjs\.toy-transport/, check: 'header' },
+    anchor: '            if (port) apply(MapSet, portData, [port.name, { families: [...port.families].sort(), value: encode(value) }]);', replacement: '            if (port && !apply(MapHas, portData, [port.name])) apply(MapSet, portData, [port.name, { families: [...port.families].sort(), value: encode(value) }]);' },
+  // S7 (the review's h-timer-body-no-drain): a timer's callback that begins no drain, so an answer a released timer gives
+  // seems to settle in its call's drain, past the count.
+  { name: 'c0f-fix-timer-body-no-drain', toys: ['toy-immediates.toy.mjs'], origin: 'C0f fix: S7, a timer callback begins no drain', file: R, tool: 'corpus', expect: { case: toyCase('an answer a released timer gives comes in a drain of its own'), check: 'flags' },
+    anchor: "      drain += 1; // a timer's callback", replacement: "      void drain; // a timer's callback" },
+  // Found by an unstable product run in the fix round: a real-transport case written with all it did, which load decides.
+  { name: 'c0f-fix-real-transport-written-whole', origin: 'C0f fix: a real-transport case written whole', file: 'record.mjs', tool: 'tools', expect: { check: 'record-real-transport-alone' },
+    anchor: "        const realTransport = allFlags.includes('real-transport');", replacement: '        const realTransport = false;' },
+  // Found by S7's injected-api toy: an argument wrapped for two ports at its keys is written as a copy, not as itself.
+  { name: 'c0f-fix-injected-holder-not-collapsed', toys: ['toy-transport.toy.mjs'], origin: 'C0f fix: S7, an argument wrapped twice is a copy', file: R, tool: 'corpus', expect: { case: toyCase('the options the module hands back are the ones handed in, with an api injected at a key'), check: 'result' },
+    anchor: 'apply(WeakMapSet, rawOf, [proxy, apply(WeakSetHas, injectedHolders, [arg]) ? apply(WeakMapGet, rawOf, [arg]) : arg]);', replacement: 'apply(WeakMapSet, rawOf, [proxy, arg]);' },
+  // S2: the parity rules for the facade's query and for a duration a test prints, each only where it is stated.
+  { name: 'c0f-fix-parity-facade-query-anywhere', origin: 'C0f fix: S2, the facade query removed from any line', file: 'parity.mjs', tool: 'tools', expect: { check: 'parity-output-facade-frame' },
+    anchor: "export const withoutFacadeQuery = (line) => line.replace(FACADE_FRAME, '$1$2');", replacement: "export const withoutFacadeQuery = (line) => line.split(FACADE_QUERY).join('');" },
+  { name: 'c0f-fix-parity-facade-query-kept', origin: 'C0f fix: S2, the facade query compared in frames', file: 'parity.mjs', tool: 'tools', expect: { check: 'parity-output-facade-frame' },
+    anchor: "export const withoutFacadeQuery = (line) => line.replace(FACADE_FRAME, '$1$2');", replacement: 'export const withoutFacadeQuery = (line) => line;' },
+  { name: 'c0f-fix-parity-any-duration-masked', origin: 'C0f fix: S2, every printed duration masked', file: 'parity.mjs', tool: 'tools', expect: { check: 'parity-output-timed-in-test-code' },
+    anchor: "    .map((line) => TIMED_IN_TEST_CODE.reduce((text, { line: shape }) => text.replace(shape, '$1#$2'), line))", replacement: "    .map((line) => line.replace(/max [0-9]+ ms/, 'max # ms'))" },
+  { name: 'c0f-fix-parity-timed-line-compared', origin: 'C0f fix: S2, the timed line compared', file: 'parity.mjs', tool: 'tools', expect: { check: 'parity-output-timed-in-test-code' },
+    anchor: "    .map((line) => TIMED_IN_TEST_CODE.reduce((text, { line: shape }) => text.replace(shape, '$1#$2'), line))", replacement: '' },
 ]);
 
 /**

@@ -84,6 +84,19 @@ test('a stub that itself sets a timer records only what the engine did', async (
   expect(await ping('http://toy.invalid/d')).toBe(204);
 });
 
+// Timer order (package C0f): the first timer is due 20 ms after it is set, the second 5 ms after it is set; the test
+// spins 40 ms of real time between the two, so on any machine the first is due earlier in real time, and later in
+// nominal time (the clock stands still while the test spins). The recording fires them in nominal order.
+test('timers fire in nominal order whatever real time does', async () => {
+  const order = [];
+  const first = later(20).then(() => { order.push('first'); });
+  const started = Bun.nanoseconds();
+  while (Bun.nanoseconds() - started < 40e6) { /* real time passes; the nominal clock does not */ }
+  const second = later(5).then(() => { order.push('second'); });
+  await Promise.all([first, second]);
+  expect(order).toHaveLength(2);
+});
+
 test('reads of navigator are inputs', () => {
   const original = globalThis.navigator;
   globalThis.navigator = { onLine: false };
@@ -92,4 +105,17 @@ test('reads of navigator are inputs', () => {
   } finally {
     globalThis.navigator = original;
   }
+});
+
+// The timer clock's floor (the C0f fix round): every timer moves its case's timer clock by at least 1 ms, so a
+// zero-delay poll of the test comes due later at each turn and lets a longer engine timer fire. Without the floor the
+// poll is always due first, the engine timer is held for ever, and the poll gives up after its bound. The bound is a
+// count of polls, never a time.
+test('a zero-delay poll of the test waits out a longer engine timer', async () => {
+  let done = false;
+  const pending = later(20).then(() => { done = true; });
+  let polls = 0;
+  await new Promise((resolve) => { const poll = () => { polls += 1; if (done || polls >= 100) resolve(); else setTimeout(poll, 0); }; poll(); });
+  expect(done).toBe(true);
+  await pending;
 });

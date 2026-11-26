@@ -73,6 +73,8 @@ export const VECTORS = Object.freeze([
   ['symbol-keys', () => ({ plain: 1, [Symbol('key')]: 'value' })],
   ['abort-signals', () => [AbortSignal.abort('reason'), new AbortController().signal, AbortSignal.abort(new Error('stopped'))]],
   ['abort-signal-domexception-reason', () => [AbortSignal.abort(new DOMException('stopped', 'AbortError')), AbortSignal.abort(new DOMException('late', 'TimeoutError'))]],
+  // Codec 4 (package C0f): a plain Event is its state; a prevented cancelable one keeps defaultPrevented; the same Event twice is one object.
+  ['plain-events', () => { const prevented = new Event('cancel', { cancelable: true }); prevented.preventDefault(); const shared = new Event('devryan:primary-recovery-reconnect'); return [new Event('plain'), new Event('options', { bubbles: true, composed: true }), prevented, shared, shared]; }],
   ['domexceptions', () => [new DOMException('stopped by user', 'AbortError'), new DOMException('late', 'TimeoutError'), new DOMException('plain'), new DOMException('', 'NotFoundError'), new DOMException('custom', 'NoSuchName')]],
   ['error-kinds', () => [new AggregateError([new Error('one'), 'two'], 'many'), new MessageOnPrototype(), Object.assign(new RangeError('named'), { name: 'Renamed' })]],
   ['boxed-primitives', () => [new Number(3), new Number(4), new String('ab'), new Boolean(false), Object(5n), Object.assign(new Number(-0), { extra: 1 }), new Counted(7)]],

@@ -13,7 +13,12 @@ const large = { rows: Array.from({ length: 200 }, (_, index) => ({ index, text: 
 
 test('a mocked export the test calls itself records nothing; the engine\'s call is a port effect', async () => {
   const written = [];
-  mock.module('./toy-log.mjs', () => ({ log: (kind, detail) => `mocked ${kind}:${detail}`, sink: { write(value) { written.push(value.rows.length); return written.length; } } }));
+  // Mocked twice, the first mock loaded before the second is made (the C0f fix round): the last mock wins, its data
+  // export included, so the recording's port data is the second mock's session id, the one the transport puts in
+  // its socket URL.
+  mock.module('./toy-log.mjs', () => ({ log: (kind, detail) => `first ${kind}:${detail}`, logSession: 'first-session', sink: { write() { return 0; } } }));
+  expect((await import('./toy-log.mjs')).logSession).toBe('first-session');
+  mock.module('./toy-log.mjs', () => ({ log: (kind, detail) => `mocked ${kind}:${detail}`, logSession: 'mocked-session', sink: { write(value) { written.push(value.rows.length); return written.length; } } }));
   const { log, sink } = await import('./toy-log.mjs');
   for (let render = 0; render < 50; render += 1) {
     expect(log('render', large)).toBe('mocked render:[object Object]');
@@ -26,6 +31,7 @@ test('a mocked export the test calls itself records nothing; the engine\'s call 
   try {
     const events = [];
     connect({}, { url: 'ws://toy.invalid', onEvent: (event) => { events.push(event.tag); } });
+    expect(sockets[0].url).toMatch(/&log=mocked-session$/);
     sockets[0].onmessage({ data: '{"type":"hello"}' });
     expect(events).toEqual(['mocked event:hello']);
   } finally { globalThis.WebSocket = original; }

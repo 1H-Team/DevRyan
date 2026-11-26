@@ -206,6 +206,16 @@
       "family": "child-store",
       "port": "module:packages/ui/src/sync/persist-cache.ts#persistVcs",
       "reason": "no test calls it: a coverage gap of the product's tests, listed for the owner in the C0e report (it needs a test, not a waiver of the harness); no recorded case changes a directory's VCS state"
+    },
+    {
+      "family": "event-pipeline",
+      "port": "module:packages/ui/src/lib/sessionEvents.ts#sessionEvents",
+      "reason": "the pipeline hands only session.changes.updated events to the session event bus (enqueueEvent), and no recorded case streams one: a test that does is listed for a later tests-only package (package C0f report)"
+    },
+    {
+      "family": "event-pipeline",
+      "port": "module:packages/ui/src/stores/usePrimaryRecoveryStore.ts#usePrimaryRecoveryStore",
+      "reason": "the pipeline hands only devryan:primary-recovery events to the primary recovery store (enqueueEvent), and no recorded case streams one: a test that does is listed for a later tests-only package (package C0f report)"
     }
   ],
   "unrecordable": [
@@ -226,7 +236,7 @@
       ],
       "flag": "global-defined:document",
       "family": "session-creation",
-      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; DOM globals as ports are the transport package's (C0f)"
+      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; package C0f records reads of these globals and their members when a test assigns them, not when it defines them, so recording them needs the test to assign them (a tests-only change)"
     },
     {
       "file": "packages/ui/src/components/chat/SessionCreationStatus.test.tsx",
@@ -238,7 +248,7 @@
       ],
       "flag": "global-defined:window",
       "family": "session-creation",
-      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; DOM globals as ports are the transport package's (C0f)"
+      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; package C0f records reads of these globals and their members when a test assigns them, not when it defines them, so recording them needs the test to assign them (a tests-only change)"
     },
     {
       "file": "packages/ui/src/components/chat/SessionCreationStatus.test.tsx",
@@ -298,14 +308,14 @@
       "test": "puts mobile agent and model metadata in the requested icon and thinking order",
       "flag": "global-defined:document",
       "family": "selection-store",
-      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; DOM globals as ports are the transport package's (C0f)"
+      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; package C0f records reads of these globals and their members when a test assigns them, not when it defines them, so recording them needs the test to assign them (a tests-only change)"
     },
     {
       "file": "packages/ui/src/components/chat/mobileLayoutRefinement.test.tsx",
       "test": "puts mobile agent and model metadata in the requested icon and thinking order",
       "flag": "global-defined:window",
       "family": "selection-store",
-      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; DOM globals as ports are the transport package's (C0f)"
+      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; package C0f records reads of these globals and their members when a test assigns them, not when it defines them, so recording them needs the test to assign them (a tests-only change)"
     },
     {
       "file": "packages/ui/src/components/chat/mobileLayoutRefinement.test.tsx",
@@ -332,7 +342,7 @@
       ],
       "flag": "global-defined:document",
       "family": "child-store",
-      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; DOM globals as ports are the transport package's (C0f)"
+      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; package C0f records reads of these globals and their members when a test assigns them, not when it defines them, so recording them needs the test to assign them (a tests-only change)"
     },
     {
       "file": "packages/ui/src/hooks/useQueuedMessageAutoSend.plan-selection.test.tsx",
@@ -352,7 +362,7 @@
       ],
       "flag": "global-defined:window",
       "family": "child-store",
-      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; DOM globals as ports are the transport package's (C0f)"
+      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; package C0f records reads of these globals and their members when a test assigns them, not when it defines them, so recording them needs the test to assign them (a tests-only change)"
     },
     {
       "file": "packages/ui/src/hooks/useQueuedMessageAutoSend.plan-selection.test.tsx",
@@ -376,6 +386,77 @@
     },
     {
       "file": "packages/ui/src/hooks/useQueuedMessageAutoSend.plan-selection.test.tsx",
+      "tests": [
+        "held refusal consumes an idle edge safely: repeat-refusal",
+        "held refusal consumes an idle edge safely: retry",
+        "idle root dispatches the captured ID once after its raced descendant settles"
+      ],
+      "flag": "interleaved",
+      "family": "child-store",
+      "reason": "the mounted component the test renders (code no family maps) delivers several inputs of the family in one microtask drain, and their continuations interleave (answers that come at once while the input before them still runs): which input an effect belongs to is decided by microtask order (package C0f, interleaved)"
+    },
+    {
+      "file": "packages/ui/src/hooks/useQueuedMessageAutoSend.plan-selection.test.tsx",
+      "tests": [
+        "dispatches fully captured OFF/ON rows without resolving live history",
+        "handles missing capture in row 1 without claiming the queue or leaking a rejection",
+        "handles missing capture in row 2 without claiming the queue or leaking a rejection",
+        "held refusal consumes an idle edge safely: disabled",
+        "held refusal consumes an idle edge safely: disconnected",
+        "held refusal consumes an idle edge safely: removed",
+        "held refusal consumes an idle edge safely: repeat-refusal",
+        "held refusal consumes an idle edge safely: retry",
+        "held refusal consumes an idle edge safely: unmounted",
+        "idle root dispatches the captured ID once after its busy descendant settles",
+        "idle root dispatches the captured ID once after its raced descendant settles",
+        "idle root dispatches the captured ID once after its unknown descendant settles"
+      ],
+      "flag": "global-defined:document",
+      "family": "event-pipeline",
+      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; package C0f records reads of these globals and their members when a test assigns them, not when it defines them, so recording them needs the test to assign them (a tests-only change)"
+    },
+    {
+      "file": "packages/ui/src/hooks/useQueuedMessageAutoSend.plan-selection.test.tsx",
+      "tests": [
+        "dispatches fully captured OFF/ON rows without resolving live history",
+        "handles missing capture in row 1 without claiming the queue or leaking a rejection",
+        "handles missing capture in row 2 without claiming the queue or leaking a rejection",
+        "held refusal consumes an idle edge safely: disabled",
+        "held refusal consumes an idle edge safely: disconnected",
+        "held refusal consumes an idle edge safely: removed",
+        "held refusal consumes an idle edge safely: repeat-refusal",
+        "held refusal consumes an idle edge safely: retry",
+        "held refusal consumes an idle edge safely: unmounted",
+        "idle root dispatches the captured ID once after its busy descendant settles",
+        "idle root dispatches the captured ID once after its raced descendant settles",
+        "idle root dispatches the captured ID once after its unknown descendant settles"
+      ],
+      "flag": "global-defined:window",
+      "family": "event-pipeline",
+      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; package C0f records reads of these globals and their members when a test assigns them, not when it defines them, so recording them needs the test to assign them (a tests-only change)"
+    },
+    {
+      "file": "packages/ui/src/hooks/useQueuedMessageAutoSend.plan-selection.test.tsx",
+      "tests": [
+        "dispatches fully captured OFF/ON rows without resolving live history",
+        "handles missing capture in row 1 without claiming the queue or leaking a rejection",
+        "handles missing capture in row 2 without claiming the queue or leaking a rejection",
+        "held refusal consumes an idle edge safely: disabled",
+        "held refusal consumes an idle edge safely: disconnected",
+        "held refusal consumes an idle edge safely: removed",
+        "held refusal consumes an idle edge safely: repeat-refusal",
+        "held refusal consumes an idle edge safely: retry",
+        "held refusal consumes an idle edge safely: unmounted",
+        "idle root dispatches the captured ID once after its busy descendant settles",
+        "idle root dispatches the captured ID once after its raced descendant settles",
+        "idle root dispatches the captured ID once after its unknown descendant settles"
+      ],
+      "flag": "port-no-line",
+      "family": "event-pipeline",
+      "reason": "test code (by the stack) calls one of the pipeline's ports itself (the API client opencodeClient, which component and store tests drive and stub, the session event bus, the primary recovery store, the stream counters, syncDebug or the retention signal) while the pipeline has no step in the case: the case gets a line for the pipeline with no step in it (a closure of the pipeline whose frame a tail call removed would look the same), so there is nothing of the pipeline to replay"
+    },
+    {
+      "file": "packages/ui/src/hooks/useQueuedMessageAutoSend.plan-selection.test.tsx",
       "test": "hooks after 0 tests",
       "flag": "outside-chain",
       "family": "input-store",
@@ -386,14 +467,14 @@
       "test": "held refusal consumes an idle edge safely: retry",
       "flag": "global-defined:document",
       "family": "live-aggregate",
-      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; DOM globals as ports are the transport package's (C0f)"
+      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; package C0f records reads of these globals and their members when a test assigns them, not when it defines them, so recording them needs the test to assign them (a tests-only change)"
     },
     {
       "file": "packages/ui/src/hooks/useQueuedMessageAutoSend.plan-selection.test.tsx",
       "test": "held refusal consumes an idle edge safely: retry",
       "flag": "global-defined:window",
       "family": "live-aggregate",
-      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; DOM globals as ports are the transport package's (C0f)"
+      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; package C0f records reads of these globals and their members when a test assigns them, not when it defines them, so recording them needs the test to assign them (a tests-only change)"
     },
     {
       "file": "packages/ui/src/hooks/useQueuedMessageAutoSend.plan-selection.test.tsx",
@@ -404,7 +485,7 @@
       ],
       "flag": "global-defined:document",
       "family": "selection-store",
-      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; DOM globals as ports are the transport package's (C0f)"
+      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; package C0f records reads of these globals and their members when a test assigns them, not when it defines them, so recording them needs the test to assign them (a tests-only change)"
     },
     {
       "file": "packages/ui/src/hooks/useQueuedMessageAutoSend.plan-selection.test.tsx",
@@ -415,7 +496,7 @@
       ],
       "flag": "global-defined:window",
       "family": "selection-store",
-      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; DOM globals as ports are the transport package's (C0f)"
+      "reason": "the test's DOM setup defines document and window as data properties the recorder did not wrap, so what engine code does through them is not recorded; package C0f records reads of these globals and their members when a test assigns them, not when it defines them, so recording them needs the test to assign them (a tests-only change)"
     },
     {
       "file": "packages/ui/src/hooks/useQueuedMessageAutoSend.plan-selection.test.tsx",
@@ -423,6 +504,33 @@
       "flag": "outside-chain",
       "family": "session-creation",
       "reason": "this family's code runs with no step open: as the continuation of a call that engine code no family maps made into it (after an await or on a timer, once the passed-through call had returned), or reading its port while its module loads; mapping the caller records it as that caller's step (package C0e)"
+    },
+    {
+      "file": "packages/ui/src/stores/useAgentsStore.reconciliation.test.ts",
+      "tests": [
+        "a late backup reset leaves the newly selected catalog untouched",
+        "a late backup save leaves the newly selected catalog untouched",
+        "a late catalog response does not replace the current project and releases loading state",
+        "a late reset response cannot replace the newly active project",
+        "a late save response cannot replace the newly active project",
+        "compares against state at response time, not the catalog captured before loading",
+        "deduplicates same-directory requests and caches a successfully loaded empty catalog",
+        "loads a backup-only change without replacing unrelated agents",
+        "loads a councillor thinking-only change without replacing unrelated agents",
+        "loads a explicit null-only change without replacing unrelated agents",
+        "loads a permissions-only change without replacing unrelated agents",
+        "loads a prompt-only change without replacing unrelated agents",
+        "loads a provenance-only change without replacing unrelated agents",
+        "object key order is irrelevant but ordered councillors are significant",
+        "reset changes only the originating directory and preserves other catalog references",
+        "save changes only the originating directory and preserves other catalog references",
+        "saving unchanged configuration preserves catalogs and directory snapshots",
+        "success-only responses use the fallback captured before a project switch",
+        "switching A to B to A cannot reuse the other project catalog within the TTL"
+      ],
+      "flag": "port-no-line",
+      "family": "event-pipeline",
+      "reason": "test code (by the stack) calls one of the pipeline's ports itself (the API client opencodeClient, which component and store tests drive and stub, the session event bus, the primary recovery store, the stream counters, syncDebug or the retention signal) while the pipeline has no step in the case: the case gets a line for the pipeline with no step in it (a closure of the pipeline whose frame a tail call removed would look the same), so there is nothing of the pipeline to replay"
     },
     {
       "file": "packages/ui/src/stores/useAgentsStore.reconciliation.test.ts",
@@ -437,6 +545,26 @@
       "flag": "outside-chain",
       "family": "session-creation",
       "reason": "this family's code runs with no step open: as the continuation of a call that engine code no family maps made into it (after an await or on a timer, once the passed-through call had returned), or reading its port while its module loads; mapping the caller records it as that caller's step (package C0e)"
+    },
+    {
+      "file": "packages/ui/src/stores/useAgentsStore.test.ts",
+      "tests": [
+        "clears a backup model through the backup-model route and nulls the local record",
+        "clears stale session selections and reapplies the current agent model after saving an override",
+        "does not let a stale in-flight agents load overwrite a saved override",
+        "keeps saved model and thinking override in the settings store when the response omits agent config",
+        "rejects a malformed backup model ref before calling the host and surfaces host errors",
+        "resets an agent model override through the override route",
+        "returns runtime warning metadata while keeping the saved model locally",
+        "saves a backup model through the backup-model route and reconciles the local record from the response",
+        "saves an agent model override through the override route",
+        "sends a null backup variant and reconciles from the request when the response omits agent config",
+        "sends null when saving the default thinking level and clears local variant",
+        "syncs saved override agent config into the chat config store"
+      ],
+      "flag": "port-no-line",
+      "family": "event-pipeline",
+      "reason": "test code (by the stack) calls one of the pipeline's ports itself (the API client opencodeClient, which component and store tests drive and stub, the session event bus, the primary recovery store, the stream counters, syncDebug or the retention signal) while the pipeline has no step in the case: the case gets a line for the pipeline with no step in it (a closure of the pipeline whose frame a tail call removed would look the same), so there is nothing of the pipeline to replay"
     },
     {
       "file": "packages/ui/src/stores/useAgentsStore.test.ts",
@@ -549,6 +677,33 @@
       "reason": "this family's code runs with no step open: as the continuation of a call that engine code no family maps made into it (after an await or on a timer, once the passed-through call had returned), or reading its port while its module loads; mapping the caller records it as that caller's step (package C0e)"
     },
     {
+      "file": "packages/ui/src/sync/__tests__/event-pipeline.test.js",
+      "tests": [
+        "accumulates consecutive deltas for the same (messageID, partID, field) into one event",
+        "coalesces message.part.updated events for the same part",
+        "collapses repeated session.status for the same session down to the latest",
+        "delivers events from two directories without losing either",
+        "does NOT merge deltas across different directories (per-directory queues)",
+        "does NOT merge deltas across different fields on the same part",
+        "does NOT merge deltas across different parts on the same message",
+        "does not touch non-delta events (session.status still replaced, not concatenated)",
+        "falls back to payload.properties.directory when the SDK event omits top-level directory",
+        "flushes immediately when streaming queue depth exceeds threshold",
+        "keeps delta events for other fields on the same part",
+        "keeps distinct sessionIDs in the same directory as independent coalesce slots",
+        "keeps message.part.delta events when a newer message.part.updated is queued for the same field",
+        "keeps text delta after an initial part.updated when no newer part.updated replaced it",
+        "keeps truly global events on the global channel when no directory is present anywhere",
+        "prefers the explicit top-level event directory when present",
+        "records responsiveness metrics without changing event delivery",
+        "routes events before queueing so coalescing happens on the resolved directory",
+        "uses payload.properties.directory when the top-level directory is an empty string"
+      ],
+      "flag": "real-transport",
+      "family": "event-pipeline",
+      "reason": "the test installs no WebSocket fake (afterEach puts Bun's own back, and an SSE-mode test never replaces it), so the pipeline's default `auto` transport opens Bun's own WebSocket to the stubbed window's origin (ws://127.0.0.1:3000) first; the connection's error and close (refused where nothing listens there) arrive from the network stack at real times, which no rule of the recorder orders against the test's own timers and the pipeline's (package C0f, real-transport); the case is written with that flag alone (C0f fix round), so the opaque ErrorEvent and CloseEvent its handlers get, which land before or after the test by load, are not recorded"
+    },
+    {
       "file": "packages/ui/src/sync/__tests__/event-reducer.test.ts",
       "tests": [
         "a replayed older user message writes the list and leaves the guard active",
@@ -560,6 +715,13 @@
       "flag": "proxy",
       "family": "abort-guard",
       "reason": "the test wraps the reducer's draft in a Proxy of its own to observe the order of its writes; the case's codec flag stands on every family line of the case, the abort guard's too (the reducer clears the guard in the same call), and the recorder never runs a foreign Proxy's traps, so the case cannot carry the value (design §2.7)"
+    },
+    {
+      "file": "packages/ui/src/sync/__tests__/event-reducer.test.ts",
+      "test": "performs one revert lookup for session-less streaming parts",
+      "flag": "accessor",
+      "family": "reducer",
+      "reason": "the test counts reads of a revert_transaction accessor and expects exactly one: a performance assertion, not behaviour; the recorder never calls a getter, so the case cannot carry the value (design §2.7)"
     },
     {
       "file": "packages/ui/src/sync/__tests__/event-reducer.test.ts",
@@ -588,17 +750,17 @@
       "reason": "the test wraps the draft in a Proxy of its own to observe the order in which the reducer writes; the recorder never runs a foreign Proxy's traps, so the case cannot carry the value (design §2.7)"
     },
     {
-      "file": "packages/ui/src/sync/__tests__/event-reducer.test.ts",
-      "test": "performs one revert lookup for session-less streaming parts",
-      "flag": "accessor",
-      "family": "reducer",
-      "reason": "the test counts reads of a revert_transaction accessor and expects exactly one: a performance assertion, not behaviour; the recorder never calls a getter, so the case cannot carry the value (design §2.7)"
+      "file": "packages/ui/src/sync/__tests__/session-switch-resync.test.ts",
+      "test": "hooks after 0 tests",
+      "flag": "outside-chain",
+      "family": "input-store",
+      "reason": "this family's code runs with no step open: as the continuation of a call that engine code no family maps made into it (after an await or on a timer, once the passed-through call had returned), or reading its port while its module loads; mapping the caller records it as that caller's step (package C0e)"
     },
     {
       "file": "packages/ui/src/sync/__tests__/session-switch-resync.test.ts",
       "test": "hooks after 0 tests",
       "flag": "outside-chain",
-      "family": "input-store",
+      "family": "session-creation",
       "reason": "this family's code runs with no step open: as the continuation of a call that engine code no family maps made into it (after an await or on a timer, once the passed-through call had returned), or reading its port while its module loads; mapping the caller records it as that caller's step (package C0e)"
     },
     {
@@ -622,13 +784,6 @@
       "reason": "the test calls a port of this family itself (getStoragePrincipal or getSafeStorage, to prepare or restore the storage principal) while the family has no step in the case; the recorder cannot tell that from a closure of the family whose frame a tail call removed (package C0e)"
     },
     {
-      "file": "packages/ui/src/sync/__tests__/session-switch-resync.test.ts",
-      "test": "hooks after 0 tests",
-      "flag": "outside-chain",
-      "family": "session-creation",
-      "reason": "this family's code runs with no step open: as the continuation of a call that engine code no family maps made into it (after an await or on a timer, once the passed-through call had returned), or reading its port while its module loads; mapping the caller records it as that caller's step (package C0e)"
-    },
-    {
       "file": "packages/ui/src/sync/abort-retry-guard.test.ts",
       "test": "manual recovery waits until the authoritative retry loop settles",
       "flag": "no-frame",
@@ -643,11 +798,38 @@
       "reason": "the test's own timer callback tail-calls clearAbortGuard, so the call has no frame (no-frame), and the guard's state it moves is then no step (state-moved); its 1 ms poll against its own 2 ms timer is a race of the test itself (C0c2)"
     },
     {
+      "file": "packages/ui/src/sync/bootstrap-global.test.ts",
+      "test": "cancelled global bootstrap cannot publish late snapshots or failure",
+      "flag": "signal-aborted",
+      "family": "bootstrap",
+      "reason": "the test aborts the AbortController whose signal it handed the bootstrap while the bootstrap awaits its requests; the bootstrap then reads signal.aborted through the platform getter, which no port sees, so the abort is an input the recording does not hold (package C0f, signal-aborted)"
+    },
+    {
+      "file": "packages/ui/src/sync/bootstrap-session-list.test.ts",
+      "test": "late responses from a cancelled directory cannot finish or replace state",
+      "flag": "released",
+      "family": "abort-guard",
+      "reason": "the test aborts the AbortController it handed bootstrapDirectory and then releases a held answer: the bootstrap code that the abort and the release resume calls the guard's snapshot filter from a continuation test code released, which is no input of this family"
+    },
+    {
+      "file": "packages/ui/src/sync/bootstrap-session-list.test.ts",
+      "test": "late responses from a cancelled directory cannot finish or replace state",
+      "flag": "released",
+      "family": "bootstrap",
+      "reason": "the test aborts the AbortController it handed bootstrapDirectory (owner.abort()) while the bootstrap awaits its requests: the abort listeners resume bootstrap code from test code, a continuation no input of the family caused"
+    },
+    {
+      "file": "packages/ui/src/sync/bootstrap-session-list.test.ts",
+      "test": "late responses from a cancelled directory cannot finish or replace state",
+      "flag": "signal-aborted",
+      "family": "bootstrap",
+      "reason": "the test aborts the AbortController whose signal it handed the bootstrap while the bootstrap awaits its requests; the bootstrap then reads signal.aborted through the platform getter, which no port sees, so the abort is an input the recording does not hold (package C0f, signal-aborted)"
+    },
+    {
       "file": "packages/ui/src/sync/bootstrap-session-list.test.ts",
       "tests": [
         "does not resurrect a guarded provider retry from the bootstrap status snapshot",
         "exposes critical failure instead of leaving preparing directory without a Retry error",
-        "keeps bootstrap incomplete and exposes the session list error after failure",
         "late responses from a cancelled directory cannot finish or replace state",
         "loads sessions concurrently, waits for required data, then starts optional enrichment",
         "marks an empty session list ready after a successful first request",
@@ -656,41 +838,23 @@
         "settles a stale incomplete stream when the successful status snapshot omits its session",
         "treats listed sessions missing from a successful status snapshot as idle"
       ],
-      "flag": "outside-chain",
-      "family": "abort-guard",
-      "reason": "this family's code runs with no step open: as the continuation of a call that engine code no family maps made into it (after an await or on a timer, once the passed-through call had returned), or reading its port while its module loads; mapping the caller records it as that caller's step (package C0e)"
-    },
-    {
-      "file": "packages/ui/src/sync/bootstrap-session-list.test.ts",
-      "test": "keeps bootstrap incomplete and exposes the session list error after failure",
-      "flag": "timer-owner-unknown",
-      "family": "abort-guard",
-      "reason": "a timer set by code with no known case (a job of a call engine code no family maps made) moved this case's clock when it fired, so the time the case saw may depend on load (C0c2)"
-    },
-    {
-      "file": "packages/ui/src/sync/bootstrap-session-list.test.ts",
-      "tests": [
-        "does not resurrect a guarded provider retry from the bootstrap status snapshot",
-        "exposes critical failure instead of leaving preparing directory without a Retry error",
-        "keeps bootstrap incomplete and exposes the session list error after failure",
-        "late responses from a cancelled directory cannot finish or replace state",
-        "loads sessions concurrently, waits for required data, then starts optional enrichment",
-        "marks an empty session list ready after a successful first request",
-        "preserves a newer live status received while the session list loads",
-        "reconciles a large history without overwriting live status received during status loading",
-        "settles a stale incomplete stream when the successful status snapshot omits its session",
-        "treats listed sessions missing from a successful status snapshot as idle"
-      ],
-      "flag": "outside-chain",
+      "flag": "interleaved",
       "family": "directory-bootstrap-request",
-      "reason": "this family's code runs with no step open: as the continuation of a call that engine code no family maps made into it (after an await or on a timer, once the passed-through call had returned), or reading its port while its module loads; mapping the caller records it as that caller's step (package C0e)"
+      "reason": "bootstrapDirectory (a family since C0f) starts six bounded requests in a row, whose works the test's SDK fake answers at once, so the requests' continuations (clearing their deadline timers, settling) interleave in one microtask drain with the answers that come after them: which request an effect belongs to is decided by microtask order (package C0f, interleaved)"
     },
     {
       "file": "packages/ui/src/sync/bootstrap-session-list.test.ts",
-      "test": "keeps bootstrap incomplete and exposes the session list error after failure",
-      "flag": "timer-owner-unknown",
+      "test": "late responses from a cancelled directory cannot finish or replace state",
+      "flag": "released",
       "family": "directory-bootstrap-request",
-      "reason": "a timer set by code with no known case (a job of a call engine code no family maps made) moved this case's clock when it fired, so the time the case saw may depend on load (C0c2)"
+      "reason": "the test aborts the AbortController whose signal it handed the request (or the bootstrap that holds it): its abort listeners resume request code from test code, a continuation no input of the family caused"
+    },
+    {
+      "file": "packages/ui/src/sync/bootstrap-session-list.test.ts",
+      "test": "late responses from a cancelled directory cannot finish or replace state",
+      "flag": "signal-aborted",
+      "family": "directory-bootstrap-request",
+      "reason": "the test aborts the AbortController whose signal it handed the family while the family awaits work: the abort listeners resume family code from test code (released), and the family reads signal.aborted through the platform getter, which no port sees, so the abort is an input the recording does not hold (package C0f, signal-aborted)"
     },
     {
       "file": "packages/ui/src/sync/child-store.status-subscription.test.ts",
@@ -698,6 +862,13 @@
       "flag": "iterator",
       "family": "child-store",
       "reason": "the test hands the manager an iterator of directories, whose position and what it yields are internal, so the recorder cannot carry it (design §2.7)"
+    },
+    {
+      "file": "packages/ui/src/sync/claude-catalog-recovery.test.ts",
+      "test": "scopes recover independently and a failed reload does not end the cycle",
+      "flag": "interleaved",
+      "family": "claude-catalog-recovery",
+      "reason": "the test runs two recovery scopes at once, and their sleeps and reloads, which its fakes answer at once, interleave in one microtask drain: which scope an effect belongs to is decided by microtask order (package C0f, interleaved)"
     },
     {
       "file": "packages/ui/src/sync/composer-attachment-storage.test.ts",
@@ -735,11 +906,50 @@
       "reason": "a continuation of the family was made runnable by the test itself (a FileReader stub's load handler the test calls, an AbortController the test aborts, a promise the test resolves), which is no input of the family; those platform objects as ports are the transport package's (C0f)"
     },
     {
+      "file": "packages/ui/src/sync/directory-bootstrap-request.test.ts",
+      "test": "cancels an obsolete attempt even when its transport ignores cancellation",
+      "flag": "signal-aborted",
+      "family": "directory-bootstrap-request",
+      "reason": "the test aborts the AbortController whose signal it handed the family while the family awaits work: the abort listeners resume family code from test code (released), and the family reads signal.aborted through the platform getter, which no port sees, so the abort is an input the recording does not hold (package C0f, signal-aborted)"
+    },
+    {
       "file": "packages/ui/src/sync/event-batch.test.ts",
       "test": "stream batches copy the map once, notify once, preserve old snapshots and flush before barriers",
       "flag": "handed-out-touched",
       "family": "child-store",
       "reason": "engine code no family maps yet calls the methods of the ChildStoreManager, or writes the directory stores, that this family handed the test; the family records no state of those objects (they are its instances, not module state), so whether a call changed them is not known and a replay that does not make the call cannot follow; mapping that code (C1 and after) makes those calls steps (package C0e fix round)"
+    },
+    {
+      "file": "packages/ui/src/sync/event-pipeline.test.ts",
+      "tests": [
+        "interrupts retry delay when the browser comes back online",
+        "paces permanent 4xx stream failures even with zero reconnect delay"
+      ],
+      "flag": "global-defined:navigator",
+      "family": "event-pipeline",
+      "reason": "installRetryEventStubs() defines navigator itself with Object.defineProperty (a getter answering the test's online flag), so the pipeline's navigator.onLine reads are not recorded; recording them needs the test to assign globalThis.navigator, a tests-only change (package C0f)"
+    },
+    {
+      "file": "packages/ui/src/sync/event-pipeline.test.ts",
+      "test": "original SDK quiet ACK reconnects without a cursor through bounded replay before input readiness",
+      "flag": "outside-chain",
+      "family": "event-pipeline",
+      "reason": "the test hands the pipeline the real SDK client over a fake fetch: the SDK reads the event-stream Response with the platform's own stream reader, whose reads resolve outside any engine chain, so the pipeline's onSseEvent callback and stream items run with no step; recording it needs the SDK as a port family of its own, or a test with an SDK fake (package C0f)"
+    },
+    {
+      "file": "packages/ui/src/sync/input-store.test.ts",
+      "tests": [
+        "attachment hydration during a revert does not claim a user edit, but picking a new attachment does",
+        "does not reuse an in-memory target cache after the storage principal changes",
+        "keeps ordered attachments isolated per composer target",
+        "permanent session input cleanup removes only that session's attachments",
+        "removes only the retired target and preserves archived-session-style targets",
+        "restores target attachments after the runtime cache is reset",
+        "routes a screenshot that finishes after switching back to its originating draft"
+      ],
+      "flag": "interleaved",
+      "family": "input-store",
+      "reason": "the attachment persistence and hydration the test drives answer at once (its storage and reader fakes) while the action before them still runs, so their continuations interleave in one microtask drain: which input an effect belongs to is decided by microtask order (package C0f, interleaved)"
     },
     {
       "file": "packages/ui/src/sync/input-store.test.ts",
@@ -768,6 +978,18 @@
     {
       "file": "packages/ui/src/sync/input-store.test.ts",
       "tests": [
+        "does not reuse an in-memory target cache after the storage principal changes",
+        "hooks after 0 tests",
+        "ignores invalid persisted records without losing valid ordered records",
+        "permanent session input cleanup removes only that session's attachments"
+      ],
+      "flag": "outside-chain",
+      "family": "input-store",
+      "reason": "this family's code runs with no step open: as the continuation of a call that engine code no family maps made into it (after an await or on a timer, once the passed-through call had returned), or reading its port while its module loads; mapping the caller records it as that caller's step (package C0e)"
+    },
+    {
+      "file": "packages/ui/src/sync/input-store.test.ts",
+      "tests": [
         "attachment hydration during a revert does not claim a user edit, but picking a new attachment does",
         "claims composer ownership before an asynchronous attachment read settles",
         "does not attach a local file after attached files are replaced",
@@ -785,23 +1007,90 @@
       "file": "packages/ui/src/sync/input-store.test.ts",
       "tests": [
         "does not reuse an in-memory target cache after the storage principal changes",
-        "hooks after 0 tests",
-        "ignores invalid persisted records without losing valid ordered records",
-        "permanent session input cleanup removes only that session's attachments"
-      ],
-      "flag": "outside-chain",
-      "family": "input-store",
-      "reason": "this family's code runs with no step open: as the continuation of a call that engine code no family maps made into it (after an await or on a timer, once the passed-through call had returned), or reading its port while its module loads; mapping the caller records it as that caller's step (package C0e)"
-    },
-    {
-      "file": "packages/ui/src/sync/input-store.test.ts",
-      "tests": [
-        "does not reuse an in-memory target cache after the storage principal changes",
         "ignores invalid persisted records without losing valid ordered records"
       ],
       "flag": "port-no-line",
       "family": "session-creation",
       "reason": "the test calls a port of this family itself (getStoragePrincipal or getSafeStorage, to prepare or restore the storage principal) while the family has no step in the case; the recorder cannot tell that from a closure of the family whose frame a tail call removed (package C0e)"
+    },
+    {
+      "file": "packages/ui/src/sync/input-subscription.mounted.test.tsx",
+      "tests": [
+        "consumer abort and timeout leave the mounted subscription usable; Stop is independent",
+        "disconnect and replacement invalidate captured readiness; only the current subscription releases a new input",
+        "mounted quiet SSE waits for subscription ACK, not health or headers, and sends captured input exactly once",
+        "retained recovery intent follows subscription-owner replacement and cancellation releases its waiter",
+        "startup observes only the current global subscription acknowledgment and loses readiness on cleanup"
+      ],
+      "flag": "global-defined:document",
+      "family": "event-pipeline",
+      "reason": "withDom (test/mountedDom.ts) defines document and window with Object.defineProperty, as data properties the recorder did not wrap, so the pipeline's reads of them and of their members are not recorded; package C0f records those reads when a test assigns the globals, so recording them needs withDom to assign them (a tests-only change)"
+    },
+    {
+      "file": "packages/ui/src/sync/input-subscription.mounted.test.tsx",
+      "tests": [
+        "consumer abort and timeout leave the mounted subscription usable; Stop is independent",
+        "disconnect and replacement invalidate captured readiness; only the current subscription releases a new input",
+        "mounted quiet SSE waits for subscription ACK, not health or headers, and sends captured input exactly once",
+        "retained recovery intent follows subscription-owner replacement and cancellation releases its waiter",
+        "startup observes only the current global subscription acknowledgment and loses readiness on cleanup"
+      ],
+      "flag": "global-defined:window",
+      "family": "event-pipeline",
+      "reason": "withDom (test/mountedDom.ts) defines document and window with Object.defineProperty, as data properties the recorder did not wrap, so the pipeline's reads of them and of their members are not recorded; package C0f records those reads when a test assigns the globals, so recording them needs withDom to assign them (a tests-only change)"
+    },
+    {
+      "file": "packages/ui/src/sync/input-subscription.mounted.test.tsx",
+      "tests": [
+        "consumer abort and timeout leave the mounted subscription usable; Stop is independent",
+        "disconnect and replacement invalidate captured readiness; only the current subscription releases a new input",
+        "mounted quiet SSE waits for subscription ACK, not health or headers, and sends captured input exactly once",
+        "retained recovery intent follows subscription-owner replacement and cancellation releases its waiter"
+      ],
+      "flag": "handed-out-touched",
+      "family": "event-pipeline",
+      "reason": "engine code no family maps (sync-context, mounted by the test) calls the pipeline object the pipeline handed out (its cleanup, enqueueEvent) inside the case; the family records no state of that object, so whether the call changed it is not known"
+    },
+    {
+      "file": "packages/ui/src/sync/input-subscription.mounted.test.tsx",
+      "test": "retained recovery intent follows subscription-owner replacement and cancellation releases its waiter",
+      "flag": "interleaved",
+      "family": "event-pipeline",
+      "reason": "the mounted component the test renders (code no family maps) delivers several inputs of the family in one microtask drain, and their continuations interleave (answers that come at once while the input before them still runs): which input an effect belongs to is decided by microtask order (package C0f, interleaved)"
+    },
+    {
+      "file": "packages/ui/src/sync/input-subscription.mounted.test.tsx",
+      "tests": [
+        "consumer abort and timeout leave the mounted subscription usable; Stop is independent",
+        "disconnect and replacement invalidate captured readiness; only the current subscription releases a new input",
+        "mounted quiet SSE waits for subscription ACK, not health or headers, and sends captured input exactly once",
+        "retained recovery intent follows subscription-owner replacement and cancellation releases its waiter"
+      ],
+      "flag": "outside-chain",
+      "family": "event-pipeline",
+      "reason": "pipeline code, or a port of the pipeline, runs with no engine chain: code no family maps (here the mounted component and the API client's send path the test drives) calls the pipeline's ports or runs its handlers, so what runs is no step of any input of the pipeline"
+    },
+    {
+      "file": "packages/ui/src/sync/input-subscription.mounted.test.tsx",
+      "tests": [
+        "consumer abort and timeout leave the mounted subscription usable; Stop is independent",
+        "disconnect and replacement invalidate captured readiness; only the current subscription releases a new input",
+        "mounted quiet SSE waits for subscription ACK, not health or headers, and sends captured input exactly once",
+        "retained recovery intent follows subscription-owner replacement and cancellation releases its waiter"
+      ],
+      "flag": "port-no-line",
+      "family": "event-pipeline",
+      "reason": "test code (by the stack) calls one of the pipeline's ports itself (the API client opencodeClient, which component and store tests drive and stub, the session event bus, the primary recovery store, the stream counters, syncDebug or the retention signal) while the pipeline has no step in the case: the case gets a line for the pipeline with no step in it (a closure of the pipeline whose frame a tail call removed would look the same), so there is nothing of the pipeline to replay"
+    },
+    {
+      "file": "packages/ui/src/sync/input-subscription.mounted.test.tsx",
+      "tests": [
+        "consumer abort and timeout leave the mounted subscription usable; Stop is independent",
+        "retained recovery intent follows subscription-owner replacement and cancellation releases its waiter"
+      ],
+      "flag": "released",
+      "family": "event-pipeline",
+      "reason": "a continuation of pipeline code was made runnable by test code or by code no family maps (the mounted provider's effects, the test's own abort and timers), which is no input of the pipeline"
     },
     {
       "file": "packages/ui/src/sync/input-subscription.mounted.test.tsx",
@@ -867,16 +1156,10 @@
         "clearing a session removes all of its resends and none of a session whose id it prefixes",
         "clearing a session whose id holds the key separator also clears another session's resend that shares the prefix",
         "clearing takes any iterable, skips empty ids, and clears several sessions at once",
+        "clears only resend markers owned by released sessions",
         "ending a resend that was never begun, or another message's, changes nothing",
         "never reports a resend with an empty session id or a missing or empty message id as in flight, and an end with such ids leaves a real resend in flight"
       ],
-      "flag": "port-no-line",
-      "family": "reducer",
-      "reason": "the test calls the committed-revert resend functions itself (begin, end, lookup, clear), which are ports of the reducer; the reducer hands out no closure (its results are data), so no reducer code can hide behind the call"
-    },
-    {
-      "file": "packages/ui/src/sync/revert-transactions.test.ts",
-      "test": "clears only resend markers owned by released sessions",
       "flag": "port-no-line",
       "family": "reducer",
       "reason": "the test calls isCommittedRevertResendInFlight itself, a port of the reducer; the reducer hands out no closure (its results are data), so no reducer code can hide behind the call"
@@ -919,6 +1202,13 @@
     },
     {
       "file": "packages/ui/src/sync/session-actions.queued-interrupt.test.ts",
+      "test": "hooks after 0 tests",
+      "flag": "port-no-line",
+      "family": "event-pipeline",
+      "reason": "test code (by the stack) calls one of the pipeline's ports itself (the API client opencodeClient, which component and store tests drive and stub, the session event bus, the primary recovery store, the stream counters, syncDebug or the retention signal) while the pipeline has no step in the case: the case gets a line for the pipeline with no step in it (a closure of the pipeline whose frame a tail call removed would look the same), so there is nothing of the pipeline to replay"
+    },
+    {
+      "file": "packages/ui/src/sync/session-actions.queued-interrupt.test.ts",
       "test": "an idle root waits for its active child to confirm termination",
       "flag": "outside-chain",
       "family": "session-creation",
@@ -953,6 +1243,13 @@
       "flag": "state-moved",
       "family": "abort-guard",
       "reason": "code that is no step of this family changes its state while the test runs: engine code no family maps yet (the session UI store, sync context, session actions, the config and agents stores, the message loader, components) calls one of its entries and leaves the state changed (a call that only reads does not flag the case, C0e fix round), another family's chain inlines one and changes it, its store notifies while none of its steps runs, or a timer an earlier case left changes it when it fires; a replay cannot reproduce the steps after that; mapping that code (C1 and after) makes those calls steps (package C0e)"
+    },
+    {
+      "file": "packages/ui/src/sync/session-actions.test.ts",
+      "test": "hooks after 0 tests",
+      "flag": "port-no-line",
+      "family": "event-pipeline",
+      "reason": "test code (by the stack) calls one of the pipeline's ports itself (the API client opencodeClient, which component and store tests drive and stub, the session event bus, the primary recovery store, the stream counters, syncDebug or the retention signal) while the pipeline has no step in the case: the case gets a line for the pipeline with no step in it (a closure of the pipeline whose frame a tail call removed would look the same), so there is nothing of the pipeline to replay"
     },
     {
       "file": "packages/ui/src/sync/session-actions.test.ts",
@@ -1000,6 +1297,16 @@
     {
       "file": "packages/ui/src/sync/session-creation.test.ts",
       "tests": [
+        "hooks after 0 tests",
+        "late completion after an account change cannot copy private markers across accounts"
+      ],
+      "flag": "outside-chain",
+      "family": "session-creation",
+      "reason": "this family's code runs with no step open: as the continuation of a call that engine code no family maps made into it (after an await or on a timer, once the passed-through call had returned), or reading its port while its module loads; mapping the caller records it as that caller's step (package C0e)"
+    },
+    {
+      "file": "packages/ui/src/sync/session-creation.test.ts",
+      "tests": [
         "cancel returns immediately, retains late identity, and never dispatches twice",
         "preparation can be cancelled while its underlying work remains pending"
       ],
@@ -1010,12 +1317,19 @@
     {
       "file": "packages/ui/src/sync/session-creation.test.ts",
       "tests": [
-        "hooks after 0 tests",
-        "late completion after an account change cannot copy private markers across accounts"
+        "cancel returns immediately, retains late identity, and never dispatches twice",
+        "preparation can be cancelled while its underlying work remains pending"
       ],
-      "flag": "outside-chain",
+      "flag": "signal-aborted",
       "family": "session-creation",
-      "reason": "this family's code runs with no step open: as the continuation of a call that engine code no family maps made into it (after an await or on a timer, once the passed-through call had returned), or reading its port while its module loads; mapping the caller records it as that caller's step (package C0e)"
+      "reason": "the test aborts the AbortController whose signal it handed the family while the family awaits work: the abort listeners resume family code from test code (released), and the family reads signal.aborted through the platform getter, which no port sees, so the abort is an input the recording does not hold (package C0f, signal-aborted)"
+    },
+    {
+      "file": "packages/ui/src/sync/session-creation.test.ts",
+      "test": "cancel returns immediately, retains late identity, and never dispatches twice",
+      "flag": "immediate-expired",
+      "family": "session-creation",
+      "reason": "the injected dispatch's answer settles in the microtask drain of its call more than 64 promise generations after it (the cancelled attempt's late answer), so at which generation is not known; before the C0f fix round it was written at the cap, as if 64 (C0f fix round, immediate-expired)"
     },
     {
       "file": "packages/ui/src/sync/session-history.test.ts",
@@ -1070,6 +1384,13 @@
       "reason": "this family's code runs with no step open: as the continuation of a call that engine code no family maps made into it (after an await or on a timer, once the passed-through call had returned), or reading its port while its module loads; mapping the caller records it as that caller's step (package C0e)"
     },
     {
+      "file": "packages/ui/src/sync/session-history.viewed-trim.test.ts",
+      "test": "resumes below an anchor that ends a page exactly",
+      "flag": "port-no-line",
+      "family": "event-pipeline",
+      "reason": "test code (by the stack) calls one of the pipeline's ports itself (the API client opencodeClient, which component and store tests drive and stub, the session event bus, the primary recovery store, the stream counters, syncDebug or the retention signal) while the pipeline has no step in the case: the case gets a line for the pipeline with no step in it (a closure of the pipeline whose frame a tail call removed would look the same), so there is nothing of the pipeline to replay"
+    },
+    {
       "file": "packages/ui/src/sync/session-message-loader.plan-selection.test.ts",
       "tests": [
         "a forced selected reload replaces the older-page owner before its stale error",
@@ -1089,6 +1410,27 @@
       "flag": "handed-out-touched",
       "family": "child-store",
       "reason": "engine code no family maps yet calls the methods of the ChildStoreManager, or writes the directory stores, that this family handed the test; the family records no state of those objects (they are its instances, not module state), so whether a call changed them is not known and a replay that does not make the call cannot follow; mapping that code (C1 and after) makes those calls steps (package C0e fix round)"
+    },
+    {
+      "file": "packages/ui/src/sync/session-message-loader.plan-selection.test.ts",
+      "tests": [
+        "a forced selected reload replaces the older-page owner before its stale error",
+        "a forced selected reload replaces the older-page owner before its stale success",
+        "caps retained authority search at 1,000 records",
+        "complete empty history is an authoritative fresh-session OFF choice",
+        "discarded directory ownership cannot commit history or errors to another selection",
+        "discarded selection ownership cannot commit history or errors to another selection",
+        "discarded session ownership cannot commit history or errors to another selection",
+        "exhausted maintenance-only history remains unresolved until an explicit local choice",
+        "promotes and deduplicates an in-flight prefetch using the server's opaque older cursor",
+        "rejects an oversized authority page before materializing it",
+        "rejects same-cursor without silently restoring OFF",
+        "rejects same-records without silently restoring OFF",
+        "retrieval failure blocks new captures, preserves captured OFF, and explicit retry recovers"
+      ],
+      "flag": "port-no-line",
+      "family": "event-pipeline",
+      "reason": "test code (by the stack) calls one of the pipeline's ports itself (the API client opencodeClient, which component and store tests drive and stub, the session event bus, the primary recovery store, the stream counters, syncDebug or the retention signal) while the pipeline has no step in the case: the case gets a line for the pipeline with no step in it (a closure of the pipeline whose frame a tail call removed would look the same), so there is nothing of the pipeline to replay"
     },
     {
       "file": "packages/ui/src/sync/session-message-loader.plan-selection.test.ts",
@@ -1206,6 +1548,13 @@
     },
     {
       "file": "packages/ui/src/sync/session-presentation.integration.test.js",
+      "test": "real reconnect hydrates the backend snapshot and rejects a disposed/recreated directory owner",
+      "flag": "port-no-line",
+      "family": "event-pipeline",
+      "reason": "test code (by the stack) calls one of the pipeline's ports itself (the API client opencodeClient, which component and store tests drive and stub, the session event bus, the primary recovery store, the stream counters, syncDebug or the retention signal) while the pipeline has no step in the case: the case gets a line for the pipeline with no step in it (a closure of the pipeline whose frame a tail call removed would look the same), so there is nothing of the pipeline to replay"
+    },
+    {
+      "file": "packages/ui/src/sync/session-presentation.integration.test.js",
       "tests": [
         "actual backend envelopes route through production global event ingestion and preserve status authority",
         "hooks after 0 tests"
@@ -1247,6 +1596,17 @@
     },
     {
       "file": "packages/ui/src/sync/session-ui-store.retention.test.ts",
+      "tests": [
+        "failed and superseded switches preserve project, directory stores and client routing",
+        "late worktree preparation updates its draft without changing a newer selection target",
+        "reconnect between acknowledgement reuse and cleanup dispatch requires fresh confirmation"
+      ],
+      "flag": "port-no-line",
+      "family": "event-pipeline",
+      "reason": "test code (by the stack) calls one of the pipeline's ports itself (the API client opencodeClient, which component and store tests drive and stub, the session event bus, the primary recovery store, the stream counters, syncDebug or the retention signal) while the pipeline has no step in the case: the case gets a line for the pipeline with no step in it (a closure of the pipeline whose frame a tail call removed would look the same), so there is nothing of the pipeline to replay"
+    },
+    {
+      "file": "packages/ui/src/sync/session-ui-store.retention.test.ts",
       "test": "hooks after 0 tests",
       "flag": "outside-chain",
       "family": "input-store",
@@ -1261,36 +1621,148 @@
     },
     {
       "file": "packages/ui/src/sync/session-ui-store.send.test.ts",
+      "test": "hooks after 0 tests",
+      "flag": "outside-chain",
+      "family": "event-pipeline",
+      "reason": "while the test file loads (the hooks before its first test), session-ui-store and the modules it imports, which no family maps, call ports of the pipeline (the API client) with no engine chain; no input of the pipeline is in it"
+    },
+    {
+      "file": "packages/ui/src/sync/session-ui-store.send.test.ts",
       "tests": [
+        "Cursor draft model changes remain local until the first send",
         "Cursor first send creates one normal session with the final draft selection",
+        "PlanCard implementation send keeps the saved plan path synthetic without file attachments",
+        "a failed managed worktree bootstrap leaves the draft intact and creates no empty session",
+        "a managed root draft stays fail-closed until its assigned Dev worktree resolves",
         "a new draft send carries the effort the composer shows, and saves it for the agent",
         "a send queued during managed preparation creates the session only in Dev",
         "aborting a dispatched create retains the draft and requires explicit retry confirmation",
         "aborting a promoted draft send cancels prompt acceptance and clears pending state",
+        "activating a draft that follows its agent default restores the account's own pick for that agent",
+        "active Cursor child sessions fail non-destructively instead of falling back to prompt_async",
+        "active OpenCode child sessions send follow-ups through immediate v2 prompt without optimistic prompt_async",
+        "adds synthetic handoff context when switching from Cursor SDK to a non-Cursor provider",
+        "adds synthetic handoff context when switching from OpenCode to Cursor SDK",
         "background activation failure after draft send does not roll back promoted session",
+        "blocks PDF attachments before optimistic send when model explicitly lacks PDF input",
+        "cancels pending completed plan indicators when a session is acknowledged before settlement",
+        "claimQueueForSession atomically drains and restore prepends claimed messages",
+        "clearSessionTurnCompletion clears completed plan indicators",
+        "clearSessionTurnCompletion preserves implementing plan indicators",
+        "clearSessionTurnCompletion preserves proposed plan indicators",
+        "clears completed plan indicators when a session is acknowledged without hiding plan availability",
+        "clears normal completion indicators when a session is read",
+        "clears only the matching handed-off plan indicator and persists released ownership",
+        "clears recorded plan-mode session ownership once implementation starts",
+        "command discovery uses the target session directory and failed discovery never sends a prompt",
+        "concurrent sends claim one draft once and use its captured text",
         "create-session failure preserves the active draft and text",
+        "createSessionFromAssistantMessage seeds a local assistant starter without sending",
         "deleting a draft during creation prevents late prompt dispatch and selection",
+        "direct Council chat sends the council agent with the selected scalar model",
+        "does not add synthetic handoff context between OpenCode providers",
+        "does not add synthetic handoff context for same-backend model switches",
+        "does not clear a completed plan indicator during a handoff",
+        "does not clear a newer plan revision during a stale mobile handoff",
+        "does not copy synthetic context into a later runtime handoff",
+        "does not mark recorded plan-mode sessions proposed before a plan card is presented",
+        "does not re-attach Cursor context once OpenCode has already replied after it",
+        "does not show completion while live status is busy even when the trailing tool turn is finalized",
+        "does not show settled normal completion when live status became busy",
         "draft promotion does not emit an intermediate closed null-target state",
+        "draft send validates provider and model before creating a session",
         "draft sends clear canonical, per-draft, and legacy persisted data for the promoted draft",
+        "draft sends preserve captured agent and model when directory activation restores defaults",
+        "draft sends preserve the selected agent and scalar model with its explicitly selected effort",
         "draft sends promote and send before directory activation settles",
         "draft sends prune same-text same-directory stale duplicates only",
+        "draft sends replace an invalid plan agent with the saved default agent model and variant",
+        "draft sends resolve a missing draft directory from the active project",
         "draft sends retire the promoted draft even if session creation selects the new session first",
         "draft sends retire the promoted draft state",
         "draft sends use explicit draft selections even when the live config has defaults",
         "draft sends use persisted send config before activation-restored defaults",
+        "explicit planMode false prevents plan-mode synthetic instructions",
+        "failed implementation sends roll back plan implementation state",
+        "failed non-Cursor sends do not persist a prompt-derived title",
+        "failed normal send does not unarchive an archived current session",
+        "failed plan-mode sends restore the previous proposal indicator",
+        "first draft send routes to the orchestrator configured model before directory activation replaces retained global state",
+        "foreground sendMessage continues to send to the current session",
+        "hides an older proposal while a newer plan-mode turn is pending",
+        "hooks after 0 tests",
+        "idle child sessions keep the normal send path",
+        "keeps the Cursor handoff when the first OpenCode send has no reply yet",
         "late creation preserves navigation to another draft",
         "late creation preserves navigation to another session",
+        "late fresh-draft activation cannot overwrite a newer session",
+        "new OpenAI draft sessions leave automatic title generation to the server runtime",
+        "new OpenAI draft sessions preserve an explicit custom title",
+        "new attachments during creation remain on the original draft",
         "new draft sends expose a pending abort target before prompt acceptance",
+        "new standard-provider draft sessions leave automatic title generation to the server runtime",
+        "non-Cursor sends do not repair provider-error session titles",
+        "normal-mode follow-ups do not hide an actionable proposal",
+        "opening a fresh draft shows the configured Orchestrator model and High variant before activation settles",
+        "opening a new draft clears the active session tracker",
+        "opening a startup draft preserves reload-compatible config-only drafts",
+        "opening an explicitly configured draft preserves its selected model",
+        "opening another draft preserves an attachment-only draft",
+        "passes captured low to slash-command optimism and transport",
+        "passes captured provider default to slash-command optimism and transport",
+        "persists actionable plan proposals and removes them when implementation starts",
+        "persists only the newest proposal revision and restores it after implementation rollback",
+        "plan mode send injects the structured plan layout instruction",
+        "plan mode synthetic instruction follows the plan.md layout contract",
+        "preserves proposed plan indicators when a session is acknowledged",
+        "prioritizes newest messages when cross-runtime handoff context exceeds its budget",
         "promotes within 100 ms of acknowledgment across 30 captured draft submissions",
+        "queue claim prevents manual submit and idle auto-send from both sending queued content",
+        "queue cleanup can remove only the original queued session",
         "raw composer text may differ from the transformed prompt without preventing promotion",
         "replacing and discarding Cursor drafts never creates a server session",
+        "restores canonical provider default and sends it over a conflicting High agent default",
         "retargeting an open draft to a worktree preserves its text and send configuration",
+        "retireDeletedSession no-ops without replacing unrelated collection references",
+        "retireDeletedSession removes only exact session UI ownership and persisted plan state",
         "route failure after session creation does not resurrect the sent draft",
-        "sending one draft preserves other unsent drafts"
+        "routes a known skill through command transport when command snapshots are empty",
+        "selecting a draft restores live agent/model from authoritative draft selection after activation",
+        "selecting a draft skips restore when a newer draft becomes current before activation settles",
+        "selecting a restored managed root draft reconciles it to the assigned branch",
+        "selecting a session clears normal and completed plan indicators but preserves proposed plans",
+        "selecting a session synchronously marks root and descendant completion notifications read",
+        "selecting an existing draft clears the active session tracker",
+        "sendMessage defensively creates a session when no draft or current session exists",
+        "sendMessageToSession dismisses descendant questions before queueing next turn",
+        "sendMessageToSession exposes implementation send message ids",
+        "sendMessageToSession ignores already-gone question dismiss errors",
+        "sendMessageToSession preserves queued client identity and directory",
+        "sendMessageToSession queues next turn and dismisses root-session questions",
+        "sendMessageToSession sends directly past a question whose turn already stopped",
+        "sendMessageToSession sends to the queued session even when another session is current",
+        "sendMessageToSession surfaces real question dismiss failures without dropping queued prompt",
+        "sending one draft preserves other unsent drafts",
+        "sends PDF attachments when model input modalities include PDF",
+        "settles completed plan indicators before showing them",
+        "settles normal completion indicators before showing them",
+        "shell sends still wait for worktree bootstrap before calling the SDK",
+        "starter assistant context is sent once with the first real user prompt",
+        "starter assistant context remains pending for shell sends",
+        "successful Cursor sends do not persist prompt fallbacks over generated new-session titles",
+        "successful Cursor sends do not persist prompt fallbacks over provider-error titles",
+        "successful first non-Cursor send leaves an authoritative untitled session unchanged",
+        "successful non-Cursor sends preserve an existing generated title",
+        "successful normal send does not unarchive a non-archived current session",
+        "successful normal send unarchives an archived current session",
+        "successful shell send unarchives an archived current session",
+        "successful slash command send unarchives an archived current session",
+        "targeted send unarchives the targeted archived session",
+        "tracks mobile handoffs separately from same-session implementations"
       ],
-      "flag": "state-moved",
-      "family": "input-store",
-      "reason": "code that is no step of this family changes its state while the test runs: engine code no family maps yet (the session UI store, sync context, session actions, the config and agents stores, the message loader, components) calls one of its entries and leaves the state changed (a call that only reads does not flag the case, C0e fix round), another family's chain inlines one and changes it, its store notifies while none of its steps runs, or a timer an earlier case left changes it when it fires; a replay cannot reproduce the steps after that; mapping that code (C1 and after) makes those calls steps (package C0e)"
+      "flag": "port-no-line",
+      "family": "event-pipeline",
+      "reason": "test code (by the stack) calls one of the pipeline's ports itself (the API client opencodeClient, which component and store tests drive and stub, the session event bus, the primary recovery store, the stream counters, syncDebug or the retention signal) while the pipeline has no step in the case: the case gets a line for the pipeline with no step in it (a closure of the pipeline whose frame a tail call removed would look the same), so there is nothing of the pipeline to replay"
     },
     {
       "file": "packages/ui/src/sync/session-ui-store.send.test.ts",
@@ -1328,6 +1800,39 @@
       "flag": "outside-chain",
       "family": "input-store",
       "reason": "this family's code runs with no step open: as the continuation of a call that engine code no family maps made into it (after an await or on a timer, once the passed-through call had returned), or reading its port while its module loads; mapping the caller records it as that caller's step (package C0e)"
+    },
+    {
+      "file": "packages/ui/src/sync/session-ui-store.send.test.ts",
+      "tests": [
+        "Cursor first send creates one normal session with the final draft selection",
+        "a new draft send carries the effort the composer shows, and saves it for the agent",
+        "a send queued during managed preparation creates the session only in Dev",
+        "aborting a dispatched create retains the draft and requires explicit retry confirmation",
+        "aborting a promoted draft send cancels prompt acceptance and clears pending state",
+        "background activation failure after draft send does not roll back promoted session",
+        "create-session failure preserves the active draft and text",
+        "deleting a draft during creation prevents late prompt dispatch and selection",
+        "draft promotion does not emit an intermediate closed null-target state",
+        "draft sends clear canonical, per-draft, and legacy persisted data for the promoted draft",
+        "draft sends promote and send before directory activation settles",
+        "draft sends prune same-text same-directory stale duplicates only",
+        "draft sends retire the promoted draft even if session creation selects the new session first",
+        "draft sends retire the promoted draft state",
+        "draft sends use explicit draft selections even when the live config has defaults",
+        "draft sends use persisted send config before activation-restored defaults",
+        "late creation preserves navigation to another draft",
+        "late creation preserves navigation to another session",
+        "new draft sends expose a pending abort target before prompt acceptance",
+        "promotes within 100 ms of acknowledgment across 30 captured draft submissions",
+        "raw composer text may differ from the transformed prompt without preventing promotion",
+        "replacing and discarding Cursor drafts never creates a server session",
+        "retargeting an open draft to a worktree preserves its text and send configuration",
+        "route failure after session creation does not resurrect the sent draft",
+        "sending one draft preserves other unsent drafts"
+      ],
+      "flag": "state-moved",
+      "family": "input-store",
+      "reason": "code that is no step of this family changes its state while the test runs: engine code no family maps yet (the session UI store, sync context, session actions, the config and agents stores, the message loader, components) calls one of its entries and leaves the state changed (a call that only reads does not flag the case, C0e fix round), another family's chain inlines one and changes it, its store notifies while none of its steps runs, or a timer an earlier case left changes it when it fires; a replay cannot reproduce the steps after that; mapping that code (C1 and after) makes those calls steps (package C0e)"
     },
     {
       "file": "packages/ui/src/sync/session-ui-store.send.test.ts",
@@ -1543,6 +2048,13 @@
       "flag": "outside-chain",
       "family": "session-creation",
       "reason": "this family's code runs with no step open: as the continuation of a call that engine code no family maps made into it (after an await or on a timer, once the passed-through call had returned), or reading its port while its module loads; mapping the caller records it as that caller's step (package C0e)"
+    },
+    {
+      "file": "packages/ui/src/sync/streaming.test.ts",
+      "test": "settles a tracked stream when bootstrap authoritatively materializes idle",
+      "flag": "port-no-line",
+      "family": "bootstrap",
+      "reason": "the test calls the streaming store's settleStreamingSessions itself, which is a port of the bootstrap, while the bootstrap has no step in the case: the case has a line for the bootstrap with no step in it"
     },
     {
       "file": "packages/ui/src/sync/sync-context.plan-lifecycle.test.ts",
@@ -1761,6 +2273,185 @@
       "flag": "outside-chain",
       "family": "child-store",
       "reason": "this family's code runs with no step open: as the continuation of a call that engine code no family maps made into it (after an await or on a timer, once the passed-through call had returned), or reading its port while its module loads; mapping the caller records it as that caller's step (package C0e)"
+    },
+    {
+      "file": "packages/ui/src/sync/sync-context.plan-lifecycle.test.ts",
+      "tests": [
+        "applies an older meaningful title projection without rolling newer session fields back",
+        "cancels late plan lifecycle restoration for a deleted session",
+        "clears only the currently selected session when authoritative deletion arrives",
+        "clears only the deleted session from persisted context state",
+        "clears only the deleted session's persisted queued prompts",
+        "clears per-session selections when an authoritative delete event lands",
+        "deletes a session from every initialized child store despite a wrong event directory",
+        "does not restore deleted messages from late snapshot materialization",
+        "does not restore deleted messages from late unexpected-abort reconciliation",
+        "does not resurrect a deleted session from late blocking-request materialization",
+        "does not supersede errors after deleted",
+        "late proof cannot restore unread completion after deleted",
+        "lets an event older by updated advance lifecycle facts in the store and snapshot replay",
+        "mirrors inactive-directory session lifecycle without allocating a child store",
+        "preserves completion notification and settlement when a session is archived",
+        "preserves session UI ownership when a session is archived",
+        "removes only the deleted session's persisted composer text and mentions",
+        "retires an exact abort-retry guard only on permanent deletion",
+        "retires exact session UI ownership when authoritative deletion arrives",
+        "retires notifications and pending completion settlement only after authoritative deletion",
+        "retires permission auto-accept only after authoritative deletion",
+        "treats empty session snapshots as authoritative while replaying concurrent lifecycle events"
+      ],
+      "flag": "outside-chain",
+      "family": "event-pipeline",
+      "reason": "pipeline code, or a port of the pipeline, runs with no engine chain: sync-context, which no family maps, creates the pipeline and runs its handlers, so what runs is no step of any input of the pipeline; mapping sync-context (C8) makes those calls steps"
+    },
+    {
+      "file": "packages/ui/src/sync/sync-context.plan-lifecycle.test.ts",
+      "tests": [
+        "a canonical Plan retry supersedes its prior auth failure while preserving a current failure",
+        "a confirmed incomplete check waits for verification events instead of retry polling",
+        "a failed managed verification snapshot recovers on the same bounded retry path",
+        "a forged or old continuation cannot complete another objective",
+        "a plan whose run never settles fails with Retry once its schedule is spent",
+        "a terminal settlement refusal fails at once, with no retries",
+        "a waiting plan is saved again on its own schedule, with no new events",
+        "acknowledging the parent scope retires a child's failed completion proof",
+        "acknowledgment during a queued retry's initial yield cannot recreate its wait",
+        "active-only status snapshot respects live recovery fences: evicted observation",
+        "active-only status snapshot respects live recovery fences: malformed map",
+        "active-only status snapshot respects live recovery fences: new busy during history",
+        "active-only status snapshot respects live recovery fences: new busy during status",
+        "active-only status snapshot respects live recovery fences: omitted idle",
+        "active-only status snapshot respects live recovery fences: same busy during status",
+        "active-only status snapshot respects live recovery fences: same idle during status",
+        "an outstanding root proof never blocks or completes a newer human turn",
+        "applies an older meaningful title projection without rolling newer session fields back",
+        "authoritatively refreshes a pending background plan on idle without opening the session",
+        "automatic proof retries exhaust, then foreground retries the retained failure once",
+        "cancels late plan lifecycle restoration for a deleted session",
+        "cancels pending normal completion when a new busy turn starts before settlement",
+        "canonical session idle retires stale streaming ownership without opening the chat",
+        "clears completed plan attention when authoritative busy starts",
+        "clears normal completion attention when authoritative busy starts",
+        "clears only the currently selected session when authoritative deletion arrives",
+        "clears only the deleted session from persisted context state",
+        "clears only the deleted session's persisted queued prompts",
+        "clears per-session selections when an authoritative delete event lands",
+        "deduplicates background completion materialization across idle event variants",
+        "deduplicates repeated part update completion notifications for the same message",
+        "defers completion while a managed child runs and re-detects after the idle snapshot settles it",
+        "deletes a session from every initialized child store despite a wrong event directory",
+        "does not create a green indicator from an unread completion notification alone",
+        "does not mark proposed when the busy Cursor plan turn is not complete",
+        "does not materialize or create unread completion for the viewed session on idle",
+        "does not record normal completion from a finalized tool row before the final assistant summary",
+        "does not record normal completion while a completed assistant still has running patch work",
+        "does not record stale completion when part update finalizes a different message",
+        "does not restore deleted messages from late snapshot materialization",
+        "does not restore deleted messages from late unexpected-abort reconciliation",
+        "does not resurrect a deleted session from late blocking-request materialization",
+        "does not settle or mark implemented plan completed while implementation tool work is running",
+        "does not settle or record completion for an intermediate tool-calls assistant turn",
+        "does not show a completion indicator for the viewed active session",
+        "does not show externally viewed normal turn completion indicator",
+        "does not supersede errors after child-permission",
+        "does not supersede errors after child-question",
+        "does not supersede errors after deleted",
+        "does not supersede errors after failure",
+        "does not supersede errors after host-recovery",
+        "does not supersede errors after manual-stop",
+        "does not supersede errors after new-user",
+        "does not supersede errors after provider-recovery",
+        "does not supersede errors after working-child",
+        "drops a stale session update before allocating replacement store branches",
+        "explicit Standard Preview absence permits ordinary completion; unknown capability does not",
+        "failed background proof retries without opening the chat (plan=false)",
+        "failed background proof retries without opening the chat (plan=true)",
+        "force-refreshes and retires a stale persisted proposal during directory bootstrap",
+        "forwards canonical saved-plan revisions without allocating a directory store",
+        "ingests focused-window Plan Ready events before native notification gating",
+        "keeps a delayed finalization tail active until authoritative idle",
+        "keeps an unguarded provider retry authoritative at the sync event boundary",
+        "keeps busy status when a terminal assistant message lands",
+        "keeps plan implementation active through final parts until authoritative idle",
+        "late proof cannot restore unread completion after busy",
+        "late proof cannot restore unread completion after deleted",
+        "late proof cannot restore unread completion after disposed",
+        "late proof cannot restore unread completion after external-view",
+        "late proof cannot restore unread completion after new-user",
+        "late proof cannot restore unread completion after opened",
+        "late proof cannot restore unread completion after question",
+        "lets an event older by updated advance lifecycle facts in the store and snapshot replay",
+        "manual abort suppresses matching ordinary turn completion and notifications only for that message",
+        "manual abort suppresses matching plan completion and notifications",
+        "marks implemented plan completed and records unread completion from part update",
+        "marks implemented plan completed from part update without session id",
+        "marks sessionPlanIndicator proposed when structured plan text arrives via delta on an idle session",
+        "marks structured fallback implemented plan completed without a generic green completion blink",
+        "marks viewed implemented plan completed without recording unread notification",
+        "materializes a stale ordinary background session on idle and clears green when opened",
+        "materializes an implementing background plan on idle and shows plan completed",
+        "mirrors inactive-directory session lifecycle without allocating a child store",
+        "normal success supersedes root and child errors without opening the task",
+        "older part cannot supersede background completion proof (plan=false)",
+        "older part cannot supersede background completion proof (plan=true)",
+        "overlapping final proof responses cannot overwrite completion (newerFirst=false)",
+        "overlapping final proof responses cannot overwrite completion (newerFirst=true)",
+        "overlapping reconnect reads keep the newer snapshot",
+        "owned managed continuation uses the canonical objective for completion",
+        "owned native continuation uses the canonical objective for completion",
+        "owned shell continuation uses the canonical objective for completion",
+        "owned todo continuation uses the canonical objective for completion",
+        "owned verification continuation uses the canonical objective for completion",
+        "plan completion requires its implementation objective and owned cancelled turn",
+        "plan completion requires its implementation objective and owned direct turn",
+        "plan completion requires its implementation objective and owned synthetic turn",
+        "plan completion requires its implementation objective and owned wrong-parent turn",
+        "plan success supersedes root and child errors without opening the task",
+        "preserves a persisted proposal when authoritative bootstrap validation fails",
+        "preserves a projected title when a concurrent canonical snapshot still has a placeholder",
+        "preserves completion notification and settlement when a session is archived",
+        "preserves implementing plan indicator when implementation turn retries",
+        "preserves proposed plan indicator when a stale busy status arrives",
+        "preserves proposed plan indicator when a stale retry status arrives",
+        "preserves session UI ownership when a session is archived",
+        "preserves the status map when terminal assistant metadata lands",
+        "projects a remote implementation marker into the exact plan card state",
+        "projects completed file tools into the session attribution store",
+        "reconciles the implementation when its marker part arrives before the user message",
+        "reconnect snapshots preserve message and part updates delivered while REST is pending",
+        "records unread completion when a background normal turn completes via part update",
+        "records unread completion when an orchestrator turn ends with blocked todos left open",
+        "removes only the deleted session's persisted composer text and mentions",
+        "renders plan-ready yellow only after part, message, and authoritative idle updates settle the plan",
+        "requires current verification evidence despite completed child execution and confident final prose",
+        "restores a persisted proposed plan indicator from authoritative materialized messages",
+        "restores the saved plan pointer without mounting the chat after a reload",
+        "restores unread background completion only after authoritative message materialization",
+        "retires an exact abort-retry guard only on permanent deletion",
+        "retires exact session UI ownership when authoritative deletion arrives",
+        "retires notifications and pending completion settlement only after authoritative deletion",
+        "retires permission auto-accept only after authoritative deletion",
+        "root objective proof gates plan completion and is refreshed for the same implementation",
+        "root-only changed proof gates ordinary completion",
+        "root-only failed proof gates ordinary completion",
+        "root-only none proof gates ordinary completion",
+        "root-only passed proof gates ordinary completion",
+        "root-only pending proof gates ordinary completion",
+        "root-only pending verification is freshly rechecked for the same objective before completion",
+        "root-only skipped proof gates ordinary completion",
+        "root-only stale proof gates ordinary completion",
+        "root-only unknown proof gates ordinary completion",
+        "routes Cursor execution-worktree events through the session's logical directory mapping",
+        "saves a completed background plan before its PlanCard mounts",
+        "settles stale terminal attention for a resumed root and its loaded descendants",
+        "successful child completion waits for descendants and resolves only that child's error",
+        "treats empty session snapshots as authoritative while replaying concurrent lifecycle events",
+        "waits for authoritative idle before marking a completed Cursor plan proposed",
+        "waits out a transient settlement refusal and saves on the next authoritative idle transition"
+      ],
+      "flag": "port-no-line",
+      "family": "event-pipeline",
+      "reason": "test code (by the stack) calls one of the pipeline's ports itself (the API client opencodeClient, which component and store tests drive and stub, the session event bus, the primary recovery store, the stream counters, syncDebug or the retention signal) while the pipeline has no step in the case: the case gets a line for the pipeline with no step in it (a closure of the pipeline whose frame a tail call removed would look the same), so there is nothing of the pipeline to replay"
     },
     {
       "file": "packages/ui/src/sync/sync-context.plan-lifecycle.test.ts",

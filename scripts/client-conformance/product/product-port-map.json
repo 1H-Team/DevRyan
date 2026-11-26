@@ -5,12 +5,13 @@
     {
       "name": "reducer",
       "module": "../../../packages/ui/src/sync/event-reducer.ts",
-      "note": "The directory and global event reducer (design §1.2, §1.3; C3). applyDirectoryEvent mutates its draft (arg 0): the change set is recorded. Inlined: binary search, sessionDiffStats, nativeCursorText, session-cache, sanitize, part-delta, session-user-activity, revert-transactions' state queries, toolStatus, sessionTitles, session-recency, display-session (zod), message-order, and debug (its flag is a module-cached platform read, see the C0c report). The module-level WeakMap sessionSummaryMemo is an optimisation keyed by array identity: not state the census asks for, but it can return a cached Session object, so identity in results depends on it within a file (C0c report).",
+      "note": "The directory and global event reducer (design §1.2, §1.3; C3). applyDirectoryEvent mutates its draft (arg 0): the change set is recorded. Inlined: binary search, sessionDiffStats, nativeCursorText, session-cache, sanitize, part-delta, session-user-activity, revert-transactions' state queries, toolStatus, sessionTitles, session-recency, display-session (zod), message-order; debug is a port since package C0f (its flag is a module-cached platform read). The module-level WeakMap sessionSummaryMemo is an optimisation keyed by array identity: not state the census asks for, but it can return a cached Session object, so identity in results depends on it within a file (C0c report).",
       "allExports": true,
       "entries": [
         { "export": "applyDirectoryEvent", "draft": 0, "reason": "mutates the directory draft in place; the change set is the copy-on-write contract (sync/DOCUMENTATION.md)" }
       ],
       "ports": [
+        { "module": "../../../packages/ui/src/sync/debug.ts", "exports": ["syncDebug"], "reason": "debug logging (package C0f): its flag is read from storage once and cached in the module, so inlined, the first case of a file reads storage and no other (global reads are inputs since recording 8), which a case replayed alone cannot follow; as a port its calls are effects" },
         { "module": "../../../packages/ui/src/sync/abort-retry-guard.ts", "exports": ["clearAbortGuard", "filterSessionStatusThroughAbortGuard"],
           "reason": "the abort guard is module state with a TTL clock, owned by the time-driven abort-guard family (C0e) and written by session actions; the reducer only queries and clears it, so its answers are recorded inputs (design §2.3 example, §4.4 gap 'abort guard')" },
         { "module": "../../../packages/ui/src/sync/revert-transactions.ts", "exports": ["isCommittedRevertResendInFlight"],
@@ -24,7 +25,8 @@
       ]
     },
     { "name": "part-delta", "module": "../../../packages/ui/src/sync/part-delta.ts", "allExports": true,
-      "note": "Delta dedupe, repeat collapse and diagnostics stripping over UTF-16 text (C2). Inlined: debug." },
+      "note": "Delta dedupe, repeat collapse and diagnostics stripping over UTF-16 text (C2). debug is a port (C0f).",
+      "ports": [{ "module": "../../../packages/ui/src/sync/debug.ts", "exports": ["syncDebug"], "reason": "debug logging (package C0f): its flag is read from storage once and cached in the module, so inlined, the first case of a file reads storage and no other (global reads are inputs since recording 8), which a case replayed alone cannot follow; as a port its calls are effects" }] },
     { "name": "optimistic", "module": "../../../packages/ui/src/sync/optimistic.ts", "allExports": true,
       "entries": [
         { "export": "applyOptimisticAdd", "draft": 0, "reason": "mutates the draft store" },
@@ -35,7 +37,8 @@
     { "name": "materialization", "module": "../../../packages/ui/src/sync/materialization.ts", "allExports": true,
       "note": "Session snapshot materialization (C2). Inlined: toolStatus, nativeCursorText, revert-transactions, session-working, tool-output, message-order." },
     { "name": "message-fetch", "module": "../../../packages/ui/src/sync/message-fetch.ts", "allExports": true,
-      "note": "Message page limits and record normalization (C2). Inlined: part-delta, sdk-result, nativeCursorText, the default limit." },
+      "note": "Message page limits and record normalization (C2). Inlined: part-delta, sdk-result, nativeCursorText, the default limit. debug, which part-delta imports, is a port (C0f).",
+      "ports": [{ "module": "../../../packages/ui/src/sync/debug.ts", "exports": ["syncDebug"], "reason": "debug logging (package C0f): its flag is read from storage once and cached in the module, so inlined, the first case of a file reads storage and no other (global reads are inputs since recording 8), which a case replayed alone cannot follow; as a port its calls are effects" }] },
     { "name": "tool-output", "module": "../../../packages/ui/src/sync/tool-output.ts", "allExports": true, "note": "Omitted tool output (C2)." },
     { "name": "sanitize", "module": "../../../packages/ui/src/sync/sanitize.ts", "allExports": true, "note": "Diff snapshot stripping (C2)." },
     { "name": "session-working", "module": "../../../packages/ui/src/sync/session-working.ts", "allExports": true, "note": "Assistant turn and working-state predicates (C2). Inlined: toolStatus." },
@@ -108,6 +111,50 @@
         { "export": "endCommittedRevertResend", "reason": "writes the module Set of committed resends (see beginCommittedRevertResend)" },
         { "export": "clearCommittedRevertResendsForSessions", "reason": "writes the module Set of committed resends (see beginCommittedRevertResend)" },
         { "export": "isCommittedRevertResendInFlight", "reason": "reads the module Set of committed resends; the reducer reaches it as a port, so its answers are recorded there" }
+      ] },
+    { "name": "event-pipeline", "module": "../../../packages/ui/src/sync/event-pipeline.ts", "allExports": true,
+      "note": "The event pipeline (design §1.5; C6): transport connection over the injected SDK's SSE stream or the platform WebSocket, coalescing, batched flush, heartbeat, backpressure, replay gaps and reconnect (package C0f). Transport ports: the injected sdk (its global.event() answer and the stream it hands back, an async iterator, are port objects: wrapAnswers), the global WebSocket (`new`, handlers written with `set`, frames, errors and closes as callback inputs), window and document (listeners added and removed, the events the pipeline dispatches, visibility and location reads), navigator (onLine), and every read of those globals themselves (recording 8). Inlined: part-delta (appendStreamingFieldDelta, a pure family of its own) and eventTypes (pure). debug (syncDebug) is a port here, unlike the reducer's: its cached storage flag would make a case's reads depend on the cases before it.",
+      "ports": [
+        { "module": "../../../packages/ui/src/lib/opencode/client.ts", "exports": ["opencodeClient"], "reason": "the API client: its input-subscription gate and base URL (the client family is not mapped yet, package C0f report)" },
+        { "module": "../../../packages/ui/src/lib/sessionRetention.ts", "exports": ["retentionClientID", "retentionConnectionChanged"], "reason": "the retention selection's connection signal, a store another module owns, and the client id the module draws once when it loads (a data port export: its value is recorded with the container, container format 5)" },
+        { "module": "../../../packages/ui/src/lib/sessionEvents.ts", "exports": ["sessionEvents"], "reason": "the session event bus (git refresh requests): a store another module owns" },
+        { "module": "../../../packages/ui/src/stores/usePrimaryRecoveryStore.ts", "exports": ["usePrimaryRecoveryStore"], "reason": "the primary recovery store the pipeline hands devryan:primary-recovery events to" },
+        { "module": "../../../packages/ui/src/stores/utils/streamDebug.ts", "exports": ["postRendererTurnTimingMark", "responsivenessPerfCount", "responsivenessPerfObserve"], "reason": "instrumentation: the counters and timing marks the pipeline reports are effects a native pipeline must make too, and the module keeps them in its own state" },
+        { "module": "../../../packages/ui/src/sync/debug.ts", "exports": ["syncDebug"], "reason": "debug logging: its flag is read from storage once and cached in the module, so inlined it would make the first case of a file read storage and no other (hidden module state a case alone cannot reproduce); as a port its calls are effects" }
+      ],
+      "injected": [
+        { "entry": "createEventPipeline", "arg": 0, "key": "sdk", "name": "sdk", "wrapAnswers": true, "reason": "the SDK client: global.event() answers an object whose stream is an async iterator; every answer with behaviour is a port object, so its reads and the iterator's next() are effects and each item an input" },
+        { "entry": "createEventPipeline", "arg": 0, "key": "onEvent", "name": "onEvent" },
+        { "entry": "createEventPipeline", "arg": 0, "key": "onBatch", "name": "onBatch" },
+        { "entry": "createEventPipeline", "arg": 0, "key": "onReconnect", "name": "onReconnect" },
+        { "entry": "createEventPipeline", "arg": 0, "key": "onSubscriptionReady", "name": "onSubscriptionReady" },
+        { "entry": "createEventPipeline", "arg": 0, "key": "onDisconnect", "name": "onDisconnect" },
+        { "entry": "createEventPipeline", "arg": 0, "key": "onTransportSwitch", "name": "onTransportSwitch" },
+        { "entry": "createEventPipeline", "arg": 0, "key": "onReplayGap", "name": "onReplayGap" },
+        { "entry": "createEventPipeline", "arg": 0, "key": "onManagedOrchestrationEvent", "name": "onManagedOrchestrationEvent" },
+        { "entry": "createEventPipeline", "arg": 0, "key": "onUserNotificationEvent", "name": "onUserNotificationEvent" },
+        { "entry": "createEventPipeline", "arg": 0, "key": "onIntegrationEvent", "name": "onIntegrationEvent" },
+        { "entry": "createEventPipeline", "arg": 0, "key": "onProviderCatalogEvent", "name": "onProviderCatalogEvent" },
+        { "entry": "createEventPipeline", "arg": 0, "key": "routeDirectory", "name": "routeDirectory" }
+      ] },
+    { "name": "bootstrap", "module": "../../../packages/ui/src/sync/bootstrap.ts", "allExports": true,
+      "note": "Global and directory bootstrap and the question snapshot (design §1.5; C8), package C0f. Transport ports: the injected sdk (every answer with behaviour a port object: wrapAnswers), the global fetch of /health, and the caller's set, getState and loadSessions. Other families' entries it calls are ports: the abort guard's snapshot filter and the directory bootstrap request (C0e families), and the streaming store. Inlined: retry (its backoff timers are this family's), startup health parsing, request signatures.",
+      "ports": [
+        { "module": "../../../packages/ui/src/sync/abort-retry-guard.ts", "exports": ["filterSessionStatusSnapshotThroughAbortGuard"], "reason": "the abort guard's module state (the abort-guard family, C0e): the bootstrap only filters a status snapshot through it" },
+        { "module": "../../../packages/ui/src/sync/directory-bootstrap-request.ts", "exports": ["directoryBootstrapRequest"], "reason": "the deadline-bounded request (its own family, C0e): the bootstrap hands it each directory request" },
+        { "module": "../../../packages/ui/src/sync/streaming.ts", "exports": ["settleStreamingSessions"], "reason": "the streaming store, which another module owns" }
+      ],
+      "injected": [
+        { "entry": "bootstrapGlobal", "arg": 0, "name": "sdk", "wrapAnswers": true, "reason": "the SDK client; its answers ({ data, error, response }) are port objects, so what the bootstrap reads of them is an input" },
+        { "entry": "bootstrapGlobal", "arg": 1, "name": "set" },
+        { "entry": "bootstrapDirectory", "arg": 0, "key": "sdk", "name": "sdk", "wrapAnswers": true },
+        { "entry": "bootstrapDirectory", "arg": 0, "key": "getState", "name": "getState", "plainAnswers": true, "reason": "the caller's directory state: data, never a port object" },
+        { "entry": "bootstrapDirectory", "arg": 0, "key": "set", "name": "set" },
+        { "entry": "bootstrapDirectory", "arg": 0, "key": "loadSessions", "name": "loadSessions" },
+        { "entry": "syncQuestionSnapshot", "arg": 0, "key": "sdk", "name": "sdk", "wrapAnswers": true },
+        { "entry": "syncQuestionSnapshot", "arg": 0, "key": "getState", "name": "getState", "plainAnswers": true },
+        { "entry": "syncQuestionSnapshot", "arg": 0, "key": "set", "name": "set" }
       ] }
-  ]
+  ],
+  "globals": { "fetch": { "wrapAnswers": true } }
 }

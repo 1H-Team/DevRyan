@@ -41,7 +41,12 @@ export const NOT_COMPARED = Object.freeze([
 // --------------------------------------------------------------- what can be replayed yet
 
 /** The later package that replays a feature this replayer does not. */
-export const LATER = Object.freeze({ state: 'a port-map change: the family names its store or module bindings (C0e\'s `store`, `moduleState`)', transport: 'C0f (transport ports)' });
+export const LATER = Object.freeze({
+  state: 'a port-map change: the family names its store or module bindings (C0e\'s `store`, `moduleState`)',
+  transport: 'C0f (transport ports)',
+  // What package C0f left for later (its report, "Not done"): a module the test mocked, and values no replay can rebuild.
+  mocked: 'a later package: a module the test mocked answered by its factory, or a value no replay rebuilds (a pending promise, a body, a platform object)',
+});
 
 const tagOf = (node) => (node !== null && typeof node === 'object' && !Array.isArray(node) ? node.$dr : undefined);
 function holdsTag(tree, tags) {
@@ -69,36 +74,35 @@ export function notReplayable(kase, family, { resolve = null } = {}) {
   // a store and module bindings (`store`, `moduleState`), which such a family does not name yet.
   if (family.state) return { feature: `the family snapshots module state through an export (${family.state}) instead of naming its store or bindings`, later: LATER.state };
   const promises = new Set(); // port calls of the case answered by a promise (a `settle` input names one)
-  const portObjects = new Set(); // port objects the case's port calls answered (their reads are answered from the recording)
   for (const step of kase.steps ?? []) {
     const { input } = step;
     if (input.kind === 'settle' && !promises.has(`${input.port}#${input.call}`)) return { feature: 'a port answer settled that was no promise the engine got (an object\'s promise member, a derived answer)', later: LATER.transport };
     if (!['call', 'new', 'get', 'timer', 'settle', 'callback'].includes(input.kind)) return { feature: `an input of kind ${input.kind}`, later: LATER.transport };
     if (input.during !== undefined && input.duringCall === undefined) return { feature: 'an input delivered inside a port call of an earlier step that the recording does not name', later: LATER.transport };
-    const held = holdsTag(valueOf(input.args), ['promise', 'port', 'response', 'request', 'opaque', 'unencodable', 'weak']);
-    if (held) return { feature: `an argument holding a ${held}`, later: LATER.transport };
+    // A port object in the test's arguments is rebuilt as that port (package C0f); a pending promise, a body or a platform object cannot be.
+    const held = holdsTag(valueOf(input.args), ['promise', 'response', 'request', 'opaque', 'unencodable', 'weak']);
+    if (held) return { feature: `an argument holding a ${held}`, later: LATER.mocked };
     for (const item of step.effects) {
-      if (['clock', 'draw', 'timer.set', 'timer.clear', 'notify', 'settled'].includes(item.kind)) continue;
-      // A read of a port object a port answered is answered from the recording; a global's (navigator, document) is a transport's.
-      if (item.kind === 'read') { if (portObjects.has(item.port)) continue; return { feature: `a read of the global port object ${item.port}`, later: LATER.transport }; }
-      if (item.kind !== 'port') return { feature: `a ${item.kind} effect`, later: LATER.transport };
-      if (!item.port.startsWith('module:') && !(family.injectedNames ?? []).some((name) => item.port === name || (name.endsWith('@') && item.port.startsWith(name)))) return { feature: `a call of port ${item.port}`, later: LATER.transport };
+      if (['clock', 'draw', 'timer.set', 'timer.clear', 'notify', 'settled', 'set'].includes(item.kind)) continue;
+      // A read is answered from the recording: of a port object a port answered or the engine was handed, and of the
+      // global itself (`globalThis`: whether a transport or DOM global is there, and the port it is), package C0f.
+      if (item.kind === 'read') continue;
+      if (item.kind !== 'port' && item.kind !== 'new') return { feature: `a ${item.kind} effect`, later: LATER.mocked };
       // A module port the map does not list is a module the test mocked (mock.module): its exports answer from the test's factory.
       if (item.port.startsWith('module:') && family.ports) {
         const at = item.port.indexOf('#');
         const base = at < 0 ? item.port : `${item.port.slice(0, at)}#${item.port.slice(at + 1).split('.')[0].split('#')[0]}`;
-        if (!family.ports.some((port) => port.name === base)) return { feature: `a call of a module the test mocked (${base})`, later: LATER.transport };
+        if (!family.ports.some((port) => port.name === base)) return { feature: `a call of a module the test mocked (${base})`, later: LATER.mocked };
       }
       const given = valueOf(Object.prototype.hasOwnProperty.call(item, 'answer') ? item.answer : item.throws);
       const answer = tagOf(given) === 'id' ? given.value : given;
-      // A promise as the whole answer is settled by an input of its own; one inside an answer is a transport's.
+      // A promise as the whole answer is settled by an input of its own; one inside an answer is not given to the engine.
       if (tagOf(answer) === 'promise' && Object.keys(answer).length === 1) { promises.add(`${item.port}#${item.call}`); continue; }
-      // A port object as the whole answer (a storage) is read and called through the port (package C0e).
-      if (tagOf(answer) === 'port') { portObjects.add(answer.name); continue; }
-      // A function inside an answer is the engine's own (a store's action in an updater's next state): it is bound where
-      // the engine made it, and one it never made is a stub that halts the case when called, never a silent pass.
-      const answered = holdsTag(answer, ['promise', 'port', 'response', 'request', 'opaque', 'unencodable', 'weak']);
-      if (answered) return { feature: `a port answer holding a ${answered}`, later: LATER.transport };
+      // A port object as the whole answer (a storage, a socket) is read and called through the port (packages C0e, C0f);
+      // one inside an answer is rebuilt as that port too. A function inside an answer is the engine's own (a store's
+      // action in an updater's next state, bound where the engine made it) or a port function (its node names the port).
+      const answered = holdsTag(answer, ['promise', 'response', 'request', 'opaque', 'unencodable', 'weak']);
+      if (answered) return { feature: `a port answer holding a ${answered}`, later: LATER.mocked };
     }
   }
   return null;
@@ -111,7 +115,8 @@ export function envOf(step) {
   const env = [];
   for (const item of step.effects) {
     // `call` is the recording's own name for the call (a later `settle` input names it), never an output to echo.
-    if (item.kind === 'port') env.push(Object.prototype.hasOwnProperty.call(item, 'throws') ? { kind: 'port', port: item.port, call: item.call, throws: item.throws } : { kind: 'port', port: item.port, call: item.call, answer: item.answer });
+    // A `new` of a port function (a socket the engine opens, package C0f) is answered as a call is.
+    if (item.kind === 'port' || item.kind === 'new') env.push(Object.prototype.hasOwnProperty.call(item, 'throws') ? { kind: item.kind, port: item.port, call: item.call, throws: item.throws } : { kind: item.kind, port: item.port, call: item.call, answer: item.answer });
     else if (item.kind === 'clock' || item.kind === 'draw') env.push({ kind: item.kind, source: item.source, value: item.value });
     // A port object's data member the engine read (its methods are port calls): what the read answered.
     else if (item.kind === 'read') env.push({ kind: 'read', port: item.port, key: item.key, value: item.value });
@@ -126,7 +131,8 @@ function stepSlots(step) {
   if (Object.prototype.hasOwnProperty.call(step.input, 'target')) slots.push(['input.target', step.input.target, false]);
   step.effects.forEach((item, index) => {
     if (item.args !== undefined) slots.push([`effects.${index}.args`, item.args, true]);
-    for (const key of ['answer', 'throws', 'value']) if (Object.prototype.hasOwnProperty.call(item, key)) slots.push([`effects.${index}.${key}`, item[key], item.kind === 'settled']);
+    // What the engine wrote on a port object (`set`: a socket's handler, package C0f) is the engine's own, as a settled value is.
+    for (const key of ['answer', 'throws', 'value']) if (Object.prototype.hasOwnProperty.call(item, key)) slots.push([`effects.${index}.${key}`, item[key], item.kind === 'settled' || (item.kind === 'set' && key === 'value')]);
     // What a store notified its listeners with is the engine's own state.
     for (const key of ['state', 'previous']) if (item.kind === 'notify' && Object.prototype.hasOwnProperty.call(item, key)) slots.push([`effects.${index}.${key}`, item[key], true]);
     if (item.kind === 'timer.clear' && Object.prototype.hasOwnProperty.call(item, 'handle')) slots.push([`effects.${index}.handle`, item.handle, false]);
@@ -458,7 +464,7 @@ export function compareReplayed(recorded, replayed, { unordered = [] } = {}) {
         const memberKeys = [...new Set([...Object.keys(e), ...Object.keys(a)])].filter((key) => !EFFECT_SLOTS.includes(key));
         for (const key of memberKeys) {
           // A port call's number and a timer's id are each side's own names: compared as a pairing across the case.
-          const paired = key === 'call' && e.kind === 'port' ? 'call' : key === 'id' && (e.kind === 'timer.set' || e.kind === 'timer.clear') && e[key] !== null && a[key] !== null ? 'timer' : null;
+          const paired = key === 'call' && (e.kind === 'port' || e.kind === 'new') ? 'call' : key === 'id' && (e.kind === 'timer.set' || e.kind === 'timer.clear') && e[key] !== null && a[key] !== null ? 'timer' : null;
           if (paired) { if (!names[paired](e[key], a[key])) add('effects', { kind: 'identity', path: `/steps/${index}/effects/${at}/${key}`, expected: show(e[key]), actual: show(a[key]), detail: `the recording's ${paired} ${show(e[key])} is paired with another ${paired} of the engine's already` }); continue; }
           if (JSON.stringify(e[key]) !== JSON.stringify(a[key])) add('effects', { kind: 'value', path: `/steps/${index}/effects/${at}/${key}`, expected: show(e[key]), actual: show(a[key]) });
         }

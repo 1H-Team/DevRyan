@@ -79,11 +79,13 @@ export function familyDescriptor(portMap, name) {
   }
   // A store's setState and subscribe take the test's functions as ports, as the recorder's store wrapper declares them.
   const storePorts = family.store ? [
-    { entry: `${family.store}.setState`, arg: 0, name: 'updater' },
-    { entry: `${family.store}.subscribe`, arg: 0, name: 'subscriber', perStep: true },
-    { entry: `${family.store}.subscribe`, arg: 1, name: 'subscriber.listener', perStep: true },
+    { entry: `${family.store}.setState`, arg: 0, name: 'updater', onlyFunction: true },
+    { entry: `${family.store}.subscribe`, arg: 0, name: 'subscriber', perStep: true, onlyFunction: true },
+    { entry: `${family.store}.subscribe`, arg: 1, name: 'subscriber.listener', perStep: true, onlyFunction: true },
   ] : [];
-  const injected = [...(family.injected ?? []).map((item) => ({ entry: item.entry, ...(item.member !== undefined ? { member: item.member } : {}), arg: item.arg, ...(item.key !== undefined ? { key: item.key } : {}), name: item.name })), ...storePorts];
+  // `onlyFunction`: the argument is a port only when it is a function (a partial state is data); an object handed in
+  // at any other injected position is a port object (package C0f).
+  const injected = [...(family.injected ?? []).map((item) => ({ entry: item.entry, ...(item.member !== undefined ? { member: item.member } : {}), arg: item.arg, ...(item.key !== undefined ? { key: item.key } : {}), name: item.name, ...(item.onlyFunction ? { onlyFunction: true } : {}) })), ...storePorts];
   // A per-step port (a store's subscriber) is named by the step that hands it in: `<name>@<n>`.
   const portNamePattern = (item) => (item.perStep ? `${item.name}@` : item.name);
   return {
@@ -93,6 +95,11 @@ export function familyDescriptor(portMap, name) {
     entries: (family.entries ?? []).map((entry) => ({ export: entry.export, ...(entry.draft !== undefined ? { draft: entry.draft } : {}) })),
     injected,
     injectedNames: injected.map(portNamePattern),
+    // The ports whose answers are port objects when they have behaviour (a microtask later): injected items, module
+    // ports and globals so listed; every port named after one of them (its members, its answers) wraps its answers too.
+    wrapAnswers: [...(family.injected ?? []).filter((item) => item.wrapAnswers === true).map((item) => item.name),
+      ...[...portMap.modules.values()].flatMap((target) => [...target.ports.values()].filter((port) => port.wrapAnswers && port.families.includes(name)).map((port) => port.name)),
+      ...Object.entries(portMap.globals ?? {}).filter(([, options]) => options.wrapAnswers === true).map(([global]) => global)],
     ports, unordered: (family.unorderedPorts ?? []).map((waiver) => waiver.port),
   };
 }
@@ -116,6 +123,26 @@ export const isStatefulFamily = (family) => Boolean(family.store || family.modul
  * settling), so the case can be delivered in file order, to keep the module's history, even when it is not judged.
  */
 const deliverable = (kase) => kase.steps.every((step) => ['call', 'new', 'get', 'timer', 'settle', 'callback'].includes(step.input.kind) && (step.input.during === undefined || step.input.duringCall !== undefined));
+
+/**
+ * The top-level steps a replay holds (sends with `hold`), so that the engine delivers a group (recording 8): a step
+ * whose next top-level step arrived together with it, and every step from the one that made a port call up to its
+ * immediate answer (one the recording counted as settling in the call's own drain), so the engine has the answer
+ * when the call is made.
+ */
+export function groupHolds(steps) {
+  const top = steps.map((step, index) => [step, index]).filter(([step]) => step.input.during === undefined).map(([, index]) => index);
+  const holds = new Set();
+  top.forEach((index, at) => { const next = top[at + 1]; if (next !== undefined && steps[next].input.together === true) holds.add(index); });
+  for (const [at, index] of top.entries()) {
+    const step = steps[index];
+    if (step.input.kind !== 'settle' || step.input.immediate === undefined) continue;
+    let made = -1;
+    for (let back = at - 1; back >= 0 && made < 0; back -= 1) if (steps[top[back]].effects.some((item) => item.kind === 'port' && item.call === step.input.call)) made = back;
+    for (let hold = made < 0 ? at - 1 : made; hold >= 0 && hold < at; hold += 1) holds.add(top[hold]);
+  }
+  return holds;
+}
 
 /** Two codec trees with the same content, identity numbers aside (each read alone, its numbers by first appearance). */
 export function sameContent(left, right) {
@@ -186,7 +213,8 @@ const outsideDifference = (entries, when) => ({ check: 'outside', kind: 'value',
 async function runUnit(engine, unit, plants, results, notes) {
   const { container, mode, items, id } = unit;
   const where = `${container.name} (${mode})`;
-  const opened = await engine.request({ op: 'open', unit: id, family: container.family, plants }, { what: `open of ${container.family.name} for ${where}` }).catch((error) => ({ ok: false, error: error.message, lost: true }));
+  // What the family's module graph took when it loaded (container format 5): the same for every case of the container.
+  const opened = await engine.request({ op: 'open', unit: id, family: container.family, plants, ...(container.header.load ? { load: container.header.load } : {}) }, { what: `open of ${container.family.name} for ${where}` }).catch((error) => ({ ok: false, error: error.message, lost: true }));
   const judgeAll = (outcome, detail) => { for (const item of items) if (item.verdict.judge) results.get(item.key)[mode] = { outcome, differences: [], detail, stepsCompared: 0 }; };
   if (!opened.ok) { judgeAll('inconclusive', `the engine could not open ${container.family.name}: ${opened.error}`); await engine.request({ op: 'close', unit: id, force: true }, { what: `close of ${where}` }).catch(() => {}); return; }
   if ((opened.load ?? []).length) notes.push(`${where}: module load noted ${JSON.stringify(opened.load.map((entry) => entry.what)).slice(0, 300)} (not compared: no case was open)`);
@@ -235,18 +263,23 @@ async function runUnit(engine, unit, plants, results, notes) {
       const stepMessage = (index) => {
         const step = kase.steps[index];
         const given = { kind: step.input.kind, entry: step.input.entry, args: step.input.args, now: step.input.now };
-        for (const key of ['id', 'port', 'call', 'outcome']) if (step.input[key] !== undefined) given[key] = step.input[key];
+        // `together` and `immediate` (recording 8) say how the input arrived; the engine delivers by them and echoes neither.
+        for (const key of ['id', 'port', 'call', 'outcome', 'together', 'immediate']) if (step.input[key] !== undefined) given[key] = step.input[key];
         if (Object.prototype.hasOwnProperty.call(step.input, 'value')) given.value = step.input.value;
         if (Object.prototype.hasOwnProperty.call(step.input, 'target')) given.target = step.input.target;
         const during = [];
         kase.steps.forEach((inner, at) => { if (at > index && inner.input.during === step.n && inner.input.duringCall !== undefined) during.push({ call: inner.input.duringCall, step: stepMessage(at) }); });
         return { input: shareStrings(given, table), env: shareStrings(envOf(step), table), bind: plan[index], ...(during.length ? { during } : {}) };
       };
+      const holds = groupHolds(kase.steps);
       for (const [index, step] of kase.steps.entries()) {
         if (step.input.during !== undefined) continue;
         const before = table.length;
         const body = stepMessage(index);
-        const message = { op: 'step', unit: id, step: { ...body, ...(index === 0 ? { entryBind: plan.entry } : {}), ...(step.late ? { late: true } : {}), ...(table.length > before ? { strings: table.slice(before) } : {}) } };
+        // The next input arrived together with this one, or an immediate answer to a call this step or one held before
+        // it makes comes later (recording 8): the engine holds this one and delivers the group at once.
+        const hold = holds.has(index);
+        const message = { op: 'step', unit: id, step: { ...body, ...(index === 0 ? { entryBind: plan.entry } : {}), ...(step.late ? { late: true } : {}), ...(hold ? { hold: true } : {}), ...(table.length > before ? { strings: table.slice(before) } : {}) } };
         const answer = await engine.request(message, { what: label(`step ${index + 1} (recorded ${step.n})`) });
         if (!answer.ok) throw new Error(answer.error);
         if (answer.halted) break;

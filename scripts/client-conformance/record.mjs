@@ -78,6 +78,19 @@ export const TOY_UNRECORDABLE = Object.freeze({
   'toy-mocked-outside.toy.mjs': Object.freeze([
     ['family code that calls a mocked export with no chain is flagged', 'outside-chain'],
   ]),
+  // Package C0f: a transport the recorder refuses (the platform's own), and a signal the test aborts.
+  'toy-transport-fixtures.toy.mjs': Object.freeze([
+    ['a signal the test aborts after handing it in is flagged', 'signal-aborted'],
+    ['the platform fetch is a real transport', 'real-transport'],
+  ]),
+  'toy-arrivals.toy.mjs': Object.freeze([
+    ['a call still running when the next call comes in its drain is interleaved', 'interleaved'],
+  ]),
+  // The C0f fix round: answers past the count of immediate answers, in their call's drain, are refused.
+  'toy-immediates.toy.mjs': Object.freeze([
+    ['two answers past the generation cap in their calls\' drain are flagged', 'immediate-expired'],
+    ['an answer one generation past the cap is flagged', 'immediate-expired'],
+  ]),
   'toy-unowned.toy.mjs': Object.freeze([
     ['a timer set by a job with no known case moves the clock and flags the case', 'timer-owner-unknown'],
   ]),
@@ -110,6 +123,10 @@ export const FLAG_REASONS = Object.freeze({
   'state-promise': 'the state the case starts from holds a pending promise (work an earlier case started, such as a persistence queue): a replay of the case alone cannot rebuild it, and would wait on it for ever',
   'state-moved': 'the state of this stateful family (its store or its module state) changed inside the case by code that is no step of the family: an engine module no family maps called one of its entries (passed through) and the state differed after it, another family\'s chain inlined one and changed it, its store notified while none of its steps ran, or a timer of an earlier case that fired after that case ended changed it; what changed it is in no step, so a replay cannot reproduce the steps after it',
   'handed-out-touched': 'engine code no family maps called engine code this family handed the test (a method or getter of an object it made, a closure), or wrote a store it handed out, inside the case; the family records no state of those objects (they are its instances, not its store or module state), so whether the call changed them is not known, and a replay that does not make the call cannot follow',
+  interleaved: 'the continuations of two inputs of the family interleave in one microtask drain (answers that come at once while the input before them is still running): an effect of the earlier input lands after the later one arrived, so which input it belongs to is decided by microtask order, which a replay that gives what follows an input to that input does not follow',
+  'signal-aborted': 'the test aborted an AbortSignal it had handed the family (an argument, or a member of one): whether a signal is aborted is read through a platform getter no port sees, so the abort changes what the engine reads with no input of the recording, and a replay could not follow it; recording it needs the abort as an input of its own (a later package)',
+  'immediate-expired': 'a port answer settled in the microtask drain of its call more than 64 generations after the call (past the count of immediate answers): at which generation is not known, so a replay can neither give it at its generation nor once the step before has run out, where it could come after work it preceded',
+  'real-transport': 'engine code used the platform\'s own WebSocket, EventSource or fetch (the test installed no fake): what it answers (a refused connection\'s error and close, a response) comes from the network stack at real times, which no rule of the recorder orders, so the recording would depend on load',
   'port-no-line': 'test code (by the stack) called a port of this family while the family had no step in the case: the test\'s own call of the port, or a closure of the family whose frame a proper tail call removed; the two cannot be told apart',
 });
 /** Flags that mean engine code ran where no step holds it: a case flagged so must be written for some family, never dropped. */
@@ -254,6 +271,16 @@ const reasonOf = (flags, status) => (flags.length ? flags.map(flagReason).join('
  * recording inconclusive. `expectedFiles` (repository-relative) are the test
  * files the run had to record; `families` the families that need a case.
  */
+/**
+ * The container header's `load` for `family` (container format 5, package C0f): the data port exports its module
+ * graph took when it loaded, as the recorder wrote them, by port name; nothing when it lists none.
+ */
+function loadOf(raw, family) {
+  const portData = {};
+  for (const name of Object.keys(raw.portData ?? {}).sort()) if (raw.portData[name].families.includes(family)) portData[name] = raw.portData[name].value;
+  return Object.keys(portData).length ? { load: { portData } } : {};
+}
+
 export function buildContainers({ raws, junit, root = REPOSITORY_ROOT, expectedFiles = [], families = [] }) {
   const incomplete = [];
   const containers = [];
@@ -300,12 +327,19 @@ export function buildContainers({ raws, junit, root = REPOSITORY_ROOT, expectedF
       }
       for (const [family, data] of Object.entries(recorded.families)) {
         if (!data) { incomplete.push({ check: 'recorder-error', file: raw.file, detail: `a case of ${family} could not be written` }); continue; }
-        if (!writers.has(family)) writers.set(family, createContainerWriter({ codec: CODEC_VERSION, recording: raw.recording ?? null, portMap: raw.portMap, modulesDigest: raw.modules?.[family] ?? null, testFile: raw.file, testFileDigest, family }, { table }));
+        if (!writers.has(family)) writers.set(family, createContainerWriter({ codec: CODEC_VERSION, recording: raw.recording ?? null, portMap: raw.portMap, modulesDigest: raw.modules?.[family] ?? null, testFile: raw.file, testFileDigest, family, ...loadOf(raw, family) }, { table }));
         const base = test ? `${test.key}` : `${raw.file} #hooks:${recorded.hooks}`;
         const id = `${base}/${family}`;
         const status = test ? test.status : 'ran';
         // A case's flags, and those of this family alone (a port of it used outside a chain).
-        const flags = [...new Set([...recorded.flags, ...(recorded.familyFlags?.[family] ?? [])])].sort();
+        const allFlags = [...new Set([...recorded.flags, ...(recorded.familyFlags?.[family] ?? [])])].sort();
+        // A case that used the platform's own transport (C0f fix round) is written with that flag alone and nothing it
+        // did: what follows the transport comes from the network stack at real times (whether a refused socket's error
+        // lands before the test ends, and what the engine does then), so any more of it would depend on load. It is
+        // never a reference either way (its end is written as its entry: a reconnect timer an error set may have moved
+        // the clock). Found by an unstable product run: under load the socket's error landed after the test.
+        const realTransport = allFlags.includes('real-transport');
+        const flags = realTransport ? ['real-transport'] : allFlags;
         const outcome = caseOutcome(flags, status);
         outcomes[outcome] += 1;
         const name = test ? test.name : `hooks after ${recorded.hooks} tests`;
@@ -315,7 +349,8 @@ export function buildContainers({ raws, junit, root = REPOSITORY_ROOT, expectedF
           id, digest: createHash('sha256').update(id).digest('hex').slice(0, 8), kind: recorded.kind, file: raw.file,
           line: test ? test.line : null, describe: test ? test.describe : [], name,
           ordinal: test ? test.occurrence : 1, family, status, outcome, flags, reason: reasonOf(flags, status),
-          seed: recorded.seed, entry: { now: recorded.entryNow, state: data.entryState }, steps: data.steps, end: { now: recorded.endNow, state: data.endState, ...(data.pending ? { pending: data.pending } : {}) }, context: data.context,
+          seed: recorded.seed, entry: { now: recorded.entryNow, state: data.entryState }, ...(realTransport ? { steps: [], end: { now: recorded.entryNow, state: null }, context: [] }
+            : { steps: data.steps, end: { now: recorded.endNow, state: data.endState, ...(data.pending ? { pending: data.pending } : {}) }, context: data.context }),
         });
       }
     }

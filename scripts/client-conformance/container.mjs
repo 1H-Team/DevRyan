@@ -30,7 +30,9 @@
 import { hashText, stringifyTree } from './codec.mjs';
 
 export const FORMAT = 'devryan-client-conformance';
-export const FORMAT_VERSION = 4;
+// 5 (package C0f): an optional header member `load`, the inputs every case of the container shares because the
+// family's module graph took them when it loaded (`portData`: a data port export's codec tree, by port name).
+export const FORMAT_VERSION = 5;
 /** The size from which a subtree or string is stored as a slice of its own. */
 export const SLICE_MIN = 1024;
 const SLICE = 'slice';
@@ -106,7 +108,7 @@ function expand(tree, lookup) {
 export const VALUE_REF = /^=[0-9a-f]{16}$/;
 // `recording` is the recorder's semantics version (bumped by hand when what a recording says changes);
 // `modulesDigest` is a digest of the sources of the family's module and its port modules.
-export const HEADER_KEYS = Object.freeze(['format', 'version', 'codec', 'recording', 'portMap', 'modulesDigest', 'testFile', 'testFileDigest', 'family']);
+export const HEADER_KEYS = Object.freeze(['format', 'version', 'codec', 'recording', 'portMap', 'modulesDigest', 'testFile', 'testFileDigest', 'family', 'load']);
 /** The members of a case that hold value slots, in written order. */
 export const VALUE_PARTS = Object.freeze(['entry', 'steps', 'end', 'context']);
 

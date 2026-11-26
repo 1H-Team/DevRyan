@@ -82,7 +82,8 @@ export function compareContainers(expectedText, actualText, { ignoreHeader = [] 
   const differences = [];
   for (const key of new Set([...Object.keys(expected.header), ...Object.keys(actual.header)])) {
     if (ignoreHeader.includes(key)) continue;
-    if (expected.header[key] !== actual.header[key]) differences.push({ check: 'header', path: key, expected: show(expected.header[key]), actual: show(actual.header[key]) });
+    // A member may be an object (container format 5's `load`): compared as its JSON text.
+    if (JSON.stringify(expected.header[key]) !== JSON.stringify(actual.header[key])) differences.push({ check: 'header', path: key, expected: show(expected.header[key]), actual: show(actual.header[key]) });
   }
   if (!differences.some((entry) => entry.check === 'header')) {
     const strip = (header) => JSON.stringify(Object.fromEntries(Object.entries(header).filter(([key]) => !ignoreHeader.includes(key))));

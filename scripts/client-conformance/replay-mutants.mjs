@@ -40,11 +40,15 @@ import { HARNESS_DIR, REPOSITORY_ROOT, SCRATCH_OWNER_FILE } from './record.mjs';
 
 /** What the toy closure must count: per run (the tracked corpus, the replayer's own toys) and outcome. */
 export const TOY_CLOSURE_COUNTS = Object.freeze({
-  corpus: { cases: 117, reproduced: 40, different: 0, inconclusive: 0, unrecordable: 32, 'no-reference': 0, 'not-replayable': 45 },
+  // Package C0f: the transport toys are replayed (toy-clock, toy-flow, toy-transport), and the corpus gained transport
+  // cases and the arrival cases (toy-arrivals: the gate toy's family, not replayable yet).
+  // The C0f fix round adds the immediates toy (answers at and past the cap, the exact generation), a zero-delay poll
+  // and an api injected at a key of the transport's options, and an answer a released timer gives.
+  corpus: { cases: 148, reproduced: 76, different: 0, inconclusive: 0, unrecordable: 37, 'no-reference': 0, 'not-replayable': 35 },
   own: { cases: 28, reproduced: 24, different: 1, inconclusive: 0, unrecordable: 3, 'no-reference': 0, 'not-replayable': 0 },
 });
 /** Families the toy closure must report as not replayable yet, by name. */
-export const TOY_NOT_REPLAYABLE = Object.freeze(['toy-clock', 'toy-flow', 'toy-gate', 'toy-guard', 'toy-sched', 'toy-timers', 'toy-transport']);
+export const TOY_NOT_REPLAYABLE = Object.freeze(['toy-gate', 'toy-guard', 'toy-sched', 'toy-timers']);
 /** What a replay must leave uncompared, by `what` (replay-compare.mjs NOT_COMPARED): a change to the list is a decision, so it is pinned. */
 export const NOT_COMPARED_PINNED = Object.freeze(9);
 
@@ -74,17 +78,22 @@ export const TOY_MUTANTS = Object.freeze([
   { name: 'toy-time-not-supplied', file: replayToy, anchor: '{ at: Date.now(), id: crypto.randomUUID() }', replacement: '{ at: Date.now() + 1, id: crypto.randomUUID() }', expect: { check: 'after', kind: 'time-oracle' } },
   { name: 'toy-clock-read-after-draw', file: replayToy, anchor: '{ at: Date.now(), id: crypto.randomUUID() }', replacement: '(() => { const id = crypto.randomUUID(); return { at: Date.now(), id }; })()', expect: { check: 'halt', kind: 'effect-order' } },
   { name: 'toy-draws-reordered', file: replayToy, anchor: '  const first = crypto.randomUUID();\n  const second = crypto.randomUUID();\n', replacement: '  const second = crypto.randomUUID();\n  const first = crypto.randomUUID();\n', expect: { check: 'result', kind: 'draw-oracle' } },
-  { name: 'toy-microtask-effect-on-a-timer', file: replayToy, anchor: "  Promise.resolve().then(() => log('relay', String(items.length)));\n", replacement: "  setTimeout(() => log('relay', String(items.length)), 0);\n", expect: { check: 'effects', kind: 'value' } },
+  // Since package C0f (inputs that arrive together) the relay's second call arrives before the first call's job runs,
+  // so that job's effect is the second step's: the timer the mutant sets is an extra effect of the first step.
+  { name: 'toy-microtask-effect-on-a-timer', file: replayToy, anchor: "  Promise.resolve().then(() => log('relay', String(items.length)));\n", replacement: "  setTimeout(() => log('relay', String(items.length)), 0);\n", expect: { check: 'effects', kind: 'extra' } },
   // C0e: an effect moved across the step's return, in each direction (recording 7, `returnedAt`).
   { name: 'toy-effect-moved-after-the-return', file: replayToy, anchor: "  log('note', text);\n", replacement: "  Promise.resolve().then(() => log('note', text));\n", expect: { check: 'effects', kind: 'return-position' } },
-  { name: 'toy-effect-moved-before-the-return', file: replayToy, anchor: "  Promise.resolve().then(() => log('relay', String(items.length)));\n", replacement: "  log('relay', String(items.length));\n", expect: { check: 'effects', kind: 'return-position' } },
+  // Since C0f the moved effect lands in the first of two inputs that arrived together, not in the second (see above).
+  { name: 'toy-effect-moved-before-the-return', file: replayToy, anchor: "  Promise.resolve().then(() => log('relay', String(items.length)));\n", replacement: "  log('relay', String(items.length));\n", expect: { check: 'effects', kind: 'extra' } },
   { name: 'toy-hidden-counter-off-by-one', file: replayToy, anchor: '  calls += 1;\n', replacement: '  calls += 2;\n', expect: { check: 'result', kind: 'value' } },
   { name: 'toy-clock-source-changed', file: toy('toy-clock.mjs'), anchor: 'return [Date.now(), new Date().getTime(), performance.now()];', replacement: 'return [Date.now(), Date.now(), performance.now()];', expect: { check: 'halt', kind: 'unanswered' } },
   // C0e: the store and timer toy family. A store that mutates where it replaced, a notification doubled or delivered
   // after the action returned, a timer delay off by one, an interval its callback no longer clears, a clock read moved.
   { name: 'toy-store-mutates-in-place', file: storeToy, anchor: "  add: (item) => set((state) => ({ items: [...state.items, item], count: state.count + 1 })),", replacement: "  add: (item) => set((state) => { state.items.push(item); return { items: state.items, count: state.count + 1 }; }),", expect: { check: 'state-changes', kind: 'value' } },
   { name: 'toy-store-notifies-twice', file: storeToy, anchor: "  tag: (name) => set((state) => { const tags = new Set(state.tags); tags.add(name); return { tags }; }),", replacement: "  tag: (name) => { set((state) => { const tags = new Set(state.tags); tags.add(name); return { tags }; }); set({}); },", expect: { check: 'effects', kind: 'extra' } },
-  { name: 'toy-store-notifies-after-the-return', file: storeToy, anchor: "    for (const listener of listeners) listener(state, previous);\n", replacement: "    Promise.resolve().then(() => { for (const listener of listeners) listener(state, previous); });\n", expect: { check: 'effects', kind: 'return-position' } },
+  // Since C0f each of these tests' next call arrives before the job the mutant adds runs: the notification is the
+  // next step's, missing from the step that made it.
+  { name: 'toy-store-notifies-after-the-return', file: storeToy, anchor: "    for (const listener of listeners) listener(state, previous);\n", replacement: "    Promise.resolve().then(() => { for (const listener of listeners) listener(state, previous); });\n", expect: { check: 'effects', kind: 'missing' } },
   { name: 'toy-store-subscribers-reversed', file: storeToy, anchor: "    for (const listener of listeners) listener(state, previous);\n", replacement: "    for (const listener of [...listeners].reverse()) listener(state, previous);\n", expect: { check: 'effects' } },
   { name: 'toy-timer-delay-off-by-one', file: storeToy, anchor: "    setTimeout(() => { log('second', label); }, 5);\n", replacement: "    setTimeout(() => { log('second', label); }, 6);\n", expect: { check: 'effects', kind: 'value' } },
   { name: 'toy-interval-not-cleared', file: storeToy, anchor: "    if (ticks % 2 === 0) clearInterval(id);\n", replacement: '', expect: { check: 'effects', kind: 'missing' } },
@@ -112,7 +121,7 @@ const JUDGE_CODE = '  const code = inconclusive.length ? EXIT.inconclusive : fai
  */
 export const REPLAYER_PLANTS = Object.freeze([
   { name: 'replayer-change-set-not-compared', origin: 'C0d', file: RC, anchor: "['after', 'after'], ['changes', 'change-set'],", replacement: "['after', 'after'],", fails: 'toy-mutants:toy-clones-one-field-too-many' },
-  { name: 'replayer-step-delivered-before-quiescence', origin: 'C0d', file: ET, anchor: '    const quiet = await quiesce();\n', replacement: '    const quiet = true;\n', fails: 'closure' },
+  { name: 'replayer-step-delivered-before-quiescence', origin: 'C0d', file: ET, anchor: '    let quiet = await quiesce();\n', replacement: '    let quiet = true;\n', fails: 'closure' },
   { name: 'replayer-identity-not-kept-on-rebuild', origin: 'C0d', file: ET, anchor: '        if (known !== undefined) { local.set(node.n, known); reconcile(known, node.value); return known; }\n', replacement: '', fails: 'closure' },
   { name: 'replayer-prefix-accepted', origin: 'C0d', file: RC, anchor: '  if (expectedSteps.length !== actualSteps.length) {\n', replacement: '  if (actualSteps.length > expectedSteps.length) {\n', fails: 'compare' },
   { name: 'replayer-not-replayable-counted-reproduced', origin: 'C0d', file: RP, anchor: ": verdict.outcome !== 'recorded' ? 'no-reference' : 'not-replayable');", replacement: ": verdict.outcome !== 'recorded' ? 'no-reference' : 'reproduced');", fails: 'closure' },
@@ -120,7 +129,7 @@ export const REPLAYER_PLANTS = Object.freeze([
   { name: 'replayer-key-order-masked', origin: 'C0d', file: RC, anchor: "  const leftKeys = Object.keys(left);\n  const rightKeys = Object.keys(right);\n", replacement: "  const leftKeys = Object.keys(left).sort();\n  const rightKeys = Object.keys(right).sort();\n", fails: 'toy-mutants:toy-key-moved' },
   { name: 'replayer-undefined-equals-null', origin: 'C0d', file: RC, anchor: "  if (left === right) return null;\n  const type = kindName(left);", replacement: "  if (left === right || (tagOf(left) === 'undefined' && right === null)) return null;\n  const type = kindName(left);", fails: 'toy-mutants:toy-undefined-as-null' },
   { name: 'replayer-identity-ignored', origin: 'C0d', file: RC, anchor: '    return known === right && other === left;\n', replacement: '    return true;\n', fails: 'toy-mutants:toy-argument-copied' },
-  { name: 'replayer-env-in-any-order', origin: 'C0d', file: ET, anchor: "    const unordered = kind === 'port' && unit.unordered.has(name);\n", replacement: '    const unordered = true;\n', fails: 'toy-mutants:toy-clock-read-after-draw' },
+  { name: 'replayer-env-in-any-order', origin: 'C0d', file: ET, anchor: "    const unordered = (kind === 'port' || kind === 'new') && unit.unordered.has(name);\n", replacement: '    const unordered = true;\n', fails: 'toy-mutants:toy-clock-read-after-draw' },
   { name: 'replayer-alone-shares-the-file-instance', origin: 'C0d', file: RP, anchor: "    if (modes.includes('isolated')) for (const item of items) if (item.verdict.judge) units.push({ id: (unitId += 1), container, mode: 'isolated', items: [item] });\n",
     replacement: "    if (modes.includes('isolated') && items.some((item) => item.verdict.judge)) units.push({ id: (unitId += 1), container, mode: 'isolated', items: items.filter((item) => item.verdict.judge) });\n", fails: 'closure' },
   { name: 'replayer-halt-ignored', origin: 'C0d', file: RC, anchor: '    if (replayed.halt && replayed.halt.step === step) found.unshift(', replacement: '    if (false) found.unshift(', fails: 'toy-mutants:toy-extra-port-call' },
@@ -182,7 +191,7 @@ export const REPLAYER_PLANTS = Object.freeze([
   { name: 'c0e-review-engine-omits-return-position', origin: 'C0e review', file: ET, anchor: '      if (record.returnedAt !== undefined) shape.returnedAt = record.returnedAt;', replacement: '', fails: 'closure', check: 'return-position' },
   { name: 'c0e-review-engine-omits-position-and-compare-needs-both', origin: 'C0e review', file: ET, anchor: '      if (record.returnedAt !== undefined) shape.returnedAt = record.returnedAt;', replacement: '',
     also: [{ file: RC, anchor: "(Object.prototype.hasOwnProperty.call(expected, 'returnedAt') || Object.prototype.hasOwnProperty.call(actual, 'returnedAt'))", replacement: "(Object.prototype.hasOwnProperty.call(expected, 'returnedAt') && Object.prototype.hasOwnProperty.call(actual, 'returnedAt'))" }], fails: 'compare', check: 'compare-return-position-not-reported' },
-  { name: 'c0e-review-engine-serves-any-port-answer', origin: 'C0e review', file: ET, anchor: "    const matches = (item) => item.kind === kind && (kind === 'port' ? item.port === name :", replacement: "    const matches = (item) => item.kind === kind && (kind === 'port' ? true :", fails: 'protocol', check: 'protocol-port-served-by-name' },
+  { name: 'c0e-review-engine-serves-any-port-answer', origin: 'C0e review', file: ET, anchor: "    const matches = (item) => item.kind === kind && (kind === 'port' || kind === 'new' ? item.port === name :", replacement: "    const matches = (item) => item.kind === kind && (kind === 'port' || kind === 'new' ? true :", fails: 'protocol', check: 'protocol-port-served-by-name' },
   { name: 'c0e-review-engine-timeout-may-fire-twice', origin: 'C0e review', file: ET, anchor: '    if (!timer || timer.cleared || (!timer.repeat && timer.fired > 0)) {', replacement: '    if (!timer || timer.cleared) {', fails: 'protocol', check: 'protocol-timeout-fires-once' },
   { name: 'c0e-review-engine-unknown-clear-takes-last-id', origin: 'C0e review', file: ET, anchor: "      if (!known) { effect({ kind: 'timer.clear', id: null, handle: snap(handle) }); return; }", replacement: "      if (!known) { effect({ kind: 'timer.clear', id: kase.timerCount || null }); return; }", fails: 'closure', check: 'effects/value' },
   { name: 'c0e-review-recorder-timer-position-counted-late', origin: 'C0e review', file: 'recorder.mjs', anchor: '        step.returnedAt = step.effects.length;\n        stateAfter(store.family, step, beforeState, store.case);', replacement: '        apply(PromiseThen, Promise.resolve(), [() => { step.returnedAt = step.effects.length; }]);\n        stateAfter(store.family, step, beforeState, store.case);', fails: 'closure', check: 'return-position' },
@@ -195,6 +204,23 @@ export const REPLAYER_PLANTS = Object.freeze([
   { name: 'c0e-review-codec-set-order-reversed', origin: 'C0e review', file: 'codec.mjs', anchor: "      return { kind: 'set', values, className: constructorName(item) };", replacement: "      return { kind: 'set', values: values.reverse(), className: constructorName(item) };", fails: 'closure', check: 'after/value' },
   { name: 'c0e-review-replay-file-order-seeds-only-after-unjudged', origin: 'C0e review', file: RP, anchor: "        const seedIt = mode === 'isolated' || endedWith === null || !sameContent(endedWith, start);", replacement: "        const seedIt = mode === 'isolated' || endedWith === null;", fails: 'closure', check: 'entry-state/value' },
   { name: 'c0e-review-compare-state-changes-order-ignored', origin: 'C0e review', file: RC, anchor: "['state', 'state'], ['stateChanges', 'state-changes']]", replacement: "['state', 'state']]", fails: 'compare', check: 'compare-state-changes' },
+  // Package C0f: the transport paths of the engine and the replayer, on the transport toys of the corpus.
+  { name: 'c0f-engine-globals-from-nowhere', origin: 'C0f', file: ET, anchor: "    const item = take('read', 'globalThis', name);\n", replacement: "    if (name !== 'never') return undefined;\n    const item = take('read', 'globalThis', name);\n", fails: 'closure', check: 'effects/missing' },
+  { name: 'c0f-engine-set-not-an-effect', origin: 'C0f', file: ET, anchor: "        effect({ kind: 'set', port: name, key: snap(key), value: snap(value) });\n", replacement: '', fails: 'closure', check: 'effects/missing' },
+  { name: 'c0f-engine-port-data-ignored', origin: 'C0f', file: ET, anchor: '        if (unit.load?.portData && hasOwn(unit.load.portData, name)) return decode(unit.load.portData[name]);\n', replacement: '', fails: 'closure', check: 'effects/value' },
+  { name: 'c0f-engine-new-is-a-call', origin: 'C0f', file: ET, anchor: "    const kind = isNew ? 'new' : 'port';", replacement: "    const kind = 'port';", fails: 'closure', check: 'halt/unanswered' },
+  { name: 'c0f-engine-together-after-quiescence', origin: 'C0f', file: ET, anchor: '    if (next.given.together === true) { if (member.syncing) member.nextNow = next; else deliverMember(next); return; }\n', replacement: '', fails: 'closure', check: 'halt/unanswered' },
+  { name: 'c0f-engine-nested-callback-as-a-call', origin: 'C0f', file: ET, anchor: "      try { if (record.given.kind === 'callback') deliverCallback(record); else deliverCall(record); } finally { current = outer; }", replacement: '      try { deliverCall(record); } finally { current = outer; }', fails: 'closure', check: 'result/value' },
+  { name: 'c0f-replay-holds-never-sent', origin: 'C0f', file: RP, anchor: '  const holds = new Set();\n', replacement: '  const holds = new Set();\n  if (steps.length) return holds;\n', fails: 'closure', check: 'halt/unanswered' },
+  { name: 'c0f-replay-arrival-not-sent', origin: 'C0f', file: RP, anchor: "for (const key of ['id', 'port', 'call', 'outcome', 'together', 'immediate'])", replacement: "for (const key of ['id', 'port', 'call', 'outcome'])", fails: 'closure', check: 'halt/unanswered' },
+  { name: 'c0f-replay-reads-not-answered', origin: 'C0f', file: RC, anchor: "    if (item.kind === 'port' || item.kind === 'new') env.push(", replacement: "    if (item.kind === 'read') continue;\n    if (item.kind === 'port' || item.kind === 'new') env.push(", fails: 'closure', check: 'halt/unanswered' },
+  // The C0f fix round (the review's S7): the generation an immediate answer is given at, one off each way (the race
+  // cases of the immediates toy), the codec's wrapper unification (the injected-api case of the transport toy), and
+  // `new` call numbers paired like port calls (the comparer's own checks).
+  { name: 'c0f-fix-engine-immediate-one-tick-late', origin: 'C0f fix', file: ET, anchor: 'if (ticks < immediate.given.immediate) realQueueMicrotask(tick); else give();', replacement: 'if (ticks <= immediate.given.immediate) realQueueMicrotask(tick); else give();', fails: 'closure', check: 'effects/value' },
+  { name: 'c0f-fix-engine-immediate-one-tick-early', origin: 'C0f fix', file: ET, anchor: 'if (ticks < immediate.given.immediate) realQueueMicrotask(tick); else give();', replacement: 'if (ticks < immediate.given.immediate - 1) realQueueMicrotask(tick); else give();', fails: 'closure', check: 'effects/value' },
+  { name: 'c0f-fix-engine-wrappers-not-unified', origin: 'C0f fix', file: ET, anchor: 'codec: createCodecContext({ names: unit.names, unwrap: (item) => engineWrapped.get(item), unifyWrapped: true })', replacement: 'codec: createCodecContext({ names: unit.names })', fails: 'closure', check: 'result/value' },
+  { name: 'c0f-fix-compare-new-not-paired', origin: 'C0f fix', file: RC, anchor: "const paired = key === 'call' && (e.kind === 'port' || e.kind === 'new') ?", replacement: "const paired = key === 'call' && (e.kind === 'port') ?", fails: 'compare', check: 'compare-new-calls' },
 ]);
 /** The replayer plants the per-push self-test runs: those its cheap parts (compare, judge) catch, and one each of the closure and the engines. */
 export const REPLAYER_PLANT_SAMPLE = Object.freeze([
@@ -205,6 +231,10 @@ export const REPLAYER_PLANT_SAMPLE = Object.freeze([
   // The C0e review's that the cheap parts catch, and its late-input plant (the closure, on the late loader fixture).
   'c0e-review-compare-timer-delay-ignored', 'c0e-review-compare-extra-trailing-notify-ignored', 'c0e-review-engine-omits-position-and-compare-needs-both',
   'c0e-review-compare-state-changes-order-ignored', 'c0e-review-replay-late-flag-not-sent',
+  // Package C0f: one of the transport paths (inputs that arrive together, on the corpus's transport toys).
+  'c0f-replay-holds-never-sent',
+  // The C0f fix round: the comparer's pairing of `new` call numbers (its cheap compare part).
+  'c0f-fix-compare-new-not-paired',
 ]);
 
 /** The number of steps of every case of `containers`, counted from the recording itself. */
@@ -324,6 +354,11 @@ export function compareChecks(compare, codec) {
   checks.push(['compare-timer-ids-renamed-reproduced', compareReplayed(named(1, 2), { ...named(7, 8), halt: null, outside: [] }).differences.length === 0 ? null : 'timers named otherwise by the engine differ']);
   const calls = (first, second) => ({ steps: [step(1, { effects: [{ kind: 'port', port: 'p', call: first, args: [], answer: 1 }, { kind: 'port', port: 'p', call: second, args: [], answer: 1 }] })] });
   checks.push(['compare-port-calls-paired', reports(calls(1, 2), { ...calls(3, 3), halt: null, outside: [] }, 'effects', 'identity')]);
+  // A `new` effect's call number is a name too (C0f fix round): paired with the port calls' across the case, so a
+  // pairing that breaks is an identity difference and numbers the engine gives otherwise, consistently, are none.
+  const built = (first, second) => ({ steps: [step(1, { effects: [{ kind: 'new', port: 'WebSocket', call: first, args: [], answer: 1 }, { kind: 'port', port: 'p', call: second, args: [], answer: 1 }] })] });
+  checks.push(['compare-new-calls-paired', reports(built(1, 2), { ...built(3, 3), halt: null, outside: [] }, 'effects', 'identity')]);
+  checks.push(['compare-new-calls-renamed-reproduced', compareReplayed(built(1, 2), { ...built(7, 8), halt: null, outside: [] }).differences.length === 0 ? null : 'new calls numbered otherwise by the engine differ']);
   checks.push(['compare-site-not-compared', compareReplayed({ steps: [step(1, { effects: [{ kind: 'draw', source: 'Math.random', value: 0.5, site: 'a.mjs:1' }] })] }, { steps: [step(1, { effects: [{ kind: 'draw', source: 'Math.random', value: 0.5 }] })], halt: null, outside: [] }).differences.length === 0 ? null : 'a draw site was compared']);
   // Identity across steps: the recording hands step 2 the object step 1 returned; the replay hands it another one with
   // the same content. Only a judge that spans the case sees it.

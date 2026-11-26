@@ -63,6 +63,8 @@ const typedLength = getOwnPropertyDescriptor(TypedArrayProto, 'byteLength').get;
 const JSONStringify = JSON.stringify;
 
 const HOOK = Symbol.for('devryan.client-conformance.replay-hook');
+/** The globals whose reads by engine code are recorded inputs (recorder.mjs READ_GLOBALS). */
+const GLOBAL_READS = Object.freeze(['fetch', 'WebSocket', 'EventSource', 'localStorage', 'sessionStorage', 'document', 'window', 'navigator']);
 const REAL_QUERY = 'devryan-replay-real';
 // The clock that code running outside any step reads (module load): the recorder's nominal epoch.
 const OUTSIDE_NOW = 1700000000000;
@@ -137,12 +139,13 @@ async function mainThread() {
 
 function workerThread() {
   // Port names outlive a case (a port the module keeps in its state is still that port in the next case), as the recorder's do.
-  const unit = { open: false, family: null, namespace: null, entries: new RealMap(), between: [], portObjects: [], cases: 0, names: new RealWeakMap() };
+  const unit = { open: false, family: null, namespace: null, entries: new RealMap(), between: [], portObjects: [], cases: 0, names: new RealWeakMap(), portFunctions: new RealMap(), portStubs: new RealMap() };
   let kase = null; // the open case
   let current = null; // the step whose input is being delivered or quiesced
   let activity = 0;
   let jobOrigin = null; // the case whose job (setImmediate, queueMicrotask) is running
   const timerHandles = new RealWeakMap(); // a Timeout handle -> { owner case, id }
+  const engineWrapped = new RealWeakMap(); // a wrapper the engine made around a test's object (an injected port in it) -> the object
 
   class ReplayHalt extends RealError {}
   defineProperty(ReplayHalt.prototype, 'name', { value: 'ReplayHalt', configurable: true, writable: true });
@@ -171,12 +174,12 @@ function workerThread() {
   const snap = (value) => new Taken(snapshot(value, kase.codec));
 
   // ------------------------------------------------------------- the env
-  const describeItem = (item) => (item ? `${item.kind} ${item.kind === 'port' || item.kind === 'read' ? item.port : item.source}${item.kind === 'read' ? `.${String(item.key)}` : ''}` : 'nothing');
+  const describeItem = (item) => (item ? `${item.kind} ${item.kind === 'port' || item.kind === 'new' || item.kind === 'read' ? item.port : item.source}${item.kind === 'read' ? `.${String(item.key)}` : ''}` : 'nothing');
   function take(kind, name, key) {
     const step = current;
     const items = step.env;
-    const matches = (item) => item.kind === kind && (kind === 'port' ? item.port === name : kind === 'read' ? item.port === name && item.key === key : item.source === name);
-    const unordered = kind === 'port' && unit.unordered.has(name);
+    const matches = (item) => item.kind === kind && (kind === 'port' || kind === 'new' ? item.port === name : kind === 'read' ? item.port === name && item.key === key : item.source === name);
+    const unordered = (kind === 'port' || kind === 'new') && unit.unordered.has(name);
     if (unordered) {
       const index = items.findIndex((item, at) => at >= step.envNext && !step.used.has(at) && matches(item));
       if (index >= 0) { step.used.add(index); return items[index]; }
@@ -235,14 +238,63 @@ function workerThread() {
   // ------------------------------------------------------------- rebuilding inputs
   const stubs = new RealWeakMap(); // stub function -> { name, port }
   function functionStub(name, port) {
+    // A function the recording names as a port (one a port answered, a global the engine read) is a port function:
+    // its members, `new` and calls are the port's (C0f). One with no port is the test's own function.
+    if (port !== null && port !== undefined) return portFunctionStub(port, name);
     const info = { name, port };
     const stub = { [name]: function (...args) {
       if (info.port === null) return halt('unanswered', `the engine called a function the test handed it (${name || 'anonymous'}) that no port declares, so the recording has no answer`);
-      return callPort(info.port, args);
+      return callPort(info.port, args, { isNew: new.target !== undefined });
     } }[name];
     if (stub.name !== name) defineProperty(stub, 'name', { value: name, configurable: true });
     stubs.set(stub, info);
-    if (port !== null && port !== undefined) kase.codec.names.set(stub, port);
+    return stub;
+  }
+  // Whether a port wraps its answers (the recorder's `wrapAnswers`): the port the name derives from is listed so.
+  function wrapsAnswers(name) {
+    const text = String(name);
+    const module = text.startsWith('module:') ? text.indexOf('#') : -1;
+    const from = module >= 0 ? module + 1 : 0;
+    const cut = text.slice(from).search(/[.#]/);
+    const root = cut < 0 ? text : text.slice(0, from + cut);
+    return (unit.family.wrapAnswers ?? []).includes(root);
+  }
+  // Whether the open step's env still holds a call of port `name` (a member the engine is about to call).
+  const envHolds = (name) => {
+    if (!current) return false;
+    for (let at = current.envNext; at < current.env.length; at += 1) {
+      if (current.used.has(at)) continue;
+      const item = current.env[at];
+      if ((item.kind === 'port' || item.kind === 'new') && item.port === name) return true;
+    }
+    return false;
+  };
+  const FUNCTION_OWN = new RealSet(['name', 'length', 'prototype', 'call', 'apply', 'bind', 'toString', 'constructor', 'caller', 'arguments']);
+  /**
+   * A port function (package C0f): a call is a port call, `new` a `new` effect, and a member read is a port function
+   * of its own (`<port>.<member>`, as the recorder names a port function's methods) when the step calls it next.
+   * One per port name for the unit (a module port's export) or the case (a port's answer, a global).
+   */
+  function portFunctionStub(port, functionName = '') {
+    const cache = unit.open && kase ? kase.portFunctions : unit.portFunctions;
+    const known = unit.portFunctions.get(port) ?? cache.get(port);
+    if (known) return known;
+    const info = { name: functionName, port };
+    const base = { [functionName]: function (...args) { return callPort(info.port, args, { isNew: new.target !== undefined }); } }[functionName];
+    if (base.name !== functionName) defineProperty(base, 'name', { value: functionName, configurable: true });
+    const members = new RealMap();
+    const stub = new RealProxy(base, {
+      get(target, key, receiver) {
+        if (typeof key === 'string' && !FUNCTION_OWN.has(key) && envHolds(`${port}.${key}`)) {
+          if (!members.has(key)) members.set(key, portFunctionStub(`${port}.${key}`, key));
+          return members.get(key);
+        }
+        return reflectGet(target, key, receiver);
+      },
+    });
+    stubs.set(stub, info);
+    unit.names.set(stub, port);
+    cache.set(port, stub);
     return stub;
   }
   class RebuildError extends RealError {}
@@ -282,7 +334,9 @@ function workerThread() {
           return { value: decode(shell) };
         }
         case 'function': return { value: functionStub(node.name, hasOwn(node, 'port') ? node.port : null), complete: true };
-        case 'port': return { value: portObjectStub(node.name), complete: true };
+        // A port object the recording names: a module port's is the one the module holds; any other is a stub of its
+        // own, whose identity is the recording's (an id node binds it), so two objects of one name stay two (C0f).
+        case 'port': return { value: unit.portStubs.get(node.name) ?? portObjectStub(node.name, { fresh: true }), complete: true };
         case 'symbol': return { value: symbolOf(node), complete: true };
         case 'id': case 'ref': throw new RebuildError('an id or ref where a value was expected');
         default: return { value: decode(node), complete: true };
@@ -405,7 +459,7 @@ function workerThread() {
   }
 
   // ------------------------------------------------------------- ports and platform sources
-  function callPort(name, args) {
+  function callPort(name, args, { isNew = false } = {}) {
     // While the module loads no case is open: a port it reads then (the storage principal, a stored cache) answers as
     // the real module does, and the read is noted (reported, not compared: replay-compare.mjs NOT_COMPARED).
     if (!unit.open && portReal.has(name)) { noteOutside(`port ${name} while the module loaded (answered by the module itself)`); return apply(portReal.get(name), undefined, args); }
@@ -414,9 +468,10 @@ function workerThread() {
     kase.portCalls += 1;
     const list = [];
     for (let index = 0; index < args.length; index += 1) list[index] = args[index];
-    const record = effect({ kind: 'port', port: name, call: kase.portCalls, args: snap(list) });
+    const kind = isNew ? 'new' : 'port';
+    const record = effect({ kind, port: name, call: kase.portCalls, args: snap(list) });
     bindSlot(`effects.${current.effects.length - 1}.args`, list);
-    const item = take('port', name);
+    const item = take(kind, name);
     // What the test did inside this call (a subscriber calling back into the store) is delivered before it answers.
     if (current.nested.length && item.call !== undefined) deliverNested(item.call);
     if (hasOwn(item, 'throws')) {
@@ -425,11 +480,41 @@ function workerThread() {
       throw error;
     }
     // A promise answer settles later, by an input of its own (`settle`, naming this call by its number).
-    if (item.answer !== null && typeof item.answer === 'object' && !isArray(item.answer) && item.answer.$dr === 'promise' && objectKeys(item.answer).length === 1) {
+    // The promise may be named (an id node) when the case reaches it again elsewhere: it is bound to that number.
+    const promiseNode = (node) => node !== null && typeof node === 'object' && !isArray(node) && node.$dr === 'promise' && objectKeys(node).length === 1;
+    const namedPromise = item.answer !== null && typeof item.answer === 'object' && !isArray(item.answer) && item.answer.$dr === 'id' && promiseNode(item.answer.value) ? item.answer.n : null;
+    if (promiseNode(item.answer) || namedPromise !== null) {
       let settle = null;
-      const promise = new RealPromise((resolve, reject) => { settle = { resolve, reject }; });
+      // The port's own promise, and for a port that wraps its answers the one the module holds a microtask later, as the
+      // recorder's (recording 8): the same promises, so the module's continuation comes at the same place in its drain.
+      const raw = new RealPromise((resolve, reject) => { settle = { resolve, reject, opens: null }; });
+      const promise = wrapsAnswers(name) ? apply(RealPromise.prototype.then, raw, [(value) => value, (reason) => { throw reason; }]) : raw;
+      // The engine's own first reaction opens the settle input's step (see deliverSettle), before the module's run.
+      const opening = () => { if (settle.opens) { openMember(settle.opens); activity += 1; } };
+      apply(RealPromise.prototype.then, promise, [opening, opening]);
       // Keyed by the recording's name of the call (env), which the `settle` input names; else by the engine's own count.
       kase.deferred.set(item.call ?? record.call, settle);
+      if (namedPromise !== null && !kase.bound.has(namedPromise)) kase.bound.set(namedPromise, promise);
+      // An immediate answer (recording 8, C0f): its settle step came in this group, and it settles as many microtask
+      // generations after the call as the recording counted, by a chain of no-op jobs started here, as the recorder's.
+      const immediate = kase.immediates.get(item.call ?? record.call);
+      if (immediate) {
+        kase.immediates.delete(item.call ?? record.call);
+        const give = () => {
+          // Never before an input the test made before it (a call, a callback) was delivered: then right after it. An
+          // answer before it keeps its own place, which its own call's generations give.
+          const before = immediate.group?.[immediate.groupIndex - 1];
+          if (before && !before.opened && before.given.kind !== 'settle') { before.thenDeliver = immediate; return; }
+          if (kase.deferred.get(item.call ?? record.call) === settle) deliverSettle(immediate, immediate.given);
+        };
+        // Generation 0: the port's promise had settled when the call returned; else it settles inside that marker.
+        if (immediate.given.immediate === 0) give();
+        else {
+          let ticks = 0;
+          const tick = () => { ticks += 1; if (ticks < immediate.given.immediate) realQueueMicrotask(tick); else give(); };
+          realQueueMicrotask(tick);
+        }
+      }
       record.answer = snap(promise);
       return promise;
     }
@@ -442,14 +527,24 @@ function workerThread() {
    * the step's next `read` of that member, its methods are port calls `<port>.<member>`. A member the step neither
    * reads nor calls next has no recorded answer.
    */
-  function portObjectStub(name) {
-    const known = kase.portStubs.get(name);
+  function portObjectStub(name, { fresh = false } = {}) {
+    // A module port's object (an API client) is the unit's, made when its module loads; any other is the case's.
+    const cache = unit.open && kase ? kase.portStubs : unit.portStubs;
+    const known = unit.portStubs.get(name) ?? (fresh ? undefined : cache.get(name));
     if (known) return known;
     const methods = new RealMap();
     const stub = new RealProxy({}, {
       get(object, key) {
+        // A symbol-keyed method (an async iterator's Symbol.asyncIterator) is a port call `<port>.Symbol(...)`, as the
+        // recorder names it, when the step calls it next; any other symbol read is the runtime's own (C0f).
+        if (typeof key === 'symbol') {
+          const memberName = `${name}.${String(key)}`;
+          if (!envHolds(memberName)) return undefined;
+          if (!methods.has(key)) methods.set(key, function (...args) { return callPort(memberName, args); });
+          return methods.get(key);
+        }
         // What the runtime reads on its own (an await's thenable check, conversions) is no read of the module's.
-        if (typeof key !== 'string' || key === 'then') return undefined;
+        if (key === 'then') return undefined;
         if (!current || !kase) { noteOutside(`read ${name}.${key}`); return undefined; }
         const items = current.env;
         let found = null;
@@ -467,13 +562,29 @@ function workerThread() {
         effect({ kind: 'read', port: name, key: snap(key), value: snap(value) });
         return value;
       },
-      set(object, key) { return halt('unanswered', `the engine wrote ${String(key)} on the port object ${name}, which this engine does not answer`); },
+      // A write of a member (a socket's onmessage) is an effect; a function written is the engine's own, named where it
+      // first shows (bind), so a later callback input calls that very function (C0f).
+      set(object, key, value) {
+        if (!current || !kase) { noteOutside(`write ${name}.${String(key)}`); return true; }
+        effect({ kind: 'set', port: name, key: snap(key), value: snap(value) });
+        bindSlot(`effects.${current.effects.length - 1}.value`, value);
+        return true;
+      },
     });
-    kase.codec.names.set(stub, name);
-    kase.portStubs.set(name, stub);
+    unit.names.set(stub, name);
+    if (!fresh || !unit.open || !kase) cache.set(name, stub);
     return stub;
   }
   const valueOf = (tree) => decode(tree);
+  function readGlobal(name) {
+    if (!current || !kase) { noteOutside(`a read of the global ${name}`); return undefined; }
+    if (kase.halt) throw new ReplayHalt('the case has halted');
+    const item = take('read', 'globalThis', name);
+    const value = rebuild(item.value);
+    effect({ kind: 'read', port: 'globalThis', key: snap(name), value: snap(value) });
+    bindSlot(`effects.${current.effects.length - 1}.value`, value);
+    return value;
+  }
   function readClock(source) {
     // A clock read while no step is open is answered with the recorder's nominal epoch, and noted where it belongs.
     if (!current || !kase) { noteOutside(`clock ${source}`); activity += 1; return source === 'performance.now' ? OUTSIDE_PERFORMANCE : OUTSIDE_NOW; }
@@ -483,7 +594,11 @@ function workerThread() {
     effect({ kind: 'clock', source, value: snap(value) });
     return value;
   }
+  // What a module draws while it loads (a port module's client id) is no step's: it gets a fixed stand-in, is noted, and
+  // a data port export that holds it is answered from the recording instead (`load.portData`, package C0f).
+  const LOAD_DRAWS = { 'Math.random': 0, 'crypto.randomUUID': '00000000-0000-4000-8000-000000000000' };
   function draw(source, check) {
+    if (!unit.open && !kase && hasOwn(LOAD_DRAWS, source)) { noteOutside(`draw ${source} while the module loaded (a stand-in)`); return LOAD_DRAWS[source]; }
     if (!current || !kase) { noteOutside(`draw ${source}`); throw new ReplayHalt(`draw ${source} while no step is open`); }
     if (kase.halt) throw new ReplayHalt('the case has halted');
     const item = take('draw', source);
@@ -548,11 +663,14 @@ function workerThread() {
       known.owner.timers.get(known.id).cleared = true;
       effect({ kind: 'timer.clear', id: known.id });
     };
-    for (const [name, value] of [['setTimeout', setTimer(false)], ['setInterval', setTimer(true)], ['clearTimeout', clearTimer], ['clearInterval', clearTimer],
-      ['fetch', function fetch(...args) { return callPort('fetch', args); }],
-      ['WebSocket', function WebSocket() { return halt('unanswered', 'the engine opened a WebSocket, which the recording does not answer'); }],
-      ['EventSource', function EventSource() { return halt('unanswered', 'the engine opened an EventSource, which the recording does not answer'); }]]) {
+    for (const [name, value] of [['setTimeout', setTimer(false)], ['setInterval', setTimer(true)], ['clearTimeout', clearTimer], ['clearInterval', clearTimer]]) {
       defineProperty(globalThis, name, { value, writable: true, configurable: true, enumerable: false });
+    }
+    // The transports and the DOM objects (protocol 4, package C0f): what the engine reads of the global itself is the
+    // step's next `read` of the port `globalThis` (undefined, a port function such as the test's WebSocket fake, a port
+    // object such as its window), so whether a global is there is an input, as the test decided it.
+    for (const name of GLOBAL_READS) {
+      defineProperty(globalThis, name, { get() { return readGlobal(name); }, set() { noteOutside(`a write of the global ${name}`); }, configurable: true, enumerable: false });
     }
     // A rejection the engine leaves unhandled (a halt thrown into one of its promise jobs, say) must not end the
     // unit: it is noted where it belongs (the case's `outside`, so the case differs; replay-compare.mjs `outside`).
@@ -609,7 +727,12 @@ function workerThread() {
     const hook = {
       portExport(name, value) {
         if (typeof value === 'function') { portReal.set(name, value); return functionStubFor(name, value.name); }
+        // An object with behaviour (an API client, an event bus) is a port object, as the recorder wraps it (C0f): its
+        // reads and calls answer from the step; data (a client id the module drew as it loaded) is the value the
+        // recording's module exported (`load.portData`), never what this engine's load made of it.
+        if (portLikeValue(value) || answerLikeValue(value)) return portObjectStub(name);
         unit.portObjects.push(name);
+        if (unit.load?.portData && hasOwn(unit.load.portData, name)) return decode(unit.load.portData[name]);
         return value;
       },
       // The family module's own load registers how its module-state bindings are read and seeded.
@@ -636,14 +759,22 @@ function workerThread() {
     });
   }
   // A module port's stub: one per port, made when its module loads; it answers from the open step.
-  const portStubs = new RealMap();
   const portReal = new RealMap(); // a module port's name -> the real export (what the module reads while it loads)
-  function functionStubFor(name, functionName) {
-    if (!portStubs.has(name)) {
-      const stub = { [functionName]: function (...args) { return callPort(name, args); } }[functionName];
-      portStubs.set(name, stub);
-    }
-    return portStubs.get(name);
+  const functionStubFor = (name, functionName) => portFunctionStub(name, functionName);
+  // The recorder's rule for an answer with behaviour (its portLike), on a live value.
+  const DATA_PROTOTYPES = [RealMap, RealSet, RealDate, RegExp, RealError, ArrayBuffer, getPrototypeOf(RealUint8Array), RealPromise, RealWeakMap, WeakSet].map((constructor) => constructor.prototype);
+  // The recorder's answerLike: behaviour at the top or in an own member (a namespace of methods).
+  function answerLikeValue(value) {
+    if (portLikeValue(value)) return true;
+    if (value === null || typeof value !== 'object' || isPromise(value)) return false;
+    return ownKeys(value).some((key) => { const descriptor = getOwnPropertyDescriptor(value, key); return Boolean(descriptor && hasOwn(descriptor, 'value') && (typeof descriptor.value === 'function' || portLikeValue(descriptor.value))); });
+  }
+  function portLikeValue(value) {
+    if (value === null || typeof value !== 'object' || isArray(value)) return false;
+    for (const prototype of DATA_PROTOTYPES) if (apply(isPrototypeOf, prototype, [value])) return false;
+    const prototype = getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) return true;
+    return ownKeys(value).some((key) => { const descriptor = getOwnPropertyDescriptor(value, key); return Boolean(descriptor && hasOwn(descriptor, 'value') && typeof descriptor.value === 'function'); });
   }
 
   // ------------------------------------------------------------- the change set (the recorder's own rule)
@@ -699,8 +830,9 @@ function workerThread() {
   }
 
   async function open(message) {
-    const { family, plants = [] } = message;
+    const { family, plants = [], load = null } = message;
     unit.family = family;
+    unit.load = load;
     unit.unordered = new RealSet(family.unordered ?? []);
     installPlatform();
     installLoader(family, plants);
@@ -731,8 +863,8 @@ function workerThread() {
   function openCase() {
     if (kase) throw new Error('a case is open: end it first');
     unit.cases += 1;
-    kase = { ordinal: unit.cases, codec: createCodecContext({ names: unit.names }), bound: new RealMap(), names: new RealMap(), symbols: new RealMap(), steps: [], portCalls: 0, halt: null, outside: [], bindFailures: [], strings: [], jobs: 0, ended: false,
-      timers: new RealMap(), timerNames: new RealMap(), timerCount: 0, deferred: new RealMap(), portStubs: new RealMap(), slots: {} };
+    kase = { ordinal: unit.cases, codec: createCodecContext({ names: unit.names, unwrap: (item) => engineWrapped.get(item), unifyWrapped: true }), bound: new RealMap(), names: new RealMap(), symbols: new RealMap(), steps: [], portCalls: 0, halt: null, outside: [], bindFailures: [], strings: [], jobs: 0, ended: false,
+      nextN: 1, timers: new RealMap(), timerNames: new RealMap(), timerCount: 0, deferred: new RealMap(), immediates: new RealMap(), portStubs: new RealMap(), portFunctions: new RealMap(), group: [], slots: {} };
     return { between: takeBetween() };
   }
   /** Seeds the state the case starts from (engine.mjs `seed`): before its first step, and then takes the entry state. */
@@ -907,13 +1039,18 @@ function workerThread() {
   }
 
   /** A step's record from its message: the input as the engine echoes it, the env, the bind plan, nested inputs. */
-  function makeRecord(message) {
+  function makeRecord(message, reserved = undefined) {
     for (const text of message.strings ?? []) kase.strings.push(text);
     const given = message.input;
     const input = { ...given, args: given.args === undefined ? undefined : expandStrings(given.args, kase.strings), value: given.value === undefined ? undefined : expandStrings(given.value, kase.strings), target: given.target === undefined ? undefined : expandStrings(given.target, kase.strings) };
     const echo = { kind: input.kind, entry: input.entry, now: input.now };
     for (const key of ['id', 'port', 'call', 'outcome']) if (hasOwn(input, key) && input[key] !== undefined) echo[key] = input[key];
-    const record = { n: kase.steps.length + 1, input: echo, given: input, effects: [], env: expandStrings(message.env ?? [], kase.strings), envNext: 0, used: new RealSet(), bind: message.bind ?? [], slots: {}, nested: message.during ?? [], parent: null };
+    // Step numbers follow the recording's order: a step's nested inputs (`during`) come right after it, so their numbers
+    // are kept for them when the step arrives, which may be before it is delivered (a held group, recording 8).
+    const countNested = (step) => (step.during ?? []).reduce((sum, group) => sum + 1 + countNested(group.step), 0);
+    const n = reserved ?? kase.nextN;
+    if (reserved === undefined) kase.nextN += 1 + countNested(message);
+    const record = { n, input: echo, given: input, effects: [], env: expandStrings(message.env ?? [], kase.strings), envNext: 0, used: new RealSet(), bind: message.bind ?? [], slots: {}, nested: message.during ?? [], parent: null, nextNested: n + 1 };
     kase.steps.push(record);
     return record;
   }
@@ -927,13 +1064,67 @@ function workerThread() {
     if (message.step.late && stateful() && kase.slots.end === undefined) kase.slots.end = snap(familyState());
     if (message.step.late) kase.pendingAtEnd ??= pendingTimers();
     const record = makeRecord(message.step);
-    const input = record.given;
-    if (input.kind === 'timer') return deliverTimer(record, input);
-    if (input.kind === 'settle') return deliverSettle(record, input);
-    current = record;
-    if (input.kind === 'callback') deliverCallback(record); else deliverCall(record);
-    if (kase.halt && kase.halt.step === record.n && ['unplaced', 'rebuild'].includes(kase.halt.check)) { current = null; return { halted: kase.halt }; }
+    // Inputs that arrived together (protocol 4, package C0f): a step sent with `hold` waits for the next; the group is
+    // delivered at once, in order, with no job run between its inputs, and then run to quiescence. Each input opens
+    // when it is delivered (a call, a callback, a timer: its synchronous part; a settle: when the first reaction of its
+    // promise runs), and the input opened before it forwards to it: what lands there afterwards is the later input's.
+    kase.group.push(record);
+    if (message.step.hold) return { halted: kase.halt, held: true };
+    const group = kase.group.splice(0);
+    group.forEach((member, index) => { member.groupIndex = index; member.group = group; });
+    // An immediate answer whose call is made in the group, and that did not arrive together with the member before it,
+    // is delivered by its call (callPort), as many generations after the call as recorded.
+    for (const member of group) if (member.given.kind === 'settle' && member.given.immediate !== undefined && !kase.deferred.has(member.given.call)) { member.immediateMember = true; kase.immediates.set(member.given.call, member); }
+    // The first member is delivered now; every later one once the member before it has opened: right after it when it
+    // arrived together with it, else once the engine ran out (scheduleNext, from openMember).
+    deliverMember(group[0]);
     return finishStep(record);
+  }
+  /** Delivers a member of a group (an immediate answer is its call's to deliver). */
+  function deliverMember(member) {
+    const input = member.given;
+    if (kase.halt || member.immediateMember) return;
+    member.delivered = true;
+    if (input.kind === 'settle') { deliverSettle(member, input); return; }
+    // A synchronous input opens before its synchronous part (where the recorder's marker chain starts); one that came
+    // together with it is delivered right after that part.
+    member.syncing = true;
+    openMember(member);
+    if (input.kind === 'timer') deliverTimer(member, input);
+    else if (input.kind === 'callback') deliverCallback(member);
+    else deliverCall(member);
+    member.syncing = false;
+    const next = member.nextNow;
+    member.nextNow = null;
+    if (next?.deliverNow) next.deliverNow(); else if (next) deliverMember(next);
+  }
+  /** Once `member` opened: the next member of its group, at the generation the recording placed it at. */
+  function scheduleNext(member) {
+    const group = member.group;
+    if (!group || member.scheduled) return;
+    member.scheduled = true;
+    member.opened = true;
+    // An immediate answer whose generations came before this member opened is delivered right after it.
+    if (member.thenDeliver) {
+      const waiting = member.thenDeliver;
+      member.thenDeliver = null;
+      const deliver = () => { if (kase.deferred.get(waiting.given.call)) deliverSettle(waiting, waiting.given); };
+      if (member.syncing) member.nextNow = { deliverNow: deliver }; else deliver();
+    }
+    const next = group[member.groupIndex + 1];
+    if (!next || kase.halt) return;
+    // An immediate answer is placed by its call; the member after it waits for it to open.
+    if (next.immediateMember) return;
+    if (next.given.together === true) { if (member.syncing) member.nextNow = next; else deliverMember(next); return; }
+    // Any other input came once the inputs before it had run out.
+    quiesce().then(() => deliverMember(next));
+  }
+  /** A member of a group opens: the member opened before it in the group forwards to it, and it is where effects go. */
+  function openMember(member) {
+    const opened = member.group?.opened ?? null;
+    if (opened && opened !== member && opened.groupIndex < member.groupIndex) opened.forward = member;
+    if (!opened || opened.groupIndex <= member.groupIndex) { if (member.group) member.group.opened = member; current = member; }
+    scheduleNext(member);
   }
   /**
    * Inputs the test made inside a port call of the open step (`during`: a subscriber's or a stub's call back into
@@ -943,10 +1134,12 @@ function workerThread() {
     const outer = current;
     for (const group of outer.nested) {
       if (group.call !== call) continue;
-      const record = makeRecord(group.step);
+      const record = makeRecord(group.step, outer.nextNested);
+      outer.nextNested += 1 + (group.step.during ?? []).reduce(function count(sum, inner) { return sum + 1 + (inner.step.during ?? []).reduce(count, 0); }, 0);
       record.parent = outer;
       current = record;
-      try { deliverCall(record); } finally { current = outer; }
+      // A callback the port invokes inside its own call (a subscription that answers at once, package C0f) is one too.
+      try { if (record.given.kind === 'callback') deliverCallback(record); else deliverCall(record); } finally { current = outer; }
     }
   }
   /**
@@ -994,6 +1187,18 @@ function workerThread() {
       for (const item of injectedFor(input.entry)) {
         const holder = item.key === undefined ? null : args[item.arg];
         const value = item.key === undefined ? args[item.arg] : holder !== null && typeof holder === 'object' ? getOwnPropertyDescriptor(holder, item.key)?.value : undefined;
+        // An object handed in (an SDK) is a port object, as the recorder wraps it: the module gets the port, the
+        // arguments as the test passed them keep the test's object (package C0f).
+        if (!item.onlyFunction && value !== null && typeof value === 'object' && !stubs.has(value)) {
+          const port = portObjectStub(item.name);
+          if (item.key === undefined) { finalArgs[item.arg] = port; continue; }
+          const inner = finalArgs[item.arg];
+          const wrapped = new RealProxy(inner, { get: (object, key, receiver) => (key === item.key ? port : reflectGet(object, key, receiver)) });
+          // The codec writes the wrapper as what it wraps, identity included, as the recorder's codec does (unifyWrapped).
+          engineWrapped.set(wrapped, engineWrapped.get(inner) ?? inner);
+          finalArgs[item.arg] = wrapped;
+          continue;
+        }
         const info = typeof value === 'function' ? stubs.get(value) : undefined;
         if (!info) continue;
         // A per-step port (a store's subscriber) is named by the step that hands it in.
@@ -1035,7 +1240,8 @@ function workerThread() {
       // The promise settles in the step whose input made it settle (a timer firing, an answer settling), as the
       // recorder places it; one an input made inside a port call settles in that input's own step while its outer
       // step is still the open one (the recorder's chain of that input).
-      const target = () => (current && (current === record || current === record.parent) ? record : current);
+      // A nested input's own promise settles in the outer step once the nested call returned (recording 8, C0f).
+      const target = () => (current && current === record ? record : current);
       apply(RealPromise.prototype.then, result, [
         (value) => { activity += 1; const into = target(); if (into) { into.effects.push({ kind: 'settled', step: n, outcome: 'fulfilled', value: snap(value) }); bindSlot(`effects.${into.effects.length - 1}.value`, value, into.bind, into.n); } else noteOutside('settled'); },
         (reason) => { activity += 1; const into = target(); if (into) { into.effects.push({ kind: 'settled', step: n, outcome: 'rejected', value: snap(reason) }); bindSlot(`effects.${into.effects.length - 1}.value`, reason, into.bind, into.n); } else noteOutside('settled'); },
@@ -1043,44 +1249,59 @@ function workerThread() {
     }
   }
   async function finishStep(record) {
-    const quiet = await quiesce();
+    let quiet = await quiesce();
+    // A group is done when every member has been delivered (one comes once the engine ran out, which another wait
+    // for quiescence may see first) and the engine is quiet again; a member whose call never came stays undelivered.
+    const waiting = () => (record.group ?? []).filter((member) => !member.delivered).length;
+    for (let left = waiting(), stalls = 0; quiet && left > 0 && stalls < QUIET_ROUNDS && !kase.halt; ) {
+      quiet = await quiesce();
+      const now = waiting();
+      stalls = now < left ? 0 : stalls + 1;
+      left = now;
+    }
     current = null;
     if (!quiet) kase.halt ??= { step: record.n, check: 'quiescence', detail: `the step was still running after ${MAX_ROUNDS} rounds of the event loop` };
     return { halted: kase.halt };
   }
   /** A timer the case set fires: only one it set and has not cleared (an interval any number of times, a timeout once). */
-  async function deliverTimer(record, input) {
+  function deliverTimer(record, input) {
     const timer = kase.timerNames.get(input.id);
     if (!timer || timer.cleared || (!timer.repeat && timer.fired > 0)) {
       kase.halt = { step: record.n, check: 'fired-unknown-timer', detail: `timer ${input.id} fired, but this case ${!timer ? 'never set it' : timer.cleared ? 'cleared it' : 'already ran it'}` };
-      return { halted: kase.halt };
+      return;
     }
     timer.fired += 1;
-    current = record;
     const beforeState = stateful() ? statePaths() : null;
     try { apply(timer.callback, undefined, timer.args); } catch (error) { if (!(error instanceof ReplayHalt)) kase.outside.push({ what: `uncaught ${describeError(error)} (a timer callback)` }); }
     record.returnedAt = record.effects.length;
     if (beforeState) takeState(record, beforeState);
-    return finishStep(record);
   }
-  /** A port's promise answer settles: the call it answered is named by the engine's own numbering of the case's port calls. */
-  async function deliverSettle(record, input) {
+  /**
+   * A port's promise answer settles: the call it answered is named by the engine's own numbering of the case's port
+   * calls. The input opens when the first reaction of that promise runs (the engine's own, registered before the
+   * module's), which is where the recorder opens it: its continuation's first effects are its own.
+   */
+  function deliverSettle(record, input) {
     const settle = kase.deferred.get(input.call);
     if (!settle || input.port === undefined) {
       kase.halt = { step: record.n, check: 'settled-unknown-call', detail: `port call ${input.call} (${input.port}) settled, but this case made no such call with a promise answer` };
-      return { halted: kase.halt };
+      return;
     }
     kase.deferred.delete(input.call);
-    current = record;
+    record.delivered = true;
     let value;
+    const before = current;
+    current = record;
     try { value = rebuild(input.value); } catch (error) {
       current = null;
       kase.halt = { step: record.n, check: 'rebuild', detail: String(error?.message ?? error) };
-      return { halted: kase.halt };
+      return;
     }
     record.slots.value = snap(value);
+    // The input opens at the first reaction of its promise (openMember), not here: until then, effects are not its own.
+    current = before;
+    settle.opens = record;
     if (input.outcome === 'rejected') settle.reject(value); else settle.resolve(value);
-    return finishStep(record);
   }
 
   // The jobs a case scheduled (setImmediate, queueMicrotask) run before it ends: what they do or throw is the case's.
@@ -1119,6 +1340,7 @@ function workerThread() {
     const put = (value) => { slots.push(value.taken); return slots.length - 1; };
     // The case's value parts in the recorder's order: entry state, the steps, end state (one identity scope).
     const entrySlot = kase.slots.entry !== undefined ? put(kase.slots.entry) : undefined;
+    kase.steps.sort((left, right) => left.n - right.n);
     const shapes = kase.steps.map((record) => {
       const shape = { n: record.n, input: { ...record.input, args: record.slots.args === undefined ? undefined : put(record.slots.args), value: record.slots.value === undefined ? undefined : put(record.slots.value), target: record.slots.target === undefined ? undefined : put(record.slots.target) } };
       shape.effects = record.effects.map((item) => {

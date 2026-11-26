@@ -45,15 +45,34 @@ const FILE_HEADING = /^\S+\.[cm]?[jt]sx?:$/;
 // is the runner's, changes its unit at one second, and can be equal in two
 // plain runs and differ in the third, so it is dropped at that fixed place.
 const RUN_SUMMARY = /^(Ran [0-9]+ tests? across [0-9]+ files?\.) \[[0-9]+(?:\.[0-9]+)?(?:ms|s)\]$/;
-/** Output lines, without colour, without the harness's own notes ([run-root], [client-conformance]) and without the runner's own timing (per test and for the run), group markers and repeated file headings. */
+// A duration a test itself prints from busy work it times with the clock (C0f fix round). Under the recorder the clock
+// is the case's nominal clock, which busy work does not move (docs/TESTING.md: busy work timed with performance.now()
+// reads 0 ms), and plainly it is the real time the work took, so the line differs whenever the work took a millisecond
+// or more: by real time, not by the engine. Each entry is one line of one product test, matched whole, and only the
+// duration in it is written as # in every run; its other numbers (the sample count) are compared, and so is a
+// duration anywhere else.
+export const TIMED_IN_TEST_CODE = Object.freeze([
+  { test: 'packages/ui/src/sync/session-ui-store.send.test.ts', line: /^(Session promotion benchmark: [0-9]+ samples, max )[0-9]+( ms)$/ },
+]);
+/** Output lines, without colour, without the harness's own notes ([run-root], [client-conformance]) and without the runner's own timing (per test and for the run), group markers and repeated file headings; a duration a test prints from timed busy work (TIMED_IN_TEST_CODE) is written as #. */
 export function outputLines(output) {
   const headings = new Set();
   return String(output).replace(/\u001b\[[0-9;]*m/g, '').split('\n')
     .map((line) => line.trimEnd().replace(RESULT_LINE, '$1'))
     .map((line) => line.replace(RUN_SUMMARY, '$1'))
+    .map((line) => TIMED_IN_TEST_CODE.reduce((text, { line: shape }) => text.replace(shape, '$1#$2'), line))
     .filter((line) => line && !/^\[run-root\]/.test(line) && !/^\[client-conformance\]/.test(line) && !RUNNER_MARKER.test(line))
     .filter((line) => { if (!FILE_HEADING.test(line)) return true; if (headings.has(line)) return false; headings.add(line); return true; });
 }
+// The family facade loads a family module's real code as `<file>?conformance-real` (the recorder), so a stack frame
+// in that code names the file with the query (C0f fix round: the bootstrap is a family module). In a line of the
+// recorded run that is a stack frame (`at ...`), exactly that query right before the frame's line and column is
+// removed; the query anywhere else, or in a line that is no frame, is compared, and so are the frame's file, line
+// and column.
+export const FACADE_QUERY = '?conformance-real';
+const FACADE_FRAME = /^(\s*at (?:.*[ (])?[^ (]+)\?conformance-real(:[0-9]+:[0-9]+\)?)$/;
+/** A recorded run's output line with the facade's query taken out of a stack frame's file (FACADE_FRAME). */
+export const withoutFacadeQuery = (line) => line.replace(FACADE_FRAME, '$1$2');
 /** A line's shape: its digit runs as #. */
 export const lineShape = (line) => line.replace(/[0-9]+/g, '#');
 /** The shapes of the lines two plain runs disagree on: what varies without the recorder. */
@@ -107,8 +126,8 @@ export function judgeParity({ run = 1, baseline, recorded, raws, expectedFiles =
   for (const raw of raws) for (const error of raw.errors) incomplete.push({ run, check: 'recorder-error', file: raw.file, detail: `recorder error: ${error}` });
   const varying = learnVarying(baselineOutput, secondBaselineOutput);
   let masked = 0;
-  const kept = (output) => outputLines(output).filter((line) => { if (!varying.has(lineShape(line))) return true; masked += 1; return false; });
-  const printed = multisetDifference(kept(baselineOutput), kept(recordedOutput));
+  const kept = (lines) => lines.filter((line) => { if (!varying.has(lineShape(line))) return true; masked += 1; return false; });
+  const printed = multisetDifference(kept(outputLines(baselineOutput)), kept(outputLines(recordedOutput).map(withoutFacadeQuery)));
   if (printed.length) differences.push({ run, check: 'output', detail: printed.slice(0, 8).map(([line, count]) => `${count > 0 ? 'plain only' : 'recorded only'} x${Math.abs(count)}: ${line}`).join(' | ') });
   return { differences, incomplete, masked, varying: [...varying] };
 }

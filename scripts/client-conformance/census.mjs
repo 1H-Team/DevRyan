@@ -428,7 +428,10 @@ export function runCensus({ portMap, census, containers, moduleExports, readSour
     const read = readContainer(container.text);
     const family = read.header.family;
     const record = usageOf(family);
+    // A data port export the family's module graph took when it loaded (container format 5) is used by every recorded case.
+    const loaded = Object.keys(read.header.load?.portData ?? {});
     for (const kase of read.cases) {
+      for (const name of loaded) { bump(record.ports, name, 'called'); if (kase.outcome === 'recorded') bump(record.ports, name, 'recorded'); }
       record.cases += 1;
       record.outcomes[kase.outcome] = (record.outcomes[kase.outcome] ?? 0) + 1;
       record.steps += kase.steps.length;
@@ -455,7 +458,8 @@ export function runCensus({ portMap, census, containers, moduleExports, readSour
           }
         }
         for (const effect of step.effects ?? []) {
-          if (effect.kind !== 'port' && effect.kind !== 'new') continue;
+          // A read of a port object's member is a use of that port too (package C0f: an API client, an event bus).
+          if (effect.kind !== 'port' && effect.kind !== 'new' && effect.kind !== 'read') continue;
           bump(record.ports, effect.port, 'called');
           if (recorded) bump(record.ports, effect.port, 'recorded');
         }
@@ -505,7 +509,10 @@ export function runCensus({ portMap, census, containers, moduleExports, readSour
     for (const [, portTarget] of portMap.modules) for (const [, port] of portTarget.ports) if (port.families.includes(family.name)) portNames.push(port.name);
     for (const name of portNames.sort()) {
       summary.ports.total += 1;
-      const use = record.ports.get(name);
+      // The port itself, or a port named after it: a method or member of a port object (`<port>.<member>`), what a call
+      // of it answered (`<port>#<call>`), and so on.
+      const use = { recorded: 0 };
+      for (const [used, counts] of record.ports) if (used === name || used.startsWith(`${name}.`) || used.startsWith(`${name}#`)) use.recorded += counts.recorded;
       const waivers = waived('ports', family.name, 'port', name);
       for (const waiver of waivers) usedWaivers.add(waiver);
       if ((use?.recorded ?? 0) > 0) {

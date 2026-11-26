@@ -84,7 +84,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createCodecContext, emitSlots, encodeText, hashText, snapshot } from './codec.mjs';
+import { createCodecContext, emitSlots, encode, encodeText, hashText, snapshot } from './codec.mjs';
 import { pathStem, sliceTree } from './container.mjs';
 import { entryOf, isTestPath, loadPortMap } from './port-map.mjs';
 
@@ -92,11 +92,16 @@ export const EPOCH = 1700000000000;
 export const PERFORMANCE_ORIGIN = 1000;
 /** The nominal time each case of a file is given: case k (0 the module load) opens at EPOCH + k × CASE_SPAN_MS at the earliest. */
 export const CASE_SPAN_MS = 1000;
-export const RAW_VERSION = 5;
+export const RAW_VERSION = 6;
 // The recording's semantics: bumped by hand whenever what a recording says changes (attribution, late effects, flags).
 // 7 (package C0e): a step with a synchronous part (a call, `new`, `get`, a timer firing, a callback) records
 // `returnedAt`, the number of its effects made before that part returned or threw; the rest followed in the jobs it started.
-export const RECORDING_VERSION = 7;
+// 8 (package C0f): platform timers of a case fire in the order of a timer clock of the case; engine reads of the
+// transport and DOM globals are `read` inputs of the port `globalThis`; a function a port answers is a port; a port that
+// wraps its answers is settled with the port object the engine got, on the promise the engine holds; inputs that arrive
+// together are marked so; answers that settle in their call's drain are `immediate`; the platform's own transports flag
+// `real-transport`; a signal the test aborts after handing it in flags `signal-aborted`.
+export const RECORDING_VERSION = 9;
 /** How long the recorder's own hook that writes a file's recording may take. */
 export const WRITE_TIMEOUT_MS = 600000;
 export const LAYERS = Object.freeze(['clock', 'random', 'globals', 'mock-module', 'entries']);
@@ -119,6 +124,9 @@ const RealUint8Array = Uint8Array;
 const { apply, construct, get: reflectGet, set: reflectSet, ownKeys, defineProperty: reflectDefineProperty, getOwnPropertyDescriptor: reflectDescriptor } = Reflect;
 const { defineProperty, getOwnPropertyDescriptor, getPrototypeOf, hasOwn, entries: objectEntries } = Object;
 const ObjectPrototype = Object.prototype;
+const RealAbortSignal = typeof AbortSignal === 'function' ? AbortSignal : null;
+const abortedGetter = RealAbortSignal ? getOwnPropertyDescriptor(RealAbortSignal.prototype, 'aborted')?.get : undefined;
+const abortedOf = (signal) => (abortedGetter ? apply(abortedGetter, signal, []) : undefined);
 const isPrototypeOf = Object.prototype.isPrototypeOf;
 const PromiseThen = Promise.prototype.then;
 const MapGet = Map.prototype.get;
@@ -131,6 +139,7 @@ const WeakMapHas = WeakMap.prototype.has;
 const SetHas = Set.prototype.has;
 const SetAdd = Set.prototype.add;
 const SetForEach = Set.prototype.forEach;
+const SetDelete = Set.prototype.delete;
 const MapForEach = Map.prototype.forEach;
 const ArrayIsArray = Array.isArray;
 const DateGetTime = Date.prototype.getTime;
@@ -149,9 +158,13 @@ const nativeTimers = {
   setTimeout: globalThis.setTimeout, setInterval: globalThis.setInterval, clearTimeout: globalThis.clearTimeout, clearInterval: globalThis.clearInterval,
 };
 const realSetSystemTime = bunTest.setSystemTime;
+// The platform's own transports, as the process started (a test's fake replaces them).
+const NATIVE_TRANSPORT = { fetch: globalThis.fetch, WebSocket: globalThis.WebSocket, EventSource: globalThis.EventSource };
 const realIsFakeTimers = bunTest.jest?.isFakeTimers;
 const isFakeTimers = typeof realIsFakeTimers === 'function' ? () => apply(realIsFakeTimers, bunTest.jest, []) : () => false;
 
+/** The globals whose reads by engine code are inputs (package C0f): the transports and the DOM objects a test may install. */
+const READ_GLOBALS = new RealSet(['fetch', 'WebSocket', 'EventSource', 'localStorage', 'sessionStorage', 'document', 'window', 'navigator']);
 const RECORDER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const TOY_DIR = path.join(RECORDER_DIR, 'toy') + path.sep;
 // Settings come from the environment, or from a per-file object a preload shim set before importing the
@@ -233,6 +246,18 @@ function newCase({ ordinal = null, hooks = null }, previous = null) {
   };
 }
 
+// Microtask drains (never written): `drain` counts the macrotasks the recorder sees begin (package C0f).
+let drain = 0;
+let drainPending = false;
+// step -> the later step it forwards to (never a member of the step: steps are written as they are).
+const forwardOf = new RealWeakMap();
+const drainOf = new RealWeakMap(); // step -> the drain it opened in
+const familyOfStep = new RealWeakMap(); // step -> its family
+const stepFamily = (step) => apply(WeakMapGet, familyOfStep, [step]);
+// A nested input (`during` a port call of the outer step): once its synchronous part has returned, what it started is
+// the outer step's, as a replay that delivers it inside that port call and then runs the outer step on sees it (C0f).
+const outerOf = new RealWeakMap(); // nested step -> the outer step
+const nestEnded = (step) => { const outer = apply(WeakMapGet, outerOf, [step]); if (outer) apply(WeakMapSet, forwardOf, [step, outer]); };
 // The order steps opened in (never written): a release window moves a chain only forward.
 let stepSeq = 0;
 const seqOf = new RealWeakMap(); // step -> its opening number
@@ -279,7 +304,7 @@ function originOf(store) {
 
 function familyRecord(name, owner = current) {
   let record = apply(MapGet, owner.families, [name]);
-  if (!record) { record = { steps: [], timers: 0, portCalls: 0, objects: 0, flags: new RealSet(), live: new RealMap(), pending: [] }; apply(MapSet, owner.families, [name, record]); }
+  if (!record) { record = { steps: [], timers: 0, portCalls: 0, objects: 0, flags: new RealSet(), live: new RealMap(), pending: [], signals: [] }; apply(MapSet, owner.families, [name, record]); }
   return record;
 }
 
@@ -443,9 +468,34 @@ function checkExpired(store, seq) {
   }
 }
 
+/**
+ * AbortSignals the test hands the family (an argument, or a member of one; package C0f): whether one is aborted is
+ * read through a platform getter no port sees, so a signal the test aborts after handing it in changes what the
+ * engine reads with no input of the recording. Each is checked when a later step of the family opens and when its
+ * case closes; one found aborted that was not when handed in flags the case `signal-aborted`.
+ */
+function watchSignals(family, kase, args) {
+  const record = familyRecord(family, kase);
+  const look = (value, depth) => {
+    if (value === null || typeof value !== 'object') return;
+    if (RealAbortSignal && apply(isPrototypeOf, RealAbortSignal.prototype, [value])) { if (abortedOf(value) === false) record.signals.push(value); return; }
+    if (depth === 0 || ArrayIsArray(value) || getPrototypeOf(value) !== ObjectPrototype) return;
+    for (const key of ownKeys(value)) { const descriptor = getOwnPropertyDescriptor(value, key); if (descriptor && hasOwn(descriptor, 'value')) look(descriptor.value, depth - 1); }
+  };
+  for (const arg of args) look(arg, 1);
+}
+function checkSignals(record) {
+  if (!record.signals.length) return;
+  if (record.signals.some((signal) => abortedOf(signal) === true)) record.flags.add('signal-aborted');
+  record.signals = record.signals.filter((signal) => abortedOf(signal) !== true);
+}
+
 /** Opens a step of `family` in case `owner`; `opener` is the store the input arrives in (re-entrance is `during`). */
 function openStep(family, input, opener = storeNow(), owner = current) {
   if (written) { noteUnplaced(input.kind); return null; }
+  // A signal the test handed in and then aborted is an input no step holds (watchSignals); one the engine's own step
+  // aborts is the engine's, so the check runs as the step opens, before its own code.
+  guard('signals', () => checkSignals(familyRecord(family, owner)));
   // A stateful family's entry state, taken before its first step in the case (before the step's own input is read).
   if (isStateful(family) && !hasOwn(owner.entryState, family) && owner.endNow === null) owner.entryState[family] = guard('state', () => ref(familyState(family), owner), null);
   const record = familyRecord(family, owner);
@@ -456,9 +506,30 @@ function openStep(family, input, opener = storeNow(), owner = current) {
   const caller = reentrant(opener) ? opener.caller : null;
   if (caller && caller.kind === 'engine' && caller.case === owner && caller.family === family) {
     step.input.during = caller.step.n;
+    apply(WeakMapSet, outerOf, [step, caller.step]);
     // Which port call of that step it arrived in (its number), so a replay delivers it inside that very call.
     if (opener.effect && opener.effect.call !== undefined) step.input.duringCall = opener.effect.call;
   }
+  // Inputs that arrive together (package C0f). A marker job is queued when each step opens; an input of the same
+  // family and case that arrives before the previous one's marker ran came before any microtask that input started
+  // had run (the test's synchronous calls in a row, answers settling in one turn, frames a fake emits at once). It is
+  // marked `together`, and the previous step forwards to it: whatever lands in that step from then on is this step's,
+  // so the effects of a group are those of its last input, made after every input of the group was delivered, as a
+  // replay that delivers the group at once makes them. Any other input is delivered by a replay once the step before
+  // has run out (an immediate answer, settleStep, excepted), with its effects where its chain puts them.
+  const previous = record.lastOpened;
+  if (previous && previous.marker.ran !== true && step.input.during === undefined && previous.step.input.during === undefined && previous.step.late !== true && step.late !== true) {
+    step.input.together = true;
+    apply(WeakMapSet, forwardOf, [previous.step, step]);
+  }
+  const marker = { ran: false };
+  enqueue(() => { marker.ran = true; });
+  record.lastOpened = { step, marker };
+  // The microtask drain the step opened in: a drain ends at the next macrotask (an immediate the recorder schedules, or
+  // a platform timer's callback), when every job queued before it has run.
+  apply(WeakMapSet, drainOf, [step, drain]);
+  if (!drainPending) { drainPending = true; apply(realSetImmediate, globalThis, [() => { drain += 1; drainPending = false; }]); }
+  apply(WeakMapSet, familyOfStep, [step, family]);
   record.steps.push(step);
   return step;
 }
@@ -466,6 +537,16 @@ function openStep(family, input, opener = storeNow(), owner = current) {
 /** Puts an effect in `step` of case `owner`; one that arrives after the test ended is marked late. */
 function place(step, owner, effect) {
   if (written) { noteUnplaced(effect.kind); return false; }
+  // A step that an input arriving together with it forwards to (or a nested input that returned, to its outer step):
+  // what lands in it is the later step's.
+  for (let next = apply(WeakMapGet, forwardOf, [step]); next; next = apply(WeakMapGet, forwardOf, [step])) step = next;
+  // Interleaved inputs (package C0f): an effect of an earlier step landing after a later step of its family opened in
+  // the same microtask drain (their continuations interleave, as answers that come at once do while the input before
+  // is still running) belongs to that step only by microtask order, which a replay that gives what follows an input
+  // to that input cannot follow: the case is flagged `interleaved`.
+  const record = apply(MapGet, owner.families, [stepFamily(step)]);
+  const latest = record?.lastOpened?.step;
+  if (latest && latest !== step && step.input.during === undefined && apply(WeakMapGet, drainOf, [latest]) === drain && apply(WeakMapGet, outerOf, [latest]) === undefined) record.flags.add('interleaved');
   if (owner.endNow !== null && step.late !== true) effect.late = true;
   step.effects.push(effect);
   return true;
@@ -562,7 +643,19 @@ function sfc32(seed) {
 const TWO_26 = 67108864;
 const TWO_53 = 9007199254740992;
 // A draw comes from the stream of the case whose code draws (an engine chain's own case, even after its test ended).
-const streamNow = () => caseOf(storeNow()).random;
+// A module's own code drawing with no chain and no test store (a module drawing an id while it loads, package C0f)
+// draws from a stream of its own draw site instead: which case is current when a module loads (a dynamic import
+// resolves) is a matter of real time, and the value it draws must not be.
+const siteStreams = new RealMap(); // draw site -> its stream
+function streamNow() {
+  const store = storeNow();
+  if (store !== undefined) return caseOf(store).random;
+  const site = guard('draw', () => drawSite(), null);
+  const file = site === null ? null : site.slice(0, site.lastIndexOf(':'));
+  if (file === null || file === '<unknown>' || file === '<outside>' || isTestPath(file)) return current.random;
+  if (!apply(MapHas, siteStreams, [site])) apply(MapSet, siteStreams, [site, sfc32(createHash('sha256').update(`${TEST_FILE}#site#${site}`).digest())]);
+  return apply(MapGet, siteStreams, [site]);
+}
 const drawFloat = () => { const random = streamNow(); return ((random() >>> 5) * TWO_26 + (random() >>> 6)) / TWO_53; };
 function drawBytes(length) {
   const bytes = new RealUint8Array(length);
@@ -834,6 +927,57 @@ const timerIds = new RealWeakMap(); // object handle -> { id, case, family }
 const primitiveTimerIds = new RealMap(); // number handle (a trap's answer) -> the same, or { ambiguous }
 const timerWrappers = { setTimeout: new RealWeakMap(), setInterval: new RealWeakMap(), clearTimeout: new RealWeakMap(), clearInterval: new RealWeakMap() };
 
+// Timer order (package C0f). Real timers fire in the order of their real due times, and a timer's real set
+// time carries every lateness before it (a timer set from a late callback is set late), so two timers can fire
+// in one order on a quiet machine and in the other under load. The recorder therefore releases the platform
+// timers of one case (the engine's, the test's and port code's alike) in the order of their due times on a timer
+// clock of the case's own: a timer is due its delay after it was set, at least 1 ms (the platform's own floor),
+// and the timer clock moves to a timer's due time when it fires, so a chain of zero-delay timers (a poll) moves it
+// on as it moves real time on, and a longer timer the poll waits for still comes due; ties go by the order the
+// timers were set. (The nominal clock the engine reads is not this one: a zero-delay timer does not move it.)
+// A real firing whose timer still has a timer of its case due earlier (or as early, and set before it) pending is
+// held, and runs, in its own macrotask, once every such timer has fired or been cleared. A timer still fires no
+// earlier than its real due time, so real work the clock cannot see (a module load, I/O) keeps its real head start
+// (the rejected auto-advancing clock, design §2.5). Fake timers (the test's) are not held. What this does not
+// order: work that is no timer (real I/O, a module load, setImmediate jobs) against the timers, and whether a timer
+// fires before its test ends (C0e fix round: one that fires after is no step).
+const realSetImmediate = globalThis.setImmediate;
+let timerSeq = 0;
+const gateEntries = new RealWeakMap(); // object handle -> its gate entry
+const primitiveGateEntries = new RealMap(); // number handle -> its gate entry
+const gateOf = (kase) => (kase.timerGate ??= { pending: new RealSet(), held: [], releasing: false, now: 0 });
+const dueBefore = (left, right) => left.due < right.due || (left.due === right.due && left.seq < right.seq);
+function gateBlocked(gate, entry) {
+  let blocked = false;
+  apply(SetForEach, gate.pending, [(other) => { if (!blocked && other !== entry && !other.done && dueBefore(other, entry)) blocked = true; }]);
+  return blocked;
+}
+/** Runs, one per macrotask, the held firings of `kase` that nothing pending is due before (all of them once its test ended). */
+function scheduleRelease(kase) {
+  const gate = kase.timerGate;
+  if (!gate || gate.releasing || gate.held.length === 0) return;
+  gate.releasing = true;
+  apply(realSetImmediate, globalThis, [() => {
+    gate.releasing = false;
+    gate.held = gate.held.filter((item) => item.entry.done !== true);
+    gate.held.sort((left, right) => (dueBefore(left.entry, right.entry) ? -1 : dueBefore(right.entry, left.entry) ? 1 : left.order - right.order));
+    const held = gate.held.findIndex((item) => kase.endNow !== null || !gateBlocked(gate, item.entry));
+    if (held < 0) return;
+    const [item] = gate.held.splice(held, 1);
+    item.run();
+    scheduleRelease(kase);
+  }]);
+}
+const gateEntryOf = (handle) => (handle !== null && (typeof handle === 'object' || typeof handle === 'function') ? apply(WeakMapGet, gateEntries, [handle]) : apply(MapGet, primitiveGateEntries, [handle]));
+function gateCleared(handle) {
+  const entry = gateEntryOf(handle);
+  if (!entry || entry.done) return;
+  entry.done = true;
+  apply(SetDelete, entry.gate.pending, [entry]);
+  entry.gate.held = entry.gate.held.filter((item) => item.entry !== entry);
+  scheduleRelease(entry.case);
+}
+
 function setTimerWrapper(kind, underlying) {
   const cache = timerWrappers[kind];
   if (apply(WeakMapHas, cache, [underlying])) return apply(WeakMapGet, cache, [underlying]);
@@ -860,8 +1004,32 @@ function setTimerWrapper(kind, underlying) {
     const setAt = timed.clock.now;
     const span = typeof delay === 'number' && delay > 0 ? delay : 0;
     let fires = 0;
-    const fire = typeof callback === 'function' ? function (...args) {
+    // Timer order (package C0f): a platform timer's firing is released in timer-clock order within its case (above).
+    const setStore = als.getStore();
+    const gateSpan = Math.max(1, span);
+    const gateEntry = native && typeof callback === 'function' && !fakeTimersOn() ? { case: timed, gate: gateOf(timed), seq: (timerSeq += 1), due: gateOf(timed).now + gateSpan, repeat, done: false } : null;
+    const settleEntry = () => {
+      if (!gateEntry) return;
+      if (repeat) gateEntry.due += gateSpan;
+      else if (!gateEntry.done) { gateEntry.done = true; apply(SetDelete, gateEntry.gate.pending, [gateEntry]); }
+      scheduleRelease(timed);
+    };
+    const run = typeof callback === 'function' ? function (...args) {
+      if (gateEntry && gateEntry.due > gateEntry.gate.now) gateEntry.gate.now = gateEntry.due;
+      try { return apply(body, this, args); } finally { settleEntry(); }
+    } : callback;
+    const fire = gateEntry ? function (...args) {
+      if (gateEntry.done) return undefined;
+      if (timed.endNow === null && gateBlocked(gateEntry.gate, gateEntry)) {
+        const self = this;
+        gateEntry.gate.held.push({ entry: gateEntry, order: (timerSeq += 1), run: () => (setStore !== undefined ? als.run(setStore, () => apply(run, self, args)) : als.exit(() => apply(run, self, args))) });
+        return undefined;
+      }
+      return apply(run, this, args);
+    } : run;
+    const body = typeof callback === 'function' ? function (...args) {
       fires += 1;
+      drain += 1; // a timer's callback begins a macrotask: every job queued before it has run
       // A timer that fires after its case's test ended is no step and no context of that case: it was recorded as
       // pending at the case's end, and what its callback does now is recorded nowhere (see lateStore).
       if (counted && timed.endNow !== null) return runLate(engine ? store.family : null, owner, () => apply(callback, this, args));
@@ -894,6 +1062,10 @@ function setTimerWrapper(kind, underlying) {
     // An engine timer is pending until it fires (a timeout) or is cleared; those still pending at the case's end are written there.
     if (counted && engine && store.case.endNow === null) guard('timer.set', () => { apply(MapSet, familyRecord(store.family, store.case).live, [id, { id, delay: ref(delay, store.case), repeat, step: store.step ? store.step.n : null }]); });
     const handle = inPort(engine ? store : null, () => apply(underlying, native ? globalThis : this, [fire, delay, ...rest]));
+    if (gateEntry && handle !== undefined && handle !== null) {
+      apply(SetAdd, gateEntry.gate.pending, [gateEntry]);
+      if (typeof handle === 'object' || typeof handle === 'function') apply(WeakMapSet, gateEntries, [handle, gateEntry]); else apply(MapSet, primitiveGateEntries, [handle, gateEntry]);
+    }
     if (counted && handle !== undefined && handle !== null) guard('timer.id', () => {
       const entry = { id, case: owner, family: engine ? store.family : null };
       if (typeof handle === 'object' || typeof handle === 'function') apply(WeakMapSet, timerIds, [handle, entry]);
@@ -913,6 +1085,8 @@ function clearTimerWrapper(kind, underlying) {
   const wrapper = { [kind](handle) {
     const store = storeNow();
     const origin = originOf(store);
+    // A cleared platform timer no longer holds back the timers of its case due after it (timer order, C0f).
+    if (origin !== 'harness' && handle !== undefined && handle !== null) guard('timer.clear', () => gateCleared(handle));
     if (origin !== 'harness' && origin !== 'port' && handle !== undefined && handle !== null) {
       guard('timer.clear', () => {
         const object = typeof handle === 'object' || typeof handle === 'function';
@@ -989,16 +1163,39 @@ function callbackFor(family, name, fn, owner) {
       } catch (error) {
         guard('callback', () => { step.returnedAt = step.effects.length; step.throws = ref(error); });
         stateAfter(family, step, beforeState, kase);
+        nestEnded(step);
         throw error;
       }
       stateAfter(family, step, beforeState, kase);
       guard('callback', () => { step.returnedAt = step.effects.length; step.returns = ref(result); if (isPromise(result)) observeSettle(result, (outcome, value) => settledOutput(chain, step, outcome, value)); });
+      nestEnded(step);
       return result;
     },
   });
   apply(WeakMapSet, callbackWrappers, [fn, wrapper]);
   apply(WeakMapSet, rawOf, [wrapper, fn]);
   return wrapper;
+}
+
+/**
+ * A plain object the engine hands a port that carries its own functions (an SDK call's options with onSseEvent and
+ * onSseError, package C0f): the port reads it through a view whose function members are callbacks (`<port>:<i>.<key>`),
+ * so the port calling one back is an input, as a function handed in whole is. The view has the object's identity.
+ */
+function callbacksIn(store, name, arg) {
+  if (arg === null || typeof arg !== 'object' || ArrayIsArray(arg) || apply(WeakMapHas, rawOf, [arg]) || apply(WeakMapHas, portNames, [arg])) return arg;
+  const prototype = getPrototypeOf(arg);
+  if (prototype !== ObjectPrototype && prototype !== null) return arg;
+  const holds = ownKeys(arg).some((key) => { const descriptor = getOwnPropertyDescriptor(arg, key); return typeof key === 'string' && descriptor && hasOwn(descriptor, 'value') && typeof descriptor.value === 'function'; });
+  if (!holds) return arg;
+  const view = new RealProxy(arg, {
+    get(object, key, receiver) {
+      const value = reflectGet(object, key, receiver);
+      return typeof value === 'function' && typeof key === 'string' && substitutable(object, key) && !apply(WeakMapHas, rawOf, [value]) ? callbackFor(store.family, `${name}.${key}`, value, store) : value;
+    },
+  });
+  apply(WeakMapSet, rawOf, [view, arg]);
+  return view;
 }
 
 /** An output: a promise the engine returned settled. It belongs to the step the returning chain is in when it settles. */
@@ -1009,11 +1206,22 @@ function settledOutput(chain, step, outcome, value) {
 }
 
 /** A port answer settled: a step of the calling chain's family (in the chain's case), and the chain moves to it. */
-function settleStep(chain, name, call, outcome, value) {
+/**
+ * How many microtask generations after its call an answer may settle and still be an immediate answer (package C0f).
+ * The count runs one generation past it, so an answer at the cap is told from one past it: an answer that settles in
+ * its call's drain later than that is flagged `immediate-expired` (C0f fix round), never recorded at the cap.
+ */
+export const IMMEDIATE_GENERATIONS = 64;
+function settleStep(chain, name, call, outcome, value, probe = null) {
   markForeign(value);
   // An answer a late timer settled (its release window is running) is no step: the chain that waits on it is late.
   if (isLate(chain)) return;
-  const step = openStep(chain.family, { kind: 'settle', port: name, call, outcome, value: ref(value, chain.case) }, null, chain.case);
+  // In the drain of its call, within the count: an immediate answer, with the generation its port's promise settled at.
+  const immediate = probe && probe.drain === drain && probe.raw !== null ? probe.raw : null;
+  // In that drain but past the count (C0f fix round): at which generation is not known, and delivered once the step
+  // before has run out it could come after work it preceded. Refused, never written as an answer at the cap.
+  if (probe && probe.expired) guard('port', () => familyRecord(chain.family, chain.case).flags.add('immediate-expired'));
+  const step = openStep(chain.family, { kind: 'settle', port: name, call, outcome, value: ref(value, chain.case), ...(immediate !== null ? { immediate } : {}) }, null, chain.case);
   if (step) chain.step = step;
 }
 
@@ -1026,7 +1234,7 @@ const portFunctions = new RealWeakMap(); // target -> Map(name -> wrapper)
  * an export of a module the test mocked (the mock-module layer), whose calls
  * with no engine chain record nothing (see there).
  */
-function portFunction(name, target, { thisArg, wrapAnswers = false, families = null, mocked = false, plainAnswers = false } = {}) {
+function portFunction(name, target, { thisArg, wrapAnswers = false, families = null, mocked = false, plainAnswers = false, realTransport = false } = {}) {
   let byName = apply(WeakMapGet, portFunctions, [target]);
   if (!byName) { byName = new RealMap(); apply(WeakMapSet, portFunctions, [target, byName]); }
   const cacheKey = thisArg === undefined ? name : null;
@@ -1044,10 +1252,13 @@ function portFunction(name, target, { thisArg, wrapAnswers = false, families = n
     // mounted test is every render's props and store state. Engine code found running there still flags its case.
     if (!engine && mocked) { checkOutside(); return invoke(args); }
     if (!engine && families) flagOutside(families, name);
+    // The platform's own WebSocket, EventSource or fetch (no test fake): what it answers comes from the network stack at
+    // real times (a refused connection's error and close, a response), which no rule of the recorder orders (C0f).
+    if (engine && realTransport) guard('port', () => familyRecord(store.family, store.case).flags.add('real-transport'));
     // Engine calls are numbered 1, 2, ... per family; the test's own t1, t2, ... so they never shift the engine's.
     const effect = guard('port', () => ({ kind: isNew ? 'new' : 'port', port: name, call: engine ? (familyRecord(store.family, store.case).portCalls += 1) : `t${(caseOf(store).testCalls += 1)}`, args: ref(listOf(args)) }), null);
     if (effect) guard('port', () => record(effect, store));
-    const finalArgs = engine ? args.map((arg, index) => (typeof arg === 'function' ? callbackFor(store.family, `${name}:${index}`, arg, store) : arg)) : args;
+    const finalArgs = engine ? args.map((arg, index) => (typeof arg === 'function' ? callbackFor(store.family, `${name}:${index}`, arg, store) : callbacksIn(store, `${name}:${index}`, arg))) : args;
     let result;
     try {
       result = inPort(engine ? store : null, () => invoke(finalArgs), effect);
@@ -1058,14 +1269,43 @@ function portFunction(name, target, { thisArg, wrapAnswers = false, families = n
     if (!effect) return result;
     // The test's own call: its answer is context. One with behaviour (a storage) is written as the port it would be
     // to the engine (its name), not walked as data; the test still gets the value itself.
-    if (!engine) { guard('port', () => { effect.answer = ref(!isPromise(result) && portLike(result) ? portObject(`${name}#${effect.call}`, result) : result); }); return result; }
+    // What the test's own call answered is not kept (package C0f): it is context, never replayed or compared, and an
+    // API client's answer to the test can hold where the test runs (its isolated home), which differs every run.
+    if (!engine) return result;
     guard('port', () => markForeign(result));
     const family = store.family;
     if (isPromise(result)) {
       guard('port', () => { effect.answer = ref(result); });
-      guard('port', () => observeSettle(result, (outcome, value) => settleStep(store, name, effect.call, outcome, value)));
-      if (wrapAnswers) return apply(PromiseThen, result, [(value) => (answerLike(value) ? portObject(`${name}#${effect.call}`, value, { wrapAnswers }) : value)]);
-      return result;
+      // A port that wraps its answers hands the engine the port object, not the value: the settle input is that port
+      // object (package C0f), whose reads and calls are then effects, never data the engine was not given. The step
+      // opens when the promise the engine holds settles (the wrapped one, a microtask after the port's own), so the
+      // engine's continuation is the next job after it, as for any other port: opened on the port's own promise, two
+      // answers settling in one turn would open both steps before the first continuation ran, and misplace it.
+      // Immediate answers (package C0f): the microtask generation, counted from the call by a chain of no-op marker
+      // jobs, at which the port's own promise settled (as its first reaction sees it: 0 for a promise that had settled
+      // when the call returned, as a fake's async function's has). An answer that settles in the drain it was asked in
+      // is then given by a replay at that generation, through the same promises (the port's own, then the wrapped one).
+      // The marker chain runs one generation past the cap, so a port promise its first reaction sees settled at the cap
+      // is told from one that settled later in the same drain (`expired`, C0f fix round); one settled in a later drain is neither.
+      const probe = { generations: 0, raw: null, expired: false, drain };
+      const sawRaw = () => {
+        if (probe.raw !== null || probe.expired || probe.drain !== drain) return;
+        if (probe.generations <= IMMEDIATE_GENERATIONS) probe.raw = probe.generations; else probe.expired = true;
+      };
+      apply(PromiseThen, result, [sawRaw, sawRaw]);
+      const held = wrapAnswers ? apply(PromiseThen, result, [(value) => (answerLike(value) ? portObject(`${name}#${effect.call}`, value, { wrapAnswers }) : value)]) : result;
+      const tick = () => { if (probe.raw !== null || probe.expired) return; probe.generations += 1; if (probe.generations <= IMMEDIATE_GENERATIONS) enqueue(tick); };
+      enqueue(tick);
+      guard('port', () => observeSettle(held, (outcome, value) => settleStep(store, name, effect.call, outcome, value, probe)));
+      return held;
+    }
+    // A function a port answers (an unsubscribe, an unregister) is a port of its own, `<port>#<call>`: calling it is an
+    // effect with an answer, never port code run as if it were the engine's (package C0f). Engine code handed back (a
+    // recorder wrapper) stays what it is.
+    if (!plainAnswers && typeof result === 'function' && !apply(WeakMapHas, rawOf, [result]) && !apply(WeakMapHas, portNames, [result])) {
+      const answered = portFunction(`${name}#${effect.call}`, result, { families, wrapAnswers, mocked });
+      guard('port', () => { effect.answer = ref(answered); });
+      return answered;
     }
     // An answer the engine gets as a port object is recorded as that port (its name): the engine never sees its
     // contents as data, it reads and calls them through the port, and those reads and calls are effects (package C0e).
@@ -1203,6 +1443,7 @@ function callEntry(family, spec, label, target, thisArg, args, newTarget, crossi
   const input = { kind: spec.input ?? (newTarget !== undefined ? 'new' : 'call'), entry: label, args: ref(listOf(args), kase) };
   if (portEffect) input.caller = store.family;
   const step = guard('entry', () => openStep(family, input, portEffect ? null : store, kase), null);
+  if (step) guard('entry', () => watchSignals(family, kase, args));
   if (!step) return invoke(args);
   const draft = spec.draft;
   const before = draft !== undefined ? guard('entry', () => identityPaths(args[draft]), null) : null;
@@ -1219,6 +1460,7 @@ function callEntry(family, spec, label, target, thisArg, args, newTarget, crossi
     step.after = ref(listOf(args), kase);
     if (before) step.changes = ref(changedPaths(before, args[draft]), kase);
     stateAfter(family, step, beforeState, kase);
+    nestEnded(step);
   });
   let result;
   try {
@@ -1372,6 +1614,7 @@ function opaqueTestFunction(spec, args) {
   return false;
 }
 
+const injectedHolders = new RealWeakSet(); // an argument wrapper injectPorts made around a port at one of its keys
 function injectPorts(family, spec, args) {
   const injected = spec.injected;
   if (!injected?.length) return args;
@@ -1386,7 +1629,10 @@ function injectPorts(family, spec, args) {
     if (inner === null || (typeof inner !== 'object' && typeof inner !== 'function')) continue;
     const wrappedInner = typeof inner === 'function' ? portFunction(item.name, inner, options) : portObject(item.name, inner, options);
     const proxy = new RealProxy(arg, { get: (object, key) => (key === item.key && substitutable(object, key) ? wrappedInner : reflectGet(object, key)) });
-    apply(WeakMapSet, rawOf, [proxy, arg]);
+    // Two ports injected at keys of one argument wrap it twice: the outer wrapper is the test's object too, identity
+    // included (C0f fix round), as the replay engine's codec writes it, never a copy of the inner wrapper.
+    apply(WeakMapSet, rawOf, [proxy, apply(WeakSetHas, injectedHolders, [arg]) ? apply(WeakMapGet, rawOf, [arg]) : arg]);
+    apply(WeakSetAdd, injectedHolders, [proxy]);
     out[item.arg] = proxy;
   }
   return out;
@@ -1868,6 +2114,7 @@ if (DISCOVER && PORT_MAP_FILE && OUT) {
 }
 
 const loadedFamilies = new RealMap(); // family -> real module namespace
+const portData = new RealMap(); // a data port export's name -> { families that list it, its codec tree as the module exported it }
 const loadedModules = new RealMap(); // mapped module file -> real module namespace (its exports are reported for the census)
 const scannedModules = new RealMap(); // mapped module file -> the export names its source declares (Bun's scan, at load)
 if (portMap) {
@@ -1908,7 +2155,12 @@ if (portMap) {
         return wrapEntry(entry.family, spec, exportName, value, crossing);
       }
       if (port && typeof value === 'function') return portFunction(port.name, value, { families: crossing.families, wrapAnswers: crossing.wrapAnswers });
-      if (port && portLike(value)) return portObject(port.name, value, { families: crossing.families, wrapAnswers: crossing.wrapAnswers });
+      // A namespace of methods (syncDebug: { pipeline: { flush } }) has behaviour one level down: a port object too (C0f).
+      if (port && (portLike(value) || answerLike(value))) return portObject(port.name, value, { families: crossing.families, wrapAnswers: crossing.wrapAnswers });
+      // A port export that is data (a client id the module drew when it loaded) is an input of every case: its value
+      // as the module exported it is written with the recording (`portData`), so a replay's module gets that very value
+      // (package C0f). The module's own load is no step, so nothing else of it is recorded.
+      if (port) guard('port.data', () => { if (!apply(MapHas, portData, [port.name])) apply(MapSet, portData, [port.name, { families: [...port.families].sort(), value: encode(value) }]); });
       return value;
     },
   };
@@ -1946,6 +2198,7 @@ if (layers.has('mock-module')) {
   const mockName = (specifier) => {
     try { return `module:${relative(realpathSync(Bun.resolveSync(specifier, path.dirname(Bun.main))))}`; } catch { return `mock:${specifier}`; }
   };
+  const specifierOf = new RealMap(); // a mocked module's port name -> the specifier the test mocked it by
   const wrapExports = (name, exports) => {
     if (exports === null || typeof exports !== 'object') return exports;
     return guard('mock.module', () => {
@@ -1957,6 +2210,12 @@ if (layers.has('mock-module')) {
           const value = descriptor.value;
           if (typeof value === 'function') descriptor.value = portFunction(`${name}#${key}`, value, { mocked: true });
           else if (portLike(value)) descriptor.value = portObject(`${name}#${key}`, value, { mocked: true });
+          // A data export of a mocked port module is the mock's (package C0f): the module that imports it after the mock
+          // gets that value, so it is the recording's `portData` for the port (the last mock wins, as for mock.module).
+          else guard('port.data', () => {
+            const port = portMap?.modules.get(realpathSync(Bun.resolveSync(String(specifierOf.get(name) ?? ''), path.dirname(Bun.main))))?.ports.get(key);
+            if (port) apply(MapSet, portData, [port.name, { families: [...port.families].sort(), value: encode(value) }]);
+          });
         }
         defineProperty(out, key, descriptor);
       }
@@ -1966,6 +2225,7 @@ if (layers.has('mock-module')) {
   const wrappedModule = { module(specifier, factory) {
     if (typeof factory !== 'function') return apply(realModule, this, [specifier, factory]);
     const name = guard('mock.module', () => mockName(specifier), `mock:${String(specifier)}`);
+    apply(MapSet, specifierOf, [name, specifier]);
     const wrappedFactory = function (...args) {
       const exports = apply(factory, this, args);
       if (isPromise(exports)) return apply(PromiseThen, exports, [(resolved) => wrapExports(name, resolved)]);
@@ -1998,9 +2258,13 @@ function installProperty(holder, key, wrap, { label = key } = {}) {
     raw = apply(WeakMapHas, rawOf, [value]) ? apply(WeakMapGet, rawOf, [value]) : value;
     wrapped = raw === undefined || raw === null ? raw : guard(`property ${label}`, () => wrap(raw), raw);
   };
+  const readsAreInputs = holder === globalThis && apply(SetHas, READ_GLOBALS, [key]);
   const accessor = {
     configurable: true, enumerable,
-    get() { return wrapped; },
+    get() {
+      if (readsAreInputs) guard('global.read', () => noteGlobalRead(label, wrapped));
+      return wrapped;
+    },
     set(value) {
       assign(value);
       guard('global.set', () => current.context.push({ kind: 'global.set', name: label, origin: 'test' }));
@@ -2031,6 +2295,16 @@ function installProperty(holder, key, wrap, { label = key } = {}) {
   apply(MapSet, byKey, [key, { armed, disarm, rearm, foreign, label }]);
 }
 const installGlobal = (name, wrap) => installProperty(globalThis, name, wrap);
+/**
+ * Engine code reading a transport or DOM global itself (`typeof document`, `new WebSocket`, `window.x`) reads an input:
+ * whether the global is there, and what it is (package C0f). It is a `read` of the port `globalThis`, whose answer is
+ * the port the engine then holds (or undefined); the test decides it, by installing a fake or not.
+ */
+function noteGlobalRead(name, value) {
+  const store = storeNow();
+  if (originOf(store) !== 'engine' || isLate(store)) return;
+  record({ kind: 'read', port: 'globalThis', key: ref(name), value: ref(value) }, store);
+}
 const rearmGlobals = () => { apply(MapForEach, controls, [(byKey) => apply(MapForEach, byKey, [(control) => { guard('global.rearm', () => control.rearm()); }])]); };
 /** Flags `kase` for every controlled global whose definition is the test's own (`keys` limits the check to one holder's keys). */
 function checkGlobals(kase, holder = null, keys = null) {
@@ -2158,8 +2432,8 @@ if (layers.has('random')) {
 }
 if (layers.has('globals')) {
   const answers = (name) => Boolean(portMap?.globals?.[name]?.wrapAnswers);
-  installGlobal('fetch', (value) => (typeof value === 'function' ? portFunction('fetch', value, { wrapAnswers: answers('fetch') }) : value));
-  for (const name of ['WebSocket', 'EventSource']) installGlobal(name, (value) => (typeof value === 'function' ? portFunction(name, value) : value));
+  installGlobal('fetch', (value) => (typeof value === 'function' ? portFunction('fetch', value, { wrapAnswers: answers('fetch'), realTransport: value === NATIVE_TRANSPORT.fetch }) : value));
+  for (const name of ['WebSocket', 'EventSource']) installGlobal(name, (value) => (typeof value === 'function' ? portFunction(name, value, { realTransport: value === NATIVE_TRANSPORT[name] }) : value));
   for (const name of ['setTimeout', 'setInterval']) installGlobal(name, (value) => (typeof value === 'function' ? setTimerWrapper(name, value) : value));
   for (const name of ['clearTimeout', 'clearInterval']) installGlobal(name, (value) => (typeof value === 'function' ? clearTimerWrapper(name, value) : value));
   for (const name of ['localStorage', 'sessionStorage', 'document', 'window', 'navigator']) installGlobal(name, (value) => (typeof value === 'object' ? portObject(name, value) : value));
@@ -2310,6 +2584,22 @@ function holdsNode(tree, tags) {
   if (typeof tree.$dr === 'string' && tags.includes(tree.$dr)) return true;
   return ownKeys(tree).some((key) => holdsNode(tree[key], tags));
 }
+// The test isolation guard's private root of this run, as given and as its real path (as the isolation check writes it).
+const ISOLATION_ROOTS = (() => {
+  const root = process.env.DEVRYAN_TEST_ISOLATION_ROOT;
+  if (!root) return [];
+  let real = root;
+  try { real = realpathSync(root); } catch { /* the given path */ }
+  return [...new RealSet([real, root])].sort((left, right) => right.length - left.length);
+})();
+function withoutIsolationRoot(tree) {
+  if (typeof tree === 'string') { let text = tree; for (const root of ISOLATION_ROOTS) text = text.split(root).join('<isolation-root>'); return text; }
+  if (tree === null || typeof tree !== 'object') return tree;
+  if (ArrayIsArray(tree)) return tree.map(withoutIsolationRoot);
+  const out = {};
+  for (const key of ownKeys(tree)) defineProperty(out, key, { value: withoutIsolationRoot(tree[key]), writable: true, enumerable: true, configurable: true });
+  return out;
+}
 function finalizeFamily(entry, steps, end, context, flags = null, pendingTimers = []) {
   const parts = { entryState: entry ?? null, steps, endState: end ?? null, context, ...(pendingTimers.length ? { pending: pendingTimers } : {}) };
   const pending = [];
@@ -2327,9 +2617,15 @@ function finalizeFamily(entry, steps, end, context, flags = null, pendingTimers 
     if (trees.slice(0, entryCount.length).some((tree) => holdsNode(tree, ['promise']))) flags.add('state-promise');
   }
   const slots = new RealMap();
+  // The test's own context (never replayed or compared) is written with the run's isolated root as `<isolation-root>`
+  // (package C0f): a test hands its own calls paths under its private HOME, which is another directory every run.
+  const contextItems = [];
+  collectPending({ context }, contextItems);
+  const contextSet = new RealSet(contextItems);
   pending.forEach((item, index) => {
+    const tree = ISOLATION_ROOTS.length && apply(SetHas, contextSet, [item]) ? withoutIsolationRoot(trees[index]) : trees[index];
     // Large subtrees and strings are stored once, as slices (container.mjs).
-    const text = sliceTree(trees[index], (sliceHash, sliceText) => { if (!apply(MapHas, values, [sliceHash])) apply(MapSet, values, [sliceHash, sliceText]); });
+    const text = sliceTree(tree, (sliceHash, sliceText) => { if (!apply(MapHas, values, [sliceHash])) apply(MapSet, values, [sliceHash, sliceText]); });
     const hash = hashText(text);
     if (!apply(MapHas, values, [hash])) apply(MapSet, values, [hash, text]);
     apply(MapSet, slots, [item, `=${hash}`]);
@@ -2348,8 +2644,11 @@ function closeCase() {
     apply(MapForEach, entry.live, [(timer) => { pending.push({ timer: timer.id, delay: timer.delay, repeat: timer.repeat, step: timer.step }); }]);
     entry.pending = pending;
   }]);
+  apply(MapForEach, current.families, [(entry) => { guard('signals', () => checkSignals(entry)); }]);
   // A case stays open to effects that arrive after its test ended (marked late); it is written with the file.
   closed.push(current);
+  // Timers of the case held back by the timer order now fire as they come (each one late: no step).
+  guard('timer.release', () => scheduleRelease(current));
 }
 
 /** The written form of a closed case: every family's line and its flags. */
@@ -2416,6 +2715,9 @@ afterEach(() => {
 function moduleExports() {
   const out = {};
   apply(MapForEach, loadedModules, [(namespace, file) => {
+    // Only a family's own module: a port module's exports are not judged, and a test may mock it (package C0f: the API
+    // client is a port of the pipeline, and component tests mock it, so two files would see two namespaces).
+    if (!(portMap?.modules.get(file)?.families.length > 0)) return;
     const kinds = {};
     for (const name of ownKeys(namespace).filter((key) => typeof key === 'string').sort()) {
       kinds[name] = guard('exports', () => {
@@ -2431,7 +2733,7 @@ function moduleExports() {
 
 const scannedExports = () => {
   const out = {};
-  apply(MapForEach, scannedModules, [(names, file) => { if (apply(MapHas, loadedModules, [file])) out[relative(file)] = names; }]);
+  apply(MapForEach, scannedModules, [(names, file) => { if (apply(MapHas, loadedModules, [file]) && portMap?.modules.get(file)?.families.length > 0) out[relative(file)] = names; }]);
   return out;
 };
 /** A table of tables with its keys sorted at both levels (the raw's bytes do not depend on call order). */
@@ -2468,7 +2770,7 @@ afterAll(() => {
     exports: guard('exports', () => moduleExports(), {}), scanned: guard('exports', () => scannedExports(), {}),
     actions: guard('exports', () => { const out = {}; apply(MapForEach, storeActions, [(actions, file) => { out[relative(file)] = actions; }]); return out; }, {}),
     passed, unmapped: sortedTable(unmapped), callers: sortedTable(callers), portCallers: sortedTable(portCallers), noFrame: sortedTable(noFrame),
-    cases: kept.map((entry) => entry.out), values: Object.fromEntries(values), errors, unplaced,
+    cases: kept.map((entry) => entry.out), values: Object.fromEntries(values), errors, unplaced, portData: Object.fromEntries(portData),
   };
   mkdirSync(OUT, { recursive: true });
   // Never overwrite: two test files must never share a recording.
