@@ -58,6 +58,11 @@
 const sh = (script) => ({ file: 'sh', args: ['-c', script] });
 
 /** This platform's value of `{ darwin, linux }`. */
+// What the shell runs when a file has no interpreter line (Linux). It prints
+// whether `$0` is absolute and its last segment, never the whole path: each
+// arm has its own scratch folder, and the output is compared as bytes.
+const PLAIN_SCRIPT = 'case "$0" in /*) printf "absolute|";; *) printf "relative|";; esac\nprintf "%s|" "${0##*/}" "$@"\n';
+
 export const onPlatform = (values) => {
   if (!Object.hasOwn(values, process.platform)) throw new Error(`no value for ${process.platform} in ${JSON.stringify(values)}`);
   return values[process.platform];
@@ -140,9 +145,9 @@ export const CASES = Object.freeze([
   // libuv on macOS spawns with posix_spawn, which runs no shell; on Linux it
   // forks and calls glibc's execvp, which runs the file with /bin/sh: $0 is
   // the path tried, the arguments follow.
-  { name: 'an executable without an interpreter line: ENOEXEC is thrown (macOS), /bin/sh runs it (Linux)', file: './plain', args: ['a b', 'c'], files: [{ name: 'plain', text: 'printf "%s|" "$0" "$@"\n', mode: 0o755 }], stdout: 'data', stderr: 'data', input: 'none' },
+  { name: 'an executable without an interpreter line: ENOEXEC is thrown (macOS), /bin/sh runs it (Linux)', file: './plain', args: ['a b', 'c'], files: [{ name: 'plain', text: PLAIN_SCRIPT, mode: 0o755 }], stdout: 'data', stderr: 'data', input: 'none' },
   { name: 'the same found on PATH: ENOEXEC is thrown (macOS), /bin/sh runs the entry\'s path (Linux)', file: 'devryan-o2e-plain', args: ['x'], env: [['PATH', '/nonexistent-devryan-o2e:<dir>/bin']], dirs: [{ name: 'bin' }],
-    files: [{ name: 'bin/devryan-o2e-plain', text: 'printf "%s|" "$0" "$@"\n', mode: 0o755 }], stdout: 'data', stderr: 'data', input: 'none' },
+    files: [{ name: 'bin/devryan-o2e-plain', text: PLAIN_SCRIPT, mode: 0o755 }], stdout: 'data', stderr: 'data', input: 'none' },
   { name: 'a directory as the program: EACCES', file: './', args: [], stdout: 'data', stderr: 'data', input: 'none' },
   { name: 'at the descriptor limit: EMFILE on a tick, no stdio at all, close(-24) (the Git runner then throws, F2)', ...sh('exit 0'), free: 1, stdout: 'data', stderr: 'data', input: 'none' },
   { name: 'at the descriptor limit, the second socket pair fails: EMFILE, and the first pair is not set up either', ...sh('exit 0'), free: 3, stdout: 'data', stderr: 'data', input: 'none' },
