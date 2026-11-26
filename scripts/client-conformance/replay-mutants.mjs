@@ -223,6 +223,14 @@ export const REPLAYER_PLANTS = Object.freeze([
   { name: 'c0f-fix-engine-immediate-one-tick-early', origin: 'C0f fix', file: ET, anchor: 'if (ticks < immediate.given.immediate) realQueueMicrotask(tick); else give();', replacement: 'if (ticks < immediate.given.immediate - 1) realQueueMicrotask(tick); else give();', fails: 'closure', check: 'effects/value' },
   { name: 'c0f-fix-engine-wrappers-not-unified', origin: 'C0f fix', file: ET, anchor: 'codec: createCodecContext({ names: unit.names, unwrap: (item) => engineWrapped.get(item), unifyWrapped: true })', replacement: 'codec: createCodecContext({ names: unit.names })', fails: 'closure', check: 'result/value' },
   { name: 'c0f-fix-compare-new-not-paired', origin: 'C0f fix', file: RC, anchor: "const paired = key === 'call' && (e.kind === 'port' || e.kind === 'new') ?", replacement: "const paired = key === 'call' && (e.kind === 'port') ?", fails: 'compare', check: 'compare-new-calls' },
+  // Package C0i: the cases of a family an engine refused as not ported pass the closure.
+  { name: 'c0i-not-ported-passes-the-closure', origin: 'C0i', file: RP, anchor: '      if (entry.outcome === \'not-ported\') { if (!allowNotPorted) inconclusive.push(', replacement: '      if (entry.outcome === \'not-ported\') { if (false) inconclusive.push(', fails: 'judge' },
+  // Package C0i fix round 1 (the C0i review's B1): not ported in some modes or units only.
+  { name: 'c0i-fix-not-ported-some-mode', origin: 'C0i fix', file: RP, anchor: "if (ran.length === modes.length && ran.every((entry) => entry.outcome === 'not-ported') && !partlyRefused) return 'not-ported';\n  if (ran.some((entry) => entry.outcome === 'not-ported') || partlyRefused) return 'inconclusive';", replacement: "if (ran.some((entry) => entry.outcome === 'not-ported')) return 'not-ported';", fails: 'judge' },
+  { name: 'c0i-fix-not-ported-partly-family-ignored', origin: 'C0i fix', file: RP, anchor: "  if (ran.some((entry) => entry.outcome === 'not-ported') || partlyRefused) return 'inconclusive';", replacement: "  if (ran.some((entry) => entry.outcome === 'not-ported')) return 'inconclusive';", fails: 'judge' },
+  { name: 'c0i-fix-not-ported-partly-no-problem', origin: 'C0i fix', file: RP, anchor: '    if (refused.length < of.length) {', replacement: '    if (false) {', fails: 'judge' },
+  { name: 'c0i-fix-not-ported-listed-no-problem', origin: 'C0i fix', file: RP, anchor: "    if (engineInfo?.families?.includes(family)) problems.push(", replacement: "    if (false) problems.push(", fails: 'judge' },
+  { name: 'c0i-fix-not-ported-one-mode-judged', origin: 'C0i fix', file: RP, anchor: " else if (kase.outcome !== 'not-ported') inconclusive.push(", replacement: " else if (false) inconclusive.push(", fails: 'judge' },
 ]);
 /** The replayer plants the per-push self-test runs: those its cheap parts (compare, judge) catch, and one each of the closure and the engines. */
 export const REPLAYER_PLANT_SAMPLE = Object.freeze([
@@ -388,7 +396,7 @@ export function compareChecks(compare, codec) {
 }
 
 /** The judgement on fixed results: each `[name, problem or null]`. `replay` is replay.mjs, `EXIT` record.mjs's. */
-export function judgeChecks({ judgeReplay }, EXIT) {
+export function judgeChecks({ judgeReplay, caseOutcome, notPortedProblems }, EXIT) {
   const entry = (outcome, differences = []) => ({ outcome, differences, stepsCompared: outcome === 'reproduced' ? 1 : 0, steps: 1, detail: outcome === 'inconclusive' ? 'the engine did not answer' : null });
   const difference = { check: 'result', kind: 'value', step: 1, path: '/steps/0/returns', expected: '1', actual: '2' };
   const kase = (id, family, outcome, modes) => ({ container: 'c.ndjson', family, id, outcome, modes, reason: null, later: null });
@@ -415,6 +423,23 @@ export function judgeChecks({ judgeReplay }, EXIT) {
   expect('judge-fixture-caught', judgeReplay(result([reproduced, kase('x', 'f', 'different', { file: entry('reproduced'), isolated: entry('different', [difference]) })]), { expected: fixture }), EXIT.pass);
   expect('judge-fixture-reproduced', judgeReplay(result([reproduced, kase('x', 'f', 'reproduced', both('reproduced'))]), { expected: fixture }), EXIT.fail, /fixture x \(isolated\) must differ/);
   expect('judge-fixture-not-replayed', judgeReplay(result([reproduced]), { expected: fixture }), EXIT.inconclusive, /was not replayed/);
+  // A family the engine refused as not ported (package C0i): inconclusive for the closure, left to a candidate run's judgement.
+  const notPorted = { outcome: 'not-ported', differences: [], stepsCompared: 0, steps: 1, detail: 'the engine does not implement g' };
+  expect('judge-not-ported-inconclusive', judgeReplay(result([reproduced, kase('n', 'g', 'not-ported', { file: notPorted, isolated: notPorted })])), EXIT.inconclusive, /^n \(file\): not ported: the engine does not implement g/);
+  expect('judge-not-ported-allowed', judgeReplay(result([reproduced, kase('n', 'g', 'not-ported', { file: notPorted, isolated: notPorted })]), { allowNotPorted: true }), EXIT.pass);
+  // Not ported is all or nothing (the C0i review's B1): refused in one mode and run in the other is no partial run.
+  expect('judge-not-ported-one-mode', judgeReplay(result([reproduced, kase('n', 'g', 'reproduced', { file: notPorted, isolated: entry('reproduced') })]), { allowNotPorted: true }), EXIT.inconclusive, /^n \(file\): not ported in this mode only/);
+  const verdict = { judge: true, outcome: 'recorded' };
+  const outcomeCheck = (name, ran, partly, wanted) => { const got = caseOutcome(verdict, ran, ['file', 'isolated'], partly); checks.push([name, got === wanted ? null : `outcome ${got}, expected ${wanted}`]); };
+  outcomeCheck('outcome-not-ported-one-mode', [notPorted, entry('reproduced')], false, 'inconclusive');
+  outcomeCheck('outcome-not-ported-other-mode', [entry('reproduced'), notPorted], false, 'inconclusive');
+  outcomeCheck('outcome-not-ported-family-partly', [notPorted, notPorted], true, 'inconclusive');
+  outcomeCheck('outcome-not-ported-every-mode', [notPorted, notPorted], false, 'not-ported');
+  outcomeCheck('outcome-reproduced-family-partly', [entry('reproduced'), entry('reproduced')], true, 'inconclusive');
+  const problemCheck = (name, opens, info, wanted) => { const got = notPortedProblems(opens, info).problems.map((problem) => problem.check); checks.push([name, JSON.stringify(got) === JSON.stringify(wanted) ? null : `problems ${JSON.stringify(got)}, expected ${JSON.stringify(wanted)}`]); };
+  problemCheck('not-ported-partly-problem', [{ family: 'g', mode: 'file', refused: true }, { family: 'g', mode: 'isolated', refused: false }], null, ['not-ported-partly']);
+  problemCheck('not-ported-everywhere-no-problem', [{ family: 'g', mode: 'file', refused: true }, { family: 'g', mode: 'isolated', refused: true }, { family: 'f', mode: 'file', refused: false }], { families: ['f'] }, []);
+  problemCheck('not-ported-listed-problem', [{ family: 'g', mode: 'file', refused: true }], { families: ['g'] }, ['not-ported-listed']);
   return checks;
 }
 

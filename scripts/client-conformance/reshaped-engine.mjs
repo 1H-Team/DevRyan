@@ -8,9 +8,11 @@
 // call numbers and timer ids renamed, protocol members reversed).
 // With a mode `outside-*` it is one of the planted engines that differ just
 // outside a freedom (reshape.mjs OUTSIDE); a case the plant has no place in is
-// answered reshaped.
+// answered reshaped. With `not-ported:<family>` (package C0i) it refuses that
+// family as one it does not implement (`notPorted`), as a Rust runner does,
+// and answers every other family reshaped.
 //
-//   node reshaped-engine.mjs [reshaped | outside-<name>]     (the working directory is the TypeScript engine's)
+//   node reshaped-engine.mjs [reshaped | outside-<name> | not-ported:<family> | not-ported-file-units | not-ported-first-unit]     (the working directory is the TypeScript engine's)
 //
 // It learns what it needs from the requests themselves (each step's input
 // kind and arrival, `hold`, the inputs nested in its port calls, the env
@@ -23,7 +25,21 @@ import { createInterface } from 'node:readline';
 import { expandStrings, protocolLine, typescriptEngine } from './engine.mjs';
 import { plantedAnswer, stepsOfMessage } from './reshape.mjs';
 
-const mode = process.argv[2] ?? 'reshaped';
+const given = process.argv[2] ?? 'reshaped';
+const refused = given.startsWith('not-ported:') ? given.slice('not-ported:'.length) : null;
+// The C0i review's wrong engine (its B1): it implements every family, says so, and refuses some units of each as not
+// ported: `not-ported-file-units` the first open after an open of another family (each container's file-order unit,
+// where module history is), `not-ported-first-unit` the first open of each family. Both must be inconclusive.
+const halfRefusing = given === 'not-ported-file-units' || given === 'not-ported-first-unit' ? given : null;
+const mode = refused === null && halfRefusing === null ? given : 'reshaped';
+const opened = new Set();
+let lastFamily = null;
+const refuseHalf = (name) => {
+  const refuse = halfRefusing === 'not-ported-file-units' ? name !== lastFamily : !opened.has(name);
+  opened.add(name);
+  lastFamily = name;
+  return refuse;
+};
 const inner = typescriptEngine({ cwd: process.cwd() });
 const child = spawn(inner.command, inner.args, { cwd: inner.cwd, env: process.env, stdio: ['pipe', 'pipe', 'inherit'] });
 const write = (message) => process.stdout.write(`${protocolLine(message)}\n`);
@@ -42,7 +58,7 @@ createInterface({ input: child.stdout }).on('line', (line) => {
   try { message = JSON.parse(line); } catch { process.stdout.write(`${line}\n`); return; }
   const request = asked.get(message.id);
   asked.delete(message.id);
-  if (request?.op === 'hello' && message.ok) { write({ ...message, engine: `reshaped(${mode}) of ${message.engine}` }); return; }
+  if (request?.op === 'hello' && message.ok) { write({ ...message, engine: `reshaped(${given}) of ${message.engine}` }); return; }
   if (request?.op === 'end' && message.ok && message.replayed) {
     const kase = cases.get(request.unit) ?? { steps: [], nows: [], strings: [] };
     cases.delete(request.unit);
@@ -61,6 +77,9 @@ for await (const line of createInterface({ input: process.stdin })) {
   if (!/\S/.test(line)) continue;
   let message;
   try { message = JSON.parse(line); } catch { child.stdin.write(`${line}\n`); continue; }
+  // A family it does not implement: refused at open, never forwarded (the replayer sends nothing more for that unit).
+  if (refused !== null && message.op === 'open' && message.family?.name === refused) { write({ id: message.id, ok: false, notPorted: true, error: `family ${refused} is not implemented by this engine` }); continue; }
+  if (halfRefusing !== null && message.op === 'open' && refuseHalf(message.family?.name)) { write({ id: message.id, ok: false, notPorted: true, error: `planted (${halfRefusing}): this unit of ${message.family?.name} refused` }); continue; }
   asked.set(message.id, { op: message.op, unit: message.unit });
   if (message.op === 'case') cases.set(message.unit, { steps: [], nows: [], strings: [] });
   if (message.op === 'seed') cases.get(message.unit)?.strings.push(...(message.strings ?? []));

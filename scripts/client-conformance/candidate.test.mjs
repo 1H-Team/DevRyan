@@ -13,8 +13,14 @@
 // in the full suite (candidate-planted.full.test.mjs). Its subjects are the
 // harness's toys only: no product module or test runs here, and nothing
 // depends on how long anything takes (every child has a deadline that names
-// it).
+// it). It also holds the client-engine vectors' contract (docs/TESTING.md,
+// "Client-engine differential and vectors"), which runs no Rust and no
+// product TypeScript: the tracked files' format, their inputs against the
+// seeded generators, their descriptors against the port map, and no path of
+// the machine that wrote them, so a change to the product's sources never
+// fails it.
 import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { after, describe, test } from 'node:test';
 import { capture, candidateChecks, commandChecks, FIELD_CHECKS, OUTSIDE_CHECKS, PER_PUSH_COMMANDS } from './candidate-checks.mjs';
@@ -22,8 +28,11 @@ import { CONTRACT, FREEDOMS } from './candidate-compare.mjs';
 import { EXIT, loadContract } from './candidate-census.mjs';
 import { PRODUCT_CONTRACT, TOY_CONTRACT } from './candidate.mjs';
 import { CANDIDATE_PLANTS, PER_PUSH_PLANTS, runCandidatePlants } from './candidate-plants.mjs';
-import { createScratch, EXIT as TOOL_EXIT } from './record.mjs';
-import { recordReplayToys } from './replay.mjs';
+import { createScratch, REPOSITORY_ROOT, EXIT as TOOL_EXIT } from './record.mjs';
+import { familyDescriptor, recordReplayToys } from './replay.mjs';
+import { PORTED_FAMILIES } from './client-differential.mjs';
+import { countsOf, FORMAT, inputsDigest, readVectorFile, vectorFile, vectorInputs } from './client-vectors.mjs';
+import { loadPortMap } from './port-map.mjs';
 
 // One recording of the replayer's toys and one capture of their replay, shared by the tests.
 let shared = null;
@@ -56,7 +65,7 @@ describe('client conformance candidate comparer self-test', { concurrency: true 
     for (const item of [...OUTSIDE_CHECKS, ...FIELD_CHECKS]) assert.ok(names.includes(item.name), `${item.name} ran`);
     for (const freedom of FREEDOMS) for (const outside of freedom.outside) assert.ok(names.includes(outside), `${freedom.name}: ${outside} ran`);
     // Each kind of rule bites on the toys: a group's order and boundary, a held later input, the clock, identity, pending timers, exit codes.
-    for (const name of ['outside-async-reordered', 'outside-group-leak', 'outside-async-past-later-input', 'groups-cut', 'outside-clock-varying-dropped', 'compared-identity', 'outside-pending-across-group', 'recording-version-refused', 'layout-order-counters', 'judge-difference', 'judge-partial-unasked', 'judge-partial-asked', 'judge-modes-partial', 'census-judged-lost']) assert.ok(names.includes(name), `${name} ran`);
+    for (const name of ['outside-async-reordered', 'outside-group-leak', 'outside-async-past-later-input', 'groups-cut', 'outside-clock-varying-dropped', 'compared-identity', 'outside-pending-across-group', 'recording-version-refused', 'layout-order-counters', 'judge-difference', 'judge-partial-unasked', 'judge-partial-asked', 'judge-modes-partial', 'judge-not-ported-unasked', 'judge-not-ported-asked', 'census-judged-lost']) assert.ok(names.includes(name), `${name} ran`);
     assert.deepEqual(checks.filter(([, problem]) => problem), []);
     assert.ok(checks.length >= 100, `${checks.length} checks`);
     sharedStatus = 'passed';
@@ -90,5 +99,37 @@ describe('client conformance candidate comparer self-test', { concurrency: true 
     assert.ok(toy.items.every((item) => item.reason.trim()) && toy.unjudged.every((item) => item.reason.trim()));
     const product = loadContract(PRODUCT_CONTRACT);
     assert.ok(Object.keys(product.judged).length >= 20, 'the product contract pins what is judged');
+  });
+
+  test('the client-engine vectors (package C0i\'s fix round): every ported family has a vector file whose inputs are the generators\' and whose descriptor is the port map\'s', async () => {
+    const portMap = loadPortMap(path.join(REPOSITORY_ROOT, 'scripts', 'client-conformance', 'product', 'product-port-map.json'), { root: REPOSITORY_ROOT });
+    for (const family of PORTED_FAMILIES) {
+      const file = vectorFile(family);
+      assert.ok(existsSync(file), `${family}: ${path.relative(REPOSITORY_ROOT, file)} is missing (write it with node scripts/client-conformance/client-vectors.mjs)`);
+      const { header, lines, text } = readVectorFile(file);
+      assert.equal(header.format, FORMAT);
+      assert.equal(header.family, family);
+      const { witnesses, ...counts } = header.counts;
+      assert.deepEqual(counts, countsOf(family), `${family}: counts`);
+      assert.equal(lines.filter((line) => line.witness).length, witnesses ?? 0, `${family}: witnesses`);
+      assert.match(header.engine, /^Electron .*'s Node v|^this Node v/, `${family}: the answers are V8's (Electron's Node)`);
+      const descriptor = familyDescriptor(portMap, family);
+      assert.deepEqual(header.descriptor, { ...descriptor, module: path.relative(REPOSITORY_ROOT, descriptor.module).split(path.sep).join('/') }, `${family}: the descriptor is the port map's`);
+      const inputs = await vectorInputs(family);
+      assert.equal(inputsDigest(inputs), header.inputs, `${family}: the generators give other inputs than the tracked ones (regenerate the vectors)`);
+      assert.equal(inputsDigest(lines), header.inputs, `${family}: a line's inputs were changed by hand`);
+      for (const [at, line] of lines.entries()) {
+        assert.ok(line.record && typeof line.record === 'object' && ('returns' in line.record || 'throws' in line.record), `${family} call ${at + 1}: a record with a result`);
+        assert.ok(Array.isArray(line.engineMessages), `${family} call ${at + 1}: engineMessages`);
+      }
+      for (const local of [REPOSITORY_ROOT, process.env.HOME, process.env.TMPDIR].filter(Boolean)) assert.ok(!text.includes(local), `${family}: the file holds a path of this machine (${local})`);
+    }
+  });
+
+  test('the sort vectors of the Rust crate are tracked with their generator', () => {
+    const dir = path.join(REPOSITORY_ROOT, 'packages', 'native', 'crates', 'client-engine', 'tests');
+    const rows = readFileSync(path.join(dir, 'sort-vectors.tsv'), 'utf8').split('\n').filter((line) => line && !line.startsWith('#'));
+    assert.ok(rows.length >= 600, `${rows.length} sort rows`);
+    assert.ok(existsSync(path.join(dir, 'generate-sort-vectors.mjs')));
   });
 });

@@ -17,7 +17,9 @@
 // The contract (CONTRACT below, docs/TESTING.md): within a group, the order of
 // observables is exact; which step of the group an observable is attributed
 // to is free; nothing crosses a group boundary; clock reads are free only
-// where every read of a source returned one value.
+// where every read of a source returned one value. A third freedom (package
+// C0i's fix round) frees the text of an error the JavaScript engine wrote
+// itself, never its class, where it was thrown or a message the module built.
 //
 // The base rule stays the replayer's exact comparison (replay-compare.mjs
 // compareReplayed: codec trees compared exactly, effects as an ordered list,
@@ -69,7 +71,236 @@ export const FREEDOMS = Object.freeze([
     why: 'under the nominal clock a read changes nothing and every read of a source in a group returns the same value, so its count and position are unobservable except through the values derived from it, which are compared; a Rust module is handed the step\'s `now` and never reads a clock (the engine protocol\'s ENGINE_ACCIDENTS). Where one source returned two values in one step (a stub the test installed), which read got which value is behaviour, so the clock reads of that step\'s group are compared exactly',
     outside: ['outside-clock-time-shifted', 'outside-clock-varying-dropped', 'outside-draw-dropped'],
   },
+  {
+    name: 'engine-message',
+    what: 'the message of an error the JavaScript engine wrote itself (ENGINE_ERRORS: a native error class, its own `name`, no own member and no cause, and a message of one of the shapes the recording\'s engine writes, JavaScriptCore\'s for every recording, which `bun test` makes): where the recording holds such an error (a step\'s thrown value or result, an effect\'s answer or value), its message is not compared, on both sides alike. Its class, its `name`, that it has no member and no cause, where it was thrown and that it was thrown are compared exactly; an error the module\'s code builds (`new Error(\'...\')`, `new TypeError(`label needs text`)`) has a message of no such shape and is compared exactly, text included',
+    why: 'the engine writes that text, not the module: JavaScriptCore writes "null is not an object (evaluating \'diff.additions\')", V8 (the product\'s renderer) "Cannot read properties of null (reading \'additions\')", and a Rust engine should carry neither engine\'s sentences (engine.mjs ENGINE_ACCIDENTS). Which errors are engine-made is decided from the recording alone (its message\'s shape and its class), never from what the candidate answers, and a message of an unknown shape is compared exactly, so the freedom can only fail closed; a contract check (`engine-messages-not-built`) holds that no mapped module builds a native error whose message has such a shape',
+    outside: ['outside-engine-error-class', 'outside-engine-error-missing', 'outside-engine-error-extra', 'outside-product-message'],
+  },
+  {
+    name: 'engine-difference',
+    what: 'the results (returned or thrown value, arguments after, change set) of a step that ENGINE_DIFFERENCES names, by a rule over the recorded step\'s family, export and arguments: a call whose answer V8 and JavaScriptCore give differently (measured by the client differential). Nothing else of the step and nothing of any other step is freed',
+    why: 'the recordings are JavaScriptCore\'s and the reference of a Rust engine is V8 (the product\'s renderer), so where the two engines differ the recorded answer is no reference; a rule reads the recording only (never the candidate\'s answer), names the difference, and is pinned by fixed inputs on both sides of it',
+    outside: ['outside-engine-difference-not-named', 'outside-engine-difference-other-step'],
+  },
 ]);
+
+/** A string StringToNumber reads in base 2, 8 or 16 with more significant bits than a double holds. */
+const LONG_RADIX = /^[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]*0([xXoObB])([0-9a-zA-Z]+)[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]*$/;
+const radixBits = { x: 4, X: 4, o: 3, O: 3, b: 1, B: 1 };
+/** Whether a codec tree holds a string whose `Number()` rounds a binary, octal or hexadecimal integer of more than 53 significant bits. */
+export function holdsLongRadixString(tree) {
+  if (typeof tree === 'string') {
+    const match = LONG_RADIX.exec(tree);
+    if (!match) return false;
+    const digits = match[2].replace(/^0+/, '');
+    return digits.length * radixBits[match[1]] > 53;
+  }
+  if (tree === null || typeof tree !== 'object') return false;
+  return (Array.isArray(tree) ? tree : Object.values(tree)).some(holdsLongRadixString);
+}
+const unwrap = (tree) => (tree !== null && typeof tree === 'object' && !Array.isArray(tree) && tree.$dr === 'id' ? tree.value : tree);
+const arrayItems = (tree) => { const node = unwrap(tree); return Array.isArray(node) ? node : node?.$dr === 'array' && Array.isArray(node.items) ? node.items : null; };
+/** Whether a list of messages (as a codec tree) has one whose `id` is no string: compareMessagesChronologically is then no consistent order. */
+export function holdsMessageWithoutStringId(tree, idOf = (item) => unwrap(item)?.id) {
+  const items = arrayItems(tree);
+  if (!items) return false;
+  return items.some((item) => { const node = unwrap(item); return node === null || typeof node !== 'object' || (node.$dr !== 'hole' && typeof unwrap(idOf(item)) !== 'string'); });
+}
+
+/**
+ * The calls whose answer V8 and JavaScriptCore give differently (measured by
+ * client-differential.mjs, docs/TESTING.md "Engine differences"), each a rule
+ * over a recorded step: its family, its export and its arguments (codec trees).
+ * A step a rule names is not judged on its results under the candidate rules
+ * (the `engine-difference` freedom), and the case says which rule.
+ */
+export const ENGINE_DIFFERENCES = Object.freeze([
+  {
+    name: 'sort-inconsistent-comparator',
+    what: '`Array.prototype.sort` with a comparator that is no consistent order (compareMessagesChronologically over messages one of which has no string id: equal times then compare `undefined`, `null` or a number with `<`): V8 and JavaScriptCore sort by other algorithms, so their orders differ; a consistent comparator gives one order on both',
+    applies: ({ family, entry, args }) => (family === 'message-order' && entry === 'sortMessagesChronologically' && holdsMessageWithoutStringId(args?.[0]))
+      || (family === 'materialization' && entry === 'materializeSessionSnapshots' && holdsMessageWithoutStringId(args?.[2], (record) => unwrap(unwrap(record)?.info)?.id)),
+  },
+  {
+    name: 'string-to-number-radix-rounding',
+    what: '`Number(text)` of a binary, octal or hexadecimal integer with more than 53 significant bits: V8 rounds it to the nearest double, the double JavaScriptCore gives differs in its last digits',
+    applies: ({ family, args }) => ['session-diff-stats', 'live-aggregate', 'materialization', 'sanitize'].includes(family) && holdsLongRadixString(args),
+  },
+]);
+
+/** The rule of ENGINE_DIFFERENCES that names a recorded step of `family`, or null. */
+export function engineDifferenceOf(family, step) {
+  if (!family || !step?.input || step.input.kind !== 'call') return null;
+  const found = ENGINE_DIFFERENCES.find((rule) => rule.applies({ family, entry: step.input.entry, args: step.input.args }));
+  return found ? found.name : null;
+}
+
+/** The native error classes an engine throws itself. */
+export const NATIVE_ERRORS = Object.freeze(['TypeError', 'RangeError', 'SyntaxError', 'ReferenceError', 'EvalError', 'URIError']);
+
+/**
+ * The shapes of the messages each JavaScript engine writes into the errors it
+ * throws itself, by engine. A recording is made by `bun test`, so its engine
+ * is JavaScriptCore; the differential and the client-engine vectors (V8,
+ * Electron's Node) classify V8's. A shape is anchored at both ends and holds
+ * nothing a module's own message would plausibly be; a message of no listed
+ * shape is the module's (compared exactly).
+ */
+export const ENGINE_ERRORS = Object.freeze({
+  javascriptcore: Object.freeze([
+    /^(?:undefined|null) is not an object(?: \(evaluating '.*'\))?$/s,
+    /^.* is not a function(?:\. \(In '.*', '.*' is (?:undefined|null|an instance of \w+|a[n]? \w+)\)| \(near '.*'\))?$/s,
+    /^.* is not a constructor(?: \(evaluating '.*'\))?$/s,
+    /^.* is not iterable(?: \(evaluating '.*'\))?$/s,
+    /^Spread syntax requires \.\.\.iterable\[Symbol\.iterator\] to be a function$/,
+    /^Spread syntax requires \.\.\.iterable not be null or undefined$/,
+    /^Cannot destructure property '.*' from (?:null|undefined)(?: or undefined)? value$/s,
+    /^Right side of assignment cannot be destructured$/,
+    /^Attempted to assign to readonly property\.$/,
+    /^Unable to delete property\.$/,
+    /^Type error$/,
+    /^No default value$/,
+    /^JSON\.stringify cannot serialize cyclic structures\.$/,
+    /^Cannot convert a symbol to a string$/,
+    /^Cannot convert undefined or null to object$/,
+    /^Object\.\w+ requires that input parameter not be null or undefined$/,
+    /^Maximum call stack size exceeded\.$/,
+    /^Invalid array length$/,
+    /^Out of memory$/,
+    /^Can't find variable: [\w$]+$/,
+    /^Cannot access uninitialized variable\.$/,
+    /^Argument to String\.prototype\.\w+ cannot be a RegExp$/,
+  ]),
+  v8: Object.freeze([
+    /^Cannot read properties of (?:undefined|null)(?: \(reading '.*'\))?$/s,
+    /^Cannot set properties of (?:undefined|null) \(setting '.*'\)$/s,
+    /^.* is not a function$/s,
+    /^.* is not a constructor$/s,
+    /^.* is not iterable(?: \(cannot read property Symbol\(Symbol\.iterator\)\))?$/s,
+    /^Spread syntax requires \.\.\.iterable\[Symbol\.iterator\] to be a function$/,
+    /^Iterator value .* is not an entry object$/s,
+    /^Cannot destructure property '.*' of '.*' as it is (?:undefined|null)\.$/s,
+    /^Cannot destructure '.*' as it is (?:undefined|null)\.$/s,
+    /^Cannot create property '.*' on (?:string|number|boolean|symbol|bigint) '.*'$/s,
+    /^Cannot assign to read only property '.*' of .*$/s,
+    /^Cannot delete property '.*' of .*$/s,
+    /^Cannot convert object to primitive value$/,
+    /^Cannot convert a Symbol value to a string$/,
+    /^Cannot convert undefined or null to object$/,
+    /^Converting circular structure to JSON[\s\S]*$/,
+    /^Maximum call stack size exceeded$/,
+    /^Invalid array length$/,
+    /^Invalid string length$/,
+    /^[\w$]+ is not defined$/,
+    /^Cannot access '[\w$]+' before initialization$/,
+    /^First argument to String\.prototype\.\w+ must not be a regular expression$/,
+    /^Method .* called on incompatible receiver .*$/s,
+  ]),
+});
+/** The engine whose shapes classify a recording: `bun test` makes every recording (the recorder runs inside it). */
+export const RECORDING_ENGINE = 'javascriptcore';
+
+/**
+ * Whether a codec tree is an error the engine wrote itself: a native error
+ * class whose `name` is its class, with no own member and no cause, and a
+ * message of one of `engine`'s shapes. A tree wrapped in an identity node is
+ * read through it.
+ */
+export function isEngineError(tree, engine = RECORDING_ENGINE) {
+  const node = tree !== null && typeof tree === 'object' && !Array.isArray(tree) && tree.$dr === 'id' ? tree.value : tree;
+  if (node === null || typeof node !== 'object' || Array.isArray(node) || node.$dr !== 'class' || !node.error) return false;
+  if (!NATIVE_ERRORS.includes(node.name) || node.error.name !== node.name || typeof node.error.message !== 'string') return false;
+  if (node.cause !== undefined || node.errors !== undefined) return false;
+  if (node.value !== undefined && (node.value === null || typeof node.value !== 'object' || Object.keys(node.value).length)) return false;
+  return ENGINE_ERRORS[engine].some((shape) => shape.test(node.error.message));
+}
+
+/**
+ * The native errors a module's source builds with a literal message of an
+ * engine's shape (`new TypeError('... is not a function')`, `RangeError(`x`)`):
+ * such a message would be taken as engine-written and freed, so a candidate
+ * run refuses the recording while one exists (`engine-message-built`).
+ * A template literal's substitutions are read as `x`.
+ */
+export function builtEngineMessages(source) {
+  const found = [];
+  const pattern = new RegExp(`(?:new\\s+)?\\b(${NATIVE_ERRORS.join('|')})\\s*\\(\\s*(?:'((?:[^'\\\\]|\\\\.)*)'|"((?:[^"\\\\]|\\\\.)*)"|\`((?:[^\`\\\\]|\\\\.)*)\`)`, 'g');
+  for (const match of source.matchAll(pattern)) {
+    const message = (match[2] ?? match[3] ?? match[4].replace(/\$\{[^}]*\}/g, 'x')).replace(/\\(.)/g, '$1');
+    const engines = Object.keys(ENGINE_ERRORS).filter((engine) => ENGINE_ERRORS[engine].some((shape) => shape.test(message)));
+    if (engines.length) found.push({ className: match[1], message, engines });
+  }
+  return found;
+}
+
+/** The paths (member names and indices) below `tree` at which an engine-written error sits. */
+function engineErrorPaths(tree, engine, at = [], out = []) {
+  if (tree === null || typeof tree !== 'object') return out;
+  if (isEngineError(tree, engine)) { out.push(at); return out; }
+  if (Array.isArray(tree)) tree.forEach((item, index) => engineErrorPaths(item, engine, [...at, index], out));
+  else for (const key of Object.keys(tree)) engineErrorPaths(tree[key], engine, [...at, key], out);
+  return out;
+}
+
+/** The engine-written message an error's view holds instead of its text (the same on both sides). */
+export const ENGINE_MESSAGE = '<engine-written message>';
+
+/** `tree` with the message of the error at each of `paths` (where the side holds an error) put as ENGINE_MESSAGE. */
+function withEngineMessages(tree, paths) {
+  if (!paths.length) return tree;
+  const copy = structuredClone(tree);
+  for (const path of paths) {
+    let node = copy;
+    for (const part of path) node = node !== null && typeof node === 'object' ? node[part] : undefined;
+    const error = node !== null && typeof node === 'object' && node.$dr === 'id' ? node.value : node;
+    if (error !== null && typeof error === 'object' && error.$dr === 'class' && error.error && typeof error.error.message === 'string') error.error = { ...error.error, message: ENGINE_MESSAGE };
+  }
+  return copy;
+}
+
+const VALUE_SLOTS = Object.freeze(['returns', 'throws', 'after', 'changes', 'state', 'stateChanges']);
+
+/** The engine-difference freedom: a recorded step a rule names has its results put as the rule's name in both views. */
+function freeEngineDifferences(recordedView, replayedView, recorded, family) {
+  const named = recorded.steps.map((step) => engineDifferenceOf(family, step));
+  if (!named.some(Boolean)) return [recordedView, replayedView];
+  const mark = (view) => ({ ...view, steps: (Array.isArray(view.steps) ? view.steps : []).map((step, index) => {
+    if (!named[index] || !step || typeof step !== 'object') return step;
+    const out = { ...step };
+    for (const slot of ['returns', 'throws', 'after', 'changes']) delete out[slot];
+    out.engineDifference = named[index];
+    return out;
+  }) });
+  return [mark(recordedView), mark(replayedView)];
+}
+const EFFECT_SLOTS = Object.freeze(['answer', 'throws', 'value', 'args']);
+
+/**
+ * The engine-message freedom on a view pair: where the RECORDED view holds an
+ * engine-written error (a step's value slot, an effect of a group's
+ * sequence), that error's message is put as ENGINE_MESSAGE in both views.
+ */
+function freeEngineMessages(recordedView, replayedView, engine = RECORDING_ENGINE) {
+  const steps = (view) => (Array.isArray(view.steps) ? view.steps : []);
+  const mark = (target, source) => steps(target).map((step, index) => {
+    const from = steps(source)[index];
+    if (!step || typeof step !== 'object' || !from || typeof from !== 'object') return step;
+    const out = { ...step };
+    for (const slot of VALUE_SLOTS) if (from[slot] !== undefined && step[slot] !== undefined) out[slot] = withEngineMessages(step[slot], engineErrorPaths(from[slot], engine));
+    if (Array.isArray(step.effects) && Array.isArray(from.effects)) {
+      out.effects = step.effects.map((item, position) => {
+        const recorded = from.effects[position];
+        if (!item || typeof item !== 'object' || !recorded || typeof recorded !== 'object') return item;
+        const changed = { ...item };
+        for (const slot of EFFECT_SLOTS) if (recorded[slot] !== undefined && item[slot] !== undefined) changed[slot] = withEngineMessages(item[slot], engineErrorPaths(recorded[slot], engine));
+        return changed;
+      });
+    }
+    return out;
+  });
+  return [{ ...recordedView, steps: mark(recordedView, recordedView) }, { ...replayedView, steps: mark(replayedView, recordedView) }];
+}
 
 /** What the exact rules already compare as names (structure), never as numbers or text. */
 export const NAMES = Object.freeze([
@@ -78,6 +309,8 @@ export const NAMES = Object.freeze([
   { what: 'the member order of a step, an effect, a group and the end answer', how: 'protocol objects, not codec values: compared member by member, never by their order (codec trees keep theirs)' },
 ]);
 
+/** Every freedom's name, in order. */
+const ALL_FREEDOMS = Object.freeze(['group', 'clock', 'engine-message', 'engine-difference']);
 const isClock = (item) => item?.kind === 'clock';
 const canonical = (tree) => JSON.stringify(tree);
 
@@ -121,7 +354,7 @@ const recount = (sequence, position) => (Number.isInteger(position) ? position -
  * step that is missing or halted is what differs. Pending timers are named by
  * their group.
  */
-export function candidateView(recorded, side, kind, { freedoms = ['group', 'clock'], layout = caseLayout(recorded.steps), exactFrom = Infinity } = {}) {
+export function candidateView(recorded, side, kind, { freedoms = ALL_FREEDOMS, layout = caseLayout(recorded.steps), exactFrom = Infinity } = {}) {
   const clockFree = freedoms.includes('clock') ? clockFreeGroups(layout, recorded.steps) : new Set();
   const settleFree = freedoms.includes('group');
   const steps = kind === 'recorded' ? recorded.steps : (Array.isArray(side.steps) ? side.steps : []);
@@ -190,7 +423,7 @@ function suppliedTimes(recorded, index) {
  * hold no clock reads where the freedom holds, so the times are taken from
  * the recorded case itself).
  */
-export function compareUnderFreedoms(recorded, replayed, { unordered = [], freedoms = ['group', 'clock'] } = {}) {
+export function compareUnderFreedoms(recorded, replayed, { unordered = [], freedoms = ALL_FREEDOMS, family = null } = {}) {
   const layout = caseLayout(recorded.steps);
   const indexOfStep = new Map(recorded.steps.map((step, index) => [step.n, index]));
   const present = Math.min(recorded.steps.length, (replayed.steps ?? []).length);
@@ -198,7 +431,10 @@ export function compareUnderFreedoms(recorded, replayed, { unordered = [], freed
   const halted = replayed.halt ? indexOfStep.get(replayed.halt.step) : undefined;
   if (halted !== undefined) exactFrom = Math.min(exactFrom, layout.groupOf[halted] + 1);
   const options = { freedoms, layout, exactFrom };
-  const result = compareReplayed(candidateView(recorded, recorded, 'recorded', options), candidateView(recorded, replayed, 'replayed', options), { unordered });
+  let views = [candidateView(recorded, recorded, 'recorded', options), candidateView(recorded, replayed, 'replayed', options)];
+  if (freedoms.includes('engine-message')) views = freeEngineMessages(...views);
+  if (freedoms.includes('engine-difference')) views = freeEngineDifferences(...views, recorded, family);
+  const result = compareReplayed(views[0], views[1], { unordered });
   const lastOfGroup = (index) => Math.max(...layout.groups[layout.groupOf[index]]);
   const differences = result.differences.map((item) => {
     if (item.kind !== 'value' || !Array.isArray(item.raw)) return item;
@@ -226,19 +462,19 @@ const exactOrder = (recorded, replayed, { unordered = [] } = {}) => compareUnder
  * `freedoms` the freedoms without which this case would differ (empty when
  * the exact rules reproduce it; reported, never silent).
  */
-export function compareCandidate(recorded, replayed, { unordered = [], rules = 'candidate' } = {}) {
+export function compareCandidate(recorded, replayed, { unordered = [], rules = 'candidate', family = null } = {}) {
   const exact = compareExact(recorded, replayed, { unordered, exactOrder });
   if (rules === 'exact') return { ...exact, rules, exact: exact.differences.length, freedoms: [] };
   // A case the exact rules reproduce is reproduced: the views of what the exact rules found equal are equal, and the
   // freedoms only take the same parts out of both (the self-test pins it on every exact pair of the toys).
   if (!exact.differences.length) return { differences: [], stepsCompared: exact.stepsCompared, rules, exact: 0, freedoms: [] };
-  const result = compareUnderFreedoms(recorded, replayed, { unordered });
+  const result = compareUnderFreedoms(recorded, replayed, { unordered, family });
   // Which freedom the case needed: each alone, else both (reported with the case, never silent). A case only the
   // recorder's attribution tells apart needs the group freedom (attribution is no part of the candidate rules).
   let freedoms = [];
   if (!result.differences.length) {
-    const needs = (name) => compareUnderFreedoms(recorded, replayed, { unordered, freedoms: ['group', 'clock'].filter((other) => other !== name) }).differences.length > 0;
-    freedoms = ['group', 'clock'].filter(needs);
+    const needs = (name) => compareUnderFreedoms(recorded, replayed, { unordered, family, freedoms: ALL_FREEDOMS.filter((other) => other !== name) }).differences.length > 0;
+    freedoms = ALL_FREEDOMS.filter(needs);
     if (!freedoms.length) freedoms = ['group'];
   }
   return { differences: result.differences, stepsCompared: result.stepsCompared, rules, exact: exact.differences.length, freedoms };

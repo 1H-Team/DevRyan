@@ -23,7 +23,9 @@
 // unstable: never judged); `not-replayable` (a feature a later package
 // replays, named with that package); `inconclusive` (the replayer could not
 // judge it: the engine was lost or did not answer in time, an entry it cannot
-// place, an input it cannot rebuild). Exit codes as every tool of the
+// place, an input it cannot rebuild); `not-ported` (an engine that is not
+// the TypeScript one refused the family as one it does not implement: its
+// cases are not judged, and this closure is inconclusive). Exit codes as every tool of the
 // harness: 0 only when every case that should be judged was judged in both
 // modes and none differs, and at least one was; 1 a difference; 3
 // inconclusive (precedence over 1); 64 usage.
@@ -207,13 +209,59 @@ const outcomeOf = (verdict) => (verdict.judge ? null : verdict.outcome === 'unre
 // A difference that something the engine noted after a case ended (or between its steps and its end) makes.
 const outsideDifference = (entries, when) => ({ check: 'outside', kind: 'value', step: null, path: '/outside', expected: `nothing ${when}`, actual: JSON.stringify(entries.map((entry) => entry.what)).slice(0, 400) });
 
+/**
+ * Not ported is all or nothing (the C0i review's B1): a family is not ported
+ * only when the engine refused it in every unit it was asked to open, in
+ * every mode. One refused in some units and run in others (refused in file
+ * order, where module history is, and run alone, say) is an engine that chose
+ * what it is judged on: a problem (the run is inconclusive), and every case of
+ * that family is inconclusive. So is an engine whose `hello` names a family it
+ * then refuses. `opens`: `{ family, mode, refused }` per unit opened.
+ */
+export function notPortedProblems(opens, engineInfo) {
+  const problems = [];
+  const partlyRefused = new Set();
+  for (const family of new Set(opens.filter((entry) => entry.refused).map((entry) => entry.family))) {
+    const of = opens.filter((entry) => entry.family === family);
+    const refused = of.filter((entry) => entry.refused);
+    if (refused.length < of.length) {
+      partlyRefused.add(family);
+      problems.push({ check: 'not-ported-partly', detail: `the engine refused family ${family} as not ported in ${refused.length} of its ${of.length} units (${[...new Set(refused.map((entry) => entry.mode))].join(', ')}) and ran it in the others: a family is not ported in every unit or in none` });
+    }
+    if (engineInfo?.families?.includes(family)) problems.push({ check: 'not-ported-listed', detail: `the engine's hello names family ${family} as implemented, and it refused it as not ported` });
+  }
+  return { problems, partlyRefused };
+}
+
+/**
+ * A case's outcome from what each mode gave: reproduced only when every mode
+ * ran it and reproduced it; not ported only when every mode refused it and
+ * its family was refused everywhere (`partlyRefused` false); refused in some
+ * mode only, or in a family refused in some units only, inconclusive.
+ */
+export function caseOutcome(verdict, ran, modes, partlyRefused = false) {
+  const recorded = outcomeOf(verdict);
+  if (recorded !== null) return recorded;
+  if (ran.length === modes.length && ran.every((entry) => entry.outcome === 'not-ported') && !partlyRefused) return 'not-ported';
+  if (ran.some((entry) => entry.outcome === 'not-ported') || partlyRefused) return 'inconclusive';
+  if (ran.length < modes.length) return 'inconclusive';
+  if (ran.some((entry) => entry.outcome === 'inconclusive')) return 'inconclusive';
+  if (ran.some((entry) => entry.outcome === 'different')) return 'different';
+  return 'reproduced';
+}
+
 /** Runs one unit (a fresh module instance) on the engine: its cases in order, each step to quiescence before the next. */
-async function runUnit(engine, unit, plants, results, notes, compare = compareClosure) {
+async function runUnit(engine, unit, plants, results, notes, compare = compareClosure, opens = []) {
   const { container, mode, items, id } = unit;
   const where = `${container.name} (${mode})`;
   // What the family's module graph took when it loaded (container format 5): the same for every case of the container.
   const opened = await engine.request({ op: 'open', unit: id, family: container.family, plants, ...(container.header.load ? { load: container.header.load } : {}) }, { what: `open of ${container.family.name} for ${where}` }).catch((error) => ({ ok: false, error: error.message, lost: true }));
   const judgeAll = (outcome, detail) => { for (const item of items) if (item.verdict.judge) results.get(item.key)[mode] = { outcome, differences: [], detail, stepsCompared: 0 }; };
+  // An engine that does not implement the family says so (`notPorted`, package C0i): its cases are not ported, never
+  // judged, and a run that holds them is partial (candidate.mjs), never a pass.
+  // Every open is noted (the family, the mode, whether it was refused), so a family refused in some units only is found.
+  opens.push({ family: container.family.name, mode, refused: !opened.ok && opened.notPorted === true });
+  if (!opened.ok && opened.notPorted === true) { judgeAll('not-ported', `the engine does not implement ${container.family.name}: ${opened.error}`); return; }
   if (!opened.ok) { judgeAll('inconclusive', `the engine could not open ${container.family.name}: ${opened.error}`); await engine.request({ op: 'close', unit: id, force: true }, { what: `close of ${where}` }).catch(() => {}); return; }
   if ((opened.load ?? []).length) notes.push(`${where}: module load noted ${JSON.stringify(opened.load.map((entry) => entry.what)).slice(0, 300)} (not compared: no case was open)`);
   // What the engine noted after a case ended is that case's: a case the replayer judged differs by it (check `outside`).
@@ -290,7 +338,7 @@ async function runUnit(engine, unit, plants, results, notes, compare = compareCl
       if (!ended.ok) throw new Error(ended.error);
       const replayed = readReplayed(ended.replayed, kase);
       if (!item.verdict.judge) { if (replayed.outside.length) notes.push(`${where}: ${kase.id}, not judged, made ${JSON.stringify(replayed.outside.map((entry) => entry.what)).slice(0, 300)} while no step was open`); continue; }
-      const { differences, stepsCompared, freedoms } = compare(kase, replayed, { unordered: container.family.unordered });
+      const { differences, stepsCompared, freedoms } = compare(kase, replayed, { unordered: container.family.unordered, family: container.family.name });
       const halt = replayed.halt;
       const inconclusive = halt && INCONCLUSIVE_HALTS.has(halt.check) && differences.every((entry) => entry.check === 'halt' || entry.step === halt.step);
       results.get(item.key)[mode] = {
@@ -355,9 +403,13 @@ export async function replayPlanned(planned, { engine, modes = MODES, plants = [
   const engineProcess = openEngine({ ...engine, deadlineMs });
   const problems = [];
   const notes = [];
+  const opens = [];
+  let engineInfo = null;
   try {
     const hello = await engineProcess.request({ op: 'hello', protocol: PROTOCOL }, { what: 'hello', deadlineMs: startDeadlineMs ?? deadlineMs });
     if (!hello.ok) throw new Error(hello.error);
+    // An engine may name the families it implements (package C0i's runner does); the TypeScript engine runs them all.
+    engineInfo = { name: typeof hello.engine === 'string' ? hello.engine : engineProcess.name, ...(Array.isArray(hello.families) ? { families: hello.families.filter((name) => typeof name === 'string') } : {}) };
     if (hello.protocol !== PROTOCOL) throw new Error(`engine ${engineProcess.name} speaks protocol ${hello.protocol}; this replayer speaks ${PROTOCOL}`);
     let next = 0;
     const width = Math.max(1, Math.min(units.length, concurrency ?? Math.max(1, Math.min(4, Math.floor(availableParallelism() / 2)))));
@@ -365,7 +417,7 @@ export async function replayPlanned(planned, { engine, modes = MODES, plants = [
       while (next < units.length) {
         const unit = units[next];
         next += 1;
-        await runUnit(engineProcess, unit, plants, results, notes, compare);
+        await runUnit(engineProcess, unit, plants, results, notes, compare, opens);
       }
     }));
   } catch (error) {
@@ -373,30 +425,25 @@ export async function replayPlanned(planned, { engine, modes = MODES, plants = [
   } finally {
     await engineProcess.stop();
   }
+  const { problems: refusals, partlyRefused } = notPortedProblems(opens, engineInfo);
+  problems.push(...refusals);
   const cases = [];
   for (const container of planned.containers) {
     container.cases.forEach((item, index) => {
       const byMode = results.get(`${container.name}\0${index}`);
       const ran = modes.map((mode) => byMode[mode]).filter(Boolean);
-      let outcome = outcomeOf(item.verdict);
-      if (outcome === null) {
-        // A judged case is reproduced only when every mode ran it and reproduced it.
-        if (ran.length < modes.length) outcome = 'inconclusive';
-        else if (ran.some((entry) => entry.outcome === 'inconclusive')) outcome = 'inconclusive';
-        else if (ran.some((entry) => entry.outcome === 'different')) outcome = 'different';
-        else outcome = 'reproduced';
-      }
+      const outcome = caseOutcome(item.verdict, ran, modes, partlyRefused.has(container.family.name));
       cases.push({ container: container.name, family: container.family.name, id: item.verdict.id, outcome, modes: byMode, reason: item.verdict.reason, later: item.verdict.later, delivered: item.verdict.deliver });
     });
   }
-  return { cases, problems, notes, engineStderr: engineProcess.stderr };
+  return { cases, problems, notes, engineStderr: engineProcess.stderr, engine: engineInfo };
 }
 
 /** Counts per family and outcome, and per family the features a later package replays. */
 export function summarize(cases, modes = MODES) {
   const families = {};
   for (const kase of cases) {
-    const row = (families[kase.family] ??= { cases: 0, judged: 0, reproduced: 0, different: 0, inconclusive: 0, unrecordable: 0, 'no-reference': 0, 'not-replayable': 0, byMode: {}, later: {}, stepsCompared: 0, steps: 0 });
+    const row = (families[kase.family] ??= { cases: 0, judged: 0, reproduced: 0, different: 0, inconclusive: 0, unrecordable: 0, 'no-reference': 0, 'not-replayable': 0, 'not-ported': 0, byMode: {}, later: {}, stepsCompared: 0, steps: 0 });
     row.cases += 1;
     row[kase.outcome] += 1;
     if (['reproduced', 'different', 'inconclusive'].includes(kase.outcome)) row.judged += 1;
@@ -404,7 +451,7 @@ export function summarize(cases, modes = MODES) {
     for (const mode of modes) {
       const entry = kase.modes[mode];
       if (!entry) continue;
-      const byMode = (row.byMode[mode] ??= { reproduced: 0, different: 0, inconclusive: 0 });
+      const byMode = (row.byMode[mode] ??= { reproduced: 0, different: 0, inconclusive: 0, 'not-ported': 0 });
       byMode[entry.outcome] += 1;
       if (mode === modes[0]) { row.stepsCompared += entry.stepsCompared ?? 0; row.steps += entry.steps ?? 0; }
     }
@@ -430,7 +477,7 @@ export function formatCase(kase) {
  * every family of `requireFamilies` must have a judged case.
  * Returns `{ code, failures, inconclusive, fixtures }`.
  */
-export function judgeReplay(result, { expected = [], modes = MODES, requireJudged = true, requireFamilies = [] } = {}) {
+export function judgeReplay(result, { expected = [], modes = MODES, requireJudged = true, requireFamilies = [], allowNotPorted = false } = {}) {
   const failures = [];
   const inconclusive = [...result.problems.map((problem) => `${problem.check}${problem.container ? ` ${problem.container}` : ''}: ${problem.detail}`)];
   const fixtures = [];
@@ -441,6 +488,9 @@ export function judgeReplay(result, { expected = [], modes = MODES, requireJudge
       if (!entry) continue;
       const wanted = fixture.find((item) => item.mode === mode);
       if (entry.outcome === 'inconclusive') { inconclusive.push(`${kase.id} (${mode}): ${entry.detail}`); continue; }
+      // A family the engine does not implement: inconclusive here, a skipped part of a candidate run (which says so).
+      // A mode refused while the case is not not-ported as a whole (another mode ran it): inconclusive, allowed or not.
+      if (entry.outcome === 'not-ported') { if (!allowNotPorted) inconclusive.push(`${kase.id} (${mode}): not ported: ${entry.detail}`); else if (kase.outcome !== 'not-ported') inconclusive.push(`${kase.id} (${mode}): not ported in this mode only (${kase.outcome} as a whole): ${entry.detail}`); continue; }
       if (wanted) {
         const hit = entry.outcome === 'different' && entry.differences.some((item) => item.check === wanted.check && (wanted.step === undefined || item.step === wanted.step));
         fixtures.push({ case: kase.id, mode, caught: hit });
@@ -468,13 +518,13 @@ export function reportLines(result, verdict, modes = MODES) {
   const notYet = [];
   for (const [name, row] of Object.entries(families).sort(([a], [b]) => (a < b ? -1 : 1))) {
     const byMode = modes.map((mode) => `${mode} ${row.byMode[mode]?.reproduced ?? 0}/${row.judged}`).join(', ');
-    lines.push(`${name}: ${row.cases} cases; ${row.judged} judged (reproduced ${byMode}; ${row.different} different, ${row.inconclusive} inconclusive), ${row.stepsCompared}/${row.steps} steps compared; ${row.unrecordable} unrecordable, ${row['no-reference']} no reference, ${row['not-replayable']} not replayable yet${Object.keys(row.later).length ? `: ${Object.entries(row.later).map(([what, count]) => `${count} ${what}`).join('; ')}` : ''}`);
+    lines.push(`${name}: ${row.cases} cases; ${row.judged} judged (reproduced ${byMode}; ${row.different} different, ${row.inconclusive} inconclusive), ${row.stepsCompared}/${row.steps} steps compared; ${row.unrecordable} unrecordable, ${row['no-reference']} no reference, ${row['not-replayable']} not replayable yet${row['not-ported'] ? `, ${row['not-ported']} not ported` : ''}${Object.keys(row.later).length ? `: ${Object.entries(row.later).map(([what, count]) => `${count} ${what}`).join('; ')}` : ''}`);
     if (row['not-replayable']) notYet.push(name);
   }
   const total = (key) => Object.values(families).reduce((sum, row) => sum + row[key], 0);
   const steps = Object.values(families).reduce((sum, row) => sum + row.stepsCompared, 0);
   const allSteps = Object.values(families).reduce((sum, row) => sum + row.steps, 0);
-  lines.push(`${new Set(result.cases.map((kase) => kase.container)).size} containers, ${result.cases.length} cases: ${total('reproduced')} reproduced (${modes.join(' and ')}), ${total('different')} different, ${total('inconclusive')} inconclusive, ${total('unrecordable')} unrecordable, ${total('no-reference')} no reference, ${total('not-replayable')} not replayable yet${notYet.length ? ` (${notYet.join(', ')})` : ''}; ${steps}/${allSteps} steps compared; ${verdict.fixtures.length ? `${verdict.fixtures.filter((item) => item.caught).length}/${verdict.fixtures.length} fixtures caught; ` : ''}${verdict.failures.length} differences, ${verdict.inconclusive.length} inconclusive problems; exit ${verdict.code}`);
+  lines.push(`${new Set(result.cases.map((kase) => kase.container)).size} containers, ${result.cases.length} cases: ${total('reproduced')} reproduced (${modes.join(' and ')}), ${total('different')} different, ${total('inconclusive')} inconclusive, ${total('unrecordable')} unrecordable, ${total('no-reference')} no reference, ${total('not-replayable')} not replayable yet${notYet.length ? ` (${notYet.join(', ')})` : ''}${total('not-ported') ? `, ${total('not-ported')} not ported (${Object.entries(families).filter(([, row]) => row['not-ported']).map(([name]) => name).join(', ')})` : ''}; ${steps}/${allSteps} steps compared; ${verdict.fixtures.length ? `${verdict.fixtures.filter((item) => item.caught).length}/${verdict.fixtures.length} fixtures caught; ` : ''}${verdict.failures.length} differences, ${verdict.inconclusive.length} inconclusive problems; exit ${verdict.code}`);
   return lines;
 }
 

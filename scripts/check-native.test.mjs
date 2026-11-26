@@ -145,7 +145,10 @@ describe('packages/native Cargo workspace', () => {
     const index = predicate => steps.findIndex(predicate);
     const gate = index(step => step.id === 'native');
     assert.ok(gate >= 0, 'the static job decides once whether packages/native is checked');
-    assert.match(steps[gate].run, /paths="packages\/native scripts\/check-native\.mjs scripts\/check-native-licenses\.mjs \.github\/workflows\/ci\.yml"/);
+    assert.match(steps[gate].run, /paths="packages\/native scripts\/check-native\.mjs scripts\/check-native-licenses\.mjs \.github\/workflows\/ci\.yml packages\/harness-runtime\/native\/ledger-core\/src\/js\/number\.rs packages\/harness-runtime\/native\/ledger-core\/tests\/numbers\.tsv packages\/harness-runtime\/native\/ledger-core\/tests\/json\.tsv"/);
+    // The ledger core's files the client engine compiles in (`#[path]`) or reads as vectors are in that filter.
+    const engineNumber = readFileSync(path.join(repositoryRoot, 'packages/native/crates/client-engine/src/js/number.rs'), 'utf8');
+    assert.match(engineNumber, /#\[path = "\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/harness-runtime\/native\/ledger-core\/src\/js\/number\.rs"\]/);
     assert.match(steps[gate].run, /echo "run=false" >> "\$GITHUB_OUTPUT"[\s\S]*echo "run=true" >> "\$GITHUB_OUTPUT"/);
     const gated = "steps.native.outputs.run == 'true'";
     const check = index(step => typeof step.run === 'string' && /^node scripts\/check-native\.mjs$/m.test(step.run));

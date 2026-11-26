@@ -1,0 +1,508 @@
+{
+ "format": "devryan-client-vector-witnesses@1",
+ "seed": 20261126,
+ "families": {
+  "live-aggregate": [
+   {
+    "profile": "full",
+    "index": 1,
+    "plant": "rv-codec-negative-zero-lost"
+   },
+   {
+    "profile": "full",
+    "index": 17,
+    "plant": "rv-index-max"
+   },
+   {
+    "profile": "full",
+    "index": 29,
+    "plant": "rv-sort-unstable-ties"
+   },
+   {
+    "profile": "full",
+    "index": 36,
+    "plant": "live-aggregate-attempt-ignored"
+   },
+   {
+    "profile": "full",
+    "index": 124,
+    "plant": "live-aggregate-ties-keep-first"
+   },
+   {
+    "profile": "full",
+    "index": 207,
+    "plant": "live-aggregate-signature-without-title"
+   },
+   {
+    "profile": "full",
+    "index": 230,
+    "plant": "rv-eq-nan"
+   },
+   {
+    "profile": "full",
+    "index": 328,
+    "plant": "live-aggregate-missing-session-zero"
+   },
+   {
+    "profile": "full",
+    "index": 412,
+    "plant": "live-aggregate-identity-not-shortcut"
+   },
+   {
+    "profile": "full",
+    "index": 2368,
+    "plant": "live-aggregate-busy-over-retry"
+   },
+   {
+    "profile": "typed",
+    "index": 1700,
+    "plant": "live-aggregate-missing-key-equal"
+   }
+  ],
+  "revert-transactions": [
+   {
+    "profile": "full",
+    "index": 6,
+    "plant": "rv-codec-negative-zero-lost"
+   },
+   {
+    "profile": "full",
+    "index": 29,
+    "plant": "message-order-find-last"
+   },
+   {
+    "profile": "full",
+    "index": 123,
+    "plant": "rv-rt-hidden-array-ok"
+   },
+   {
+    "profile": "full",
+    "index": 193,
+    "plant": "revert-transactions-hidden-set-ignored"
+   },
+   {
+    "profile": "full",
+    "index": 337,
+    "plant": "revert-transactions-session-argument-ignored"
+   },
+   {
+    "profile": "full",
+    "index": 407,
+    "plant": "baseline: an optional computed key made a string before its base was read (fixed in the C0i fix round)"
+   }
+  ],
+  "materialization": [
+   {
+    "profile": "full",
+    "index": 1,
+    "plant": "message-order-find-last"
+   },
+   {
+    "profile": "full",
+    "index": 3,
+    "plant": "rv-sort-unstable-ties"
+   },
+   {
+    "profile": "full",
+    "index": 6,
+    "plant": "materialization-status-without-own-key"
+   },
+   {
+    "profile": "full",
+    "index": 70,
+    "plant": "message-order-sort-unstable"
+   },
+   {
+    "profile": "full",
+    "index": 72,
+    "plant": "materialization-part-time-ignored"
+   },
+   {
+    "profile": "full",
+    "index": 103,
+    "plant": "materialization-user-envelope-materialized"
+   },
+   {
+    "profile": "full",
+    "index": 109,
+    "plant": "rv-index-max"
+   },
+   {
+    "profile": "full",
+    "index": 125,
+    "plant": "session-diff-stats-unchanged-copied"
+   },
+   {
+    "profile": "full",
+    "index": 155,
+    "plant": "rv-mat-message-json-ignored"
+   },
+   {
+    "profile": "full",
+    "index": 339,
+    "plant": "materialization-unchanged-messages-copied"
+   },
+   {
+    "profile": "full",
+    "index": 620,
+    "plant": "materialization-incomplete-replaces-complete"
+   },
+   {
+    "profile": "full",
+    "index": 679,
+    "plant": "session-working-zero-completed"
+   },
+   {
+    "profile": "full",
+    "index": 1039,
+    "plant": "native-cursor-text-missing-namespace-true"
+   },
+   {
+    "profile": "full",
+    "index": 1320,
+    "plant": "materialization-diverging-text-kept"
+   },
+   {
+    "profile": "full",
+    "index": 1328,
+    "plant": "rv-join-null-text"
+   },
+   {
+    "profile": "typed",
+    "index": 263,
+    "plant": "materialization-finalized-tool-replaced"
+   },
+   {
+    "profile": "typed",
+    "index": 275,
+    "plant": "rv-json-undefined-member-null"
+   },
+   {
+    "profile": "typed",
+    "index": 645,
+    "plant": "native-cursor-text-missing-cursor-true"
+   }
+  ],
+  "message-order": [
+   {
+    "profile": "full",
+    "index": 0,
+    "plant": "rv-codec-negative-zero-lost"
+   },
+   {
+    "profile": "full",
+    "index": 8,
+    "plant": "message-order-sort-unstable"
+   },
+   {
+    "profile": "full",
+    "index": 9,
+    "plant": "rv-sort-undefined-kept"
+   },
+   {
+    "profile": "full",
+    "index": 18,
+    "plant": "message-order-find-last"
+   },
+   {
+    "profile": "full",
+    "index": 602,
+    "plant": "rv-lt-codepoint"
+   },
+   {
+    "profile": "full",
+    "index": 983,
+    "plant": "rv-index-max"
+   },
+   {
+    "profile": "full",
+    "index": 2117,
+    "plant": "rv-num-empty-nan"
+   }
+  ],
+  "optimistic": [
+   {
+    "profile": "full",
+    "index": 8,
+    "plant": "optimistic-parts-unfiltered"
+   },
+   {
+    "profile": "full",
+    "index": 83,
+    "plant": "rv-index-max"
+   },
+   {
+    "profile": "full",
+    "index": 95,
+    "plant": "optimistic-add-duplicates"
+   },
+   {
+    "profile": "full",
+    "index": 158,
+    "plant": "rv-join-null-text"
+   },
+   {
+    "profile": "full",
+    "index": 687,
+    "plant": "message-order-find-last"
+   },
+   {
+    "profile": "full",
+    "index": 2369,
+    "plant": "rv-codec-negative-zero-lost"
+   }
+  ],
+  "native-cursor-text": [
+   {
+    "profile": "full",
+    "index": 27,
+    "plant": "rv-codec-negative-zero-lost"
+   },
+   {
+    "profile": "full",
+    "index": 144,
+    "plant": "rv-index-max"
+   },
+   {
+    "profile": "full",
+    "index": 393,
+    "plant": "native-cursor-text-missing-cursor-true"
+   },
+   {
+    "profile": "full",
+    "index": 446,
+    "plant": "native-cursor-text-id-unchecked"
+   },
+   {
+    "profile": "full",
+    "index": 543,
+    "plant": "native-cursor-text-missing-namespace-true"
+   }
+  ],
+  "tool-status": [
+   {
+    "profile": "full",
+    "index": 2,
+    "plant": "rv-lower-ascii"
+   },
+   {
+    "profile": "full",
+    "index": 12,
+    "plant": "rv-space-no-feff"
+   },
+   {
+    "profile": "full",
+    "index": 14,
+    "plant": "rv-codec-negative-zero-lost"
+   },
+   {
+    "profile": "full",
+    "index": 15,
+    "plant": "rv-ts-no-line-separators"
+   },
+   {
+    "profile": "full",
+    "index": 32,
+    "plant": "rv-space-nel"
+   },
+   {
+    "profile": "full",
+    "index": 81,
+    "plant": "rv-lower-lone-fffd"
+   },
+   {
+    "profile": "full",
+    "index": 110,
+    "plant": "rv-index-max"
+   },
+   {
+    "profile": "full",
+    "index": 222,
+    "plant": "tool-status-empty-kept"
+   },
+   {
+    "profile": "full",
+    "index": 356,
+    "plant": "tool-status-range-inclusive"
+   },
+   {
+    "profile": "full",
+    "index": 553,
+    "plant": "tool-status-pending-not-active"
+   },
+   {
+    "profile": "full",
+    "index": 1188,
+    "plant": "rv-lower-no-final-sigma"
+   }
+  ],
+  "sanitize": [
+   {
+    "profile": "full",
+    "index": 7,
+    "plant": "sanitize-holes-filled"
+   },
+   {
+    "profile": "full",
+    "index": 10,
+    "plant": "rv-sz-empty-string-kept"
+   },
+   {
+    "profile": "full",
+    "index": 16,
+    "plant": "rv-codec-negative-zero-lost"
+   },
+   {
+    "profile": "full",
+    "index": 1035,
+    "plant": "rv-index-max"
+   }
+  ],
+  "tool-output": [
+   {
+    "profile": "full",
+    "index": 3,
+    "plant": "rv-codec-negative-zero-lost"
+   },
+   {
+    "profile": "full",
+    "index": 29,
+    "plant": "tool-output-truthy-marker"
+   },
+   {
+    "profile": "full",
+    "index": 131,
+    "plant": "tool-output-bytes-kept"
+   },
+   {
+    "profile": "full",
+    "index": 177,
+    "plant": "rv-index-max"
+   },
+   {
+    "profile": "full",
+    "index": 214,
+    "plant": "rv-to-zero-bytes-rejected"
+   },
+   {
+    "profile": "full",
+    "index": 345,
+    "plant": "tool-output-ids-unchecked"
+   },
+   {
+    "profile": "full",
+    "index": 617,
+    "plant": "tool-output-first-loaded-wins"
+   },
+   {
+    "profile": "typed",
+    "index": 1226,
+    "plant": "rv-json-undefined-member-null"
+   }
+  ],
+  "session-diff-stats": [
+   {
+    "profile": "full",
+    "index": 5,
+    "plant": "session-diff-stats-backslash-kept"
+   },
+   {
+    "profile": "full",
+    "index": 23,
+    "plant": "rv-codec-negative-zero-lost"
+   },
+   {
+    "profile": "full",
+    "index": 48,
+    "plant": "rv-trim-start-only"
+   },
+   {
+    "profile": "full",
+    "index": 80,
+    "plant": "rv-num-lenient-suffix"
+   },
+   {
+    "profile": "full",
+    "index": 81,
+    "plant": "rv-max-neg-zero"
+   },
+   {
+    "profile": "full",
+    "index": 142,
+    "plant": "rv-sds-strip-all-dot-slash"
+   },
+   {
+    "profile": "full",
+    "index": 145,
+    "plant": "session-diff-stats-true-counts"
+   },
+   {
+    "profile": "full",
+    "index": 199,
+    "plant": "session-diff-stats-unchanged-copied"
+   },
+   {
+    "profile": "full",
+    "index": 289,
+    "plant": "rv-space-no-feff"
+   },
+   {
+    "profile": "full",
+    "index": 899,
+    "plant": "rv-space-nel"
+   }
+  ],
+  "session-working": [
+   {
+    "profile": "full",
+    "index": 10,
+    "plant": "rv-codec-negative-zero-lost"
+   },
+   {
+    "profile": "full",
+    "index": 20,
+    "plant": "rv-trim-start-only"
+   },
+   {
+    "profile": "full",
+    "index": 216,
+    "plant": "session-working-zero-completed"
+   },
+   {
+    "profile": "full",
+    "index": 391,
+    "plant": "rv-space-no-feff"
+   },
+   {
+    "profile": "full",
+    "index": 398,
+    "plant": "session-working-scan-past-user"
+   },
+   {
+    "profile": "full",
+    "index": 670,
+    "plant": "session-working-done-not-complete"
+   },
+   {
+    "profile": "full",
+    "index": 694,
+    "plant": "session-working-streaming-ignored"
+   },
+   {
+    "profile": "full",
+    "index": 1324,
+    "plant": "rv-index-max"
+   },
+   {
+    "profile": "typed",
+    "index": 42,
+    "plant": "tool-status-range-inclusive"
+   },
+   {
+    "profile": "typed",
+    "index": 1320,
+    "plant": "session-working-in-flight-is-unfinalized"
+   }
+  ]
+ }
+}

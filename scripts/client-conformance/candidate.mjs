@@ -28,12 +28,16 @@
 // for, a difference is still 1 and an unstable case 2, and a run whose judged
 // part passed exits 3, its last line saying `partial pass`.
 // `--repeat=N` runs the engine N times and makes a case it judged two ways
-// unstable. Exit codes: candidate-census.mjs (0, 1, 2, 3; 64 usage).
-import { existsSync, statSync, writeFileSync } from 'node:fs';
+// unstable. An engine that does not implement a family refuses it as not
+// ported (package C0i: the Rust runner names the families it implements):
+// its cases are `not-ported`, the family is out of the judgement, and the
+// run is partial by a line naming it, exactly as one run with `--families`.
+// Exit codes: candidate-census.mjs (0, 1, 2, 3; 64 usage).
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { candidateCensus, casesWithRecords, censusLines, EXIT, judgeCandidate, judgeUnjudged, loadContract, repeatDifferences } from './candidate-census.mjs';
-import { compareCandidate, RULE_SETS } from './candidate-compare.mjs';
+import { builtEngineMessages, compareCandidate, RULE_SETS } from './candidate-compare.mjs';
 import { loadCensus } from './census.mjs';
 import { typescriptEngine } from './engine.mjs';
 import { loadPortMap } from './port-map.mjs';
@@ -94,9 +98,12 @@ export async function replayRepeated(planned, { engine, rules, modes, repeat, co
  */
 export function judgeRuns(runs, { recordingCensus, contract, problems = [], modes = MODES, partial = false }) {
   const missingModes = MODES.filter((mode) => !modes.includes(mode));
+  // The families whose cases the engine refused as not ported (it does not implement them): out of the judgement.
+  const notPortedOf = (run) => [...new Set(run.result.cases.filter((kase) => kase.outcome === 'not-ported').map((kase) => kase.family))].sort();
   const skippedOf = (run) => [
     ...(run.complete === false ? [`${run.label} holds part of a recording only (${run.scope ? `families ${run.scope.join(', ')}` : 'a scope its manifest names'})`] : []),
     ...(missingModes.length ? [`${run.label} judged in mode ${modes.join(', ')} only, not ${missingModes.join(', ')}`] : []),
+    ...(notPortedOf(run).length ? [`${run.label}: the engine does not implement families ${notPortedOf(run).join(', ')} (${run.result.cases.filter((kase) => kase.outcome === 'not-ported').length} cases not ported, not judged)`] : []),
   ];
   const whole = (run) => skippedOf(run).length === 0;
   const verdicts = [];
@@ -104,9 +111,10 @@ export function judgeRuns(runs, { recordingCensus, contract, problems = [], mode
   const unjudged = { inconclusive: [], unstable: [], stale: [], waived: { unrecordable: 0, unstable: 0, 'not-replayable': 0 } };
   const repeats = [];
   for (const run of runs) {
-    verdicts.push(judgeReplay(run.result, { modes, expected: run.expected ?? [], requireFamilies: run.requireFamilies ?? [] }));
+    const notPorted = notPortedOf(run);
+    verdicts.push(judgeReplay(run.result, { modes, expected: run.expected ?? [], requireFamilies: (run.requireFamilies ?? []).filter((family) => !notPorted.includes(family)), allowNotPorted: true }));
     const entries = casesWithRecords(run);
-    const scope = run.scope ?? run.portMap.families.map((family) => family.name);
+    const scope = (run.scope ?? run.portMap.families.map((family) => family.name)).filter((family) => !notPorted.includes(family));
     const judged = judgeUnjudged(entries, { recordingCensus: run.recordingCensus ?? recordingCensus, contract, complete: whole(run), scope });
     unjudged.inconclusive.push(...judged.inconclusive);
     unjudged.unstable.push(...judged.unstable);
@@ -138,6 +146,7 @@ export async function candidateToys({ workDir, engine, rules = 'candidate', mode
   const replayMap = loadPortMap(REPLAY_PORT_MAP, { root });
   const own = recording ?? await recordReplayToys({ workDir: path.join(workDir, 'record') });
   const problems = own.incomplete.map((entry) => `recording ${entry.check}: ${entry.detail}`);
+  if (rules === 'candidate') problems.push(...engineMessagesBuilt(toyMap), ...engineMessagesBuilt(replayMap));
   const corpus = planContainers(readContainerDir(TOY_EXPECTED), toyMap);
   const mine = planContainers(own.containers.map((item) => ({ name: item.name, text: item.text })), replayMap);
   const given = engine ?? typescriptEngine({ cwd: root });
@@ -176,6 +185,15 @@ export function assembleFrom({ recording, families = null, requireAlso = [] }) {
   return { problems, complete, requireFamilies: [...new Set([...recording.requireFamilies, ...requireAlso])].sort(), universe: manifest?.items ?? null };
 }
 
+/** The problems of the mapped modules that build a native error with an engine-shaped message (`engine-message-built`). */
+export function engineMessagesBuilt(portMap) {
+  const problems = [];
+  for (const file of new Set(portMap.families.map((family) => family.module))) {
+    for (const item of builtEngineMessages(readFileSync(file, 'utf8'))) problems.push(`engine-message-built ${path.relative(REPOSITORY_ROOT, file)}: it builds a ${item.className} whose message "${item.message}" has the shape of one ${item.engines.join(' and ')} writes itself, which the engine-message freedom would free`);
+  }
+  return problems;
+}
+
 /**
  * A recording directory's run (assembleFrom), replayed with `engine`.
  * `partial` asks for a run of part of a recording (then not inconclusive for that).
@@ -188,6 +206,9 @@ export async function candidateFrom({ directory, portMapFile, censusFile, contra
   const { problems, complete, requireFamilies, universe } = assembleFrom({ recording, families, requireAlso });
   const planned = planContainers(recording.list, portMap, { families });
   problems.push(...planned.problems.map((problem) => `${problem.check}${problem.container ? ` ${problem.container}` : ''}: ${problem.detail}`));
+  // The engine-message freedom reads an engine's message shapes: a mapped module that builds a native error with a
+  // message of such a shape would have it freed, so such a recording is no reference for a candidate (inconclusive).
+  if (rules === 'candidate') problems.push(...engineMessagesBuilt(portMap));
   const { result, repeats } = await replayRepeated(planned, { engine: engine ?? typescriptEngine({ cwd }), rules, modes, repeat, concurrency, deadlineMs, capture });
   const scope = families ?? recording.manifest?.scope ?? undefined;
   const run = { label: path.basename(directory), planned, result, repeats, portMap, ...(scope ? { scope } : {}), universe, complete, requireFamilies };
@@ -257,10 +278,12 @@ export async function main(argv = process.argv.slice(2), { log = console.log, er
     const freedoms = {};
     for (const run of outcome.runs) for (const kase of run.result.cases) for (const entry of Object.values(kase.modes)) for (const name of entry.freedoms ?? []) freedoms[name] = (freedoms[name] ?? 0) + 1;
     const waived = outcome.unjudged.waived;
+    for (const run of outcome.runs) if (run.result.engine?.families) log(`${run.label}: engine ${run.result.engine.name} implements ${run.result.engine.families.length} families: ${run.result.engine.families.join(', ')}`);
+    const notPorted = outcome.runs.reduce((sum, run) => sum + run.result.cases.filter((kase) => kase.outcome === 'not-ported').length, 0);
     // A run that skipped part of the judgement says so first, and what it skipped, on its last line (never exit 0).
     const passedPart = options.partial && outcome.code === EXIT.inconclusive && !outcome.inconclusive.length;
     const partial = !outcome.skipped.length ? '' : `, ${passedPart ? 'partial pass (asked for with --partial), not a complete pass' : options.partial ? 'partial run (asked for with --partial)' : 'partial run not asked for'}: ${outcome.skipped.join('; ')}`;
-    log(`candidate (${rules} rules${partial}): ${outcome.runs.reduce((sum, run) => sum + run.result.cases.filter((kase) => kase.outcome === 'reproduced').length, 0)} reproduced; not judged and waived by name: ${waived.unrecordable} unrecordable, ${waived.unstable} unstable, ${waived['not-replayable']} not replayable; freedoms used ${Object.keys(freedoms).length ? Object.entries(freedoms).map(([name, count]) => `${name} ${count}`).join(', ') : 'none'}; ${outcome.failures.length} differences or failed checks, ${outcome.unstable.length} unstable, ${outcome.inconclusive.length} inconclusive problems; exit ${outcome.code}`);
+    log(`candidate (${rules} rules${partial}): ${outcome.runs.reduce((sum, run) => sum + run.result.cases.filter((kase) => kase.outcome === 'reproduced').length, 0)} reproduced; not judged and waived by name: ${waived.unrecordable} unrecordable, ${waived.unstable} unstable, ${waived['not-replayable']} not replayable; ${notPorted} not ported; freedoms used ${Object.keys(freedoms).length ? Object.entries(freedoms).map(([name, count]) => `${name} ${count}`).join(', ') : 'none'}; ${outcome.failures.length} differences or failed checks, ${outcome.unstable.length} unstable, ${outcome.inconclusive.length} inconclusive problems; exit ${outcome.code}`);
     if (options.json) writeFileSync(options.json, `${JSON.stringify({ code: outcome.code, rules, complete: !outcome.skipped.length, skipped: outcome.skipped, failures: outcome.failures, unstable: outcome.unstable, inconclusive: outcome.inconclusive, census: outcome.census, waived, runs: outcome.runs.map((run) => ({ label: run.label, cases: run.result.cases })) }, null, 2)}\n`);
     status = outcome.code === EXIT.pass || passedPart ? 'passed' : 'failed';
     return outcome.code;

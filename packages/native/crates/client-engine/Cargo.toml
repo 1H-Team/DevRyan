@@ -1,0 +1,16 @@
+[package]
+name = "devryan-client-engine"
+version = "0.1.0"
+description = "Client state engine families ported from packages/ui/src/sync, sans-IO, judged against the client conformance recordings (tests only; nothing calls it yet)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+
+[lints]
+workspace = true

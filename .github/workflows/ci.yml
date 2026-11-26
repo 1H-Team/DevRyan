@@ -81,14 +81,17 @@ jobs:
       # in deny.toml, with cargo metadata only), cargo fmt --check, clippy with
       # warnings denied and cargo test, then the RustSec advisory check. Every
       # push to main runs them; a pull request runs them only when
-      # packages/native, its check scripts or this workflow changed. Their
-      # contract test needs no Rust and runs in a test lane on every push.
+      # packages/native, its check scripts, this workflow or the ledger
+      # core's files the client engine compiles in or reads as vectors
+      # (packages/native/DOCUMENTATION.md, "One JavaScript implementation")
+      # changed. Their contract test needs no Rust and runs in a test lane on
+      # every push.
       - name: Does this run check packages/native?
         id: native
         env:
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
         run: |
-          paths="packages/native scripts/check-native.mjs scripts/check-native-licenses.mjs .github/workflows/ci.yml"
+          paths="packages/native scripts/check-native.mjs scripts/check-native-licenses.mjs .github/workflows/ci.yml packages/harness-runtime/native/ledger-core/src/js/number.rs packages/harness-runtime/native/ledger-core/tests/numbers.tsv packages/harness-runtime/native/ledger-core/tests/json.tsv"
           if [ -n "$BASE" ] && git fetch --no-tags --depth=1 origin "$BASE" && git diff --quiet "$BASE" HEAD -- $paths; then
             echo "No packages/native change in this pull request: its checks are skipped."
             echo "run=false" >> "$GITHUB_OUTPUT"

@@ -153,7 +153,55 @@ export const OUTSIDE_CHECKS = Object.freeze([
   { name: 'outside-clock-time-shifted', check: null, kind: 'time-oracle' },
   { name: 'outside-pending-across-group', check: 'pending-timers', synthetic: 'pending' },
   { name: 'outside-clock-varying-dropped', check: 'effects', synthetic: 'clock' },
+  // Package C0i's fix round: the engine-message freedom frees an engine-written message, nothing else of an error.
+  { name: 'outside-engine-error-class', check: null, synthetic: 'engine-message' },
+  { name: 'outside-engine-error-missing', check: null, synthetic: 'engine-message' },
+  { name: 'outside-engine-error-extra', check: null, synthetic: 'engine-message' },
+  { name: 'outside-product-message', check: null, synthetic: 'engine-message' },
+  // The engine-difference freedom frees a step a rule names, nothing else.
+  { name: 'outside-engine-difference-not-named', check: 'result', synthetic: 'engine-difference' },
+  { name: 'outside-engine-difference-other-step', check: 'result', synthetic: 'engine-difference' },
 ]);
+
+/**
+ * A fixed message-order case (no toy family sorts messages): one step per list given, each
+ * sortMessagesChronologically of it, recorded as returning `recorded[i]` and answered by the engine as `replayed[i]`.
+ */
+function sortCase(lists, recorded, replayed) {
+  const step = (args, returns, n) => ({ n, input: { kind: 'call', entry: 'sortMessagesChronologically', args: [args], now: 1 }, effects: [], returnedAt: 0, returns });
+  const kase = { id: 'fixed sort', steps: lists.map((list, at) => step(list, recorded[at], at + 1)), end: { pending: [] } };
+  const answer = { steps: lists.map((list, at) => ({ ...step(list, replayed[at], at + 1), effects: undefined, group: at + 1, openedAt: 0 })), groups: lists.map(() => ({ effects: [] })), pending: [], halt: null, outside: [], bindFailures: [] };
+  return { kase, answer: { ...answer, steps: answer.steps.map(({ effects: _effects, ...rest }) => rest) } };
+}
+const INCONSISTENT = [{ id: 'a', time: { created: 1 } }, { time: { created: 1 } }];
+const CONSISTENT = [{ id: 'a', time: { created: 1 } }, { id: 'b', time: { created: 1 } }];
+
+/** A JavaScriptCore message and a candidate's own for one engine-written TypeError (the engine-message checks). */
+const ENGINE_TEXT = "null is not an object (evaluating 'text.trim')";
+const CANDIDATE_TEXT = 'client-engine: null has no member trim';
+const errorOf = (tree) => (tree !== null && typeof tree === 'object' && tree.$dr === 'id' ? tree.value : tree);
+const withError = (tree, change) => { const copy = clone(tree); change(errorOf(copy)); return copy; };
+/**
+ * The captured pairs with a thrown error (the toys' `label` of `toy-relay`, a
+ * TypeError its module builds), each as `{ pair, index }`, the step that threw.
+ */
+const throwingPairs = (pairs) => pairs.flatMap((pair) => pair.kase.steps.map((step, index) => ({ pair, index, step })).filter(({ step, index }) => errorOf(step.throws)?.$dr === 'class' && errorOf(step.throws).error && errorOf(pair.replayed.steps[index]?.throws)?.$dr === 'class'));
+/** The pair with that step's error made an engine-written one: the recording's JavaScriptCore text, the candidate's own. */
+const engineMade = ({ pair, index }) => {
+  const kase = { ...pair.kase, steps: pair.kase.steps.map((step, at) => (at === index ? { ...step, throws: withError(step.throws, (error) => { error.error = { name: 'TypeError', message: ENGINE_TEXT }; error.name = 'TypeError'; }) } : step)) };
+  const replayed = { ...pair.replayed, steps: pair.replayed.steps.map((step, at) => (at === index ? { ...step, throws: withError(step.throws, (error) => { error.error = { name: 'TypeError', message: CANDIDATE_TEXT }; error.name = 'TypeError'; }) } : step)) };
+  return { kase, replayed };
+};
+/** The planted answers just outside the engine-message freedom, from an engine-made pair. */
+const ENGINE_MESSAGE_PLANTS = Object.freeze({
+  'outside-engine-error-class': ({ kase, replayed }, index) => ({ kase, replayed: { ...replayed, steps: replayed.steps.map((step, at) => (at === index ? { ...step, throws: withError(step.throws, (error) => { error.name = 'RangeError'; error.error = { ...error.error, name: 'RangeError' }; }) } : step)) } }),
+  'outside-engine-error-missing': ({ kase, replayed }, index) => ({ kase, replayed: { ...replayed, steps: replayed.steps.map((step, at) => (at === index ? { ...without(step, 'throws'), returns: { $dr: 'undefined' } } : step)) } }),
+  'outside-engine-error-extra': ({ kase, replayed }, index) => {
+    const other = replayed.steps.findIndex((step, at) => at !== index && step.returns !== undefined);
+    if (other < 0) return null;
+    return { kase, replayed: { ...replayed, steps: replayed.steps.map((step, at) => (at === other ? { ...without(step, 'returns'), throws: clone(replayed.steps[index].throws) } : step)) } };
+  },
+});
 
 /** The answer with the first effect of any group that `test` picks changed by `change` (null when none, or when `change` declines). */
 function changeEffect(replayed, test, change) {
@@ -276,7 +324,7 @@ export async function candidateChecks({ harnessDir = HARNESS_DIR, captured, only
 
   add('freedoms-pinned', () => {
     const names = FREEDOMS.map((item) => item.name);
-    if (JSON.stringify(names) !== JSON.stringify(['group', 'clock'])) return `the freedoms are ${names.join(', ')}; pinned group, clock`;
+    if (JSON.stringify(names) !== JSON.stringify(['group', 'clock', 'engine-message', 'engine-difference'])) return `the freedoms are ${names.join(', ')}; pinned group, clock, engine-message, engine-difference`;
     const listed = FREEDOMS.flatMap((item) => item.outside);
     const known = OUTSIDE_CHECKS.map((item) => item.name);
     const missing = listed.filter((name) => !known.includes(name));
@@ -339,7 +387,7 @@ export async function candidateChecks({ harnessDir = HARNESS_DIR, captured, only
   }
   add('freedoms-reported', () => {
     // A case only a freedom reproduces says which (never silent): the reshaped answers need both, each somewhere.
-    const used = { group: 0, clock: 0 };
+    const used = { group: 0, clock: 0, 'engine-message': 0, 'engine-difference': 0 };
     for (const pair of pairs) for (const name of judge(pair, reshaped(pair)).freedoms) used[name] += 1;
     return used.group >= MINIMUMS.groupOnly && used.clock >= MINIMUMS.clockOnly ? null : `the reshaped answers report freedoms ${JSON.stringify(used)}`;
   });
@@ -443,6 +491,37 @@ export async function candidateChecks({ harnessDir = HARNESS_DIR, captured, only
           if (problem) return problem;
           if (applied >= 10) break;
         }
+      } else if (outside.synthetic === 'engine-message') {
+        // The toys' thrown errors are their modules' own (`label`'s TypeError): made engine-written here, on both
+        // sides alike, the recording with JavaScriptCore's text and the candidate with its own (a right candidate,
+        // the control); each plant then changes what the freedom does not free. `outside-product-message` keeps the
+        // module's own error and changes its text, which is compared.
+        for (const found of throwingPairs(pairs)) {
+          const { pair, index } = found;
+          let planted;
+          if (outside.name === 'outside-product-message') {
+            planted = { kase: pair.kase, replayed: { ...pair.replayed, steps: pair.replayed.steps.map((step, at) => (at === index ? { ...step, throws: withError(step.throws, (error) => { error.error = { ...error.error, message: `${error.error.message} (planted)` }; }) } : step)) } };
+          } else {
+            const made = engineMade(found);
+            const control = compareCandidate(made.kase, made.replayed, { unordered: pair.unordered });
+            if (control.differences.length) return `${pair.kase.id}: the engine-made control differs: ${first(control)}`;
+            planted = ENGINE_MESSAGE_PLANTS[outside.name](made, index);
+          }
+          if (!planted) continue;
+          applied += 1;
+          const problem = verify(pair, planted.replayed, planted.kase);
+          if (problem) return problem;
+        }
+      } else if (outside.synthetic === 'engine-difference') {
+        // Fixed cases: a step no rule names (all ids strings) answered otherwise, or a later step after a named one.
+        const { kase, answer } = outside.name === 'outside-engine-difference-not-named'
+          ? sortCase([CONSISTENT], [['x']], [['y']])
+          : sortCase([INCONSISTENT, CONSISTENT], [['x'], ['z']], [['y'], ['w']]);
+        applied += 1;
+        const result = compareCandidate(kase, answer, { family: 'message-order' });
+        if (!result.differences.length) return 'reproduced';
+        if (has(result, outside.check)) named += 1;
+        else return `different by ${first(result)}, not by ${outside.check}`;
       } else if (outside.synthetic === 'pending') {
         // A timer pending at the end set in the first of two groups (a second, empty group appended where the toys have none).
         for (const pair of pairs) {
@@ -472,6 +551,75 @@ export async function candidateChecks({ harnessDir = HARNESS_DIR, captured, only
       return named ? null : `no case reported ${outside.check ?? ''}/${[].concat(outside.kind ?? '*').join('|')}`;
     });
   }
+  add('freedom-engine-message-needed', () => {
+    // An engine-written error whose text is the candidate's own: reproduced under the candidate rules, by that freedom
+    // alone (reported), different under the exact rules; the same answer with the module's own error is different.
+    const found = throwingPairs(pairs);
+    if (!found.length) return 'no toy case throws: it proves nothing';
+    for (const item of found) {
+      const { kase, replayed } = engineMade(item);
+      const candidate = compareCandidate(kase, replayed, { unordered: item.pair.unordered, rules: 'candidate' });
+      if (candidate.differences.length) return `${item.pair.kase.id}: an engine-written message the candidate writes its own way differs: ${first(candidate)}`;
+      if (JSON.stringify(candidate.freedoms) !== JSON.stringify(['engine-message'])) return `${item.pair.kase.id}: freedoms used ${candidate.freedoms.join(', ')}, expected engine-message`;
+      if (!compareCandidate(kase, replayed, { unordered: item.pair.unordered, rules: 'exact' }).differences.length) return `${item.pair.kase.id}: the exact rules reproduce another message`;
+      const own = { ...item.pair.replayed, steps: item.pair.replayed.steps.map((step, at) => (at === item.index ? { ...step, throws: withError(step.throws, (error) => { error.error = { ...error.error, message: CANDIDATE_TEXT }; }) } : step)) };
+      if (!compareCandidate(item.pair.kase, own, { unordered: item.pair.unordered, rules: 'candidate' }).differences.length) return `${item.pair.kase.id}: the module's own message, changed, is reproduced`;
+    }
+    return null;
+  });
+  add('engine-error-shapes', () => {
+    // Fixed messages: each engine's own are engine-written, a module's are not, and the class and members are read.
+    const node = (name, message, value = {}) => ({ $dr: 'class', name, error: { name, message }, value });
+    const cases = [
+      [node('TypeError', "null is not an object (evaluating 'diff.additions')"), 'javascriptcore', true],
+      [node('TypeError', "undefined is not an object (evaluating 'state.part[message.id]')"), 'javascriptcore', true],
+      [node('TypeError', 'Attempted to assign to readonly property.'), 'javascriptcore', true],
+      [node('TypeError', "Cannot read properties of null (reading 'additions')"), 'v8', true],
+      [node('TypeError', "Cannot read properties of null (reading 'additions')"), 'javascriptcore', false],
+      [node('TypeError', 'label needs text, got object'), 'javascriptcore', false],
+      [node('Error', "null is not an object (evaluating 'x.y')"), 'javascriptcore', false],
+      [node('TypeError', "null is not an object (evaluating 'x.y')", { extra: 1 }), 'javascriptcore', false],
+      [{ $dr: 'id', n: 1, value: node('RangeError', 'Invalid array length') }, 'v8', true],
+    ];
+    for (const [tree, engine, wanted] of cases) if (compareModule.isEngineError(tree, engine) !== wanted) return `${JSON.stringify(tree)} under ${engine}: ${!wanted}, expected ${wanted}`;
+    return null;
+  });
+  add('engine-messages-not-built', () => {
+    // The scanner finds a native error built with an engine's text, in each way a module writes one, and not a module's
+    // own text; the command makes such a recording inconclusive for a candidate (candidate.mjs engineMessagesBuilt).
+    const found = compareModule.builtEngineMessages("new TypeError('x is not a function'); throw RangeError(\"Invalid array length\"); new TypeError(`${a} is not iterable`); new TypeError(`label needs text, got ${typeof text}`); new Error('null is not an object')");
+    const got = found.map((item) => `${item.className}:${item.message}`);
+    const wanted = ['TypeError:x is not a function', 'RangeError:Invalid array length', 'TypeError:x is not iterable'];
+    if (JSON.stringify(got) !== JSON.stringify(wanted)) return `found ${JSON.stringify(got)}, expected ${JSON.stringify(wanted)}`;
+    const planted = commandModule.engineMessagesBuilt({ families: [{ module: new URL(import.meta.url).pathname }] });
+    return planted.length ? null : 'a module that builds engine-shaped messages (this file) gives no problem';
+  });
+  add('engine-difference-rules', () => {
+    // Each rule names the recorded calls it must and no other; the candidate rules then free that step's results only.
+    const named = (family, entry, args) => compareModule.engineDifferenceOf(family, { input: { kind: 'call', entry, args } });
+    const records = (ids) => [{}, 's1', ids.map((id) => ({ info: id === undefined ? { role: 'user' } : { id, role: 'user' }, parts: [] }))];
+    const cases = [
+      [named('message-order', 'sortMessagesChronologically', [INCONSISTENT]), 'sort-inconsistent-comparator'],
+      [named('message-order', 'sortMessagesChronologically', [CONSISTENT]), null],
+      [named('message-order', 'sortMessagesChronologically', [[{ id: 'a' }, null]]), 'sort-inconsistent-comparator'],
+      [named('message-order', 'findMessageIndex', [INCONSISTENT, 'a']), null],
+      [named('materialization', 'materializeSessionSnapshots', records(['m1', undefined])), 'sort-inconsistent-comparator'],
+      [named('materialization', 'materializeSessionSnapshots', records(['m1', 'm2'])), null],
+      [named('session-diff-stats', 'parseSessionDiffCount', [`0x${'f'.repeat(14)}`]), 'string-to-number-radix-rounding'],
+      [named('session-diff-stats', 'parseSessionDiffCount', [` 0b${'1'.repeat(54)} `]), 'string-to-number-radix-rounding'],
+      [named('session-diff-stats', 'parseSessionDiffCount', [`0x${'f'.repeat(13)}`]), null],
+      [named('session-diff-stats', 'parseSessionDiffCount', [`0x000${'f'.repeat(13)}`]), null],
+      [named('session-diff-stats', 'parseSessionDiffCount', ['9'.repeat(40)]), null],
+      [named('tool-status', 'normalizeToolStatus', [`0x${'f'.repeat(20)}`]), null],
+    ];
+    for (const [index, [got, wanted]] of cases.entries()) if (got !== wanted) return `case ${index}: ${got}, expected ${wanted}`;
+    const { kase, answer } = sortCase([INCONSISTENT], [['x']], [['y']]);
+    const freed = compareCandidate(kase, answer, { family: 'message-order' });
+    if (freed.differences.length || JSON.stringify(freed.freedoms) !== JSON.stringify(['engine-difference'])) return `a named step answered otherwise: ${first(freed)}, freedoms ${freed.freedoms.join(', ')}`;
+    if (!compareCandidate(kase, answer, { family: 'message-order', rules: 'exact' }).differences.length) return 'the exact rules free a named step';
+    if (!compareCandidate(kase, answer, { family: 'tool-status' }).differences.length) return 'a rule applied to a family it does not name';
+    return null;
+  });
   add('freedom-settle-opening', () => {
     // Where a settled answer opened is free (the group freedom), and the exact rules see it.
     let applied = 0;
@@ -637,6 +785,14 @@ export function judgeChecks(captured, { censusModule, commandModule }) {
   run('judge-partial-asked-difference', ({ runs }) => { runs[0].complete = false; runs[0].scope = ['toy-reducer']; differ(reproducedCase(runs).kase, { check: 'effects', kind: 'value', step: 1, path: '/steps/0/effects/0', expected: 'a', actual: 'b' }); return { partial: true }; }, code(EXIT.fail, /^different /));
   run('judge-modes-partial', () => ({ modes: ['file'] }), code(EXIT.inconclusive, /^partial: toy corpus judged in mode file only, not isolated/));
   run('judge-modes-partial-asked', () => ({ modes: ['isolated'], partial: true }), partialPass(/replayer toys judged in mode isolated only, not file/));
+  // A family the engine refused as not ported (package C0i): out of the judgement, and the run partial, never 0.
+  const notPorted = (runs, family) => { for (const item of casesOf(runs, ({ kase }) => kase.family === family && kase.outcome === 'reproduced')) { item.kase.outcome = 'not-ported'; item.kase.modes = { file: { outcome: 'not-ported', differences: [], detail: 'planted: not implemented' }, isolated: { outcome: 'not-ported', differences: [], detail: 'planted: not implemented' } }; } };
+  run('judge-not-ported-unasked', ({ runs }) => { notPorted(runs, 'toy-reducer'); }, code(EXIT.inconclusive, /^partial: toy corpus: the engine does not implement families toy-reducer/));
+  run('judge-not-ported-asked', ({ runs }) => { notPorted(runs, 'toy-reducer'); return { partial: true }; }, partialPass(/the engine does not implement families toy-reducer/));
+  // Refused in file order only and reproduced alone (the C0i review's B1): inconclusive, asked for as partial or not.
+  const notPortedFileOnly = (runs, family) => { for (const item of casesOf(runs, ({ kase }) => kase.family === family && kase.outcome === 'reproduced')) item.kase.modes = { ...item.kase.modes, file: { outcome: 'not-ported', differences: [], detail: 'planted: refused in file order only' } }; };
+  run('judge-not-ported-one-mode', ({ runs }) => { notPortedFileOnly(runs, 'toy-reducer'); return { partial: true }; }, code(EXIT.inconclusive, /not ported in this mode only/));
+  run('judge-not-ported-difference', ({ runs }) => { notPorted(runs, 'toy-reducer'); differ(casesOf(runs, ({ kase }) => kase.family !== 'toy-reducer' && kase.outcome === 'reproduced')[0].kase, { check: 'effects', kind: 'value', step: 1, path: '/steps/0/effects/0', expected: 'a', actual: 'b' }); return { partial: true }; }, code(EXIT.fail, /^different /));
   // The census.
   const censusCode = (check, pattern) => (judged) => (judged.code !== EXIT.fail ? `exit ${judged.code}, expected ${EXIT.fail}` : judged.census.failures.some((item) => item.check === check && (!pattern || pattern.test(item.detail))) ? null : `no ${check} failure${pattern ? ` matching ${pattern}` : ''}: ${judged.census.failures.map((item) => item.check).join(', ')}`);
   run('census-item-unjudged', ({ contract: given }) => { given.items = given.items.filter((item) => item.family !== 'toy-timers'); }, censusCode('candidate-item-unjudged', /createDebouncer of toy-timers/));
@@ -810,6 +966,13 @@ export async function commandChecks({ harnessDir = HARNESS_DIR, workDir, recordi
     ['command-items-partial', dirArgs(itemsPartial), EXIT.inconclusive, /no census items for family/],
     // --repeat replays the engine again: the TypeScript engine judges every case alike (exit 0, no unstable case).
     ['command-repeat', [...dirArgs(intact), '--repeat=2'], EXIT.inconclusive, /0 unstable, 0 inconclusive problems; exit 3$/],
+    // An engine that refuses a family as not ported (package C0i): a partial run, asked for or not, never exit 0.
+    ['command-not-ported-asked', ['--toys', '--partial', ...engine(reshapedEngine, ['not-ported:toy-reducer'])], EXIT.inconclusive, /^candidate \(candidate rules, partial pass \(asked for with --partial\), not a complete pass: toy corpus: the engine does not implement families toy-reducer \(\d+ cases not ported, not judged\)\): .*[1-9]\d* not ported; .*exit 3$/],
+    ['command-not-ported-unasked', ['--toys', ...engine(reshapedEngine, ['not-ported:toy-reducer'])], EXIT.inconclusive, /^inconclusive: partial: toy corpus: the engine does not implement families toy-reducer/],
+    // The C0i review's B1 engines: some units of every family refused, the same cases computed in the others. Asked for
+    // as partial or not, inconclusive, with the problem named (never a pass of the units it chose to run).
+    ['command-not-ported-file-units', ['--toys', '--partial', ...engine(reshapedEngine, ['not-ported-file-units'])], EXIT.inconclusive, /not-ported-partly: the engine refused family /],
+    ['command-not-ported-first-unit', ['--toys', ...engine(reshapedEngine, ['not-ported-first-unit'])], EXIT.inconclusive, /not-ported-partly: the engine refused family /],
   ].filter(([name]) => (only === null || only.includes(name)) && !except.includes(name));
   // At most four heavy children at once (each starts an engine).
   const results = [];

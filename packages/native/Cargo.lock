@@ -18,6 +18,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "devryan-client-engine"
+version = "0.1.0"
+
+[[package]]
+name = "devryan-client-engine-runner"
+version = "0.1.0"
+dependencies = [
+ "devryan-client-engine",
+]
+
+[[package]]
 name = "devryan-config-text"
 version = "0.1.0"
 
