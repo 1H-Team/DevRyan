@@ -55,9 +55,12 @@
 //    blocks the loop. Ports call `node::fs`. A JavaScript `fs.xSync(…)` is
 //    the inline call: it is marked `// port: sync call` on the line above
 //    (or uses `node::fs::*_sync`).
-// 11. I/O settled outside the facade (`host::blocking(…)`, `host::submit(…)`):
-//    only `node::{fs, stream, zlib}` check rule 1 (their guard panics on a
-//    completion in its starting checkpoint) and give Node's error objects.
+// 11. I/O settled outside the facade (`host::blocking(…)`, `host::submit(…)`,
+//    `host::open_source(…)`): only `node::{fs, stream, zlib, child, net}`
+//    check rule 1 (their guard panics on a completion in its starting
+//    checkpoint) and give Node's error objects. A child process is
+//    signalled or reaped only through `node::child` (`ledger_io::fs::sys`
+//    is refused by rule 10 like every other `ledger_io` call).
 // 12. A read cut of the port's own (rule 3: the execution receipt's byte
 //    stream hands each file read to the host as one message): a
 //    `create_read_stream` whose `high_water_mark` is not written as a
@@ -220,7 +223,7 @@ export function lintPortedSource(text) {
     found(match.index, 'a blocking file-system call made directly (an `await fs.promises.x()` is `node::fs::x(…).await`; an `fs.xSync` is marked `// port: sync call`)');
   }
   // Rule 11: I/O settled outside the facade.
-  for (const match of code.matchAll(/\bhost::(?:blocking|submit)\s*(?:::<[^\n;]*>)?\s*\(|\buse\s+crate::host::\{[^}]*\b(?:blocking|submit)\b/g)) {
+  for (const match of code.matchAll(/\bhost::(?:blocking|submit|open_source)\s*(?:::<[^\n;]*>)?\s*\(|\buse\s+crate::host::\{[^}]*\b(?:blocking|submit|open_source)\b/g)) {
     found(match.index, 'I/O settled outside node::{fs, stream, zlib} (which check rule 1 and give Node\'s errors)');
   }
   // Rule 12: a read cut of the port's own.
@@ -315,6 +318,8 @@ describe('the porting rule\'s silent mistakes are refused in the ported modules'
     ['a use of the blocking functions, and std::fs', 'use ledger_io::fs::{lstat, read_file};\nlet bytes = std::fs::read(&p)?;\nuse std::{fs, io};', 3],
     ['an fs.lstatSync, marked, and the facade', `${SYNC_MARKER} (fs.lstatSync)\nlet stat = ledger_io::fs::lstat(&p);\nlet stat = node::fs::lstat(&p, true).await?;\nlet same = node::fs::lstat_sync(&p, true)?;`, 0],
     ['I/O settled outside the facade', 'let stat = host::blocking(move || lstat_of(&p)).await?;\nhost::submit::<u8>(work, deliver);\nuse crate::host::{self, blocking};', 3],
+    ['a long-lived source of units outside the node module (a reader thread of a port\'s own)', 'let poster = host::open_source(move |chunk: Vec<u8>| push(chunk));\nuse crate::host::{open_source, Poster};', 2],
+    ['a child process signalled or reaped by pid (no API but the system calls)', 'ledger_io::fs::sys::kill(pid, 9);\nlet status = ledger_io::fs::sys::reap(pid);', 2],
     ['a read stream with a cut of the port\'s own', 'let s = create_read_stream(&file, ReadStreamOptions { high_water_mark: size });\nlet t = node::stream::create_read_stream(&file, ReadStreamOptions { high_water_mark: 64 * 1024 + extra });', 2],
     ['the receipt\'s read stream and the default one', 'let s = create_read_stream(&file, ReadStreamOptions { high_water_mark: 128 * 1024 });\nlet t = create_read_stream(&file, ReadStreamOptions::DEFAULT);', 0],
     ['a generator yielding a FileHandle read loop, and re-cut bytes', 'agen::async_gen(move |co: Co<W, W>| async move {\n    loop { let got = handle.read(131072, None).await?; co.yield_(Resolution::Value(W::Bytes(got.bytes))).await?; }\n    for piece in whole.chunks(131072) { co.yield_(Resolution::Value(piece)).await?; }\n})', 2],
@@ -331,13 +336,13 @@ describe('the porting rule\'s silent mistakes are refused in the ported modules'
 // is the module's only way to the pool, so no completion of the facade or
 // the read stream can go around its epoch check.
 describe('the node module reaches the pool only through its guarded submit', () => {
-  test('host::submit and host::blocking appear in src/node only in node::submit (mod.rs)', () => {
+  test('host::submit, host::blocking and host::open_source appear in src/node only in node::submit and node::source (mod.rs)', () => {
     const dir = path.join(crate, 'node');
     const found = [];
     for (const name of readdirSync(dir).filter((file) => file.endsWith('.rs'))) {
       const code = readFileSync(path.join(dir, name), 'utf8').split('\n').filter((line) => !/^\s*\/\//.test(line)).join('\n');
-      const uses = [...code.matchAll(/\bhost::(?:blocking|submit)\b/g)].length;
-      const allowed = name === 'mod.rs' ? 1 : 0;
+      const uses = [...code.matchAll(/\bhost::(?:blocking|submit|open_source)\b/g)].length;
+      const allowed = name === 'mod.rs' ? 2 : 0;
       if (uses !== allowed) found.push(`${name}: ${uses} (expected ${allowed})`);
     }
     assert.deepEqual(found, []);

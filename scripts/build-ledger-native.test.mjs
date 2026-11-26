@@ -6,7 +6,8 @@
 // Rust runs in the build script's --verify (fast validate and CI), which
 // needs the pinned toolchain.
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { after, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -20,7 +21,7 @@ import { NOT_RESTATED, RESTATED, SCENARIOS, runJavaScript, scenarioRoot } from '
 import { LEDGER_NATIVE_INPUTS, isLedgerNativeInput } from './ledger-native/inputs.mjs';
 import { electronBinary } from './ledger-native/reference-runtime.mjs';
 import { buildPlan } from './validate.mjs';
-import { DIFFERENTIAL_TESTS, EXTENDED_TESTS } from './build-ledger-native.mjs';
+import { DIFFERENTIAL_TESTS, EXTENDED_TESTS, indexEntryPath, lockedRegistryPackages, seedCargoHome } from './build-ledger-native.mjs';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const workspace = path.join(repositoryRoot, WORKSPACE_DIR);
@@ -178,6 +179,37 @@ describe('native ledger workspace contract', () => {
     assert.equal(env.RUSTUP_TOOLCHAIN, '1.99.1');
     assert.equal(env.RUSTFLAGS, undefined);
     assert.equal(env.PATH, `/toolchain/bin${path.delimiter}/usr/bin`);
+  });
+
+  test('the locked crates are taken from the developer\'s cargo cache only when every one is there with its checksum and index entry', () => {
+    const crate = Buffer.from('a crate');
+    const checksum = createHash('sha256').update(crate).digest('hex');
+    const lockText = `version = 4\n\n[[package]]\nname = "cfg-if"\nversion = "1.0.5"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\nchecksum = "${checksum}"\n\n[[package]]\nname = "ledger-io"\nversion = "0.1.0"\n`;
+    assert.deepEqual(lockedRegistryPackages(lockText), [{ name: 'cfg-if', version: '1.0.5', checksum }]);
+    // Every crates.io package of the real lock is found, each with its checksum.
+    assert.equal(lockedRegistryPackages(read('Cargo.lock')).length, read('Cargo.lock').split('source = "registry+https://github.com/rust-lang/crates.io-index"').length - 1);
+    assert.equal(indexEntryPath('cfg-if'), path.join('cf', 'g-', 'cfg-if'));
+    assert.equal(indexEntryPath('abc'), path.join('3', 'a', 'abc'));
+    assert.equal(indexEntryPath('ab'), path.join('2', 'ab'));
+    const sourceHome = path.join(scratch, 'source-cargo'), dir = 'index.crates.io-1949cf8c6b5b557f';
+    const put = (file, bytes) => { mkdirSync(path.dirname(path.join(sourceHome, file)), { recursive: true }); writeFileSync(path.join(sourceHome, file), bytes); };
+    const seed = (name) => seedCargoHome({ lockText, cargoHome: path.join(scratch, name), sourceHome });
+    // Nothing there (a cold runner): nothing seeded, the fetch goes online.
+    assert.equal(seed('cold'), false);
+    put(`registry/cache/${dir}/cfg-if-1.0.5.crate`, Buffer.from('another crate'));
+    put(`registry/index/${dir}/config.json`, '{}');
+    put(`registry/index/${dir}/.cache/${indexEntryPath('cfg-if')}`, 'entry');
+    // A crate whose checksum is not the lock's: nothing seeded.
+    assert.equal(seed('wrong'), false);
+    assert.equal(existsSync(path.join(scratch, 'wrong')), false);
+    put(`registry/cache/${dir}/cfg-if-1.0.5.crate`, crate);
+    rmSync(path.join(sourceHome, `registry/index/${dir}/.cache`), { recursive: true });
+    // No index entry: nothing seeded.
+    assert.equal(seed('unindexed'), false);
+    put(`registry/index/${dir}/.cache/${indexEntryPath('cfg-if')}`, 'entry');
+    assert.equal(seed('warm'), true);
+    assert.deepEqual(readFileSync(path.join(scratch, 'warm', 'registry', 'cache', dir, 'cfg-if-1.0.5.crate')), crate);
+    assert.deepEqual(readdirSync(path.join(scratch, 'warm', 'registry', 'index', dir)).sort(), ['.cache', 'config.json']);
   });
 
   test('the shared specification restates every in-scope case of the JavaScript test file', () => {

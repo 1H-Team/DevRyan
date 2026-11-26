@@ -1507,7 +1507,14 @@ no switch, no binary in the package and no change to any JavaScript.
   ledger-core under the OS temp dir, with a private `CARGO_HOME` and target
   directory there (removed afterwards; `--keep-artifacts` keeps them). The
   dependencies are fetched once per run with `cargo fetch --locked`, which
-  needs the network; everything after that runs `--offline`. `--verify` runs
+  needs the network, unless the developer's own cargo cache (`CARGO_HOME`,
+  else `~/.cargo`) holds every locked crates.io crate and its index entry:
+  then they are copied into the private `CARGO_HOME` (each `.crate` checked
+  against `Cargo.lock`'s checksum) and the fetch runs `--offline` too, and
+  goes to the network only if that fails. A cold runner finds nothing there
+  and fetches as before. Everything after the fetch runs `--offline` (the
+  RustSec check, when `cargo-deny` is installed, still fetches its advisory
+  database). `--verify` runs
   `cargo fmt --check`, `cargo clippy -D warnings` (every target and feature),
   `cargo test`, then `cargo check` and `cargo clippy -D warnings` for
   `x86_64-unknown-linux-gnu` when the pinned toolchain has that target (the
@@ -1754,7 +1761,9 @@ there is no switch, the binary is built only in the verify's scratch, and
   - *Units of work.* One inbound message (a stdin line, `init` included);
     one timer callback; one immediate; one completion of blocking work
     (`host::blocking`, or `host::submit` whose callback runs in the unit,
-    on four threads as libuv's pool) or, from L3b, of a child process.
+    on four threads as libuv's pool); one delivery of a long-lived source
+    (`host::open_source`: a child process's output reader, its exit
+    waiter, a write in flight), run in the frame the source was opened in.
     `js::checkpoint_epoch()` counts the checkpoints that have ended, so
     everything one unit and its checkpoint run sees one value. Another thread reaches the loop only by posting a unit
     to its inbox; a promise, a task or a job never leaves the loop's
@@ -1955,10 +1964,119 @@ there is no switch, the binary is built only in the verify's scratch, and
     they go one at a time and the first listed is reported; a stat has no
     `birthtime` (no site reads it).
 
-    **Not in this package**: child processes and their pipes (`spawn`, a
-    child's stdout, stderr and stdin, `pipeline` into stdin,
-    `Readable.from`). They are the next package (design file 32, O2e), on
-    the same `host::submit` units and the same read stream core.
+    *Child processes* (`node::child`, `node::net`; design file 32, package
+    O2e, in the same reduced form): `child_process.spawn(file, args, { cwd,
+    env, stdio })` as `session-changes-git.js` calls it (`start()` serves
+    `git` and `gitTokens`; the persistent `cat-file` reader's shapes too),
+    Node 24.22's `ChildProcess` ported by identity (`spawn`, `onexit`,
+    `maybeClose`, `flushStdio`, `kill`), its stdio `net.Socket`s (a `Duplex`
+    that does not allow half-open, `emitClose: false`) on the read stream's
+    `Readable` core and Node's `Writable` (`write`, `onwrite`,
+    `afterWrite`, `clearBuffer` as one `writev`, `end`, `finishMaybe`,
+    `finish`), and `pipeline(source, child.stdin)` for the sites' sources
+    (`Readable.from([string | Buffer])`, `Readable.from([])`, an async
+    generator). The rules above, for a child:
+    1. No completion settles in the checkpoint that started it: an
+       output's reads, the exit, a write that had to wait, a shutdown and a
+       handle's close are units (`node::source`, beside `node::submit`, is
+       the module's only way to `host::open_source`, with the same epoch
+       guard, renewed at each `readStart`). Node's own ticks stay ticks:
+       the `spawn` event, a run-time spawn error (`EACCES`, `EAGAIN`,
+       `EMFILE`, `ENFILE`, `ENOENT`: an `error` event, its `ErrnoException`
+       with `errno`, `code`, `syscall` `spawn <file>`, `path`, `spawnargs`;
+       any other spawn error is thrown, `syscall` `spawn`), and the
+       callback of a write that went at once (`uv_try_write`; Node calls it
+       synchronously and `afterWrite` on a tick).
+    2. One source's events in Node's order: an output's `data` in read
+       order, `end`, `finish` (its writable side ends, `allowHalfOpen`
+       false), `close` (from its handle, `hadError`); `error`, then `close`;
+       the stdin's `finish` or `error`, then `close`; the child's `spawn` or
+       `error`, `exit` (`[code, signal]`, the stdin already destroyed; a
+       death by a signal Node's `signo_string` does not name, such as
+       `SIGEMT` on macOS or a real-time one on Linux, is exit code 0 and no
+       signal, as in Node),
+       `close` at the last of the exit and every piped output's close
+       (inside that socket's `close`: `maybeClose` is its first listener).
+       On a run-time spawn error the outputs are still sockets whose peers
+       are closed: they read their end, and `close` waits for them, as in
+       Node. A `for await` over an output ends at its `end` (end-of-stream
+       with `willEmitClose` false) and destroys it.
+    3. Independent sources (stdout against stderr, the exit against an
+       output's end, writes against reads) and where reads split are
+       arrival's; consumers must not depend on chunk boundaries.
+
+    Threads, per child: one reader per piped output (a blocking `read(2)` of
+    up to 64 KiB into a buffer of its own, each result copied out at its
+    exact length, so a chunk holds only its bytes, and delivered as a unit;
+    gated by `readStart`/`readStop`, so past the 64 KiB high-water mark
+    nothing is read, and by the loop taking each delivery: the thread reads
+    again only after the loop ran the unit of its last read, so while the
+    loop is busy at most one read waits in the inbox and the child blocks on
+    a full socket, as under Node, where libuv reads only while the loop
+    polls). The socket pairs get 64 KiB send and receive buffers on macOS, as
+    a child of Electron's Node sees them (the macOS default is 8 KiB), so
+    reads are Node's 64 KiB. An exit waiter in `waitid(P_PID, pid, WEXITED | WNOWAIT)`,
+    which sees the exit **without reaping**; the loop thread reaps
+    (`waitpid(WNOHANG)`) in that unit, right before `onexit`, so until then
+    the pid is the child or its zombie and a `kill` (an abort listener, a
+    timer, a `finally`) cannot reach another process; after the reap the
+    handle is gone and `kill` is Node's no-op (`false`, no system call).
+    Writes are tried inline (non-blocking, as `uv_try_write`); only the rest
+    of a write goes to a writer thread that waits for the socket to be
+    writable. A completion posted once the handle began to close is
+    `ECANCELED` (libuv cancels a write still queued at `uv_close`; the check
+    and the post are one step under the writer's lock). When the child exits
+    while a write waits, the exit waiter first lets the writer make its next
+    attempt if the socket is ready (the child's end is gone): libuv runs a
+    poll batch's socket events before its signal events, so the failed
+    write's `EPIPE` comes before the exit, as under Node. Shutdown and close run on the pool, and a handle's close
+    callback always runs in a unit of its own. A descriptor is closed only
+    when no thread uses it: a blocked reader is woken by
+    `shutdown(SHUT_RDWR)` and its last unit releases it. The spawn is
+    `posix_spawn` (`ledger_io::process`, libuv's search of the child's own
+    `PATH`: `ENOENT` and `ENOTDIR` try the next entry, an `EACCES` is kept
+    if nothing else is found) with every signal at its default and none
+    blocked, on macOS `POSIX_SPAWN_CLOEXEC_DEFAULT`; socket pairs as libuv's
+    (`AF_UNIX` stream, close-on-exec); `'ignore'` is `/dev/null`;
+    `SIGCHLD` is set to its default at the first spawn.
+    `node::net::live_threads()` and `node::child::live_children()` count
+    the helper threads and the unreaped children (the tests' census). After
+    a child's `close` (and a socket's) nothing is emitted, so their
+    listeners are let go: a listener may hold its child, a cycle
+    JavaScript's collector frees and `Rc` would not.
+
+    Built: `stdio` `'pipe'` and `'ignore'` per stream; `cwd` (an empty one
+    is none, as in Node), `env` in its order (`node::child::env_pairs` builds
+    it from an object's entries as JavaScript orders them: array-index keys
+    first, ascending, a key given again in its first place with its last
+    value, an `undefined` value left out); at the descriptor limit an
+    `EMFILE` or `ENFILE`, of a socket pair or of the spawn, sets up no stdio
+    at all (`stdin`, `stdout` and `stderr` are none, as Node returns before
+    it makes them); `kill(signal)` (`SIGKILL`, `SIGTERM`, `SIGINT`, `SIGHUP`, 0);
+    `pid`, `exitCode`, `signalCode`, `killed`; the events above; a socket's
+    `on` (`data`, `end`, `finish`, `drain`, `error`, `close`), `for await`,
+    `write(chunk, cb)` (`false` past the high-water mark, then `drain`),
+    `end`, `destroy`. `pipeline` fulfils once the stdin has finished, on a
+    tick, and rejects with the first error (a failed write such as `EPIPE`
+    or `ENOTCONN`, the generator's throw; at the stdin's close its
+    `errored` first, such as the `ECANCELED` of a write the exit's destroy
+    cancelled, else `ERR_STREAM_PREMATURE_CLOSE` when it closed before it
+    finished; a stdin ended with nothing left to write that is then closed
+    counts as finished, as Node's end-of-stream has it), destroying the
+    stdin with it. Which of `EPIPE`, `ECANCELED` and `ENOTCONN` a child that
+    dies with a write waiting gives is arrival's in Node as here; the tests
+    accept, per situation, exactly the codes Electron's Node gives there. Not built, because no reachable site
+    uses them: `shell`, `detached`, `uid`/`gid`, `timeout`, `killSignal`,
+    `signal`, `maxBuffer`, `encoding`, `windowsHide` and the Windows
+    options, IPC and `serialization`, `'inherit'` and stream or descriptor
+    stdio (`gitToFile`'s `fd` stdout is unreachable), `ref`/`unref` (the
+    persistent reader's: the native process does not exit when its loop is
+    idle, and the reader is replaced by the in-process object database),
+    `exec`, `execFile` and the sync forms, `setEncoding`, `pause`/`resume`
+    by hand, `cork`; a NUL byte in an argument panics (Node's
+    `ERR_INVALID_ARG_VALUE` is not reproduced). Not reproduced: Node's job
+    and tick counts inside a write, a pipeline and a socket's end (file
+    33); where reads split (up to 64 KiB, whatever the kernel hands over).
   - *Left free:* which of two ready units from different sources runs
     first: a line and a pool completion, a line and a timer that falls due
     while the loop waits. In Node that depends on when the loop wakes and,
@@ -2059,6 +2177,13 @@ there is no switch, the binary is built only in the verify's scratch, and
     | `for await (const chunk of createReadStream(f, { highWaterMark: 128 * 1024 })) { … }` | `let chunks = agen::for_await(node::stream::create_read_stream(&f, ReadStreamOptions { high_water_mark: 128 * 1024 })); while let Some(chunk) = chunks.next().await? { … }` (`createReadStream(f)`: `ReadStreamOptions::DEFAULT`); chunks are `W::Bytes`; leaving the loop closes the iterator, which destroys the stream |
     | `stream.on('data', (chunk) => …)`, `'end'`, `'error'`, `'close'` | `stream.on("data", &Listener::new(\|chunk\| { …; Ok(()) }))`, and so on (a `data` listener starts the flow) |
     | `await promisify(zlib.deflate)(bytes)` | `node::zlib::deflate(&bytes).await?` |
+    | `const child = spawn(file, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })` | `let child = node::child::spawn(Spawn { file, args, cwd: Some(cwd), env, stdio: [Stdio::Pipe; 3] })?;` (`env` is `node::child::env_pairs` of the object's entries as `gitEnvironment` builds it: JavaScript's key order, a key given again in its first place with its last value, `undefined` values left out; `Err` is a thrown spawn error) |
+    | `child.on('error', reject); child.on('close', (code, signal) => …)` | `child.on("error", &Listener::new(…)); child.on("close", &Listener::new(\|status\| …))` (`status` is `W::Array([code, signal])`, each a number or string, else `null`) |
+    | `child.kill('SIGKILL')` | `child.kill(Signal::Kill)?` (`Ok(false)` once reaped; there is no kill by pid) |
+    | `child.stderr.on('data', (chunk) => …)` | `child.stderr().expect("piped").on("data", &Listener::new(\|chunk\| …))` (`W::Bytes`) |
+    | `for await (const chunk of process.child.stdout) { … }` | `let stdout = child.stdout().expect("piped"); let chunks = agen::for_await(&stdout); while let Some(chunk) = chunks.next().await? { … }` (it ends at the stdout's `end`; leaving it destroys the stdout) |
+    | `pipeline(Readable.from([input]), child.stdin)`; `Readable.from([])`; a generator | `node::net::pipeline(PipeInput::Bytes(bytes), &stdin)`; `PipeInput::Empty`; `PipeInput::Generator(rows())` (a `Promise<(), W>`; the `.catch` of `EPIPE` and `ERR_STREAM_PREMATURE_CLOSE` is `then(…, \|e\| …)` on `node::code_of(&e)`) |
+    | `child.stdin.write(text)`; `stdin.end()` | `stdin.write(bytes, None)` (or `Some(Box::new(\|error\| …))`); `stdin.end()` |
 
     For example `for await (const row of entries(prefix)) { if (row.key
     === key) return row; check(row); }` (`check` may throw) is:
@@ -2164,8 +2289,10 @@ there is no switch, the binary is built only in the verify's scratch, and
     generator's body standing in for the stream (marked
     `// port: handle read loop` where the JavaScript loops on a handle
     itself). The `node` module's own files are the layer, not ported
-    modules. Child processes are not in the layer yet (design file 32,
-    package O2e).
+    modules. A long-lived source of units outside the `node` module
+    (`host::open_source`) is refused as I/O settled outside the facade, and
+    a child is signalled or reaped only through `node::child` (the system
+    calls are `ledger_io::fs::sys`, refused with every `ledger_io` call).
 - **Process.** A reader thread splits stdin into lines and posts each to the
   loop; a writer thread drains an unbounded queue to stdout (one line on
   stderr past 64 MiB queued); a watchdog thread checks every 250 ms that
@@ -2190,8 +2317,8 @@ there is no switch, the binary is built only in the verify's scratch, and
   tokio,
   which the design named for the loop, was removed: its scheduler queues
   woken tasks behind the next message and timer, so reproducing Node's order
-  meant replacing it, and stdin, stdout, the blocking pool and (from L3b)
-  child processes are threads that post units, which needs no reactor.
+  meant replacing it, and stdin, stdout, the blocking pool and child
+  processes (`node::child`) are threads that post units, which needs no reactor.
   `--verify` refuses any package
   whose licence expression is not, as a whole, in
   `scripts/ledger-native/licences.mjs`, and checks RustSec advisories with
@@ -2263,6 +2390,41 @@ there is no switch, the binary is built only in the verify's scratch, and
     also plants the independent review's 25 and runs each bug against the
     whole of `cargo test` and `fs-differential.mjs`, then the extended run
     for a survivor.
+  - `scripts/ledger-native/child-differential.mjs`: child processes
+    against Node's own on Electron's Node, the Node running the test
+    (information) and the Rust (`ledger-native-probe child-cases`,
+    `child-programs`; the JavaScript arm is `child-js-arm.mjs`): 50
+    outcome cases (`child-spec.mjs`: the Git runner's shapes of design file
+    32 section 3.2, spawn errors and their objects, the descriptor limit
+    (on a second pair of arms started under `ulimit -n 256`), the `PATH`
+    search (order, a remembered `EACCES`, an empty entry, no `PATH`), kill
+    before and after the exit, a signal Node does not name, `'ignore'`, the
+    environment's order (JavaScript's key order too), `cwd` (empty, and a
+    relative `PATH` entry), the child's inherited descriptors (on macOS the
+    Rust arm holds one descriptor without close-on-exec, which no child may
+    see), writes (and the `writev` of writes buffered behind one),
+    string, generator and throwing pipelines, 1 MiB each way, the stdin
+    pipeline's outcome when its child goes away (a code Electron's Node
+    gives in that situation and Node's error object: exits, kills, a closed
+    stdin, a grandchild holding it, a row that waits for the exit),
+    output nobody reads, backpressure (a slow consumer holds its child
+    within a stated bound in reads of Node's size; an unread output stops
+    being read at the high-water mark; a reader parked there stops when
+    destroyed)), each source's events in order exactly
+    and the cross-source rules, the records field by field (fields left to
+    arrival compared as sets), and around every case the descriptors, live
+    children, helper threads and open sources back and no zombie (`ps`, no
+    signal); that an `error` nobody listens to ends the process (the
+    worker dies of it); programs (`child-programs.mjs`: 21 named, 40 random;
+    `--extended` 1,000 over five seeds) compared as the file programs are,
+    each event of each child a strand of its own, rule 1 per event source
+    (the `spawn` event, a spawn error and the callback of a write that went
+    at once on a tick of the starting checkpoint, every other event later)
+    and rule 2 per child. An arm that times out once fails its later cases
+    at once and a program arm stops at its first stuck program, so a hang
+    costs one deadline. `scripts/ledger-native/child-planted.mjs` (by hand)
+    plants 34 bugs (the builder's, the review's that had escaped, the fix
+    round's), each caught by a named test.
   - `scripts/ledger-native/porting-lint.mjs`: the porting rule's silent
     mistakes, refused in the ported modules (above), with a planted case of
     each.
@@ -2310,7 +2472,15 @@ there is no switch, the binary is built only in the verify's scratch, and
     re-entrant `once` and refused `newListener`/`removeListener`; the
     `node` module's units (a completion in a later checkpoint, the guard's
     panic, a read stream's cut and close before its `for await` ends, a
-    closed handle's `EBADF`); and 20,000 random or mutated lines that must never panic.
+    closed handle's `EBADF`; a child's events per source, a spawn error's
+    tick and close, `kill` before and after the reap, the zombie kept until
+    the loop reaps, `for await` over stdout with a 180 KB pipeline, the
+    child's `close` before the stdin's, a reader that reads no further
+    while the loop has not taken its last read, chunks that hold only their
+    own bytes (16 MiB collected holds 16 MiB), the exit waiter letting a
+    ready writer's attempt go first, the environment in JavaScript's key
+    order); and
+    20,000 random or mutated lines that must never panic.
 - **What the comparison leaves free**, and why each is fair. Every message
   of one call (reports, callbacks, observations, its result) is compared in
   order; a transcript's `ordered` messages are compared in order across

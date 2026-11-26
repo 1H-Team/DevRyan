@@ -1,9 +1,11 @@
 //! What the ledger's worker calls of Node's own library on top of the event
-//! loop (design file 32, packages O2f and O2d, in the reduced form of file
-//! 33): `fs.promises` and its `FileHandle` ([`fs`]), the file read stream
-//! ([`stream`]) and the promisified `zlib.deflate` ([`zlib`]). Part of the
-//! job layer (it is the only ledger-native code that calls `ledger-io`'s
-//! blocking functions; the porting lint refuses them in ported modules).
+//! loop (design file 32, packages O2f, O2d and O2e, in the reduced form of
+//! file 33): `fs.promises` and its `FileHandle` ([`fs`]), the file read
+//! stream ([`stream`]), the promisified `zlib.deflate` ([`zlib`]), and
+//! `child_process.spawn` ([`child`]) with its stdio sockets and `pipeline`
+//! into its stdin ([`net`]). Part of the job layer (it is the only
+//! ledger-native code that calls `ledger-io`'s blocking functions and system
+//! calls; the porting lint refuses them in ported modules).
 //!
 //! The rules (`packages/harness-runtime/DOCUMENTATION.md`, "Node's library
 //! on the loop"):
@@ -43,7 +45,9 @@ use ledger_core::js::JsStr;
 use crate::js::{self, Promise};
 use crate::value::{JsError, W};
 
+pub mod child;
 pub mod fs;
+pub mod net;
 pub mod stream;
 pub mod zlib;
 
@@ -145,6 +149,75 @@ pub(crate) fn submit<T: Send + 'static>(
         settled_in_a_later_checkpoint(started);
         deliver(value);
     });
+}
+
+/// A long-lived source of units (a child's output reader, its exit waiter,
+/// a write in flight): `host::open_source` with rule 1's guard, the
+/// module's one way to it (the porting lint refuses `host::open_source`
+/// elsewhere in `node/`). The epoch is recorded where the source opens and
+/// again where its reading is started anew (`readStart`); every delivery
+/// panics, in every build, if it runs in that checkpoint.
+pub(crate) struct Source<T> {
+    poster: crate::host::Poster,
+    started: Rc<std::cell::Cell<u64>>,
+    _value: std::marker::PhantomData<T>,
+}
+
+impl<T: Send + 'static> Source<T> {
+    /// Where the source's thread posts.
+    pub(crate) fn poster(&self) -> SourcePoster<T> {
+        SourcePoster {
+            poster: self.poster.clone(),
+            _value: std::marker::PhantomData,
+        }
+    }
+
+    /// The source's work starts anew here (`readStart`).
+    pub(crate) fn restarted(&self) {
+        self.started.set(js::checkpoint_epoch());
+    }
+
+    /// Closes it: nothing more is delivered.
+    pub(crate) fn close(self) {
+        crate::host::close_source(self.poster.id());
+    }
+}
+
+/// A source's poster, typed (it is `Send`).
+pub(crate) struct SourcePoster<T> {
+    poster: crate::host::Poster,
+    _value: std::marker::PhantomData<fn(T)>,
+}
+
+impl<T> Clone for SourcePoster<T> {
+    fn clone(&self) -> Self {
+        SourcePoster {
+            poster: self.poster.clone(),
+            _value: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T: Send + 'static> SourcePoster<T> {
+    pub(crate) fn post(&self, value: T) {
+        self.poster.post(value);
+    }
+}
+
+/// Opens a [`Source`] whose deliveries run `deliver` in units of their own,
+/// in the frame current here.
+pub(crate) fn source<T: Send + 'static>(mut deliver: impl FnMut(T) + 'static) -> Source<T> {
+    let started = Rc::new(std::cell::Cell::new(js::checkpoint_epoch()));
+    let checked = started.clone();
+    let poster = crate::host::open_source(move |value: T| {
+        settled_in_a_later_checkpoint(checked.get());
+        deliver(value);
+    });
+    Source {
+        poster,
+        started,
+        _value: std::marker::PhantomData,
+    }
 }
 
 /// Rule 1's guard (design file 32, section 6, rule 3): an I/O completion
@@ -450,7 +523,13 @@ mod tests {
         drive(&event_loop, &|| {
             done.is_settled() && log.borrow().len() == 3
         });
-        assert_eq!(*log.borrow(), vec!["read", "read2-ok", "close"]);
+        // The two reads run on the pool's threads at once: which completes
+        // first is arrival's, in Node too (libuv's pool). What is Node's is
+        // that the second read is admitted and the close waits for both.
+        let mut seen = log.borrow().clone();
+        assert_eq!(seen.pop().as_deref(), Some("close"), "{seen:?}");
+        seen.sort();
+        assert_eq!(seen, vec!["read", "read2-ok"]);
     }
 
     /// Node 24.22: `a = h.close(); b = h.close(); b.then(B);

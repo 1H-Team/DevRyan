@@ -16,12 +16,14 @@
 //!   `EventEmitter`; `host`: the event
 //!   loop around them (units of work, Node's timers and immediates, blocking
 //!   work); `node`: what the worker calls of Node's library on that loop
-//!   (`fs.promises`, the file read stream, `zlib.deflate`); `runtime`: the
+//!   (`fs.promises`, the file read stream, `zlib.deflate`, child processes
+//!   and their sockets); `runtime`: the
 //!   methods and the worker's options.
 //! - With the `test-hooks` feature only: `stub` (the stub methods of the
 //!   conformance suite), `program` (the job-order programs' interpreter),
-//!   `io_program` (the `node` module's programs and file-system steps)
-//!   and `virtual_host` (a clock tests move by hand).
+//!   `io_program` (the `node` module's programs and file-system steps),
+//!   `child_program` (its child-process cases and programs) and
+//!   `virtual_host` (a clock tests move by hand).
 #![forbid(unsafe_code)]
 
 use std::rc::Rc;
@@ -43,6 +45,8 @@ pub mod stall;
 pub mod value;
 pub mod wire;
 
+#[cfg(feature = "test-hooks")]
+pub mod child_program;
 #[cfg(feature = "test-hooks")]
 pub mod io_program;
 #[cfg(feature = "test-hooks")]

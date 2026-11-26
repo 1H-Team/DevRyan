@@ -1,5 +1,6 @@
 //! File-system primitives exactly as libuv makes them for Node, and the
-//! crate's only unsafe code.
+//! crate's only unsafe code (with `sys`, the system calls of child processes
+//! and their sockets).
 //!
 //! The reference is the libuv inside Electron's Node (1.52.1 at the time of
 //! writing; `process.versions.uv`), `src/unix/fs.c` and `src/unix/core.c`,
@@ -1588,6 +1589,453 @@ mod linux {
     fn set_errno(value: c_int) {
         // SAFETY: __errno_location returns this thread's errno.
         unsafe { *libc::__errno_location() = value };
+    }
+}
+
+/// Child processes and their sockets: the system calls libuv's
+/// `src/unix/process.c` and `src/unix/stream.c` make for Node's
+/// `child_process.spawn` with piped stdio. [`crate::process`] builds the
+/// spawn (libuv's `PATH` search) on them. Errors are plain errnos here; the
+/// caller makes Node's error objects.
+pub mod sys {
+    use std::ffi::{CStr, CString};
+
+    use libc::{c_char, c_int, c_void};
+
+    use super::{close_raw, last_errno};
+
+    /// `uv_socketpair(SOCK_STREAM, 0, fds, 0, 0)`: an `AF_UNIX` stream pair,
+    /// both ends close-on-exec (atomically on Linux, by `fcntl` right after
+    /// on macOS, as libuv does) and blocking.
+    pub fn socketpair() -> Result<(c_int, c_int), i32> {
+        let mut fds: [c_int; 2] = [-1, -1];
+        #[cfg(target_os = "linux")]
+        let kind = libc::SOCK_STREAM | libc::SOCK_CLOEXEC;
+        #[cfg(not(target_os = "linux"))]
+        let kind = libc::SOCK_STREAM;
+        // SAFETY: `fds` is an array of two ints for the kernel to fill.
+        if unsafe { libc::socketpair(libc::AF_UNIX, kind, 0, fds.as_mut_ptr()) } != 0 {
+            return Err(last_errno());
+        }
+        #[cfg(not(target_os = "linux"))]
+        for fd in fds {
+            // SAFETY: sets a flag on a descriptor just made by this call.
+            if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } == -1 {
+                let errno = last_errno();
+                close_raw(fds[0]);
+                close_raw(fds[1]);
+                return Err(errno);
+            }
+        }
+        // macOS gives a local stream socket 8 KiB each way; a child of
+        // Electron's Node sees 64 KiB send and receive buffers on each of its
+        // three stdio sockets (measured, O2e fix round 1), so its reads are
+        // 64 KiB, not 8 KiB.
+        #[cfg(target_os = "macos")]
+        for fd in fds {
+            for option in [libc::SO_SNDBUF, libc::SO_RCVBUF] {
+                let size: c_int = 64 * 1024;
+                // SAFETY: sets one int option on a socket just made by this call.
+                let result = unsafe {
+                    libc::setsockopt(
+                        fd,
+                        libc::SOL_SOCKET,
+                        option,
+                        (&raw const size).cast::<c_void>(),
+                        std::mem::size_of::<c_int>() as libc::socklen_t,
+                    )
+                };
+                if result == -1 {
+                    let errno = last_errno();
+                    close_raw(fds[0]);
+                    close_raw(fds[1]);
+                    return Err(errno);
+                }
+            }
+        }
+        Ok((fds[0], fds[1]))
+    }
+
+    /// `uv__nonblock(fd, 1)`: the parent's end of a child's stdio.
+    pub fn set_nonblocking(fd: c_int) -> Result<(), i32> {
+        // SAFETY: reads and sets the status flags of a descriptor the caller owns.
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+        if flags == -1 {
+            return Err(last_errno());
+        }
+        // SAFETY: as above.
+        if unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } == -1 {
+            return Err(last_errno());
+        }
+        Ok(())
+    }
+
+    /// `fcntl(fd, F_DUPFD_CLOEXEC, 3)`: a copy above the standard three, so a
+    /// child's stdio is always set by `dup2` (an end that landed on 0, 1 or
+    /// 2 would be `dup2`ed onto itself and keep its close-on-exec flag).
+    pub fn dup_above_stdio(fd: c_int) -> Result<c_int, i32> {
+        // SAFETY: duplicates a descriptor the caller owns.
+        let copy = unsafe { libc::fcntl(fd, libc::F_DUPFD_CLOEXEC, 3) };
+        if copy == -1 {
+            Err(last_errno())
+        } else {
+            Ok(copy)
+        }
+    }
+
+    fn c_array(items: &[CString]) -> Vec<*mut c_char> {
+        let mut out: Vec<*mut c_char> = items.iter().map(|item| item.as_ptr().cast_mut()).collect();
+        out.push(std::ptr::null_mut());
+        out
+    }
+
+    /// One `posix_spawn(2)` of `path` as libuv's `uv__spawn_and_init_child_posix_spawn`
+    /// sets it up: every signal reset to its default and none blocked
+    /// (`POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK`); on macOS
+    /// `POSIX_SPAWN_CLOEXEC_DEFAULT`, so the child gets only the three
+    /// descriptors set here; `stdio[i]` `dup2`ed onto `i` (`None` is
+    /// `/dev/null`, read-only for 0, read-write otherwise, as libuv opens it
+    /// for an ignored stream); `cwd` by `posix_spawn_file_actions_addchdir_np`.
+    /// Every descriptor in `stdio` must be above 2. Gives the child's pid, or
+    /// the errno `posix_spawn` returned.
+    pub fn posix_spawn_one(
+        path: &CStr,
+        argv: &[CString],
+        envp: &[CString],
+        cwd: Option<&CStr>,
+        stdio: [Option<c_int>; 3],
+    ) -> Result<i32, i32> {
+        let argv = c_array(argv);
+        let envp = c_array(envp);
+        let null = c"/dev/null";
+        // SAFETY: the attribute and action objects are initialized before use and
+        // destroyed on every path; every pointer passed (paths, argv, envp) stays
+        // alive for the call; descriptors are the caller's.
+        unsafe {
+            let mut attrs: libc::posix_spawnattr_t = std::mem::zeroed();
+            let mut actions: libc::posix_spawn_file_actions_t = std::mem::zeroed();
+            let err = libc::posix_spawnattr_init(&mut attrs);
+            if err != 0 {
+                return Err(err);
+            }
+            let err = libc::posix_spawn_file_actions_init(&mut actions);
+            if err != 0 {
+                libc::posix_spawnattr_destroy(&mut attrs);
+                return Err(err);
+            }
+            let result = (|| {
+                #[cfg(target_os = "macos")]
+                let flags = libc::POSIX_SPAWN_SETSIGDEF
+                    | libc::POSIX_SPAWN_SETSIGMASK
+                    | libc::POSIX_SPAWN_CLOEXEC_DEFAULT;
+                #[cfg(not(target_os = "macos"))]
+                let flags = libc::POSIX_SPAWN_SETSIGDEF | libc::POSIX_SPAWN_SETSIGMASK;
+                let err = libc::posix_spawnattr_setflags(&mut attrs, flags as libc::c_short);
+                if err != 0 {
+                    return Err(err);
+                }
+                let mut set: libc::sigset_t = std::mem::zeroed();
+                libc::sigfillset(&mut set);
+                let err = libc::posix_spawnattr_setsigdefault(&mut attrs, &set);
+                if err != 0 {
+                    return Err(err);
+                }
+                libc::sigemptyset(&mut set);
+                let err = libc::posix_spawnattr_setsigmask(&mut attrs, &set);
+                if err != 0 {
+                    return Err(err);
+                }
+                for (target, source) in stdio.iter().enumerate() {
+                    let err = match source {
+                        Some(fd) => libc::posix_spawn_file_actions_adddup2(
+                            &mut actions,
+                            *fd,
+                            target as c_int,
+                        ),
+                        None => libc::posix_spawn_file_actions_addopen(
+                            &mut actions,
+                            target as c_int,
+                            null.as_ptr(),
+                            if target == 0 {
+                                libc::O_RDONLY
+                            } else {
+                                libc::O_RDWR
+                            },
+                            0,
+                        ),
+                    };
+                    if err != 0 {
+                        return Err(err);
+                    }
+                }
+                if let Some(cwd) = cwd {
+                    let err =
+                        libc::posix_spawn_file_actions_addchdir_np(&mut actions, cwd.as_ptr());
+                    if err != 0 {
+                        return Err(err);
+                    }
+                }
+                let mut pid: libc::pid_t = 0;
+                loop {
+                    let err = libc::posix_spawn(
+                        &mut pid,
+                        path.as_ptr(),
+                        &actions,
+                        &attrs,
+                        argv.as_ptr(),
+                        envp.as_ptr(),
+                    );
+                    if err == libc::EINTR {
+                        continue;
+                    }
+                    return if err == 0 { Ok(pid) } else { Err(err) };
+                }
+            })();
+            libc::posix_spawn_file_actions_destroy(&mut actions);
+            libc::posix_spawnattr_destroy(&mut attrs);
+            result
+        }
+    }
+
+    /// `waitid(P_PID, pid, WEXITED | WNOWAIT)`, retried on `EINTR`: blocks
+    /// until the child has exited and leaves it a zombie, so its pid cannot be
+    /// reused until the loop thread reaps it ([`reap`]).
+    pub fn wait_exited(pid: i32) -> Result<(), i32> {
+        loop {
+            // SAFETY: `info` is a zeroed `siginfo_t` for the kernel to fill.
+            let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+            // SAFETY: as above; `pid` is a child of this process.
+            let result = unsafe {
+                libc::waitid(
+                    libc::P_PID,
+                    pid as libc::id_t,
+                    &mut info,
+                    libc::WEXITED | libc::WNOWAIT,
+                )
+            };
+            if result == 0 {
+                return Ok(());
+            }
+            let errno = last_errno();
+            if errno != libc::EINTR {
+                return Err(errno);
+            }
+        }
+    }
+
+    /// Whether `pid` is a child that has exited and not been reaped
+    /// (`waitid` with `WNOWAIT | WNOHANG`), for tests of the reap rule.
+    pub fn exited_unreaped(pid: i32) -> bool {
+        // SAFETY: as in `wait_exited`; WNOHANG returns at once.
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        // SAFETY: as above.
+        let result = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                pid as libc::id_t,
+                &mut info,
+                libc::WEXITED | libc::WNOWAIT | libc::WNOHANG,
+            )
+        };
+        if result != 0 {
+            return false;
+        }
+        #[cfg(target_os = "linux")]
+        // SAFETY: si_pid is set by waitid for a child state change, zero otherwise.
+        let found = unsafe { info.si_pid() };
+        #[cfg(not(target_os = "linux"))]
+        let found = info.si_pid;
+        found == pid
+    }
+
+    /// libuv's `uv__wait_children` for one child: `waitpid(pid, WNOHANG)`,
+    /// retried on `EINTR`. `Some((exit_status, term_signal))` once reaped
+    /// (one of the two is 0), `None` while it runs.
+    pub fn reap(pid: i32) -> Result<Option<(i32, i32)>, i32> {
+        let mut status: c_int = 0;
+        loop {
+            // SAFETY: `status` is an int for the kernel to fill.
+            let result = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
+            if result == -1 {
+                let errno = last_errno();
+                if errno == libc::EINTR {
+                    continue;
+                }
+                return Err(errno);
+            }
+            if result == 0 {
+                return Ok(None);
+            }
+            let exit = if libc::WIFEXITED(status) {
+                libc::WEXITSTATUS(status)
+            } else {
+                0
+            };
+            let signal = if libc::WIFSIGNALED(status) {
+                libc::WTERMSIG(status)
+            } else {
+                0
+            };
+            return Ok(Some((exit, signal)));
+        }
+    }
+
+    /// `uv_kill(pid, signal)`.
+    pub fn kill(pid: i32, signal: c_int) -> Result<(), i32> {
+        // SAFETY: sends a signal; no memory is touched.
+        if unsafe { libc::kill(pid, signal) } == 0 {
+            Ok(())
+        } else {
+            Err(last_errno())
+        }
+    }
+
+    /// One blocking `read(2)` into `buffer`, retried on `EINTR` (libuv's
+    /// `uv__read`): how many bytes it read, 0 at the end of the stream. The
+    /// caller keeps one buffer and copies out what was read, so a chunk
+    /// holds only its own bytes (Node gives each read's backing store
+    /// exactly `nread` bytes).
+    pub fn read_into(fd: c_int, buffer: &mut [u8]) -> Result<usize, i32> {
+        loop {
+            // SAFETY: the pointer and length describe the live, writable `buffer`.
+            let result =
+                unsafe { libc::read(fd, buffer.as_mut_ptr().cast::<c_void>(), buffer.len()) };
+            if result >= 0 {
+                return Ok(result as usize);
+            }
+            let errno = last_errno();
+            if errno != libc::EINTR {
+                return Err(errno);
+            }
+        }
+    }
+
+    /// Clears or sets a descriptor's close-on-exec flag (`F_SETFD`). Only
+    /// the probe's census uses it: on macOS it keeps one descriptor without
+    /// the flag open, which `POSIX_SPAWN_CLOEXEC_DEFAULT` must keep from
+    /// every child.
+    pub fn set_close_on_exec(fd: c_int, on: bool) -> Result<(), i32> {
+        // SAFETY: sets a flag on a descriptor the caller owns.
+        let result =
+            unsafe { libc::fcntl(fd, libc::F_SETFD, if on { libc::FD_CLOEXEC } else { 0 }) };
+        if result == -1 {
+            Err(last_errno())
+        } else {
+            Ok(())
+        }
+    }
+
+    /// One `write(2)` to a non-blocking descriptor, retried on `EINTR`, as
+    /// libuv's `uv__try_write`: how many bytes went (0 when it would block).
+    pub fn write(fd: c_int, bytes: &[u8]) -> Result<usize, i32> {
+        loop {
+            // SAFETY: the pointer and length describe the live slice `bytes`.
+            let result = unsafe { libc::write(fd, bytes.as_ptr().cast::<c_void>(), bytes.len()) };
+            if result >= 0 {
+                return Ok(result as usize);
+            }
+            let errno = last_errno();
+            if errno == libc::EINTR {
+                continue;
+            }
+            if errno == libc::EAGAIN || errno == libc::EWOULDBLOCK {
+                return Ok(0);
+            }
+            return Err(errno);
+        }
+    }
+
+    /// `poll(2)` for `POLLOUT` on one descriptor, up to `timeout_ms`: whether
+    /// it is writable (or hung up, which the next write reports).
+    pub fn poll_writable(fd: c_int, timeout_ms: i32) -> Result<bool, i32> {
+        let mut entry = libc::pollfd {
+            fd,
+            events: libc::POLLOUT,
+            revents: 0,
+        };
+        loop {
+            // SAFETY: one live `pollfd`.
+            let result = unsafe { libc::poll(&mut entry, 1, timeout_ms) };
+            if result >= 0 {
+                return Ok(result > 0);
+            }
+            let errno = last_errno();
+            if errno != libc::EINTR {
+                return Err(errno);
+            }
+        }
+    }
+
+    /// `shutdown(2)`: `write` is libuv's `uv_shutdown` (`SHUT_WR`); `read`
+    /// adds `SHUT_RD`, which wakes a thread blocked reading the descriptor
+    /// (it reads the end) before the descriptor is closed.
+    pub fn shutdown(fd: c_int, read: bool, write: bool) -> Result<(), i32> {
+        let how = match (read, write) {
+            (true, true) => libc::SHUT_RDWR,
+            (true, false) => libc::SHUT_RD,
+            _ => libc::SHUT_WR,
+        };
+        // SAFETY: shuts down a socket the caller owns.
+        if unsafe { libc::shutdown(fd, how) } == 0 {
+            Ok(())
+        } else {
+            Err(last_errno())
+        }
+    }
+
+    /// `uv__close`: closes a descriptor this process owns (not retried).
+    pub fn close(fd: c_int) {
+        close_raw(fd);
+    }
+
+    /// `SIGCHLD` back to its default: a process started with it ignored would
+    /// have its children reaped by the kernel, and `waitid` would find none.
+    pub fn reset_sigchld() {
+        // SAFETY: sets one signal's disposition to the default.
+        unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
+    }
+
+    /// The signals Node names (`signo_string`), as `(number, name)` on this
+    /// platform. `signo_string` has no `SIGEMT` (macOS) and no real-time
+    /// signal (Linux): a child that dies of one is reported with `exitCode`
+    /// 0 and no `signalCode`, as Node reports it.
+    pub fn signals() -> Vec<(c_int, &'static str)> {
+        let mut out = vec![
+            (libc::SIGHUP, "SIGHUP"),
+            (libc::SIGINT, "SIGINT"),
+            (libc::SIGQUIT, "SIGQUIT"),
+            (libc::SIGILL, "SIGILL"),
+            (libc::SIGTRAP, "SIGTRAP"),
+            (libc::SIGABRT, "SIGABRT"),
+            (libc::SIGBUS, "SIGBUS"),
+            (libc::SIGFPE, "SIGFPE"),
+            (libc::SIGKILL, "SIGKILL"),
+            (libc::SIGUSR1, "SIGUSR1"),
+            (libc::SIGSEGV, "SIGSEGV"),
+            (libc::SIGUSR2, "SIGUSR2"),
+            (libc::SIGPIPE, "SIGPIPE"),
+            (libc::SIGALRM, "SIGALRM"),
+            (libc::SIGTERM, "SIGTERM"),
+            (libc::SIGCHLD, "SIGCHLD"),
+            (libc::SIGCONT, "SIGCONT"),
+            (libc::SIGSTOP, "SIGSTOP"),
+            (libc::SIGTSTP, "SIGTSTP"),
+            (libc::SIGTTIN, "SIGTTIN"),
+            (libc::SIGTTOU, "SIGTTOU"),
+            (libc::SIGURG, "SIGURG"),
+            (libc::SIGXCPU, "SIGXCPU"),
+            (libc::SIGXFSZ, "SIGXFSZ"),
+            (libc::SIGVTALRM, "SIGVTALRM"),
+            (libc::SIGPROF, "SIGPROF"),
+            (libc::SIGWINCH, "SIGWINCH"),
+            (libc::SIGIO, "SIGIO"),
+            (libc::SIGSYS, "SIGSYS"),
+        ];
+        #[cfg(target_os = "macos")]
+        out.push((libc::SIGINFO, "SIGINFO"));
+        #[cfg(target_os = "linux")]
+        out.extend([(libc::SIGSTKFLT, "SIGSTKFLT"), (libc::SIGPWR, "SIGPWR")]);
+        out
     }
 }
 

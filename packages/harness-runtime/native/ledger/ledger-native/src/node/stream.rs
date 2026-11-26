@@ -31,13 +31,22 @@
 //! stream with an `AbortError` (Node's `destroyer`); a read in flight is
 //! waited for, then the descriptor is closed, then `close` is emitted.
 //!
+//! The same `Readable` core is the readable side of a child process's
+//! stdio socket ([`super::net`], package O2e): there `_read` starts the
+//! socket's reading instead of one `read(2)`, the end ends the socket's
+//! writable side (a `Duplex` that does not allow half-open), the destroy
+//! closes the socket's handle, and `close` comes from that close, not from
+//! the destroy (a `net.Socket` has `emitClose: false`), so a `for await`
+//! over it ends at its `end`, as Node's end-of-stream callback does for a
+//! stream that will not emit `close` itself.
+//!
 //! Not built (a port that needs them is refused: there is no API): object
 //! mode, encodings (`setEncoding`), `unshift`, `pause`/`resume` by hand,
 //! `pipe`, `start`/`end`, a stream over a `FileHandle` or an `fd`,
 //! `readable` listeners of a port's own, and one stream consumed both by
-//! `for await` and by listeners (it panics). Writable streams, `pipeline`
-//! and `finished` are only reached through a child process's stdin (the
-//! next package).
+//! `for await` and by listeners (it panics). The only `Writable` is a child
+//! process's stdin and the writable side of its stdout and stderr
+//! ([`super::net`]); `pipeline` only into that stdin.
 #![forbid(unsafe_code)]
 
 use std::cell::{Cell, RefCell};
@@ -74,7 +83,7 @@ impl ReadStreamOptions {
 /// What the async iterator's end-of-stream callback has said: `undefined`
 /// (nothing yet), `null` (the stream finished), or an error.
 #[derive(Clone)]
-enum Outcome {
+pub(crate) enum Outcome {
     Pending,
     Finished,
     Failed(W),
@@ -82,7 +91,7 @@ enum Outcome {
 
 /// How a stream is consumed: `for await` or listeners, never both.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Mode {
+pub(crate) enum Mode {
     None,
     Iterator,
     Listeners,
@@ -90,70 +99,78 @@ enum Mode {
 
 type IoDone = Box<dyn FnOnce(Option<W>)>;
 
-struct Inner {
-    path: String,
+/// A readable stream's state (`ReadStream`'s and `ReadableState`'s fields),
+/// shared with the socket glue of [`super::net`], which reads and sets them
+/// as Node's `net.Socket` does.
+pub(crate) struct Inner {
+    pub(crate) path: String,
     // ReadStream
-    fd: Cell<Option<i32>>,
-    bytes_read: Cell<u64>,
-    performing_io: Cell<bool>,
-    io_done: RefCell<Vec<IoDone>>,
+    pub(crate) fd: Cell<Option<i32>>,
+    pub(crate) bytes_read: Cell<u64>,
+    pub(crate) performing_io: Cell<bool>,
+    pub(crate) io_done: RefCell<Vec<IoDone>>,
     // ReadableState (byte mode, no decoder, autoDestroy and emitClose on)
-    high_water_mark: usize,
-    buffer: RefCell<VecDeque<Rc<Vec<u8>>>>,
-    length: Cell<usize>,
-    constructed: Cell<bool>,
-    reading: Cell<bool>,
-    sync: Cell<bool>,
-    ended: Cell<bool>,
-    end_scheduled: Cell<bool>,
-    end_emitted: Cell<bool>,
-    need_readable: Cell<bool>,
-    emitted_readable: Cell<bool>,
-    eof_readable_pending: Cell<bool>,
-    reading_more: Cell<bool>,
-    readable_listening: Cell<bool>,
-    data_listening: Cell<bool>,
+    pub(crate) high_water_mark: usize,
+    pub(crate) buffer: RefCell<VecDeque<Rc<Vec<u8>>>>,
+    pub(crate) length: Cell<usize>,
+    pub(crate) constructed: Cell<bool>,
+    pub(crate) reading: Cell<bool>,
+    pub(crate) sync: Cell<bool>,
+    pub(crate) ended: Cell<bool>,
+    pub(crate) end_scheduled: Cell<bool>,
+    pub(crate) end_emitted: Cell<bool>,
+    pub(crate) need_readable: Cell<bool>,
+    pub(crate) emitted_readable: Cell<bool>,
+    pub(crate) eof_readable_pending: Cell<bool>,
+    pub(crate) reading_more: Cell<bool>,
+    pub(crate) readable_listening: Cell<bool>,
+    pub(crate) data_listening: Cell<bool>,
     /// `null` (never set), `true` or `false`.
-    flowing: Cell<Option<bool>>,
-    resume_scheduled: Cell<bool>,
-    destroyed: Cell<bool>,
-    errored: RefCell<Option<W>>,
-    error_emitted: Cell<bool>,
-    closed: Cell<bool>,
-    close_emitted: Cell<bool>,
+    pub(crate) flowing: Cell<Option<bool>>,
+    pub(crate) resume_scheduled: Cell<bool>,
+    pub(crate) destroyed: Cell<bool>,
+    pub(crate) errored: RefCell<Option<W>>,
+    pub(crate) error_emitted: Cell<bool>,
+    pub(crate) closed: Cell<bool>,
+    pub(crate) close_emitted: Cell<bool>,
     /// `once(kDestroy, …)` of a destroy made before the open finished.
-    on_destroy_after_construct: RefCell<Vec<IoDone>>,
-    emitter: Emitter<W, W>,
-    mode: Cell<Mode>,
+    pub(crate) on_destroy_after_construct: RefCell<Vec<IoDone>>,
+    pub(crate) emitter: Emitter<W, W>,
+    pub(crate) mode: Cell<Mode>,
     // createAsyncIterator's `callback` and its end-of-stream state
-    callback: RefCell<Option<Resolvers<(), W>>>,
-    outcome: RefCell<Outcome>,
-    eos_attached: Cell<bool>,
-    eos_readable_finished: Cell<bool>,
-    eos_called: Cell<bool>,
+    pub(crate) callback: RefCell<Option<Resolvers<(), W>>>,
+    pub(crate) outcome: RefCell<Outcome>,
+    pub(crate) eos_attached: Cell<bool>,
+    pub(crate) eos_readable_finished: Cell<bool>,
+    pub(crate) eos_called: Cell<bool>,
+    /// The socket glue of a child process's stdio (`None` for a file).
+    pub(crate) socket: Option<super::net::SocketState>,
+    /// `emitClose` (`false` for a socket: its `close` comes from its handle).
+    pub(crate) emit_close: bool,
 }
 
 /// A file read stream (`fs.ReadStream`). Clones are the same stream.
 #[derive(Clone)]
 pub struct ReadStream(Rc<Inner>);
 
-/// `fs.createReadStream(path, { highWaterMark })`: the open is asked for on
-/// the next tick, as `ReadStream`'s `_construct` is.
-pub fn create_read_stream(path: &str, options: ReadStreamOptions) -> ReadStream {
-    assert!(
-        options.high_water_mark > 0,
-        "a read stream with highWaterMark 0 is not ported"
-    );
-    let inner = Rc::new(Inner {
+/// A readable state for a file (`socket` `None`, not yet constructed) or a
+/// socket (constructed from the start, `emitClose` off).
+pub(crate) fn new_inner(
+    path: &str,
+    high_water_mark: usize,
+    socket: Option<super::net::SocketState>,
+) -> Rc<Inner> {
+    let is_socket = socket.is_some();
+    Rc::new(Inner {
         path: path.to_owned(),
         fd: Cell::new(None),
         bytes_read: Cell::new(0),
         performing_io: Cell::new(false),
         io_done: RefCell::new(Vec::new()),
-        high_water_mark: options.high_water_mark,
+        high_water_mark,
         buffer: RefCell::new(VecDeque::new()),
         length: Cell::new(0),
-        constructed: Cell::new(false),
+        constructed: Cell::new(is_socket),
         reading: Cell::new(false),
         sync: Cell::new(true),
         ended: Cell::new(false),
@@ -180,7 +197,19 @@ pub fn create_read_stream(path: &str, options: ReadStreamOptions) -> ReadStream 
         eos_attached: Cell::new(false),
         eos_readable_finished: Cell::new(false),
         eos_called: Cell::new(false),
-    });
+        socket,
+        emit_close: !is_socket,
+    })
+}
+
+/// `fs.createReadStream(path, { highWaterMark })`: the open is asked for on
+/// the next tick, as `ReadStream`'s `_construct` is.
+pub fn create_read_stream(path: &str, options: ReadStreamOptions) -> ReadStream {
+    assert!(
+        options.high_water_mark > 0,
+        "a read stream with highWaterMark 0 is not ported"
+    );
+    let inner = new_inner(path, options.high_water_mark, None);
     let stream = inner.clone();
     // destroyImpl.construct: `process.nextTick(constructNT, stream)`.
     js::next_tick(move || construct(&stream));
@@ -238,7 +267,7 @@ fn on_construct(stream: &Rc<Inner>, error: Option<W>) {
 
 /// `stream.emit(event, value)`: an `error` nobody listens to is an uncaught
 /// exception in Node (the worker dies), so here it ends the process.
-fn emit(stream: &Rc<Inner>, event: &str, value: &W) {
+pub(crate) fn emit(stream: &Rc<Inner>, event: &str, value: &W) {
     if let Err(error) = stream.emitter.emit(event, value) {
         let text = match &error {
             W::Error(made) => made.message.to_string_lossy(),
@@ -251,7 +280,7 @@ fn emit(stream: &Rc<Inner>, event: &str, value: &W) {
 }
 
 /// `errorOrDestroy(stream, err)` with `autoDestroy`: `destroy(err)`.
-fn error_or_destroy(stream: &Rc<Inner>, error: W) {
+pub(crate) fn error_or_destroy(stream: &Rc<Inner>, error: W) {
     if stream.destroyed.get() {
         return;
     }
@@ -311,7 +340,7 @@ fn from_list(stream: &Inner, n: usize) -> Rc<Vec<u8>> {
 }
 
 /// `Readable.prototype.read(n)`; `None` is `read()`.
-fn read(stream: &Rc<Inner>, n_orig: Option<usize>) -> Option<Rc<Vec<u8>>> {
+pub(crate) fn read(stream: &Rc<Inner>, n_orig: Option<usize>) -> Option<Rc<Vec<u8>>> {
     let hwm = stream.high_water_mark;
     if n_orig != Some(0) {
         stream.emitted_readable.set(false);
@@ -387,8 +416,13 @@ fn read(stream: &Rc<Inner>, n_orig: Option<usize>) -> Option<Rc<Vec<u8>>> {
 }
 
 /// `ReadStream.prototype._read(n)`: one `read(fd, n)` at the descriptor's
-/// offset; its callback pushes the bytes, or `null` at the end.
+/// offset; its callback pushes the bytes, or `null` at the end. A socket's
+/// `_read` starts its reading instead (`Socket.prototype._read`).
 fn start_read(stream: &Rc<Inner>, n: usize) {
+    if stream.socket.is_some() {
+        super::net::read_start(stream);
+        return;
+    }
     let fd = stream
         .fd
         .get()
@@ -415,30 +449,40 @@ fn start_read(stream: &Rc<Inner>, n: usize) {
                         .set(done.bytes_read.get() + bytes.len() as u64);
                     push(&done, Some(bytes));
                 }
-                Ok(_) => push(&done, None),
+                Ok(_) => {
+                    push(&done, None);
+                }
             }
         },
     );
 }
 
-/// `readableAddChunkPushByteMode(stream, state, chunk)`.
-fn push(stream: &Rc<Inner>, chunk: Option<Vec<u8>>) {
+/// `readableAddChunkPushByteMode(stream, state, chunk)`; what it returns is
+/// `canPushMore` (a socket stops reading on `false`).
+pub(crate) fn push(stream: &Rc<Inner>, chunk: Option<Vec<u8>>) -> bool {
     let Some(chunk) = chunk else {
         stream.reading.set(false);
         on_eof_chunk(stream);
-        return;
+        return false;
     };
     if chunk.is_empty() {
         stream.reading.set(false);
         maybe_read_more(stream);
-        return;
+        return can_push_more(stream);
     }
     assert!(!stream.ended.get(), "a read stream pushed after its end");
     if stream.destroyed.get() || stream.errored.borrow().is_some() {
-        return;
+        return false;
     }
     stream.reading.set(false);
     add_chunk(stream, Rc::new(chunk));
+    can_push_more(stream)
+}
+
+/// `canPushMore(state)`.
+fn can_push_more(stream: &Inner) -> bool {
+    !stream.ended.get()
+        && (stream.length.get() < stream.high_water_mark || stream.length.get() == 0)
 }
 
 /// `addChunk(stream, state, chunk, false)`.
@@ -557,7 +601,8 @@ fn end_readable(stream: &Rc<Inner>) {
     }
 }
 
-/// `endReadableNT`: `'end'`, then `autoDestroy`'s `destroy()`.
+/// `endReadableNT`: `'end'`, then `autoDestroy`'s `destroy()` (a socket, a
+/// `Duplex` that does not allow half-open, ends its writable side instead).
 fn end_readable_now(stream: &Rc<Inner>) {
     stream.end_scheduled.set(false);
     if stream.errored.borrow().is_none()
@@ -568,12 +613,16 @@ fn end_readable_now(stream: &Rc<Inner>) {
         stream.end_emitted.set(true);
         emit(stream, "end", &W::Undefined);
         eos_on_end(stream);
-        destroy(stream, None);
+        if stream.socket.is_some() {
+            super::net::after_end(stream);
+        } else {
+            destroy(stream, None);
+        }
     }
 }
 
 /// `Readable.prototype.resume()` and `resume_` on the next tick.
-fn resume(stream: &Rc<Inner>) {
+pub(crate) fn resume(stream: &Rc<Inner>) {
     if stream.flowing.get() == Some(true) {
         return;
     }
@@ -595,7 +644,7 @@ fn resume(stream: &Rc<Inner>) {
 }
 
 /// `destroyImpl.destroy(err)`.
-fn destroy(stream: &Rc<Inner>, error: Option<W>) {
+pub(crate) fn destroy(stream: &Rc<Inner>, error: Option<W>) {
     if stream.destroyed.get() {
         return;
     }
@@ -619,8 +668,15 @@ fn destroy(stream: &Rc<Inner>, error: Option<W>) {
 }
 
 /// `_destroy(self, err, cb)` → `ReadStream.prototype._destroy`: a read in
-/// flight is waited for (`kIoDone`), then the descriptor is closed.
+/// flight is waited for (`kIoDone`), then the descriptor is closed. A
+/// socket's is `Socket.prototype._destroy`: its handle closes (and emits
+/// `close` when it has), and the destroy's callback runs at once.
 fn start_destroy(stream: &Rc<Inner>, error: Option<W>) {
+    if stream.socket.is_some() {
+        super::net::destroy_handle(stream, error.is_some());
+        on_destroy(stream, error);
+        return;
+    }
     if stream.performing_io.get() {
         let later = stream.clone();
         stream
@@ -661,7 +717,8 @@ fn close(stream: &Rc<Inner>, error: Option<W>) {
 }
 
 /// `onDestroy(err)`: `'error'` (when there is one) and `'close'` on the
-/// next tick (`emitErrorCloseNT`, `emitCloseNT`).
+/// next tick (`emitErrorCloseNT`, `emitCloseNT`; a socket's `close` comes
+/// from its handle instead).
 fn on_destroy(stream: &Rc<Inner>, error: Option<W>) {
     if let Some(error) = &error
         && stream.errored.borrow().is_none()
@@ -683,9 +740,24 @@ fn on_destroy(stream: &Rc<Inner>, error: Option<W>) {
             eos_on_error(&later, error);
         }
         later.close_emitted.set(true);
-        emit(&later, "close", &W::Undefined);
-        eos_on_close(&later);
+        if later.emit_close {
+            emit(&later, "close", &W::Undefined);
+            eos_on_close(&later);
+        }
     });
+}
+
+/// A socket's `close` event, from its handle's close: listeners, then the
+/// async iterator's end-of-stream callback.
+pub(crate) fn emit_socket_close(stream: &Rc<Inner>, had_error: bool) {
+    emit(stream, "close", &W::Bool(had_error));
+    if stream.eos_attached.get() {
+        eos_on_close(stream);
+    }
+    // Nothing is emitted after a socket's close: its listeners, which may
+    // hold the socket or its child (a cycle JavaScript's collector frees),
+    // are let go.
+    stream.emitter.remove_all_listeners(None);
 }
 
 // The async iterator's end-of-stream callback (`eos(stream, { writable:
@@ -714,6 +786,11 @@ fn eos_callback(stream: &Rc<Inner>, error: Option<W>) {
 
 fn eos_on_end(stream: &Rc<Inner>) {
     stream.eos_readable_finished.set(true);
+    // A stream that will not emit `close` itself (a socket) is finished at
+    // its end (`eos`'s `onend` with `willEmitClose` false).
+    if !stream.emit_close {
+        eos_callback(stream, None);
+    }
 }
 
 fn eos_on_error(stream: &Rc<Inner>, error: W) {
@@ -768,17 +845,29 @@ fn wait(stream: &Rc<Inner>) -> Promise<(), W> {
 }
 
 /// `createAsyncIterator(stream)`'s `finally`: `destroyer(stream, null)`,
-/// which destroys a stream that has not finished with an `AbortError`.
+/// which destroys a stream that has not finished with an `AbortError` (a
+/// socket is finished when neither side is readable or writable any more).
 fn iterator_finally(stream: &Rc<Inner>) {
     if stream.destroyed.get() {
         return;
     }
-    let finished = stream.end_emitted.get() || stream.error_emitted.get();
+    let finished = match &stream.socket {
+        Some(socket) => !readable_alive(stream) && !socket.writable_alive(),
+        None => stream.end_emitted.get() || stream.error_emitted.get(),
+    };
     destroy(stream, if finished { None } else { Some(abort_error()) });
 }
 
+/// `isReadable(stream)`: not destroyed, not errored, not ended.
+pub(crate) fn readable_alive(stream: &Inner) -> bool {
+    !stream.destroyed.get()
+        && !stream.error_emitted.get()
+        && !stream.end_emitted.get()
+        && stream.socket.as_ref().is_none_or(|socket| socket.readable)
+}
+
 /// `async function* createAsyncIterator(stream)` of Node 24.22.
-fn iterator(stream: Rc<Inner>) -> AsyncGen<W, W> {
+pub(crate) fn iterator(stream: Rc<Inner>) -> AsyncGen<W, W> {
     agen::async_gen(move |co: Co<W, W>| async move {
         attach_iterator(&stream);
         let body: Result<(), Abrupt<W, W>> = async {

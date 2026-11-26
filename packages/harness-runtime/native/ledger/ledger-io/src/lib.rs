@@ -3,7 +3,9 @@
 //!
 //! - `fs`: the primitives exactly as libuv makes them for Node (stamps, the
 //!   sync chain, copyfile, links, opens, recursive mkdir, utimes, realpath,
-//!   statfs). All of the crate's `unsafe` code is there.
+//!   statfs), and in `fs::sys` the system calls of a child process and its
+//!   sockets. All of the crate's `unsafe` code is there.
+//! - `process`: `uv_spawn`'s program search and spawn on those calls.
 //! - `atomic`: `writeFileAtomic`, `withCrossProcessFileLock` and
 //!   `cleanupStaleAtomicFiles` of `lib/atomic-file.js`, with an injectable
 //!   file system and environment.
@@ -16,3 +18,4 @@ pub mod atomic;
 pub mod fs;
 pub mod git;
 pub mod path;
+pub mod process;

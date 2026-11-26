@@ -8,7 +8,11 @@
 // temp dir, with a private CARGO_HOME and target directory there (removed
 // afterwards unless --keep-artifacts). The dependencies are fetched once per
 // run with `cargo fetch --locked` (checksums from the tracked Cargo.lock);
-// everything after that is --offline.
+// everything after that is --offline. When the developer's own cargo cache
+// already holds every locked crate (its checksum checked against Cargo.lock)
+// and its index entry, they are copied into the private CARGO_HOME first and
+// the fetch runs --offline too, so a local run needs no network; a cold
+// runner finds nothing there and fetches as before.
 //
 //   node scripts/build-ledger-native.mjs            build the workspace, the test-only probes and devryan-ledger
 //   node scripts/build-ledger-native.mjs --verify   cargo fmt --check, clippy -D warnings, cargo test,
@@ -28,7 +32,8 @@
 // the workspace; the Rust-free contract is this script's test.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -50,6 +55,7 @@ export const DIFFERENTIAL_TESTS = Object.freeze([
   'scripts/ledger-native/ctx-differential.mjs',
   'scripts/ledger-native/jobs-differential.mjs',
   'scripts/ledger-native/fs-differential.mjs',
+  'scripts/ledger-native/child-differential.mjs',
   'scripts/ledger-native/porting-lint.mjs',
   'scripts/ledger-native/proto-differential.mjs',
 ]);
@@ -117,6 +123,70 @@ function createScratch(keep) {
   };
 }
 
+const CRATES_IO = 'registry+https://github.com/rust-lang/crates.io-index';
+
+/** The crates.io packages of a Cargo.lock: `{ name, version, checksum }`. */
+export function lockedRegistryPackages(lockText) {
+  const packages = [];
+  for (const block of lockText.split(/^\[\[package\]\]$/m).slice(1)) {
+    const field = (key) => new RegExp(`^${key} = "([^"]*)"$`, 'm').exec(block)?.[1];
+    if (field('source') === CRATES_IO && field('checksum')) packages.push({ name: field('name'), version: field('version'), checksum: field('checksum') });
+  }
+  return packages;
+}
+
+/** Where cargo's sparse index keeps a crate's entry (`ab/cd/abcd…`, `3/a/abc`, `2/ab`, `1/a`). */
+export function indexEntryPath(name) {
+  const lower = name.toLowerCase();
+  if (lower.length <= 2) return path.join(String(lower.length), lower);
+  if (lower.length === 3) return path.join('3', lower[0], lower);
+  return path.join(lower.slice(0, 2), lower.slice(2, 4), lower);
+}
+
+/**
+ * Copies every locked crates.io crate (its `.crate` file, checked against
+ * Cargo.lock's checksum, and its sparse-index entry) from the developer's
+ * cargo cache into the run's private CARGO_HOME. True only when one index
+ * directory had all of them; nothing is copied otherwise.
+ */
+export function seedCargoHome({ lockText, cargoHome, sourceHome = process.env.CARGO_HOME || path.join(os.homedir(), '.cargo') }) {
+  const packages = lockedRegistryPackages(lockText);
+  const cacheRoot = path.join(sourceHome, 'registry', 'cache');
+  if (!packages.length || !existsSync(cacheRoot)) return false;
+  for (const dir of readdirSync(cacheRoot).filter((name) => /^index\.crates\.io-[0-9a-f]+$/.test(name)).sort()) {
+    const index = path.join(sourceHome, 'registry', 'index', dir);
+    const files = [[path.join(index, 'config.json'), path.join(cargoHome, 'registry', 'index', dir, 'config.json')]];
+    const complete = existsSync(files[0][0]) && packages.every(({ name, version, checksum }) => {
+      const crate = path.join(cacheRoot, dir, `${name}-${version}.crate`);
+      const entry = path.join(index, '.cache', indexEntryPath(name));
+      if (!existsSync(crate) || !existsSync(entry)) return false;
+      if (createHash('sha256').update(readFileSync(crate)).digest('hex') !== checksum) return false;
+      files.push([crate, path.join(cargoHome, 'registry', 'cache', dir, `${name}-${version}.crate`)], [entry, path.join(cargoHome, 'registry', 'index', dir, '.cache', indexEntryPath(name))]);
+      return true;
+    });
+    if (!complete) continue;
+    for (const [from, to] of files) { mkdirSync(path.dirname(to), { recursive: true }); copyFileSync(from, to); }
+    return true;
+  }
+  return false;
+}
+
+/**
+ * `cargo fetch --locked`: offline from the seeded CARGO_HOME when the
+ * developer's cache holds every crate, else (or when that fails) from the
+ * network, as on a cold runner.
+ */
+function fetchDependencies(cargo, workspace, env) {
+  const seeded = seedCargoHome({ lockText: readFileSync(path.join(workspace, 'Cargo.lock'), 'utf8'), cargoHome: env.CARGO_HOME });
+  if (seeded) {
+    console.log('\n$ cargo fetch --locked --offline (the locked crates copied from the local cargo cache)');
+    const offline = spawnSync(cargo, ['fetch', '--locked', '--offline'], { cwd: workspace, env, stdio: 'inherit' });
+    if (!offline.error && offline.status === 0) return;
+    console.log('The offline fetch failed; fetching from the network instead.');
+  }
+  runChecked(cargo, ['fetch', '--locked'], { cwd: workspace, env });
+}
+
 /** Copies the sources, fetches the locked dependencies and builds the probe; returns the cargo context. */
 function prepare({ root, scratch }) {
   const toolchain = readToolchainFile(root);
@@ -124,7 +194,7 @@ function prepare({ root, scratch }) {
   const workspace = copySources(root, scratch);
   const env = { ...cargoEnvironment({ located, toolchain, scratch }), DEVRYAN_LEDGER_SOURCE_DIGEST: sourceDigest(root) };
   const cargo = path.join(located.bin, 'cargo');
-  runChecked(cargo, ['fetch', '--locked'], { cwd: workspace, env });
+  fetchDependencies(cargo, workspace, env);
   const debug = path.join(scratch, 'target', 'debug');
   return { cargo, workspace, env, located, toolchain, scratch, probe: path.join(debug, 'atomic-probe'), odbProbe: path.join(debug, 'odb-probe') };
 }

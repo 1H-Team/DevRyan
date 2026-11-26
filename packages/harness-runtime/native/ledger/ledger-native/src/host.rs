@@ -84,6 +84,29 @@ pub enum Unit {
     Input(Input),
     /// Blocking work finished: its id and result.
     Done(u64, Box<dyn Any + Send>),
+    /// One delivery of a long-lived source (a child's output reader, its
+    /// exit waiter): the source's id and what it read.
+    Source(u64, Box<dyn Any + Send>),
+}
+
+/// Where the thread of a long-lived source posts its units ([`open_source`]).
+/// It holds nothing of the loop but its inbox.
+#[derive(Clone)]
+pub struct Poster {
+    inbox: Arc<Inbox>,
+    id: u64,
+}
+
+impl Poster {
+    /// Posts one delivery; it runs as a unit of its own on the loop.
+    pub fn post<T: Send + 'static>(&self, value: T) {
+        self.inbox.post(Unit::Source(self.id, Box::new(value)));
+    }
+
+    /// The source's id ([`close_source`]).
+    pub fn id(&self) -> u64 {
+        self.id
+    }
 }
 
 /// What the stdin reader hands the loop.
@@ -265,6 +288,8 @@ pub type EnvReader = Box<dyn Fn(&str) -> Option<String>>;
 
 type Delivery = Box<dyn FnOnce(Box<dyn Any + Send>)>;
 
+type SourceHandler = Rc<RefCell<Box<dyn FnMut(Box<dyn Any + Send>)>>>;
+
 /// The loop of one thread.
 pub struct EventLoop {
     clock: Box<dyn Clock>,
@@ -279,6 +304,9 @@ pub struct EventLoop {
     blocking: RefCell<HashMap<u64, Delivery>>,
     next_blocking: Cell<u64>,
     pool: RefCell<Option<BlockingPool>>,
+    /// The open long-lived sources: each delivery runs in the frame the
+    /// source was opened in.
+    sources: RefCell<HashMap<u64, (Frame, SourceHandler)>>,
 }
 
 impl EventLoop {
@@ -295,6 +323,7 @@ impl EventLoop {
             blocking: RefCell::new(HashMap::new()),
             next_blocking: Cell::new(0),
             pool: RefCell::new(None),
+            sources: RefCell::new(HashMap::new()),
         })
     }
 
@@ -466,6 +495,13 @@ impl EventLoop {
                     delivery(result);
                 }
             }
+            Unit::Source(id, value) => {
+                // A source closed meanwhile drops what its thread still sent.
+                let entry = self.sources.borrow().get(&id).cloned();
+                if let Some((frame, handler)) = entry {
+                    js::with_frame(frame, move || (handler.borrow_mut())(value));
+                }
+            }
         }
         self.checkpoint();
     }
@@ -519,9 +555,32 @@ impl EventLoop {
         self.timers_phase();
     }
 
-    /// How many pieces of blocking work have not been delivered yet.
+    /// How many pieces of blocking work have not been delivered yet, and
+    /// how many long-lived sources are open (a child process's readers, its
+    /// exit waiter, a write in flight): what a test driver waits for before
+    /// it moves a virtual clock.
     pub fn blocking_pending(&self) -> usize {
-        self.blocking.borrow().len()
+        self.blocking.borrow().len() + self.sources.borrow().len()
+    }
+
+    /// How many long-lived sources are open.
+    pub fn sources_open(&self) -> usize {
+        self.sources.borrow().len()
+    }
+
+    fn open_source<T: Send + 'static>(&self, mut deliver: impl FnMut(T) + 'static) -> Poster {
+        let id = self.next_blocking.get() + 1;
+        self.next_blocking.set(id);
+        let handler: Box<dyn FnMut(Box<dyn Any + Send>)> = Box::new(move |value| {
+            deliver(delivered::<T>(value));
+        });
+        self.sources
+            .borrow_mut()
+            .insert(id, (js::current_frame(), Rc::new(RefCell::new(handler))));
+        Poster {
+            inbox: self.inbox.clone(),
+            id,
+        }
     }
 
     /// Runs `work` on the pool; `deliver` gets its result in a unit of its
@@ -807,6 +866,22 @@ pub fn submit<T: Send + 'static>(
     deliver: impl FnOnce(T) + 'static,
 ) {
     current().submit(work, deliver);
+}
+
+/// Opens a long-lived source: another thread posts deliveries through the
+/// returned [`Poster`], and each runs `deliver` in a unit of its own on this
+/// loop, in the async context frame current here (a libuv handle's callbacks
+/// run in the frame the handle was made in), until [`close_source`].
+pub fn open_source<T: Send + 'static>(deliver: impl FnMut(T) + 'static) -> Poster {
+    current().open_source(deliver)
+}
+
+/// Closes a source: what its thread posts afterwards is dropped.
+pub fn close_source(id: u64) {
+    if let Some(event_loop) = LOOP.with(|slot| slot.borrow().clone()) {
+        let removed = event_loop.sources.borrow_mut().remove(&id);
+        drop(removed);
+    }
 }
 
 /// `process.env[name]`, read per use.

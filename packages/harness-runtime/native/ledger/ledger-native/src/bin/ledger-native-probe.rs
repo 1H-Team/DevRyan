@@ -21,6 +21,16 @@
 //!   ledger-native-probe fs-programs      stdin: one {dir, program} per line
 //!                                        (scripts/ledger-native/fs-programs.mjs);
 //!                                        stdout: its trace per line, or `!<why>`
+//!   ledger-native-probe child-cases      stdin: one child-process case per line
+//!                                        (scripts/ledger-native/child-spec.mjs) or
+//!                                        {op: census}; stdout: its record per line
+//!   ledger-native-probe child-programs   stdin: one {dir, program} per line
+//!                                        (scripts/ledger-native/child-programs.mjs);
+//!                                        stdout: its trace per line, or `!<why>`
+//!                                        (a program stuck past its deadline ends the run)
+//!   ledger-native-probe child-emfile-uncaught  (under `ulimit -n 256`) a spawn at the
+//!                                        descriptor limit without an 'error' listener:
+//!                                        the process ends, as the worker dies of it
 //!   ledger-native-probe jobs             stdin: one job-order program per line
 //!                                        (scripts/ledger-native/jobs-programs.mjs);
 //!                                        stdout: its trace per line, as
@@ -66,6 +76,17 @@ fn main() {
             ledger_native::io_program::serve_steps(lines, print, |line| decode_line(line).ok());
         }
         Some("fs-programs") => fs_programs(),
+        Some("child-cases") => {
+            let stdin = std::io::stdin();
+            let lines = stdin
+                .lock()
+                .split(b'\n')
+                .map(|line| line.expect("stdin"))
+                .filter(|line| !line.is_empty());
+            ledger_native::child_program::serve_cases(lines, print, |line| decode_line(line).ok());
+        }
+        Some("child-programs") => child_programs(),
+        Some("child-emfile-uncaught") => ledger_native::child_program::emfile_uncaught(),
         Some("transcript") => transcript(),
         Some("jobs") => {
             // `jobs node26`: Node 26.13's frame rule after a `yield`, to
@@ -77,7 +98,7 @@ fn main() {
         }
         _ => {
             eprintln!(
-                "usage: ledger-native-probe codec | generate <seed> <count> | scenarios | transcript | fs-steps | fs-programs | jobs [node26]"
+                "usage: ledger-native-probe codec | generate <seed> <count> | scenarios | transcript | fs-steps | fs-programs | child-cases | child-programs | child-emfile-uncaught | jobs [node26]"
             );
             std::process::exit(2);
         }
@@ -616,6 +637,31 @@ fn fs_programs() {
         match ledger_native::io_program::run_program(&input.get("program"), &dir) {
             Ok(trace) => writeln!(stdout, "{trace}").expect("stdout"),
             Err(why) => writeln!(stdout, "!{why}").expect("stdout"),
+        }
+        stdout.flush().expect("stdout");
+    }
+}
+
+/// The child-process programs, one `{dir, program}` per line.
+fn child_programs() {
+    let stdin = std::io::stdin();
+    let mut stdout = std::io::stdout();
+    for line in stdin.lock().split(b'\n') {
+        let line = line.expect("stdin");
+        if line.is_empty() {
+            continue;
+        }
+        let input = decode_line(&line).expect("a program");
+        let dir = to_js_string(&input.get("dir")).to_string_lossy();
+        match ledger_native::child_program::run_program(&input.get("program"), &dir) {
+            Ok(trace) => writeln!(stdout, "{trace}").expect("stdout"),
+            Err(why) => {
+                // A program stuck past its deadline ends the run: the rest
+                // would wait out theirs too.
+                writeln!(stdout, "!{why}").expect("stdout");
+                stdout.flush().expect("stdout");
+                return;
+            }
         }
         stdout.flush().expect("stdout");
     }
