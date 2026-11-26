@@ -11,7 +11,7 @@
 //   check (ledger, mutated, case-bytes) has a plant only it reports, and one
 //   plant changes nothing but a timer's delay;
 // - in a copy of the replayer itself (REPLAYER_PLANTS, its own folder with
-//   the shared codec, the package reached through a link): each is reported by
+//   the shared codec and the comparer, the package reached through a link): each is reported by
 //   its named check, which is a check of the replay (`placement`, `draw`), of
 //   the closure judgement (`reproduced-complete`, `crossed-mark`: judgeClosure
 //   in closure.mjs, which reads the recording's marks itself), or of this table
@@ -299,7 +299,7 @@ const replaceOnce = (text, plant) => (plant.edits ?? [plant]).reduce((current, e
 export function plantedReplayer(root, plant = null) {
   const harness = path.join(root, 'scripts/scheduler-conformance');
   mkdirSync(harness, { recursive: true });
-  for (const file of ['replay.mjs', 'replay-values.mjs', 'candidate.mjs', 'trace.mjs', 'target.json']) cpSync(path.join(HERE, file), path.join(harness, file));
+  for (const file of ['replay.mjs', 'replay-values.mjs', 'candidate.mjs', 'compare.mjs', 'trace.mjs', 'target.json']) cpSync(path.join(HERE, file), path.join(harness, file));
   cpSync(path.join(REPOSITORY, 'scripts/client-conformance'), path.join(root, 'scripts/client-conformance'), { recursive: true });
   symlinkSync(path.join(REPOSITORY, 'packages'), path.join(root, 'packages'));
   if (plant) writeFileSync(path.join(harness, plant.file), replaceOnce(readFileSync(path.join(harness, plant.file), 'utf8'), plant));

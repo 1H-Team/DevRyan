@@ -63,6 +63,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createCodecContext, emitSlots, snapshot, stringifyTree } from '../client-conformance/codec.mjs';
 import { CANDIDATE_FILE, candidateAls, createJsCandidate, ReplayInputError } from './candidate.mjs';
+import { compareCase, compareEvent, INDEPENDENCE, LAUNCH_PORTS, laneOf, plain } from './compare.mjs';
 import { bindFrom, contentText, decodeValue, pathTo, shape, shapeText, TAG, treeDifference, Unplaceable } from './replay-values.mjs';
 import { casePlacement, caseEvents, importClosure, isArrivedEvent, loadTarget, readContainer, sha256 } from './trace.mjs';
 
@@ -74,7 +75,17 @@ export const PACKAGE_DIR = path.join(REPOSITORY_ROOT, 'packages/orchestration-ru
 export const TARGET_SPEC = path.join(HARNESS_DIR, 'target.json');
 const REPLAY_FILE = realpathSync(fileURLToPath(import.meta.url));
 
-export const OUTCOMES = Object.freeze(['reproduced', 'partial', 'crossed', 'unrecordable', 'empty', 'different']);
+export const OUTCOMES = Object.freeze(['reproduced', 'partial', 'crossed', 'unrecordable', 'empty', 'different', 'inconclusive']);
+/**
+ * How a case is compared (compare.mjs). `compare`: the comparer's rules and
+ * oracles run on what was compared (default on); `reads`: `exact` (the
+ * JavaScript closure's, default) or `free` (OD2's read mode for a candidate
+ * that is not the JavaScript scheduler, reported on every use);
+ * `independence`: the independence table (default compare.mjs INDEPENDENCE,
+ * which ships empty: strict total order; DESIGN_INDEPENDENCE is the design's
+ * two entries, for a run that is given them).
+ */
+export const DEFAULT_MODE = Object.freeze({ compare: true, reads: 'exact', independence: INDEPENDENCE });
 /** The named checks of a replay: each difference is reported by one of them, with the first differing event. */
 export const REPLAY_CHECKS = Object.freeze({
   order: 'at each position the candidate produces the event the recording has there: its kind, construction, numbers and names (and none where the recording has an input not yet delivered)',
@@ -90,6 +101,9 @@ export const REPLAY_CHECKS = Object.freeze({
   quiescence: 'the candidate reaches quiescence: a drain ends with two quiet event-loop turns',
   'hidden-site': 'every hidden read of the candidate is at a line the target spec names',
   'real-timer': 'the candidate sets no real timer (every timer is the candidate adapter\'s)',
+  compare: 'the comparer (compare.mjs) finds no failure on what was compared: its rules, oracles and global assertions, each reported by its own name (`rule`)',
+  'option-varies': 'read mode free only: the recording reads one option key with more than one value, so the count and position of its reads are contract (inconclusive)',
+  'option-unread': 'read mode free only: the candidate reads an option key the recording never read, whose value the host cannot give (inconclusive)',
 });
 
 /** An input that arrives on its own (the host delivers it), not one the candidate asks for. */
@@ -302,7 +316,7 @@ const boundary = () => new Promise((resolve) => { realSetImmediate(resolve); });
  * `casePlacement`, read from the recording before anything runs), `produced`
  * how many the candidate produced and were compared.
  */
-export async function replayCase({ record, resolve, header, copy, reference, makeCandidate = createJsCandidate }) {
+export async function replayCase({ record, resolve, header, copy, reference, makeCandidate = createJsCandidate, mode = DEFAULT_MODE }) {
   const base = { id: record.id, file: record.file, events: 0, prefix: 0, recordedEvents: record.events };
   if (record.outcome !== 'recorded') {
     if (record.outcome === 'empty') return { ...base, outcome: 'empty', reason: 'the test built no scheduler' };
@@ -315,7 +329,17 @@ export async function replayCase({ record, resolve, header, copy, reference, mak
   base.prefix = limit;
   const busyText = busy ? `${describe(busy, busy.c)} (#${limit + 1}) is marked ${JSON.stringify(busy.place ?? null)}: the recorder could not show where it arrived (the scheduler may have had work queued)` : null;
   if (limit === 0) return { ...base, outcome: 'crossed', busy: busyText, detail: `nothing compared: its first input ${busyText}` };
-  const host = new Host({ expected, limit, resolve, header, copy, reference, makeCandidate });
+  // OD2 read mode (never the JavaScript closure's): the recorded reads leave the order and are served by key.
+  let reads = null;
+  let compared = limit;
+  let replayed = expected;
+  if (mode.reads === 'free') {
+    reads = readsByKey(expected.slice(0, limit), resolve);
+    if (reads.varies.length) return { ...base, outcome: 'inconclusive', check: 'option-varies', reason: 'option-varies', readMode: { recorded: reads.count, varies: reads.varies }, detail: `read mode free: the recording reads ${reads.varies.slice(0, 4).join(', ')} with more than one value` };
+    compared -= expected.slice(0, limit).filter((event) => event.dir === 'in' && event.kind === 'read').length;
+    replayed = renumber(expected.filter((event) => !(event.dir === 'in' && event.kind === 'read')));
+  }
+  const host = new Host({ expected: replayed, limit: compared, resolve, header, copy, reference, makeCandidate, mode, reads });
   try {
     const result = await host.run();
     if (result.outcome === 'partial') return { ...base, ...result, busy: busyText, detail: `compared ${limit} of ${expected.length} events: ${busyText}` };
@@ -323,10 +347,39 @@ export async function replayCase({ record, resolve, header, copy, reference, mak
   } finally { host.close(); }
 }
 
+/** The recorded reads of a compared prefix by key (object, op, key): their one value, and the keys read with more than one. */
+function readsByKey(events, resolve) {
+  const table = new Map();
+  const varies = new Set();
+  let count = 0;
+  for (const event of events) {
+    if (event.dir !== 'in' || event.kind !== 'read') continue;
+    count += 1;
+    const key = readKeyOf(event.c, event.object, event.op, typeof event.key === 'string' && !SLOT.test(event.key) ? event.key : `<${JSON.stringify(resolve(event.key))}>`);
+    const text = `${JSON.stringify(event.found ?? null)}|${JSON.stringify(event.supplied ?? null)}|${'value' in event ? shapeText(resolve(event.value)) : '-'}`;
+    if (!table.has(key)) table.set(key, { event, text });
+    else if (table.get(key).text !== text) varies.add(key);
+  }
+  return { table, varies: [...varies], count };
+}
+const readKeyOf = (construction, object, op, key) => `${construction}|${object}|${op ?? 'get'}|${key}`;
+
+/** `at` and the per-construction `seq` of a list of recorded events made positional again (after reads were taken out). */
+function renumber(events) {
+  const seq = new Map();
+  return events.map((event, index) => { const next = (seq.get(event.c) ?? 0) + 1; seq.set(event.c, next); return { ...event, at: index + 1, seq: next }; });
+}
+
 class Host {
-  constructor({ expected, limit = expected.length, resolve, header, copy, reference, makeCandidate }) {
+  constructor({ expected, limit = expected.length, resolve, header, copy, reference, makeCandidate, mode = DEFAULT_MODE, reads = null }) {
+    this.options = { limit, resolve, header, copy, reference, makeCandidate, mode, reads };
     this.expected = expected;
+    this.recorded = expected.slice(); // the recording's order, never moved (the comparer's reference)
     this.limit = limit;
+    this.mode = mode;
+    this.reads = reads;
+    this.freeReads = 0;
+    this.independenceUses = [];
     // Where the recording places the inputs that are delivered by a mechanism, not at quiescence: index -> how.
     this.placements = new Map();
     this.settledAt = new Map(); // `${construction}:${port}` -> index of the recording's settlement of that port's promise
@@ -475,6 +528,18 @@ class Host {
   /** Records a produced event and compares it with the recording's event at its position. */
   event(construction, dir, kind, fields) {
     if (this.stopped || !this.live) throw new ReplayStop();
+    const { index, entry } = this.record(construction, dir, kind, fields);
+    this.compare(index);
+    // The compared prefix ends here: the recording's next event is a busy input, whose position it does not hold.
+    if (this.produced.length === this.limit && this.limit < this.expected.length) {
+      this.stopped = { outcome: 'partial' };
+      throw new ReplayStop();
+    }
+    return entry;
+  }
+
+  /** Records a produced event (its signals listed by field) without comparing it; `{ index, entry }`. */
+  record(construction, dir, kind, fields) {
     this.activity += 1;
     const index = this.produced.length;
     const seq = (this.seq.get(construction) ?? 0) + 1;
@@ -488,13 +553,7 @@ class Host {
     if (signals) entry.signals = signals;
     this.produced.push({ c: construction, entry });
     for (const [key, item] of Object.entries(entry)) if (isRef(item)) this.slotPlaces[item.slot] = [index, key];
-    this.compare(index);
-    // The compared prefix ends here: the recording's next event is a busy input, whose position it does not hold.
-    if (this.produced.length === this.limit && this.limit < this.expected.length) {
-      this.stopped = { outcome: 'partial' };
-      throw new ReplayStop();
-    }
-    return entry;
+    return { index, entry };
   }
 
   /** The produced event `index` against the recording's (online: each value alone; identity is checked at the end). */
@@ -508,6 +567,9 @@ class Host {
     }
     const head = (event) => JSON.stringify(Object.fromEntries(Object.entries(event).filter(([key]) => !ANNOTATIONS.has(key) && !PLACEMENT_KEYS.has(key) && key !== 'c').map(([key, value]) => [key, isRef(value) || (typeof value === 'string' && SLOT.test(value)) ? '<value>' : key === 'ledger' ? '<ledger>' : value])));
     if (want.c !== c || head(want) !== head(entry)) {
+      // The independence table, the only relaxation: the recording's unit of this lane moves before the units of
+      // independent lanes ahead of it, and the comparison is made again (reported as a use).
+      if (this.relax(index)) return this.compare(index);
       this.stop({ outcome: 'different', check: 'order', detail: `the candidate produced ${shown} where the recording has ${describe(want, want.c)}`, expected: describe(want, want.c), got: shown });
     }
     for (const [key, item] of Object.entries(entry)) {
@@ -521,21 +583,113 @@ class Host {
     }
   }
 
+  /**
+   * The independence table (compare.mjs INDEPENDENCE), online: the candidate produced at `index` an event of lane L
+   * where the recording has an event of a lane the table makes independent of L. If the recording's next unit of
+   * lane L (a port call with its synchronous answer, or a timer set) follows after only units of lanes independent
+   * of L (no input, nothing else), that unit moves to `index`, ahead of them; the recording's positions and port
+   * numbers are made those of the new order. Order within a lane is never changed. Returns whether it moved.
+   */
+  relax(index) {
+    const table = this.mode.independence ?? [];
+    if (!table.length) return false;
+    const { c, entry } = this.produced[index];
+    const lane = laneOf({ kind: entry.kind, head: entry });
+    if (lane === null) return false;
+    const independent = new Set(table.flatMap((item) => [`${item.lanes[0]}|${item.lanes[1]}`, `${item.lanes[1]}|${item.lanes[0]}`]));
+    const unitEnd = (at) => {
+      const event = this.expected[at];
+      const next = this.expected[at + 1];
+      return event.kind === 'port' && next && next.c === event.c && next.dir === 'in' && next.kind === 'answer' && next.port === event.port && ['return', 'throw', 'promise'].includes(next.outcome) ? at + 2 : at + 1;
+    };
+    const skipped = [];
+    for (let at = index; at < this.limit;) {
+      const event = this.expected[at];
+      const end = unitEnd(at);
+      const itsLane = laneOf({ kind: event.kind, head: event });
+      if (at > index && itsLane === lane) {
+        if (event.c !== c || event.dir !== entry.dir || event.kind !== entry.kind || event.name !== entry.name || end > this.limit) return false;
+        const unit = this.expected.slice(at, end);
+        const block = this.expected.slice(index, at);
+        this.expected.splice(index, end - index, ...unit, ...block);
+        this.renumberExpected();
+        this.independenceUses.push({ rule: 'independence', kind: 'info', at: index + 1, lanes: [lane, ...new Set(skipped)], detail: `${describe(this.expected[index], c)} comes before ${block.length} recorded event(s) of lane ${[...new Set(skipped)].join(', ')} (independence table)` });
+        return true;
+      }
+      if (itsLane === null || !independent.has(`${itsLane}|${lane}`) || isArrived(event)) return false;
+      skipped.push(itsLane);
+      at = end;
+    }
+    return false;
+  }
+
+  /** After a move: every recorded event's `at` and per-construction `seq` positional, and port numbers by order of call. */
+  renumberExpected() {
+    const seq = new Map();
+    const ports = new Map(); // construction -> count
+    const map = new Map(); // `${c}:${old}` -> new
+    for (const [index, event] of this.expected.entries()) {
+      const next = (seq.get(event.c) ?? 0) + 1;
+      seq.set(event.c, next);
+      let changed = event.at !== index + 1 || event.seq !== next ? { ...event, at: index + 1, seq: next } : event;
+      if (event.kind === 'port') {
+        const number = (ports.get(event.c) ?? 0) + 1;
+        ports.set(event.c, number);
+        if (number !== event.port) { map.set(`${event.c}:${event.port}`, number); changed = { ...changed, port: number }; }
+      }
+      this.expected[index] = changed;
+    }
+    if (!map.size) return;
+    const to = (c, number) => (typeof number === 'number' ? map.get(`${c}:${number}`) ?? number : number);
+    for (const [index, event] of this.expected.entries()) {
+      const out = { ...event };
+      if (event.kind === 'answer') out.port = to(event.c, event.port);
+      if (event.kind === 'control' || event.kind === 'callback') out.of = to(event.c, event.of);
+      if (event.during !== undefined) out.during = to(event.c, event.during);
+      if (event.kind === 'step' && Array.isArray(event.inputs)) out.inputs = event.inputs.map((item) => ({ ...item, ...(item.port !== undefined ? { port: to(item.construction, item.port) } : {}), ...(item.of !== undefined ? { of: to(item.construction, item.of) } : {}) }));
+      this.expected[index] = out;
+    }
+    this.settledAt = new Map();
+    for (const [index, event] of this.expected.entries()) if (event.kind === 'answer' && (event.outcome === 'resolve' || event.outcome === 'reject')) this.settledAt.set(`${event.c}:${event.port}`, index);
+  }
+
   // ---------------------------------------------------------------- inputs the candidate asks for
 
   nextIsRead(construction, object, key) {
+    if (this.reads) return typeof key === 'string' && this.reads.table.has(readKeyOf(construction, object, undefined, key));
     const want = this.expected[this.produced.length];
     return Boolean(want && want.c === construction && want.dir === 'in' && want.kind === 'read' && want.object === object && want.op === undefined && typeof key === 'string' && want.key === key);
+  }
+
+  /**
+   * Read mode free (OD2): a read is answered from the recorded value of its key, whatever its position, and leaves no
+   * event (the order is compared without reads). A key the recording never read cannot be answered: inconclusive.
+   */
+  freeRead(construction, fields) {
+    const key = readKeyOf(construction, fields.object, fields.op, typeof fields.key === 'string' ? fields.key : `<${JSON.stringify(typeof fields.key === 'symbol' ? String(fields.key) : fields.key)}>`);
+    const found = this.reads.table.get(key);
+    if (!found) return this.stop({ outcome: 'inconclusive', check: 'option-unread', reason: 'option-unread', detail: `read mode free: the candidate reads ${key}, which the recording never read` });
+    this.freeReads += 1;
+    const want = found.event;
+    const options = want.object === 'options';
+    const place = { construction, context: options && fields.op === undefined ? 'option' : 'data', key: fields.key, supplied: want.supplied === true };
+    if (fields.op === 'own') return { found: want.found, value: want.found && 'value' in want ? this.decodeIn(want.value, place) : undefined };
+    return this.decodeIn(want.value, place);
   }
 
   /** Answers an input the candidate asks for from the event at the cursor, and records it. */
   ask(construction, kind, fields) {
     if (this.stopped || !this.live) throw new ReplayStop();
+    if (kind === 'read' && this.reads) return this.freeRead(construction, fields);
     const index = this.produced.length;
     const want = this.expected[index];
-    const asked = `in ${kind} ${JSON.stringify(Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, typeof value === 'symbol' ? String(value) : value])))} (construction ${construction})`;
-    if (!want) this.stop({ outcome: 'different', check: 'extra', detail: `the candidate asked for ${asked} after the recording's last event`, got: asked });
-    const mismatch = (check = 'order') => this.stop({ outcome: 'different', check, detail: `the candidate asked for ${asked} where the recording has ${describe(want, want.c)}`, expected: describe(want, want.c), got: asked });
+    const scalars = Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, typeof value === 'symbol' ? String(value) : value]));
+    const asked = `in ${kind} ${JSON.stringify(scalars)} (construction ${construction})`;
+    // What the candidate asked for where the recording has something else is kept (its value never served), so the
+    // comparer sees where the candidate went and names it.
+    const keep = () => { const seq = (this.seq.get(construction) ?? 0) + 1; this.seq.set(construction, seq); this.produced.push({ c: construction, entry: { seq, at: index + 1, dir: 'in', kind, ...scalars, asked: true } }); };
+    if (!want) { keep(); this.stop({ outcome: 'different', check: 'extra', at: index + 1, detail: `the candidate asked for ${asked} after the recording's last event`, got: asked }); }
+    const mismatch = (check = 'order') => { keep(); this.stop({ outcome: 'different', check, at: index + 1, detail: `the candidate asked for ${asked} where the recording has ${describe(want, want.c)}`, expected: describe(want, want.c), got: asked }); };
     if (want.c !== construction || want.dir !== 'in' || want.kind !== kind) mismatch();
     switch (kind) {
       case 'read': {
@@ -802,16 +956,68 @@ class Host {
       if (!(error instanceof ReplayStop)) throw error;
     }
     const partial = this.stopped?.outcome === 'partial';
-    if (this.stopped && !partial) return this.result();
+    // A candidate stopped for `missing` was quiescent: its trace is complete up to there.
+    if (this.stopped && !partial) return this.judged(this.result(), this.stopped.check === 'missing');
     // The whole case, or its compared prefix: the final checks run on what was compared.
     const found = this.finalChecks();
-    if (found) { this.stopped = { outcome: 'different', ...found }; return this.result(); }
-    if (partial && this.produced.length !== this.limit) { this.stopped = { outcome: 'different', check: 'missing', detail: `the compared prefix ends after ${this.limit} events; the candidate produced ${this.produced.length}`, at: this.produced.length + 1 }; return this.result(); }
+    if (found) { this.stopped = { outcome: 'different', ...found }; return this.judged(this.result(), false); }
+    if (partial && this.produced.length !== this.limit) { this.stopped = { outcome: 'different', check: 'missing', detail: `the compared prefix ends after ${this.limit} events; the candidate produced ${this.produced.length}`, at: this.produced.length + 1 }; return this.judged(this.result(), false); }
     if (this.inPortMicrotasks) {
       const { port, construction, index } = this.inPortMicrotasks;
       this.stopped = { outcome: 'unrecordable', check: 'microtasks-inside-port', reason: 'microtasks-inside-port', at: index + 1, detail: `the recording has the scheduler's own microtasks running while port ${port} of construction ${construction} was on the stack (#${index + 1}): Bun's expect().rejects runs the microtask queue inside a test's function; reproduced only by running it there, which a replay cannot place` };
     }
-    return this.result();
+    return this.judged(this.result(), true);
+  }
+
+  /**
+   * The comparer on what was compared, after, for a case the replay found different, the candidate's run past the
+   * first difference (`observePast`), which only the comparer's launch-latency oracle and its capacity and admitLaunch
+   * assertions read.
+   */
+  async judged(result, complete) {
+    const observed = result.outcome === 'different' && this.mode.compare !== false && this.mode.observe !== false && this.launchesFrom(Math.max(0, this.produced.length - 1)) ? await this.observePast() : null;
+    return this.compared(result, complete, observed);
+  }
+
+  /** Whether the compared part of the recording launches anything at or after recorded index `from`. */
+  launchesFrom(from) {
+    return this.recorded.slice(from, this.limit).some((event) => event.kind === 'port' && LAUNCH_PORTS.includes(event.name));
+  }
+
+  /** A fresh candidate run past the first difference (ObserveHost), as the comparer reads it; null when it cannot start. */
+  async observePast() {
+    const observer = new ObserveHost({ ...this.options, expected: this.recorded.slice() });
+    try {
+      const run = await observer.observe();
+      const trees = emitSlots(observer.snaps);
+      const resolve = (item) => (isRef(item) ? trees[item.slot] : observer.resolveTree(item));
+      return { ...run, events: observer.produced.map(({ c, entry }) => compareEvent({ ...entry, c }, resolve)) };
+    } finally {
+      observer.close();
+    }
+  }
+
+  /**
+   * The comparer (compare.mjs) on what was compared: the recording's events (in the recorded order: a move the
+   * independence table allowed is found again, and reported, by the comparer itself) against the candidate's, cut where
+   * the replay stopped, and `observed`, the candidate's run past a difference. The verdict is `judgeComparison`'s.
+   */
+  compared(result, complete, observed = null) {
+    const uses = this.independenceUses;
+    const readMode = this.reads ? { recorded: this.reads.count, served: this.freeReads } : null;
+    if (this.mode.compare === false || result.outcome === 'unrecordable') return { ...result, ...(uses.length ? { independence: uses.length } : {}), ...(readMode ? { readMode } : {}) };
+    return judgeComparison(result, {
+      uses: uses.length,
+      readMode,
+      observed: observed ? { through: observed.through, complete: observed.complete, stopped: observed.stopped, skipped: observed.skipped } : null,
+      run: () => {
+        const slotTrees = emitSlots(this.snaps);
+        const resolve = (item) => (isRef(item) ? slotTrees[item.slot] : this.resolveTree(item));
+        const candidate = this.produced.map(({ c, entry }) => compareEvent({ ...entry, c }, resolve));
+        const reference = this.recorded.map((event) => compareEvent(event, this.resolveTree));
+        return compareCase({ reference, candidate, limit: this.limit, complete, mode: { independence: this.mode.independence ?? [], reads: 'exact' }, observed });
+      },
+    });
   }
 
   /**
@@ -865,6 +1071,375 @@ class Host {
     if (!this.stopped) return { outcome: 'reproduced', produced: this.produced.length, delivered, unhandledRejections };
     return { ...this.stopped, produced: this.produced.length, delivered, unhandledRejections };
   }
+}
+
+// ------------------------------------------------------------------ past the first difference
+
+const CALL_KINDS = new Set(['call', 'control', 'callback', 'fire']);
+/** The position of the first entry above `value` in an ascending list (its length when there is none). */
+const firstAbove = (list, value) => {
+  let low = 0;
+  let high = list.length;
+  while (low < high) { const middle = (low + high) >> 1; if (list[middle] > value) high = middle; else low = middle + 1; }
+  return low;
+};
+
+/**
+ * The candidate's run past the first difference (package O0d fix round 1, S1), for the comparer's launch-latency
+ * oracle and its capacity and admitLaunch assertions, never for the verdict: the case is already different (OD1),
+ * and nothing here is compared. A fresh candidate is given the arrived inputs of the compared part in their recorded
+ * order: a step marker with its group, an input placed `rest` at quiescence, one placed in a port call, at a port's
+ * return, with a call's return or in a settlement's continuation where the candidate reaches that place (else it is
+ * skipped). Past the difference positions no longer match, so what the candidate asks for and the inputs it is given
+ * are matched by identity, not by position:
+ * - a port call is the recording's call with the same construction, port name and task (`taskId` of its first
+ *   argument), in call order; its synchronous answer is that call's, the answers and the control and callback calls
+ *   of that call go to it, and a call the recording has no counterpart of gets the latest synchronous answer of that
+ *   port name, or a promise never settled;
+ * - a timer is the recording's timer of the same construction and delay, in set order; a recorded fire fires it
+ *   when it is still live;
+ * - a clock, option, data or environment read is answered with the recording's value of that key in the current
+ *   step (the first such read after the latest input delivered, else the latest before it); identifiers come from
+ *   their site's queue;
+ * - what cannot be answered (a key never read, a site's draws used up, a value naming an object never seen) stops
+ *   the run, and the launches it did not reach are not judged.
+ * The run is bounded (events, and the drains' own bound). `observe()` resolves `{ recOf, through, complete,
+ * stopped, skipped }` beside `produced`: `recOf[i]` the recorded index of the arrived input produced as event i,
+ * `through` the last recorded index before which every input was delivered (or skipped) and drained.
+ */
+class ObserveHost extends Host {
+  constructor(options) {
+    super(options);
+    const { expected, limit } = this;
+    this.recOf = [];
+    this.pendingRec = null;
+    this.currentRec = -1;
+    this.answerRec = new Map(); // `${c}:${candidate port}` -> recorded index of the settlement delivered to it
+    this.callRec = new Map(); // `${c}:${candidate call}` -> the recorded call number delivered as it
+    this.portOf = new Map(); // `${c}:${recorded port}` -> candidate port
+    this.portRec = new Map(); // `${c}:${candidate port}` -> recorded port
+    this.portNames = new Map(); // `${c}:${candidate port}` -> its name
+    this.portCounts = new Map();
+    this.timerOf = new Map(); // `${c}:${recorded timer}` -> candidate timer
+    this.timerCounts = new Map();
+    this.timerDone = new Set(); // `${c}:${candidate timer}` fired or cleared
+    this.skipped = 0;
+    this.through = -1;
+    this.complete = false;
+    this.cap = expected.length * 4 + 10_000;
+    this.arrived = [];
+    this.recordedPorts = new Map(); // key -> recorded port numbers in call order
+    this.byName = new Map(); // `${c}|${name}` -> recorded port numbers
+    this.syncAnswer = new Map(); // `${c}:${recorded port}` -> index of its synchronous answer
+    this.duringOf = new Map(); // `${c}:${recorded port}` -> indices of the inputs placed inside it
+    this.settleOf = new Map(); // `${c}:${recorded call}` -> index of its settlement
+    this.recordedTimers = new Map(); // `${c}|${delay}` -> recorded timer numbers in set order
+    this.handles = new Map(); // c -> the handle kind of its first recorded timer
+    this.asks = new Map(); // key -> indices of the recording's asked inputs of that key
+    const add = (map, key, value) => { if (!map.has(key)) map.set(key, []); map.get(key).push(value); };
+    for (const [index, event] of expected.entries()) {
+      const c = event.c;
+      if (index < limit && isArrived(event)) this.arrived.push(index);
+      if (event.kind === 'port') {
+        add(this.recordedPorts, `${c}|${event.name}|${this.recordedTask(event)}`, event.port);
+        add(this.byName, `${c}|${event.name}`, event.port);
+      } else if (event.kind === 'answer' && ['return', 'throw', 'promise'].includes(event.outcome)) this.syncAnswer.set(`${c}:${event.port}`, index);
+      else if (event.kind === 'settle') this.settleOf.set(`${c}:${event.call}`, index);
+      else if (event.kind === 'timer.set') {
+        add(this.recordedTimers, `${c}|${plain(this.resolveTree(event.delay))}`, event.timer);
+        if (!this.handles.has(c)) this.handles.set(c, event.handle);
+      } else if (event.dir === 'in' && ['read', 'clock', 'env'].includes(event.kind)) add(this.asks, this.askKey(c, event.kind, event), index);
+      if (isArrived(event) && event.place === 'during' && typeof event.during === 'number') add(this.duringOf, `${c}:${event.during}`, index);
+    }
+  }
+
+  /** The task a recorded port call's first argument names (`taskId`), or ''. */
+  recordedTask(event) {
+    try { const first = plain(this.resolveTree(event.args))?.[0]; return typeof first?.taskId === 'string' ? first.taskId : ''; } catch { return ''; }
+  }
+
+  /** The key of an asked input: kind, construction and what it asks for (the recorded event's fields, or the candidate's). */
+  askKey(c, kind, fields) {
+    if (kind === 'clock') return `clock|${c}|${fields.source}|${fields.site ?? ''}`;
+    if (kind === 'env') return `env|${c}|${fields.site}|${fields.name}`;
+    const key = fields.op === 'keys' ? '' : typeof fields.key === 'string' && !SLOT.test(fields.key) ? fields.key : '<value>';
+    return `read|${c}|${fields.object}|${fields.op ?? 'get'}|${key}`;
+  }
+
+  /** Stops the observed run: what it did not reach is not judged. */
+  halt(reason) {
+    this.stopped ??= { outcome: 'observed', detail: reason };
+    throw new ReplayStop();
+  }
+
+  note(check, detail) { this.stopped ??= { outcome: 'observed', check, detail }; }
+
+  event(construction, dir, kind, fields) {
+    if (this.stopped || !this.live) throw new ReplayStop();
+    if (this.produced.length >= this.cap) this.halt(`the candidate produced more than ${this.cap} events`);
+    const { index, entry } = this.record(construction, dir, kind, fields);
+    if (dir === 'in' && (CALL_KINDS.has(kind) || kind === 'abort' || kind === 'step' || (kind === 'answer' && (fields.outcome === 'resolve' || fields.outcome === 'reject')))) {
+      const rec = kind === 'answer' ? this.answerRec.get(`${construction}:${fields.port}`) : this.pendingRec;
+      if (rec !== undefined && rec !== null) this.recOf[index] = rec;
+      if (CALL_KINDS.has(kind) && this.pendingRec !== null) this.callRec.set(`${construction}:${fields.call}`, this.expected[this.pendingRec].call);
+    }
+    if (dir === 'out' && kind === 'port') {
+      const first = isRef(fields.args) ? this.slotValues[fields.args.slot]?.[0] : undefined;
+      const task = first !== null && typeof first === 'object' && this.rawOf.get(first) === undefined && typeof first.taskId === 'string' ? first.taskId : '';
+      const key = `${construction}|${fields.name}|${task}`;
+      const n = (this.portCounts.get(key) ?? 0) + 1;
+      this.portCounts.set(key, n);
+      this.portNames.set(`${construction}:${fields.port}`, fields.name);
+      const recorded = this.recordedPorts.get(key)?.[n - 1];
+      if (recorded !== undefined) { this.portOf.set(`${construction}:${recorded}`, fields.port); this.portRec.set(`${construction}:${fields.port}`, recorded); }
+    }
+    if (dir === 'out' && kind === 'timer.set') {
+      const delay = isRef(fields.delay) ? plain(emitSlots([this.snaps[fields.delay.slot]])[0]) : fields.delay;
+      const key = `${construction}|${delay}`;
+      const n = (this.timerCounts.get(key) ?? 0) + 1;
+      this.timerCounts.set(key, n);
+      const recorded = this.recordedTimers.get(key)?.[n - 1];
+      if (recorded !== undefined) this.timerOf.set(`${construction}:${recorded}`, fields.timer);
+    }
+    if (kind === 'timer.clear' && fields.timer !== null) this.timerDone.add(`${construction}:${fields.timer}`);
+    if (dir === 'in' && kind === 'fire') this.timerDone.add(`${construction}:${fields.timer}`);
+    return entry;
+  }
+
+  timerHandle(c) { return this.handles.get(c) ?? 'object'; }
+
+  nextIsRead(construction, object, key) {
+    if (this.reads) return super.nextIsRead(construction, object, key);
+    return typeof key === 'string' && this.asks.has(`read|${construction}|${object}|get|${key}`);
+  }
+
+  /** The recorded asked input of `key` that answers now (the current step's), or undefined. */
+  answering(key) {
+    const list = this.asks.get(key);
+    if (!list) return undefined;
+    const cursor = this.currentRec;
+    const nextInput = this.arrived[firstAbove(this.arrived, cursor)] ?? Number.POSITIVE_INFINITY;
+    const after = firstAbove(list, cursor);
+    if (after < list.length && list[after] < nextInput) return list[after];
+    return after > 0 ? list[after - 1] : list[0];
+  }
+
+  ask(construction, kind, fields) {
+    if (this.stopped || !this.live) throw new ReplayStop();
+    if (kind === 'read' && this.reads) return this.freeRead(construction, fields);
+    try {
+      if (kind === 'draw') {
+        const queue = this.draws.get([construction, fields.site].join(':'));
+        if (!queue?.length) this.halt(`the candidate drew at ${fields.site} more often than the recording did`);
+        const value = this.decodeIn(queue.shift(), { construction, context: 'data' });
+        this.input(construction, 'draw', { site: fields.site, source: fields.source, value: this.slot(construction, value, 'in') });
+        return value;
+      }
+      const at = this.answering(this.askKey(construction, kind, fields));
+      if (at === undefined) this.halt(`the candidate asked for ${kind} ${this.askKey(construction, kind, fields)}, which the recording never answered`);
+      const want = this.expected[at];
+      if (kind === 'read') {
+        const place = { construction, context: want.object === 'options' && fields.op === undefined ? 'option' : 'data', key: fields.key, supplied: want.supplied === true };
+        if (fields.op === 'own') {
+          const value = want.found && 'value' in want ? this.decodeIn(want.value, place) : undefined;
+          this.input(construction, 'read', { object: fields.object, op: 'own', key: this.keyField(construction, fields.key), found: want.found, ...('value' in want ? { value: this.slot(construction, value, 'in') } : {}) });
+          return { found: want.found, value };
+        }
+        const value = this.decodeIn(want.value, place);
+        const shown = fields.op === undefined ? { object: fields.object, key: this.keyField(construction, fields.key) } : fields.op === 'has' ? { object: fields.object, op: 'has', key: this.keyField(construction, fields.key) } : { object: fields.object, op: 'keys' };
+        this.input(construction, 'read', { ...shown, value: this.slot(construction, value, 'in'), ...(want.supplied ? { supplied: true } : {}) });
+        return value;
+      }
+      const value = this.decodeIn(want.value, { construction, context: 'data' });
+      this.input(construction, kind, kind === 'clock' ? { source: fields.source, ...(fields.site !== undefined ? { site: fields.site } : {}), value: this.slot(construction, value, 'in') } : { site: fields.site, name: fields.name, value: this.slot(construction, value, 'in') });
+      return value;
+    } catch (error) {
+      if (error instanceof Unplaceable) this.halt(`a value the candidate asked for cannot be placed: ${error.reason}`);
+      throw error;
+    }
+  }
+
+  portAnswer(construction, port) {
+    if (this.stopped || !this.live) throw new ReplayStop();
+    const recorded = this.portRec.get(`${construction}:${port}`);
+    if (recorded !== undefined) {
+      if (!this.portStack.has(construction)) this.portStack.set(construction, []);
+      const stack = this.portStack.get(construction);
+      stack.push(port);
+      try {
+        for (const index of this.duringOf.get(`${construction}:${recorded}`) ?? []) if (index < this.limit) this.deliverObserved(index);
+      } finally { stack.pop(); }
+    }
+    let at = recorded === undefined ? undefined : this.syncAnswer.get(`${construction}:${recorded}`);
+    let matched = at !== undefined;
+    if (!matched) {
+      // No counterpart in the recording: the latest synchronous answer of that port name, or a promise never settled.
+      const list = this.byName.get(`${construction}|${this.portNames.get(`${construction}:${port}`)}`) ?? [];
+      const last = list.length ? this.syncAnswer.get(`${construction}:${list[list.length - 1]}`) : undefined;
+      if (last === undefined) { this.input(construction, 'answer', { port, outcome: 'return', value: this.slot(construction, undefined, 'in') }); return { outcome: 'return', value: undefined }; }
+      at = last;
+      matched = false;
+    }
+    const want = this.expected[at];
+    try {
+      if (want.outcome === 'promise') {
+        this.input(construction, 'answer', { port, outcome: 'promise' });
+        const settled = matched && want.settled ? this.settledAt.get(`${construction}:${recorded}`) : undefined;
+        if (settled !== undefined && settled < this.limit && this.expected[settled].outcome === want.settled && !this.delivered.has(settled)) {
+          const event = this.expected[settled];
+          this.delivered.add(settled);
+          this.answerRec.set(`${construction}:${port}`, settled);
+          return { outcome: 'promise', settle: { outcome: event.outcome, value: this.decodeIn(event.value, { construction, context: 'data', field: 'value', signals: event.signals }) } };
+        }
+        return { outcome: 'promise' };
+      }
+      const value = this.decodeIn(want.value, { construction, context: 'data' });
+      this.input(construction, 'answer', { port, outcome: want.outcome, value: this.slot(construction, value, 'in') });
+      return { outcome: want.outcome, value };
+    } catch (error) {
+      if (error instanceof Unplaceable) this.halt(`the answer of port ${port} cannot be placed: ${error.reason}`);
+      throw error;
+    }
+  }
+
+  returnedPromise(c, call, promise) {
+    const recorded = this.callRec.get(`${c}:${call}`);
+    const settle = recorded === undefined ? undefined : this.settleOf.get(`${c}:${recorded}`);
+    if (settle === undefined) return;
+    const next = settle + 1;
+    const following = this.expected[next];
+    if (!following || next >= this.limit || !isArrived(following) || following.place !== 'settle' || following.after !== recorded) return;
+    const later = () => {
+      if (this.stopped || !this.live || this.delivered.has(next)) return;
+      try { this.deliverObserved(next); } catch (error) { if (!(error instanceof ReplayStop)) throw error; }
+    };
+    Promise.prototype.then.call(promise, () => { queueMicrotask(later); }, () => { queueMicrotask(later); });
+  }
+
+  /** The live input for a recorded arrived input, matched to the candidate's own port, call or timer; null when it has none. */
+  observedInput(want) {
+    if (want.kind === 'answer') {
+      const port = this.portOf.get(`${want.c}:${want.port}`);
+      return port === undefined ? null : { kind: 'answer', construction: want.c, port, outcome: want.outcome, value: this.decodeIn(want.value, { construction: want.c, context: 'data', field: 'value', signals: want.signals }) };
+    }
+    if (want.kind === 'control' || want.kind === 'callback') {
+      const port = this.portOf.get(`${want.c}:${want.of}`);
+      return port === undefined ? null : { ...this.inputOf(want), of: port };
+    }
+    if (want.kind === 'fire') {
+      const timer = this.timerOf.get(`${want.c}:${want.timer}`);
+      return timer === undefined || this.timerDone.has(`${want.c}:${timer}`) ? null : { kind: 'fire', construction: want.c, timer };
+    }
+    return this.inputOf(want);
+  }
+
+  /** Delivers the recorded arrived input `index` (and, for a marker, its group), or skips it. */
+  deliverObserved(index) {
+    if (this.delivered.has(index)) return;
+    this.delivered.add(index);
+    if (index > this.currentRec) this.currentRec = index;
+    const want = this.expected[index];
+    const previous = this.pendingRec;
+    if (want.kind === 'step') {
+      this.pendingRec = index;
+      try { this.input(want.c, 'step', { step: want.step, now: want.now, inputs: want.inputs }); } finally { this.pendingRec = previous; }
+      for (const at of this.groupOf(index)) this.deliverObserved(at);
+      return;
+    }
+    let input;
+    try { input = this.observedInput(want); } catch (error) { if (!(error instanceof Unplaceable)) throw error; input = null; }
+    if (input === null) { this.skipped += 1; return; }
+    this.pendingRec = index;
+    if (want.kind === 'answer') this.answerRec.set(`${want.c}:${input.port}`, index);
+    try {
+      this.candidate.deliver(input);
+    } catch (error) {
+      if (!(error instanceof ReplayInputError)) throw error;
+      this.skipped += 1;
+    } finally { this.pendingRec = previous; }
+    if (CALL_KINDS.has(want.kind)) {
+      const next = this.arrived[firstAbove(this.arrived, index)];
+      const following = next === undefined ? null : this.expected[next];
+      if (following && following.c === want.c && following.place === 'with' && following.after === want.call) this.deliverObserved(next);
+    }
+  }
+
+  /** The inputs a step marker lists that the recording has, in delivery order (one it has no event for is left out). */
+  groupOf(markerIndex) {
+    const marker = this.expected[markerIndex];
+    const used = new Set();
+    const out = [];
+    for (const item of marker.inputs ?? []) {
+      const found = this.expected.findIndex((event, index) => index > markerIndex && index < this.limit && !used.has(index) && !this.delivered.has(index) && event.c === item.construction && event.dir === 'in' && event.kind === item.kind && event.place === 'group'
+        && (item.kind === 'answer' ? event.port === item.port && event.outcome === item.outcome : item.kind === 'abort' ? event.signal === item.signal : event.call === item.call));
+      if (found >= 0) { used.add(found); out.push(found); }
+    }
+    return out;
+  }
+
+  /** The observed run: every arrived input of the compared part in recorded order, each at quiescence or at its place. */
+  async observe() {
+    try {
+      for (const index of this.arrived) {
+        if (this.delivered.has(index)) continue;
+        const event = this.expected[index];
+        if (event.place === 'group' && event.kind !== 'step') continue;
+        await this.drain();
+        if (this.stopped) break;
+        this.through = index - 1;
+        if (this.delivered.has(index)) continue;
+        if (event.kind !== 'step' && event.place !== 'rest') { this.delivered.add(index); this.skipped += 1; continue; }
+        this.deliverObserved(index);
+      }
+      if (!this.stopped) await this.drain();
+      if (!this.stopped) { this.through = this.limit - 1; this.complete = true; }
+    } catch (error) {
+      if (!(error instanceof ReplayStop)) throw error;
+    }
+    return { recOf: this.recOf, through: this.through, complete: this.complete, stopped: this.stopped ? String(this.stopped.detail ?? this.stopped.check ?? 'stopped').slice(0, 300) : null, skipped: this.skipped };
+  }
+}
+
+// ------------------------------------------------------------------ the replay's verdict
+
+/**
+ * The replay's verdict from the comparer's (pure: the comparer's self-test feeds it fixed inputs). `run` runs the comparer;
+ * a throw is a failure named `compare`, never a pass. `uses` the moves the replay made by the independence table,
+ * which must equal the comparer's own (the table is applied twice, independently), else `independence` fails. A
+ * reproduced or partial case with a failure becomes different (`check: compare`, its first rule); one with an
+ * inconclusive finding becomes inconclusive; a different case keeps its check and gets the rules named. Nothing here
+ * turns a case out of `different`.
+ */
+export function judgeComparison(result, { run, uses = 0, readMode = null, observed = null }) {
+  let outcome;
+  try {
+    outcome = run();
+  } catch (error) {
+    outcome = { verdict: 'fail', findings: [{ rule: 'compare', kind: 'fail', detail: `the comparer failed: ${String(error?.stack ?? error).slice(0, 600)}` }], info: [] };
+  }
+  const fails = outcome.findings.filter((finding) => finding.kind === 'fail');
+  const inconclusive = outcome.findings.filter((finding) => finding.kind === 'inconclusive');
+  const infoByRule = {};
+  for (const item of outcome.info) infoByRule[item.rule] = (infoByRule[item.rule] ?? 0) + 1;
+  const usesFound = outcome.info.filter((item) => item.rule === 'independence');
+  if (usesFound.length !== uses) fails.push({ rule: 'independence', kind: 'fail', detail: `the replay moved ${uses} unit(s) by the independence table, the comparer found ${usesFound.length}` });
+  const summary = {
+    verdict: fails.length ? 'fail' : inconclusive.length ? 'inconclusive' : outcome.verdict,
+    rules: [...new Set(fails.map((finding) => finding.rule))],
+    findings: [...fails, ...inconclusive].slice(0, 8).map((finding) => ({ rule: finding.rule, kind: finding.kind, at: finding.at ?? null, detail: String(finding.detail ?? '').slice(0, 500), ...(finding.needsOwner ? { needsOwner: true } : {}) })),
+    info: infoByRule,
+    ...(usesFound.length || uses ? { independence: { replay: uses, comparer: usesFound.length, uses: usesFound.slice(0, 4).map((use) => ({ at: use.at, lanes: use.lanes, cite: use.cite })) } } : {}),
+    ...(readMode ? { readMode } : {}),
+    ...(observed ? { observed } : {}),
+  };
+  const first = fails[0];
+  if ((result.outcome === 'reproduced' || result.outcome === 'partial') && first) {
+    return { ...result, outcome: 'different', check: 'compare', rule: first.rule, at: first.at ?? null, detail: `(${first.rule}) ${first.detail}`, compare: summary };
+  }
+  if ((result.outcome === 'reproduced' || result.outcome === 'partial') && inconclusive.length) {
+    return { ...result, outcome: 'inconclusive', check: inconclusive[0].rule, reason: inconclusive[0].rule, detail: inconclusive[0].detail, compare: summary };
+  }
+  return { ...result, ...(result.outcome === 'different' && first ? { rule: first.rule } : {}), compare: summary };
 }
 
 // ------------------------------------------------------------------ helpers

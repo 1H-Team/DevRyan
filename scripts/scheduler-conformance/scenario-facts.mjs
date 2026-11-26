@@ -158,7 +158,10 @@ function restartFacts(d) {
   const crashSave = crashed.saves;
   const after = crashed.entries.filter((entry) => entry.seq > saves[saves.length - 1].seq && entry.name !== 'publishEvent').map((entry) => entry.name);
   const loaded = fresh.policies['persistence.load'].answer();
-  const index = loaded === null ? 0 : d.crashSaves.indexOf(d.encodeSaved(loaded)) + 1;
+  // By the bytes; when two saves have the same bytes (a ledger emptied again), the one the crash point names, if it is one of them.
+  const encoded = loaded === null ? null : d.encodeSaved(loaded);
+  const named = fresh.restartedFrom ? (fresh.restartedFrom.mode === 'durable' ? fresh.restartedFrom.save : fresh.restartedFrom.save - 1) : 0;
+  const index = loaded === null ? 0 : named > 0 && d.crashSaves[named - 1] === encoded ? named : d.crashSaves.indexOf(encoded) + 1;
   return { crashedAfterSave: crashSave, portsAfterIt: after, loads: loaded === null ? 'nothing' : index === 0 ? 'no save of the crashed instance' : `save ${index}` };
 }
 

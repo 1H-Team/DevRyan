@@ -60,7 +60,7 @@ const SHAPES = '../../scripts/scheduler-conformance/shapes.toy.mjs';
 /** How long one replay process or one plant process may take before it is killed and named. */
 export const CHILD_DEADLINE_MS = 600_000;
 export const SOURCES = Object.freeze(['tests', 'package', 'scenarios']);
-export const CASE_OUTCOMES = Object.freeze(['reproduced', 'partial', 'crossed', 'unrecordable', 'empty', 'different']);
+export const CASE_OUTCOMES = Object.freeze(['reproduced', 'partial', 'crossed', 'unrecordable', 'empty', 'different', 'inconclusive']);
 
 /** The package's other test files that build a scheduler (design §4.1 R2): every non-scheduler test file that names the factory. */
 export const packageTestFiles = (directory = PACKAGE_DIR) => readdirSync(directory)
@@ -93,10 +93,11 @@ export async function recordSource(source, { workDir, names = null }) {
 /**
  * One recording without a plain run or a second recording (the self-test's:
  * its containers only, judged by nothing but the replay): `tests` are files
- * of the package, `scenarios` names of corpus tests. Returns `{ tests, scenarios }`,
+ * of the package, `scenarios` names of corpus tests (`env` is added to the
+ * scenario run's, as the crash sweep's variable). Returns `{ tests, scenarios }`,
  * each the path of its one container (or null), and every problem the recording had.
  */
-export async function recordQuick({ workDir, tests = [], scenarios = [] }) {
+export async function recordQuick({ workDir, tests = [], scenarios = [], env = {} }) {
   const run = async (key, files, cwd, env) => {
     if (!files.length) return { key, files: [], problems: [] };
     const out = path.join(workDir, `quick-${key}`);
@@ -109,7 +110,7 @@ export async function recordQuick({ workDir, tests = [], scenarios = [] }) {
   };
   const [testRun, scenarioRun] = await Promise.all([
     run('tests', tests, PACKAGE_DIR, {}),
-    run('scenarios', scenarios.length ? [CORPUS] : [], REPOSITORY_ROOT, { ...SCENARIO_ENV, DEVRYAN_SCHEDULER_SCENARIOS: scenarios.join(',') }),
+    run('scenarios', scenarios.length ? [CORPUS] : [], REPOSITORY_ROOT, { ...SCENARIO_ENV, ...env, DEVRYAN_SCHEDULER_SCENARIOS: scenarios.join(',') }),
   ]);
   return { tests: testRun.files, scenarios: scenarioRun.files, problems: [...testRun.problems, ...scenarioRun.problems] };
 }
@@ -178,9 +179,11 @@ async function pool(tasks, workers) {
  * a closure run gives none). Returns `{ code, table, byFile, problems, info,
  * cases, counts }`.
  */
-export function judgeClosure(sources, { expectCopyDiffers = [] } = {}) {
+export function judgeClosure(sources, { expectCopyDiffers = [], requireCompare = true } = {}) {
   const problems = [];
   const info = [];
+  // What the comparer reported over the run: independence-table uses, read-mode uses, its info by rule.
+  const compared = { cases: 0, independence: 0, readMode: 0, info: {} };
   const table = {};
   const byFile = {};
   const cases = [];
@@ -221,7 +224,7 @@ export function judgeClosure(sources, { expectCopyDiffers = [] } = {}) {
         cases.push({ source: entry.source, ...result });
         if (result.unhandledRejections) info.push({ source: entry.source, check: 'unhandled-rejection', detail: `${result.id}: ${result.unhandledRejections} unhandled rejection(s) while the candidate ran (a test's own handlers are not in a replay)` });
         const file = result.testFile ?? result.file;
-        byFile[file] ??= { cases: 0, reproduced: 0, partial: 0, crossed: 0, unrecordable: 0, empty: 0, different: 0, compared: 0, recorded: 0, prefixes: [] };
+        byFile[file] ??= { cases: 0, reproduced: 0, partial: 0, crossed: 0, unrecordable: 0, empty: 0, different: 0, inconclusive: 0, compared: 0, recorded: 0, prefixes: [] };
         const stats = byFile[file];
         stats[outcome] += 1;
         if (outcome !== 'empty') stats.cases += 1;
@@ -233,13 +236,22 @@ export function judgeClosure(sources, { expectCopyDiffers = [] } = {}) {
           if (result.recordedEvents !== mark.events || (mark.outcome === 'recorded' && result.events !== mark.events)) fail(entry.source, 'event-count', `${result.id}: the recording says ${mark.events} events, the replay counted ${result.events} (recorded ${result.recordedEvents})`);
           // Unrecordable is the recording's verdict only: a case it recorded that a replay calls unrecordable fails.
           const expectedOutcome = mark.outcome === 'empty' ? ['empty'] : mark.outcome !== 'recorded' ? ['unrecordable']
-            : mark.limit === 0 ? ['crossed'] : mark.limit < mark.events ? ['partial', 'different'] : ['reproduced', 'different'];
+            : mark.limit === 0 ? ['crossed'] : mark.limit < mark.events ? ['partial', 'different', 'inconclusive'] : ['reproduced', 'different', 'inconclusive'];
           if (outcome === 'unrecordable' && mark.outcome === 'recorded') fail(entry.source, 'unrecordable-mark', `${result.id} is reported unrecordable (${result.reason ?? 'no reason'}); the recording recorded it, so it is ${expectedOutcome.join(' or ')}`);
           else if (!expectedOutcome.includes(outcome)) fail(entry.source, 'crossed-mark', `${result.id} is reported ${outcome}; the recording's marks make it ${expectedOutcome.join(' or ')} (compared up to ${mark.limit ?? 0} of ${mark.events} events)`);
           if (outcome === 'reproduced' && result.produced !== mark.events) fail(entry.source, 'reproduced-complete', `${result.id} is reported reproduced after ${result.produced} of its ${mark.events} events`);
           if (outcome === 'partial' && (result.produced !== mark.limit || result.prefix !== mark.limit)) fail(entry.source, 'reproduced-complete', `${result.id} is reported partial after ${result.produced} events; its compared prefix is ${mark.limit} of ${mark.events}`);
         }
-        if (outcome === 'different') fail(entry.source, result.check ?? 'different', `${result.id}: ${result.detail ?? ''}`);
+        // The comparer judged every compared case: a case reproduced or compared in part without its verdict is unjudged.
+        if (result.compare) {
+          compared.cases += 1;
+          compared.independence += result.compare.independence?.replay ?? 0;
+          if (result.compare.readMode) compared.readMode += 1;
+          for (const [rule, count] of Object.entries(result.compare.info ?? {})) compared.info[rule] = (compared.info[rule] ?? 0) + count;
+        }
+        if (requireCompare && (outcome === 'reproduced' || outcome === 'partial') && result.compare?.verdict !== 'pass') fail(entry.source, 'compare-missing', `${result.id} is ${outcome} with no comparer verdict of pass (${result.compare ? result.compare.verdict : 'none'})`);
+        if (outcome === 'inconclusive') problems.push({ kind: 'inconclusive', source: entry.source, check: result.check ?? 'inconclusive', detail: `${result.id}: ${result.detail ?? result.reason ?? ''}` });
+        else if (outcome === 'different') fail(entry.source, result.rule ? `${result.check ?? 'different'}/${result.rule}` : result.check ?? 'different', `${result.id}: ${result.detail ?? ''}`);
         else if (entry.source === 'scenarios' && outcome !== 'reproduced') fail(entry.source, `scenario-${outcome}`, `${result.id}: a scenario must be reproduced whole; ${outcome}: ${result.detail ?? result.reason ?? ''}`);
         else if (['unrecordable', 'crossed', 'partial'].includes(outcome) && !(result.reason || result.detail)) fail(entry.source, 'unnamed', `${result.id} is ${outcome} with no reason`);
       }
@@ -249,12 +261,14 @@ export function judgeClosure(sources, { expectCopyDiffers = [] } = {}) {
   const counts = Object.fromEntries(CASE_OUTCOMES.map((outcome) => [outcome, Object.values(table).reduce((sum, row) => sum + row[outcome], 0)]));
   if (counts.reproduced === 0) problems.push({ kind: 'inconclusive', check: 'nothing-replayed', detail: 'no case was reproduced: the run replayed nothing whole' });
   const code = problems.some((problem) => problem.kind === 'fail') ? EXIT.fail : problems.length ? EXIT.inconclusive : EXIT.pass;
-  return { code, table, byFile, problems, info, cases, counts };
+  if (compared.independence) info.push({ check: 'independence-table', detail: `${compared.independence} move(s) by the independence table (each is listed with its case)` });
+  if (compared.readMode) info.push({ check: 'read-mode', detail: `${compared.readMode} case(s) compared with option reads free (OD2 read mode)` });
+  return { code, table, byFile, problems, info, cases, counts, compared };
 }
 
 /** One line per test file: its cases by outcome and how many of its recorded events were compared. */
 export function fileLines(byFile) {
-  return Object.entries(byFile).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([file, stats]) => `  ${file}: ${stats.cases} cases: ${stats.reproduced} reproduced, ${stats.partial} partial${stats.prefixes.length ? ` (${stats.prefixes.join(', ')})` : ''}, ${stats.crossed} crossed, ${stats.unrecordable} unrecordable${stats.empty ? `, ${stats.empty} empty` : ''}${stats.different ? `, ${stats.different} DIFFERENT` : ''}; ${stats.compared} of ${stats.recorded} recorded events compared`);
+  return Object.entries(byFile).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([file, stats]) => `  ${file}: ${stats.cases} cases: ${stats.reproduced} reproduced, ${stats.partial} partial${stats.prefixes.length ? ` (${stats.prefixes.join(', ')})` : ''}, ${stats.crossed} crossed, ${stats.unrecordable} unrecordable${stats.empty ? `, ${stats.empty} empty` : ''}${stats.different ? `, ${stats.different} DIFFERENT` : ''}${stats.inconclusive ? `, ${stats.inconclusive} INCONCLUSIVE` : ''}; ${stats.compared} of ${stats.recorded} recorded events compared`);
 }
 
 /** The table of counts per source and outcome, as text. */
@@ -370,13 +384,14 @@ async function main(argv) {
     const started = Date.now();
     const { judged, containers } = await runClosure({ sources, given, workers, workDir: scratch.dir });
     // One line per case: its outcome and, unless reproduced, its reason or check with the first differing event.
-    for (const entry of judged.cases) console.log(`${entry.outcome === 'different' ? 'DIFFERENT' : entry.outcome} ${entry.id}${entry.outcome === 'reproduced' ? ` (${entry.produced} events)` : `: ${entry.check && entry.outcome === 'different' ? `(${entry.check}) ` : ''}${entry.reason ?? entry.detail ?? ''}`.slice(0, 600)}`);
+    for (const entry of judged.cases) console.log(`${entry.outcome === 'different' ? 'DIFFERENT' : entry.outcome === 'inconclusive' ? 'INCONCLUSIVE' : entry.outcome} ${entry.id}${entry.outcome === 'reproduced' ? ` (${entry.produced} events)` : `: ${entry.check && entry.outcome === 'different' ? `(${entry.check}${entry.rule ? `/${entry.rule}` : ''}) ` : ''}${entry.reason ?? entry.detail ?? ''}`.slice(0, 600)}`);
     for (const problem of judged.problems) console.log(`${problem.kind === 'fail' ? 'FAILED' : 'inconclusive'} (${problem.check})${problem.source ? ` ${problem.source}` : ''}: ${problem.detail}`);
     for (const line of tableLines(judged.table)) console.log(line);
     for (const item of judged.info) console.log(`info (${item.check})${item.source ? ` ${item.source}` : ''}: ${item.detail}`);
+    console.log(`comparer: ${judged.compared.cases} cases judged; independence-table moves ${judged.compared.independence}; read mode ${judged.compared.readMode}; info ${Object.entries(judged.compared.info).map(([rule, count]) => `${rule} ${count}`).join(', ') || 'none'}`);
     console.log('per test file (partial: events compared / recorded):');
     for (const line of fileLines(judged.byFile)) console.log(line);
-    if (options.json) writeFileSync(options.json, `${JSON.stringify({ code: judged.code, table: judged.table, byFile: judged.byFile, problems: judged.problems, info: judged.info, cases: judged.cases }, null, 2)}\n`);
+    if (options.json) writeFileSync(options.json, `${JSON.stringify({ code: judged.code, table: judged.table, byFile: judged.byFile, problems: judged.problems, info: judged.info, compared: judged.compared, cases: judged.cases }, null, 2)}\n`);
     const verdict = judged.code === EXIT.pass ? 'complete' : judged.code === EXIT.fail ? 'FAILED' : 'INCONCLUSIVE';
     console.log(`scheduler closure ${verdict}: ${judged.cases.length} cases (${sources.join(', ')}), ${Math.round((Date.now() - started) / 1000)} s; ${CASE_OUTCOMES.map((outcome) => `${judged.counts[outcome]} ${outcome}`).join(', ')}; ${judged.problems.length} problems`);
     if (judged.code !== EXIT.pass || !options.plants) {

@@ -75,7 +75,7 @@ test('the closure check reproduces every scenario whole and classifies every cas
   for (const replay of replays) assert.equal(replay.error, undefined, replay.error);
   const judged = judgeClosure([{ source: 'tests', recording: null, replays: tests }, { source: 'scenarios', recording: null, replays: [scenarios] }]);
   assert.equal(judged.code, EXIT.pass, JSON.stringify(judged.problems));
-  assert.deepEqual(judged.table.scenarios, { reproduced: SCENARIOS.length, partial: 0, crossed: 0, unrecordable: 0, empty: 0, different: 0 });
+  assert.deepEqual(judged.table.scenarios, { reproduced: SCENARIOS.length, partial: 0, crossed: 0, unrecordable: 0, empty: 0, different: 0, inconclusive: 0 });
   // The test files: cases reproduce whole, others are compared up to their first busy input, nothing differs.
   const results = tests.flatMap((replay) => replay.results);
   assert.ok(judged.table.tests.reproduced >= 1 && judged.table.tests.partial >= 1, JSON.stringify(judged.table.tests));
@@ -154,7 +154,7 @@ test('every planted replayer bug is reported by its own check (the review\'s amo
 });
 
 test('the closure judgement and its exit codes, and damaged containers', () => {
-  const result = (fields) => ({ id: 'f.test.js:1 a #1', file: 'f.test.js', testFile: 'f.test.js', events: 3, recordedEvents: 3, produced: 3, prefix: 3, ...fields });
+  const result = (fields) => ({ id: 'f.test.js:1 a #1', file: 'f.test.js', testFile: 'f.test.js', events: 3, recordedEvents: 3, produced: 3, prefix: 3, compare: { verdict: 'pass', rules: [], findings: [], info: {} }, ...fields });
   const mark = (fields) => ({ id: 'f.test.js:1 a #1', outcome: 'recorded', events: 3, limit: 3, ...fields });
   const recordedOf = (marks) => ({ end: { cases: marks.length, events: marks.reduce((sum, item) => sum + item.events, 0) }, cases: marks });
   const run = (pairs, { source = 'tests', recording = null, provenance = { same: true, problems: [] }, options } = {}) => judgeClosure([{ source, recording, replays: [{ file: 'f.ndjson', recorded: recordedOf(pairs.map(([, item]) => item)), containers: [{ testFile: 'f.test.js', provenance }], results: pairs.map(([item]) => item) }] }], options);
@@ -163,6 +163,12 @@ test('the closure judgement and its exit codes, and damaged containers', () => {
   assert.equal(run([whole]).code, EXIT.pass);
   assert.equal(run([whole, [result({ outcome: 'partial', produced: 2, prefix: 2, detail: 'busy' }), mark({ limit: 2 })], [result({ outcome: 'crossed', prefix: 0, detail: 'busy' }), mark({ limit: 0 })], [result({ outcome: 'unrecordable', reason: 'recording: accessor' }), mark({ outcome: 'unrecordable' })], [result({ outcome: 'empty', reason: 'no scheduler', events: 0 }), mark({ outcome: 'empty' })]]).code, EXIT.pass);
   assert.equal(run([whole, [result({ outcome: 'different', check: 'order', detail: 'x' }), mark()]]).code, EXIT.fail);
+  // The comparer judged every compared case: a reproduced or partial case without its verdict of pass
+  // fails; an inconclusive case (OD2's option-varies) never passes.
+  assert.deepEqual(checks(run([[result({ outcome: 'reproduced', compare: undefined }), mark()]])), ['compare-missing']);
+  assert.deepEqual(checks(run([[result({ outcome: 'reproduced', compare: { verdict: 'inconclusive', info: {} } }), mark()]])), ['compare-missing']);
+  assert.equal(run([whole, [result({ outcome: 'inconclusive', check: 'option-varies', detail: 'x' }), mark()]]).code, EXIT.inconclusive);
+  assert.deepEqual(checks(run([whole, [result({ outcome: 'different', check: 'compare', rule: 'launch_delayed', detail: 'x' }), mark()]])), ['compare/launch_delayed']);
   // A scenario must be reproduced whole.
   assert.equal(run([whole, [result({ outcome: 'partial', produced: 2, prefix: 2, detail: 'busy' }), mark({ limit: 2 })]], { source: 'scenarios' }).code, EXIT.fail);
   assert.deepEqual(checks(run([[result({ outcome: 'reproduced', produced: 2 }), mark()]])), ['reproduced-complete']);

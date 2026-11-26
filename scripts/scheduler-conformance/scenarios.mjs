@@ -16,6 +16,7 @@
 import { encodeLedgerSnapshot } from '../../packages/orchestration-runtime/codec.js';
 import { createManagedTaskScheduler } from '../../packages/orchestration-runtime/scheduler.js';
 import * as DRIVER from './driver.mjs';
+import { EPOCH } from './trace.mjs';
 
 const MINUTE = 60_000;
 export const encodeSaved = (state) => encodeLedgerSnapshot(state);
@@ -46,6 +47,17 @@ async function acceptAll(d, entries = starts(d), childOf = (entry) => `ses_child
   await d.step(...entries.map((entry) => d.control(entry, 'markAccepted')));
 }
 const completed = { status: 'completed', recoverablePreview: 'done', canonicalRefs: [] };
+/** restart-mixed: the reconcile answers in turn. */
+const RECONCILE_MIX = [{ state: 'transient' }, { state: 'live' }, { state: 'terminal', result: completed }, { state: 'relaunch' }];
+/** queue-order-ties: a queued record as the scheduler saves one (codec.js), created `ago` ms before the epoch. */
+const queuedRecord = (taskId, key, ago) => ({
+  taskId, idempotencyKey: key, rootSessionId: 'ses_root', dispatchGroupId: null, dispatchCallId: null, dispatchWaveId: null, parentTaskId: null, childSessionId: null, transportRecovery: null,
+  directory: '/workspace', sequence: 1, mode: 'orchestrator', readOnly: false, providerId: 'github-copilot', modelId: 'gpt-4.1', agent: 'explorer', variant: null, label: key, prompt: `Perform ${key}.`,
+  attempt: 1, priorTaskId: null, executionKind: 'start', createdAt: EPOCH - ago, timeoutAt: null, recoveryLineageId: null, owner: 'devryan', status: 'queued', leaseToken: null, startedAt: null, finishedAt: null,
+  childPromptedAt: null, firstAssistantPartAt: null, waitingReason: null, failureReason: null, partial: false, recoverablePreview: '', canonicalRefs: [],
+});
+/** Two queued tasks of one sequence: the later task ID (`b…`) created first, so createdAt and the task ID disagree. */
+const TIED_LEDGER = Object.freeze({ version: 1, tasks: [queuedRecord(`dvr_task_${'a'.repeat(32)}`, 'tie-created-second', 1_000), queuedRecord(`dvr_task_${'b'.repeat(32)}`, 'tie-created-first', 2_000)], resultEnvelopes: [] });
 
 /** F1: N submits in one group, one root. */
 const fanOut = (count, { samePrompt = false, allowDuplicate } = {}) => async (d) => {
@@ -354,7 +366,97 @@ const DEFINED = [
       await d.advance(5_000);
     },
   },
+  // Package O0d: a waiter that resolves only after the terminal save, and a shutdown with a starting lease armed
+  // (its clear, the final save, executor.shutdown); the comparer's planted candidates need both.
+  {
+    name: 'wait-then-shutdown', purpose: 'Lifecycle: waitForTask pending while a task runs, resolved after its terminal save; a second task left starting (its 60,000 ms lease armed) when shutdown clears every timer, saves once more and shuts the executor down',
+    async run(d) {
+      await boot(d);
+      const first = await d.step(d.call('submit', taskInput('waited')));
+      await acceptAll(d);
+      await d.step(d.call('waitForTask', first.value?.taskId));
+      await d.step(d.answer(starts(d)[0], completed));
+      await d.step(d.call('submit', taskInput('left-starting')));
+      await d.step(d.call('shutdown'));
+    },
+  },
+  // Package O0d: the crash point between a native job proof shard write and the main commit (design §4.5,
+  // DOCUMENTATION.md "Shard first"). maxTerminalRecords 0 makes the completed native task a tombstone at its terminal
+  // save, so its proof moves to a shard first (persistence.putNativeJobProofShard, answered), then the main commit
+  // drops it. The shard store is the driver's (it survives the crash: a torn crash at the next save leaves the shard
+  // written and the ledger without that commit).
+  {
+    name: 'native-proof-shard', saves: 10, crashPoints: true,
+    purpose: 'Lifecycle: a native-job task completes with maxTerminalRecords 0: its proof is written to a shard before the commit that drops it, its acknowledgement is retried after 5,000 ms, and the shard is removed once acknowledged; the crash points include the one between the shard write and the main commit',
+    config: {
+      options: { maxTerminalRecords: 0, resolveExecutionBackend: () => 'native-job', acknowledgeNativeJob: (entry) => (entry.index === 1 ? { $reject: Object.assign(new Error('harness: not yet'), { code: 'harness_pending' }) } : undefined) },
+      ports: {
+        'persistence.loadNativeJobProofShards': { mode: 'auto', answer: (_entry, driver) => [...shardStore(driver)].map(([shard, text]) => ({ shard, value: JSON.parse(text) })) },
+        'persistence.putNativeJobProofShard': { mode: 'auto', answer: (entry, driver) => { shardStore(driver).set(entry.args[0], entry.args[1]); } },
+        'persistence.removeNativeJobProofShard': { mode: 'auto', answer: (entry, driver) => { shardStore(driver).delete(entry.args[0]); } },
+      },
+    },
+    async run(d) {
+      await boot(d, this.config);
+      await d.step(d.call('submit', taskInput('native-proof')));
+      const [start] = starts(d);
+      await d.step(d.control(start, 'setChildSessionId', 'ses_child'));
+      await d.step(d.control(start, 'reserveNativeJobSegment', SEGMENT));
+      await d.step(d.control(start, 'recordNativeJobSegment', SEGMENT.messageID, 'prepared'));
+      await d.step(d.control(start, 'recordNativeJobSegment', SEGMENT.messageID, 'accepted'));
+      await d.step(d.control(start, 'markAccepted'));
+      await d.step(d.answer(start, completed));
+      await d.advance(5_000);
+    },
+  },
+  // Package O0d fix round 1: what the corpus did not reach. A restart with several active tasks of mixed reconcile
+  // answers at every save point (S4: a recovery reversed, run in parallel, without its starting leases or without its
+  // pump differs here, per push); the second run-cleanup retry (design M5, RUN_CLEANUP_RETRY_MS[1]); two queued tasks
+  // whose queue order only createdAt decides (design M11); a shutdown with a task deadline and an admission retry
+  // armed (the timer census at shutdown).
+  {
+    name: 'restart-mixed', saves: 9, crashPoints: true,
+    purpose: 'Restart with several active tasks of mixed reconcile answers: 3 submits in one group, the first accepted; at every crash point a fresh instance recovers the active tasks one at a time in queue order, its reconciles answered transient, live, terminal and relaunch in turn (a transient task stays starting, its lease re-armed by initialize, and is reconciled again after 1,000 ms), then pumps the queued ones',
+    config: { ports: { 'executor.reconcile': { mode: 'auto', answer: (entry) => RECONCILE_MIX[(entry.index - 1) % RECONCILE_MIX.length] } } },
+    async run(d) {
+      await boot(d, this.config);
+      await d.step(...range(3).map((index) => d.call('submit', taskInput(`mixed-${index}`))));
+      const [first] = starts(d);
+      await d.step(d.control(first, 'setChildSessionId', 'ses_child_mixed'));
+      await d.step(d.control(first, 'markAccepted'));
+    },
+  },
+  {
+    name: 'run-cleanup-backoff', purpose: 'Lifecycle: a settled attempt\'s runs fail to stop twice: the first retry 5,000 ms after the commit, the second 30,000 ms after that (RUN_CLEANUP_RETRY_MS), the third stop succeeds; each outcome observed',
+    async run(d) {
+      await boot(d, { options: { stopAttemptRuns: (entry) => (entry.index <= 2 ? { $reject: new Error('harness: stop failed') } : { stopped: 1 }), onRunCleanup: () => undefined } });
+      await d.step(d.call('submit', taskInput('backoff', { agent: 'designer' })));
+      await acceptAll(d);
+      await d.step(d.answer(starts(d)[0], completed));
+      await d.advance(5_000);
+      await d.advance(30_000);
+    },
+  },
+  {
+    name: 'queue-order-ties', purpose: 'Queue order on a tie: a loaded ledger holds two queued tasks of one sequence, the one with the later task ID created first; initialize pumps them in queue order (compareManagedTaskQueueOrder: sequence, then createdAt, then task ID), so createdAt alone decides which launches first',
+    config: { load: TIED_LEDGER },
+    async run(d) {
+      await boot(d, this.config);
+    },
+  },
+  {
+    name: 'shutdown-with-timers', purpose: 'Lifecycle: shutdown while a task deadline and an admission retry are armed: a task with timeoutAt starts (its deadline timer armed), a second submit\'s admission save fails (the 5,000 ms admission retry armed), then shutdown clears every timer, saves once more and shuts the executor down',
+    config: { ports: { 'persistence.save': { mode: 'auto', answer: (entry) => (entry.index === 5 ? { $reject: Object.assign(new Error('harness: save refused'), { code: 'harness_save_refused' }) } : undefined) } } },
+    async run(d) {
+      await boot(d, this.config);
+      await d.step(d.call('submit', taskInput('deadline', { timeoutAt: d.time + 10 * MINUTE })));
+      await d.step(d.call('submit', taskInput('refused-admission')));
+      await d.step(d.call('shutdown'));
+    },
+  },
 ];
+/** The driver's native job proof shard store (its disk): it outlives a crashed instance, as a file would. */
+const shardStore = (driver) => { driver.shardStore ??= new Map(); return driver.shardStore; };
 
 // ------------------------------------------------------------------ facts
 //
@@ -615,6 +717,35 @@ const FACTS = {
     outcomes: ['initialize resolved', 'submit resolved starting', 'control.setChildSessionId resolved true', 'control.markAccepted resolved true', 'waitForTask resolved completed', 'acknowledgeResult resolved <object>'],
     final: { completed: 'one' },
   },
+  // waitForTask waits on the running task (:2873) and is resolved by notifyTaskWaiters after the terminal save
+  // (:854-870, step 12 answers save 6 at step 13); shutdown (:3357-3423) clears the second task's starting lease, saves
+  // once more (save 9, step 17) and then calls executor.shutdown (step 18, answered 19).
+  'wait-then-shutdown': {
+    steps: 19,
+    clock: ['+0 1-19'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-5 7 9 12 14-15 17', publishEvent: '5-6 8 10 13 15-16', 'executor.start': '6 16', 'executor.shutdown': '18' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-6 8 10 13 15-16 18', 'executor.start': '12', 'executor.shutdown': '19' },
+    launches: ['waited @6 after 3', 'left-starting @16 after 8'],
+    timers: { '300000 at +0 cleared +0': 9, '60000 at +0 cleared +0': 2 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.setChildSessionId resolved true', 'control.markAccepted resolved true', 'waitForTask resolved completed', 'submit resolved starting', 'shutdown resolved'],
+    final: { completed: 'waited', starting: 'left-starting' },
+  },
+  // initialize loads the shards (:2286, step 2); the terminal save of the native task (maxTerminalRecords 0) makes it a
+  // tombstone whose proof is written to its shard first (:496-514, step 18, answered 19), then the main commit drops
+  // the record (save 9, step 19); the first acknowledgement is refused (logged, :912 arms 5,000 ms), the retry at
+  // +5,000 succeeds, the next save (10) releases the proof and its shard is removed (step 24, :473).
+  'native-proof-shard': {
+    steps: 25,
+    clock: ['+0 1-21', '+5000 22-25'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.loadNativeJobProofShards': '2', 'persistence.save': '3 5-6 8 10 12 14 16 19 23', resolveExecutionBackend: '5', publishEvent: '6-7 9 17 20 24', 'executor.start': '7', 'persistence.putNativeJobProofShard': '18', acknowledgeNativeJob: '20 22', 'logger.warn': '21', 'persistence.removeNativeJobProofShard': '24' },
+    answers: { 'persistence.load': '2', 'persistence.loadNativeJobProofShards': '3', 'persistence.save': '4 6-7 9 11 13 15 17 20 24', 'executor.start': '18', 'persistence.putNativeJobProofShard': '19', acknowledgeNativeJob: '23 rejected 21', 'persistence.removeNativeJobProofShard': '25' },
+    launches: ['native-proof @7 after 3'],
+    timers: { '300000 at +0 cleared +0': 9, '60000 at +0 cleared +0': 1, '5000 at +0 fired +5000': 1, '300000 at +5000 cleared +5000': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.setChildSessionId resolved true', 'control.reserveNativeJobSegment resolved true', 'control.recordNativeJobSegment resolved true x2', 'control.markAccepted resolved true'],
+    final: {},
+  },
   // cancelTask aborts through executor.abort with the 5,000 ms abort race timer (:231), cleared when the abort answers;
   // the task ends aborted.
   'cancel-running': {
@@ -716,6 +847,61 @@ const FACTS = {
     outcomes: ['initialize resolved', 'submit resolved starting', 'control.setChildSessionId resolved true', 'control.reserveNativeJobSegment resolved true', 'control.recordNativeJobSegment resolved true x2', 'control.markAccepted resolved true'],
     final: { completed: 'native' },
   },
+  // As F1 at 3 (1 + 2N saves, the starts in step 10), then the first task's child session and acceptance (saves 8, 9).
+  // Its crash points state only which save the fresh instance loads; the recovery itself (reconciles one at a time in
+  // queue order, answered from RECONCILE_MIX in turn, then initialize's leases and pump) is the recording's.
+  'restart-mixed': {
+    steps: 14,
+    clock: ['+0 1-14'],
+    groups: ['4: call submit x3'],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-9 11 13', publishEvent: '5-10 12 14', 'executor.start': '10x3' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-10 12 14' },
+    launches: ['mixed-1..3 @10 after 7'],
+    timers: { '300000 at +0 cleared +0': 9, '60000 at +0 cleared +0': 1, '60000 at +0 live': 2 },
+    outcomes: ['initialize resolved', 'submit resolved starting x3', 'control.setChildSessionId resolved true', 'control.markAccepted resolved true'],
+    final: { running: 'mixed-1', starting: 'mixed-2..3' },
+  },
+  // As run-cleanup, the second stop failing too: the retry after it is armed with RUN_CLEANUP_RETRY_MS[1] (30,000 ms,
+  // :924) at +5000 and fires at +35000, where the third stop succeeds.
+  'run-cleanup-backoff': {
+    steps: 20,
+    clock: ['+0 1-14', '+5000 15-17', '+35000 18-20'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-5 7 9 11 13 16 19', publishEvent: '5-6 8 10 12 14 17 20', 'executor.start': '6', stopAttemptRuns: '12 15 18', onRunCleanup: '14 17 20' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-6 8 10 12 14 17 20', 'executor.start': '11', stopAttemptRuns: '19 rejected 13 16' },
+    launches: ['backoff @6 after 3'],
+    timers: { '300000 at +0 cleared +0': 7, '60000 at +0 cleared +0': 1, '5000 at +0 fired +5000': 1, '300000 at +5000 cleared +5000': 1, '30000 at +5000 fired +35000': 1, '300000 at +35000 cleared +35000': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'control.setChildSessionId resolved true', 'control.markAccepted resolved true'],
+    final: { completed: 'backoff' },
+  },
+  // initialize loads the two queued records (step 2), saves once (:2349) and pumps (:2386): queue order (:198-202) puts
+  // the record created first ahead though its task ID sorts later; two admission saves (3, 4), both starts in step 5.
+  'queue-order-ties': {
+    steps: 5,
+    clock: ['+0 1-5'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2-4', publishEvent: '4-5', 'executor.start': '5x2' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3-5' },
+    launches: ['tie-created-first @5 after 3', 'tie-created-second @5 after 3'],
+    timers: { '300000 at +0 cleared +0': 3, '60000 at +0 live': 2 },
+    outcomes: ['initialize resolved'],
+    final: { starting: 'tie-created-first, tie-created-second' },
+  },
+  // The first task's admission arms its 600,000 ms deadline (timeoutAt, :2142) and its starting lease; the second
+  // submit's admission save (save 5, step 8) is refused, logged (step 9) and arms the 5,000 ms admission retry (:1956);
+  // shutdown (:3357-3423) clears the deadline, the lease and the retry, saves once more (step 10) and calls
+  // executor.shutdown (step 11, answered 12).
+  'shutdown-with-timers': {
+    steps: 12,
+    clock: ['+0 1-12'],
+    groups: [],
+    ports: { 'persistence.load': '1', 'persistence.save': '2 4-5 7-8 10', publishEvent: '5-6 8', 'executor.start': '6', 'logger.warn': '9', 'executor.shutdown': '11' },
+    answers: { 'persistence.load': '2', 'persistence.save': '3 5-6 8 11 rejected 9', 'executor.shutdown': '12' },
+    launches: ['deadline @6 after 3'],
+    timers: { '300000 at +0 cleared +0': 6, '600000 at +0 cleared +0': 1, '60000 at +0 cleared +0': 1, '5000 at +0 cleared +0': 1 },
+    outcomes: ['initialize resolved', 'submit resolved starting', 'submit resolved queued', 'shutdown resolved'],
+    final: { queued: 'refused-admission', starting: 'deadline' },
+  },
   // recordOperatorStop then acceptOperatorStop; the 5,000 ms expiry timer and a 1,000 ms timer are set and cleared when
   // the child settles user-stopped.
   'operator-stop': {
@@ -734,10 +920,25 @@ const FACTS = {
 /** The scenarios, each with its stated facts (null when it states none: the facts check then fails it). */
 export const SCENARIOS = Object.freeze(DEFINED.map((scenario) => Object.freeze({ ...scenario, facts: FACTS[scenario.name] ?? null })));
 
-/** Every test the corpus defines: its name, scenario and crash point. */
-export const corpusTests = () => SCENARIOS.filter((scenario) => !scenario.large).flatMap((scenario) => [
+/** How many entries a stated step list holds: `2 4-5 12x4` is 1 + 2 + 4. */
+export const stepCount = (text) => String(text ?? '').split(' ').filter(Boolean).reduce((sum, part) => {
+  const times = /^(\d+)x(\d+)$/.exec(part);
+  const span = /^(\d+)-(\d+)$/.exec(part);
+  return sum + (times ? Number(times[2]) : span ? Number(span[2]) - Number(span[1]) + 1 : 1);
+}, 0);
+/** A scenario's saves when run through (its first instance's, from its stated facts), or its own `saves`. */
+export const savesOf = (scenario) => scenario.saves ?? stepCount(scenario.facts?.ports?.['persistence.save']);
+/** The crash points of the sweep (package O0d, design §4.5): every save of every scenario, durable and torn. */
+export const CRASH_SWEEP_ENV = 'DEVRYAN_SCHEDULER_CRASH_SWEEP';
+
+/**
+ * Every test the corpus defines: its name, scenario and crash point. A scenario that asks for them has its crash
+ * points (every save, durable and torn) always; with `sweep` (default: the CRASH_SWEEP_ENV variable is `1`) every
+ * other scenario has them too, except one whose script states its own crash (F7) and the large F1 sizes.
+ */
+export const corpusTests = ({ sweep = process.env[CRASH_SWEEP_ENV] === '1' } = {}) => SCENARIOS.filter((scenario) => !scenario.large).flatMap((scenario) => [
   { name: scenario.name, scenario, crash: null },
-  ...(scenario.crashPoints ? Array.from({ length: scenario.saves }, (_, index) => ['durable', 'torn'].map((mode) => ({ name: `${scenario.name} crash at save ${index + 1} ${mode}`, scenario, crash: { index: index + 1, mode } }))).flat() : []),
+  ...(scenario.crashPoints || (sweep && !scenario.crash) ? Array.from({ length: savesOf(scenario) }, (_, index) => ['durable', 'torn'].map((mode) => ({ name: `${scenario.name} crash at save ${index + 1} ${mode}`, scenario, crash: { index: index + 1, mode } }))).flat() : []),
 ]);
 
 export const scenarioNamed = (name) => SCENARIOS.find((scenario) => scenario.name === name) ?? null;
