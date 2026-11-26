@@ -1,0 +1,390 @@
+{
+  "version": 1,
+  "waivers": [
+    {
+      "kind": "member",
+      "name": "acceptPrimaryPrompt",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "member",
+      "name": "cancelAutoResumeForSession",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "member",
+      "name": "claimPrimaryStepBudgetWarning",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "member",
+      "name": "claimProviderRecoveryContinuation",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "member",
+      "name": "confirmAgentHandoff",
+      "class": "call-only",
+      "needs": "scenario",
+      "reason": "called inside a compared prefix only by the F11-handoff scenario, whose handoff never settles within the case, so the scheduler's answer to it is never compared; the 10 cases of scheduler.handoff.test.js that call it do so only at or after their first busy input. Needs a scenario (an F11 variant whose abort is answered, so the handoff settles inside the case) or a placed test"
+    },
+    {
+      "kind": "member",
+      "name": "getObjectiveRequiredChecks",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "member",
+      "name": "inspectAgentHandoff",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "member",
+      "name": "inspectDispatchBarrier",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "member",
+      "name": "listReadyProviderRecoveryContinuations",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "member",
+      "name": "listResultEnvelopes",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "member",
+      "name": "readOperatorStop",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "member",
+      "name": "recordPrimaryStep",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "member",
+      "name": "releaseProviderRecoveryContinuation",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "member",
+      "name": "setResultAutoResume",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "member",
+      "name": "verifyRecoveredCollection",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "member",
+      "name": "verifyTaskDispatch",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "member",
+      "name": "verifyTaskSettlement",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "member",
+      "name": "waitForAnyTask",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "member",
+      "name": "waitForResultAction",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "member",
+      "name": "waitForResultCommit",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "member",
+      "name": "withNativePromptContext",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "member",
+      "name": "withdrawOperatorStop",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "member",
+      "name": "getChildAssignment",
+      "class": "unreached",
+      "needs": "test",
+      "reason": "no package test or scenario reaches it (server tests do, through options.scheduler: package O0g's recording); needs a package test or a scenario"
+    },
+    {
+      "kind": "member",
+      "name": "getRequiredCheckTask",
+      "class": "unreached",
+      "needs": "test",
+      "reason": "no package test or scenario reaches it (server tests do, through options.scheduler: package O0g's recording); needs a package test or a scenario"
+    },
+    {
+      "kind": "member",
+      "name": "recordRequiredCheck",
+      "class": "unreached",
+      "needs": "test",
+      "reason": "no package test or scenario reaches it (server tests do, through options.scheduler: package O0g's recording); needs a package test or a scenario"
+    },
+    {
+      "kind": "member",
+      "name": "recordRequiredChecks",
+      "class": "unreached",
+      "needs": "test",
+      "reason": "no package test or scenario reaches it (server tests do, through options.scheduler: package O0g's recording); needs a package test or a scenario"
+    },
+    {
+      "kind": "member",
+      "name": "waiveRequiredChecks",
+      "class": "unreached",
+      "needs": "test",
+      "reason": "no package test or scenario reaches it (server tests do, through options.scheduler: package O0g's recording); needs a package test or a scenario"
+    },
+    {
+      "kind": "member",
+      "name": "getRequiredCheckTasks",
+      "class": "unreached",
+      "needs": "test",
+      "reason": "no recording of the package's tests or the scenarios reaches it; needs a package test or a scripted scenario"
+    },
+    {
+      "kind": "control",
+      "name": "readPriorFailureReason",
+      "class": "unreached",
+      "needs": "test",
+      "reason": "no executor in a recording calls it on its control object (only executor-level tests use it); needs a test whose executor reads the prior failure reason"
+    },
+    {
+      "kind": "control",
+      "name": "assertPrerequisites",
+      "class": "unreached",
+      "needs": "test",
+      "reason": "no executor in a recording calls it on its control object; needs a test whose executor asserts prerequisites during a launch"
+    },
+    {
+      "kind": "control",
+      "name": "recordTransportRecovery",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "control",
+      "name": "readPrimaryStepBudget",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "port",
+      "name": "logger.error",
+      "class": "unreached",
+      "needs": "scenario",
+      "reason": "the scheduler's only logger.error is the failed resume of queued work after an agent handoff (scheduler.js), which no recording reaches; needs a handoff scenario whose resume fails"
+    },
+    {
+      "kind": "port",
+      "name": "onBarrierChange",
+      "class": "unreached",
+      "needs": "test",
+      "reason": "no test passes onBarrierChange (the server does); needs a test or scenario that passes it"
+    },
+    {
+      "kind": "port",
+      "name": "onRequiredCheckReceipt",
+      "class": "unreached",
+      "needs": "test",
+      "reason": "no test passes onRequiredCheckReceipt (the server does); needs a test or scenario that passes it"
+    },
+    {
+      "kind": "port",
+      "name": "inspectRequiredChecks",
+      "class": "unreached",
+      "needs": "test",
+      "reason": "no package test or scenario reaches it (server tests do, through options.scheduler: package O0g's recording); needs a package test or a scenario"
+    },
+    {
+      "kind": "port",
+      "name": "onPersistenceObservation",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "option",
+      "name": "inspectRequiredChecks",
+      "class": "unreached",
+      "needs": "test",
+      "reason": "no package test or scenario reaches it (server tests do, through options.scheduler: package O0g's recording); needs a package test or a scenario"
+    },
+    {
+      "kind": "option",
+      "name": "onBarrierChange",
+      "class": "unreached",
+      "needs": "test",
+      "reason": "no test passes onBarrierChange (the server does); needs a test or scenario that passes it"
+    },
+    {
+      "kind": "option",
+      "name": "onRequiredCheckReceipt",
+      "class": "unreached",
+      "needs": "test",
+      "reason": "no test passes onRequiredCheckReceipt (the server does); needs a test or scenario that passes it"
+    },
+    {
+      "kind": "option",
+      "name": "startingLeaseTimeoutMs",
+      "class": "unreached",
+      "needs": "test",
+      "reason": "no test or scenario gives it: every recording runs the 60,000 ms default; needs a test that passes it"
+    },
+    {
+      "kind": "option",
+      "name": "onPersistenceObservation",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed"
+    },
+    {
+      "kind": "input",
+      "name": "in callback",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed (a function the scheduler handed a port, such as onProgress, called back)"
+    },
+    {
+      "kind": "input",
+      "name": "out throw",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "every case that shows it shows it only at or after the case's first busy input, so nothing of it is compared; needs a test (or scripted scenario) that reaches it with every input before it placed (a member that throws synchronously)"
+    },
+    {
+      "kind": "gap",
+      "name": "reconcile-retry-pending",
+      "class": "unreached",
+      "needs": "scenario",
+      "reason": "O0c review, plant reconcile-retry-unguarded: no recording answers a task's reconcile transient twice before its retry fires (scheduler.js `if (reconciliationRetryTimers.has(task.taskId)) return;`); needs a scenario"
+    },
+    {
+      "kind": "gap",
+      "name": "handoff-abort-timeout",
+      "class": "past-busy",
+      "needs": "scenario",
+      "reason": "O0c review, plant handoff-abort-late: the handoff abort race timing out is reached only past a busy input; needs F11 with an executor that never answers the handoff abort"
+    },
+    {
+      "kind": "gap",
+      "name": "restart-starting-with-deadline",
+      "class": "unreached",
+      "needs": "scenario",
+      "reason": "O0c review, plant deadline-lease-swapped: no recording restarts on a task that is starting and has timeoutAt; needs a crash point after the starting save of a task with a deadline"
+    },
+    {
+      "kind": "gap",
+      "name": "getTask-missing",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "O0c fix, plant getTask-undefined: getTask of a missing task is reached only past a busy input (and by the awaiting shapes, which are no corpus source); needs a placed test"
+    },
+    {
+      "kind": "gap",
+      "name": "initialize-after-shutdown",
+      "class": "unreached",
+      "needs": "test",
+      "reason": "O0c review, plant shutdown-code: initialize after shutdown is reached only by the awaiting shapes, no corpus source; needs a test or scenario"
+    },
+    {
+      "kind": "gap",
+      "name": "publish-failure",
+      "class": "unreached",
+      "needs": "test",
+      "reason": "O0c review, plant publish-warn-text: a publishEvent that throws or rejects is reached only by the awaiting shapes; needs a test or scenario"
+    },
+    {
+      "kind": "gap",
+      "name": "failed-mutation-timing",
+      "class": "unreached",
+      "needs": "test",
+      "reason": "O0c review, plant timing-callback-dropped: onMutationTiming for a failed mutation is reached only by the awaiting shapes; needs a test or scenario (F6 with the option)"
+    },
+    {
+      "kind": "gap",
+      "name": "fake-timers-case",
+      "class": "unreached",
+      "needs": "test",
+      "reason": "O0c review 3, B1: no package test uses the test runner's fake timers, so the recorder's fake-timer path (no timer entry a rest point) is exercised only by the toy; needs nothing unless a test adopts fake timers"
+    },
+    {
+      "kind": "gap",
+      "name": "publication-beside-launch",
+      "class": "past-busy",
+      "needs": "placed test",
+      "reason": "O0d: an independence-table move that renumbers ports needs a publication unit next to a launch unit; the corpus has one only past a busy input; needs a placed case"
+    },
+    {
+      "kind": "gap",
+      "name": "restart-with-operator-stop",
+      "class": "past-busy",
+      "needs": "scenario",
+      "reason": "design §4.5 crash point with an operatorStop pending: reached only past a busy input; needs a crash point of a scenario with a pending operator stop"
+    },
+    {
+      "kind": "gap",
+      "name": "restart-during-runtime-restart",
+      "class": "unreached",
+      "needs": "scenario",
+      "reason": "design §4.5 crash point during withRuntimeRestart after replacementStarted: no recording restarts while withRuntimeRestart is unsettled; needs a crash point in F8"
+    }
+  ]
+}

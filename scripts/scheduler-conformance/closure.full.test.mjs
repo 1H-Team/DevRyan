@@ -1,24 +1,32 @@
 // The closure check on a fixed sample (design file 30 §4.3, package O0c), in
 // the full suite and CI: the whole scenario corpus and three of the
 // scheduler's own test files, each recorded twice and replayed against a
-// second copy of the package; then every planted difference and replayer bug
-// against that sample and the awaiting shapes. The sample is what a small CI
-// runner can afford on every push. The whole corpus (all 21 scheduler test
-// files, the package's other files, and the plants against all of it) is the
-// closure tool run with --plants: minutes of many cores, run by hand when the
-// scheduler or this harness changes (docs/TESTING.md).
+// second copy of the package; and the census over the sample's recordings,
+// manifests and verdicts (package O0e): inconclusive, since a sample is not
+// the whole corpus, with nothing failing and every launch situation the
+// oracles need judged. The sample is what a small CI runner can afford on
+// every push (about twenty CPU-seconds).
 //
-// Every child process is bounded: a recording, replay or plant that does not
-// finish is killed and named in the failure.
+// Not here since O0e fix round 1: the planted differences and replayer bugs
+// against this sample (about six times the rest of this file's cost). The
+// per-push replayer self-test catches every one of them on its own smaller
+// recording; what only this sample showed (every plant against the whole
+// scenario corpus and three real test files, and a settlement delivered late
+// differing on a real recording) is the whole-corpus run's, by hand: the
+// closure tool or the census tool with --plants, when the scheduler or this
+// harness changes (docs/TESTING.md).
+//
+// Every child process is bounded: a recording or replay that does not finish
+// is killed and named in the failure.
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
-import { judgePlants, runClosure, runPlants } from './closure.mjs';
+import { censusLines, closureResults, CONTRACT_FILE, loadContract, loadWaivers, productSurface, runCensus, WAIVER_FILE, wholeCorpus } from './census.mjs';
+import { runClosure, SAMPLE_TESTS } from './closure.mjs';
 import { createScratch } from './record.mjs';
+import { readManifestText } from './recording-manifest.mjs';
 import { defaultPlantWorkers } from './replay-mutants.mjs';
 import { EXIT } from './trace.mjs';
 
-/** The sampled test files: leases and admission (the launch path), and recovery (where a late settlement delivery shows on a real recording). */
-const SAMPLE_TESTS = ['./scheduler.lease.test.js', './scheduler.admission.test.js', './scheduler.recovery.test.js'];
 const CHILD_MS = 300_000;
 const scratch = createScratch('scheduler-conformance-closure-full');
 let passed = 0;
@@ -39,11 +47,22 @@ test('every recording of the sample is reproduced or classified by its marks, no
   passed += 1;
 });
 
-test('every planted difference and replayer bug is reported by its own check on the sample', { timeout: 1_500_000 }, async () => {
+test('the census of the sample: inconclusive (not the whole corpus), nothing failing, every launch situation judged', async () => {
   assert.ok(closure, 'the closure ran');
-  const plants = await runPlants({ scenarios: closure.containers.scenarios[0], tests: closure.containers.tests, workDir: scratch.dir, deadlineMs: CHILD_MS });
-  const found = judgePlants(plants);
-  for (const line of found.lines) console.log(line);
-  assert.deepEqual(found.problems, []);
+  const { contract, problems } = loadContract(CONTRACT_FILE);
+  assert.deepEqual(problems, []);
+  const { waivers, problems: waiverProblems } = loadWaivers(WAIVER_FILE);
+  const report = runCensus({
+    contract, waivers, waiverProblems, surface: await productSurface(contract), results: closureResults(closure.judged), expected: await wholeCorpus(), closureCode: closure.judged.code,
+    manifests: new Map(Object.entries(closure.directories).map(([source, directory]) => [source, readManifestText(directory)])),
+    containers: Object.entries(closure.containers).flatMap(([source, files]) => files.map((file) => ({ source, file }))),
+  });
+  for (const line of censusLines(report, { waivers }).slice(-3)) console.log(line);
+  assert.deepEqual(report.failures, []);
+  assert.deepEqual(report.problems.map((problem) => problem.check), ['corpus-incomplete']);
+  assert.equal(report.code, EXIT.inconclusive);
+  assert.equal(report.cases.judged, closure.judged.counts.reproduced + closure.judged.counts.partial);
+  const unjudged = report.items.filter((item) => item.kind === 'launch' && item.judged === 0).map((item) => item.name);
+  assert.deepEqual(unjudged, [], 'the sample is the launch path: every launch situation of the contract has a judged case');
   passed += 1;
 });

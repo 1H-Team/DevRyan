@@ -48,6 +48,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseOptions, runBunTests } from '../client-conformance/record.mjs';
 import { CORPUS, recordCorpus, SCENARIO_ENV } from './drive.mjs';
 import { createScratch, judgeRecording, PACKAGE_DIR, RECORDER, recordFiles, REPOSITORY_ROOT, schedulerTestFiles } from './record.mjs';
+import { writeManifest } from './recording-manifest.mjs';
 import { prepareCopy } from './replay.mjs';
 import { COPY_PLANTS, REPLAYER_PLANTS } from './replay-mutants.mjs';
 import { buildContainers, casePlacement, EXIT, formatIncomplete, readContainer, readRaws } from './trace.mjs';
@@ -60,6 +61,8 @@ const SHAPES = '../../scripts/scheduler-conformance/shapes.toy.mjs';
 /** How long one replay process or one plant process may take before it is killed and named. */
 export const CHILD_DEADLINE_MS = 600_000;
 export const SOURCES = Object.freeze(['tests', 'package', 'scenarios']);
+/** The full suite's sample of the scheduler's test files: leases and admission (the launch path), and recovery (where a late settlement delivery shows on a real recording). */
+export const SAMPLE_TESTS = Object.freeze(['./scheduler.lease.test.js', './scheduler.admission.test.js', './scheduler.recovery.test.js']);
 export const CASE_OUTCOMES = Object.freeze(['reproduced', 'partial', 'crossed', 'unrecordable', 'empty', 'different', 'inconclusive']);
 
 /** The package's other test files that build a scheduler (design §4.1 R2): every non-scheduler test file that names the factory. */
@@ -67,7 +70,7 @@ export const packageTestFiles = (directory = PACKAGE_DIR) => readdirSync(directo
   .filter((name) => name.endsWith('.test.js') && !/^scheduler\..+\.test\.js$/.test(name) && readFileSync(path.join(directory, name), 'utf8').includes('createManagedTaskScheduler'))
   .sort().map((name) => `./${name}`);
 
-/** Records one source twice into `<workDir>/containers/<source>`; returns its containers' paths and the recording's judgement. */
+/** Records one source twice into `<workDir>/containers/<source>`, with the manifest of what it wrote; returns its directory, its containers' paths and the recording's judgement. */
 export async function recordSource(source, { workDir, names = null }) {
   const out = path.join(workDir, 'containers', source);
   mkdirSync(out, { recursive: true });
@@ -87,7 +90,9 @@ export async function recordSource(source, { workDir, names = null }) {
     writeFileSync(file, container.text);
     containers.push(file);
   }
-  return { source, containers, recording: { code: judged.code, incomplete: judged.incomplete, unstable: judged.unstable, differences: judged.differences, outcomes: judged.outcomes } };
+  // What this recording wrote, so a reader of the directory sees a container or a case that went missing or changed (the census).
+  writeManifest(out, source, containers);
+  return { source, directory: out, containers, recording: { code: judged.code, incomplete: judged.incomplete, unstable: judged.unstable, differences: judged.differences, outcomes: judged.outcomes } };
 }
 
 /**
@@ -282,13 +287,14 @@ export function tableLines(table) {
  * Records the sources (or reads the containers `given` names, a Map from
  * source to directory), makes one copy of the package in `workDir`, replays
  * every container in its own bun process (`workers` at a time) and judges.
- * Returns `{ judged, containers }` (containers per source, for further use).
+ * Returns `{ judged, containers, directories }` (per source its containers and the directory that holds them with
+ * its manifest, for further use).
  */
 export async function runClosure({ sources = SOURCES, given = new Map(), names = {}, workers = 4, workDir, deadlineMs = CHILD_DEADLINE_MS }) {
   const copyDir = prepareCopy(workDir);
   const recorded = [];
   for (const source of sources) {
-    if (given.has(source)) recorded.push({ source, containers: containersIn(given.get(source)), recording: null });
+    if (given.has(source)) recorded.push({ source, directory: given.get(source), containers: containersIn(given.get(source)), recording: null });
     else recorded.push(await recordSource(source, { workDir, names: names[source] ?? null }));
   }
   const replayDir = path.join(workDir, 'replays');
@@ -296,7 +302,7 @@ export async function runClosure({ sources = SOURCES, given = new Map(), names =
   const tasks = recorded.flatMap((entry) => entry.containers.map((file) => async () => ({ source: entry.source, replay: await replayFile(file, { copyDir, workDir: replayDir, deadlineMs }) })));
   const done = await pool(tasks, workers);
   const judged = judgeClosure(recorded.map((entry) => ({ ...entry, replays: done.filter((item) => item.source === entry.source).map((item) => item.replay) })));
-  return { judged, containers: Object.fromEntries(recorded.map((entry) => [entry.source, entry.containers])) };
+  return { judged, containers: Object.fromEntries(recorded.map((entry) => [entry.source, entry.containers])), directories: Object.fromEntries(recorded.map((entry) => [entry.source, entry.directory])) };
 }
 
 /**
