@@ -19,6 +19,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <pthread.h>
 #include <unistd.h>
 
 #define MAX_FDS 65536
@@ -32,6 +33,7 @@ static int fail_full = 0;
 static int fail_barrier = 0;
 static int fail_fsync = 0;
 static _Atomic unsigned char traced[MAX_FDS];
+static pthread_mutex_t numbers = PTHREAD_MUTEX_INITIALIZER;
 
 __attribute__((constructor)) static void trace_init(void) {
   // Only the first process the library is loaded into is traced and made to
@@ -86,12 +88,19 @@ static int t_open(const char *path, int flags, ...) {
     mode = (mode_t)va_arg(ap, int);
     va_end(ap);
   }
+  // A traced open and a traced close each hold `numbers` across the call and
+  // its lines: a descriptor number freed by one thread and taken by another
+  // would otherwise have the first thread's close written under the second
+  // thread's file, and that file's later calls dropped.
+  int traced_path = wanted(path);
+  if (traced_path) pthread_mutex_lock(&numbers);
   int fd = open(path, flags, mode);
   int saved = errno;
-  if (wanted(path)) {
+  if (traced_path) {
     if (fd >= 0 && fd < MAX_FDS) atomic_store(&traced[fd], 1);
     emit("open %s flags=0x%x mode=0%o = %d %d", path, flags, (unsigned)mode, fd >= 0 ? 0 : -1, fd >= 0 ? 0 : saved);
     if (fd >= 0) emit("fd %d %s", fd, path);
+    pthread_mutex_unlock(&numbers);
   }
   result(fd, saved);
   return fd;
@@ -136,18 +145,20 @@ static void untrack(int fd, const char *how, int r, int saved) {
 
 static int t_close(int fd) {
   int was = wanted_fd(fd);
+  if (was) pthread_mutex_lock(&numbers);
   int r = close(fd);
   int saved = errno;
-  if (was) untrack(fd, "close", r, saved);
+  if (was) { untrack(fd, "close", r, saved); pthread_mutex_unlock(&numbers); }
   result(r, saved);
   return r;
 }
 
 static int t_close_nocancel(int fd) {
   int was = wanted_fd(fd);
+  if (was) pthread_mutex_lock(&numbers);
   int r = close$NOCANCEL(fd);
   int saved = errno;
-  if (was) untrack(fd, "close", r, saved);
+  if (was) { untrack(fd, "close", r, saved); pthread_mutex_unlock(&numbers); }
   result(r, saved);
   return r;
 }

@@ -402,11 +402,33 @@ export function parse(trace) {
 }
 
 /** The pure part and each strand, consecutive data entries collapsed (chunk boundaries are arrival's). */
-function projection(entries) {
+/**
+ * The children of a program whose stdin outcome the kernel decides: input
+ * written in several pieces to a child that reads one line and exits, or that
+ * is killed while it is written. Whether a later piece meets a closed pipe
+ * (EPIPE) or is taken first differs from run to run on one arm.
+ */
+function racingStdin(program) {
+  const names = new Set();
+  const walk = (value) => {
+    if (Array.isArray(value)) { for (const item of value) walk(item); return; }
+    if (!value || typeof value !== 'object') return;
+    if ((value.s === 'spawn' || value.s === 'git') && value.l && Array.isArray(value.input?.gen) && value.input.gen.length > 1
+      && (value.kill || (value.args ?? []).some((arg) => /\bread\b/.test(String(arg))))) names.add(value.l);
+    for (const item of Object.values(value)) walk(item);
+  };
+  walk(program);
+  return names;
+}
+
+function projection(entries, racing = new Set()) {
   const pure = entries.filter((entry) => entry.strand === undefined).map((entry) => entry.text);
   const strands = {};
   for (const entry of entries) {
     if (entry.strand === undefined) continue;
+    // Such a child's stdin and writing strands are not compared (rules 1 and 2 still are, by broken()).
+    const owner = /^([^.]+)\.(?:0|w)$/.exec(entry.strand)?.[1];
+    if (owner && racing.has(owner)) continue;
     // A stdin's finish races the exit that destroys it (see perSource).
     if (/^[^.]+\.0\.finish@/.test(entry.text)) continue;
     const list = (strands[entry.strand] ??= []);
@@ -511,10 +533,11 @@ function comparePrograms(programs, tag, names = []) {
     const parsed = Object.fromEntries(Object.entries(traces).map(([arm, list]) => [arm, parse(list[index])]));
     entries += parsed.electron.length;
     for (const [arm, list] of Object.entries(parsed)) for (const problem of broken(list)) problems.push(`${name}\n  ${arm} breaks a rule: ${problem}\n  trace: ${traces[arm][index]}`);
-    const expected = projection(parsed.electron), actual = projection(parsed.rust);
+    const racing = racingStdin(program);
+    const expected = projection(parsed.electron, racing), actual = projection(parsed.rust, racing);
     const difference = firstDifference(expected, actual);
     if (difference) problems.push(`${name}\n  the Rust differs from Electron's Node at ${difference}\n  electron: ${traces.electron[index]}\n  rust:     ${traces.rust[index]}`);
-    if (parsed.node && firstDifference(expected, projection(parsed.node))) nodeDiffers += 1;
+    if (parsed.node && firstDifference(expected, projection(parsed.node, racing))) nodeDiffers += 1;
     const strip = (list) => list.map((entry) => `${entry.strand ?? ''}:${entry.text}`).join(' ');
     if (strip(parsed.electron) === strip(parsed.rust)) identical += 1;
   });
