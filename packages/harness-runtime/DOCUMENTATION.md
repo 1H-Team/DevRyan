@@ -2013,9 +2013,13 @@ there is no switch, the binary is built only in the verify's scratch, and
     again only after the loop ran the unit of its last read, so while the
     loop is busy at most one read waits in the inbox and the child blocks on
     a full socket, as under Node, where libuv reads only while the loop
-    polls). The socket pairs get 64 KiB send and receive buffers on macOS, as
-    a child of Electron's Node sees them (the macOS default is 8 KiB), so
-    reads are Node's 64 KiB. An exit waiter in `waitid(P_PID, pid, WEXITED | WNOWAIT)`,
+    polls). The socket pairs ask for 64 KiB send and receive buffers, as a
+    child of Node's sees them on macOS (the macOS default is 8 KiB; measured)
+    and, inferred from CI, on Linux too (which reports the request doubled;
+    a default Linux pair holds 208 KiB). The sizes decide how much one
+    `write(2)` takes, so what `write()` returns, and how far a child runs
+    ahead of its reader; an outcome case compares the child's sizes with
+    Node's on each platform. An exit waiter in `waitid(P_PID, pid, WEXITED | WNOWAIT)`,
     which sees the exit **without reaping**; the loop thread reaps
     (`waitpid(WNOHANG)`) in that unit, right before `onexit`, so until then
     the pid is the child or its zombie and a `kill` (an abort listener, a
@@ -2033,12 +2037,23 @@ there is no switch, the binary is built only in the verify's scratch, and
     callback always runs in a unit of its own. A descriptor is closed only
     when no thread uses it: a blocked reader is woken by
     `shutdown(SHUT_RDWR)` and its last unit releases it. The spawn is
-    `posix_spawn` (`ledger_io::process`, libuv's search of the child's own
-    `PATH`: `ENOENT` and `ENOTDIR` try the next entry, an `EACCES` is kept
-    if nothing else is found) with every signal at its default and none
-    blocked, on macOS `POSIX_SPAWN_CLOEXEC_DEFAULT`; socket pairs as libuv's
-    (`AF_UNIX` stream, close-on-exec); `'ignore'` is `/dev/null`;
-    `SIGCHLD` is set to its default at the first spawn.
+    `posix_spawn` (`ledger_io::process`) searching the child's own `PATH`
+    the way libuv's child does on each platform (`process::Search`). On
+    macOS libuv's own search before its `posix_spawn`: `ENOENT` and
+    `ENOTDIR` try the next entry, an `EACCES` is kept if nothing else is
+    found, any other error (`ENOEXEC` included) is the spawn's, no `PATH` is
+    `/usr/bin:/bin`; every signal at its default, none blocked,
+    `POSIX_SPAWN_CLOEXEC_DEFAULT`, so a child gets descriptors 0 to 2 only.
+    On Linux libuv forks and calls glibc's `execvp`, so glibc's search: a
+    file the kernel does not run (`ENOEXEC`) is run as `/bin/sh <the path
+    tried> <the arguments after the first>`, `ESTALE`, `ENODEV` and
+    `ETIMEDOUT` try the next entry too, no `PATH` is `/bin:/usr/bin`;
+    signals 1 to 31 at their default, none blocked, and the child keeps
+    every descriptor this process holds without close-on-exec (the port
+    holds none it was not started with: every descriptor it opens is
+    close-on-exec when made). Socket pairs as libuv's (`AF_UNIX` stream,
+    close-on-exec); `'ignore'` is `/dev/null`; `SIGCHLD` is set to its
+    default at the first spawn.
     `node::net::live_threads()` and `node::child::live_children()` count
     the helper threads and the unreaped children (the tests' census). After
     a child's `close` (and a socket's) nothing is emitted, so their
@@ -2065,7 +2080,9 @@ there is no switch, the binary is built only in the verify's scratch, and
     counts as finished, as Node's end-of-stream has it), destroying the
     stdin with it. Which of `EPIPE`, `ECANCELED` and `ENOTCONN` a child that
     dies with a write waiting gives is arrival's in Node as here; the tests
-    accept, per situation, exactly the codes Electron's Node gives there. Not built, because no reachable site
+    accept, per situation and platform, exactly the codes Electron's Node
+    gives there (macOS measured; Linux inferred, without `ENOTCONN`, and
+    printed by every run until measured). Not built, because no reachable site
     uses them: `shell`, `detached`, `uid`/`gid`, `timeout`, `killSignal`,
     `signal`, `maxBuffer`, `encoding`, `windowsHide` and the Windows
     options, IPC and `serialization`, `'inherit'` and stream or descriptor
@@ -2393,20 +2410,25 @@ there is no switch, the binary is built only in the verify's scratch, and
   - `scripts/ledger-native/child-differential.mjs`: child processes
     against Node's own on Electron's Node, the Node running the test
     (information) and the Rust (`ledger-native-probe child-cases`,
-    `child-programs`; the JavaScript arm is `child-js-arm.mjs`): 50
+    `child-programs`; the JavaScript arm is `child-js-arm.mjs`): 52
     outcome cases (`child-spec.mjs`: the Git runner's shapes of design file
-    32 section 3.2, spawn errors and their objects, the descriptor limit
-    (on a second pair of arms started under `ulimit -n 256`), the `PATH`
-    search (order, a remembered `EACCES`, an empty entry, no `PATH`), kill
-    before and after the exit, a signal Node does not name, `'ignore'`, the
-    environment's order (JavaScript's key order too), `cwd` (empty, and a
-    relative `PATH` entry), the child's inherited descriptors (on macOS the
-    Rust arm holds one descriptor without close-on-exec, which no child may
-    see), writes (and the `writev` of writes buffered behind one),
+    32 section 3.2, spawn errors and their objects (a file without an
+    interpreter line: `ENOEXEC` on macOS, run by `/bin/sh` on Linux), the
+    descriptor limit (on a second pair of arms started under `ulimit -n
+    256`), the `PATH` search (order, a remembered `EACCES`, an empty entry,
+    no `PATH`), kill before and after the exit, a signal Node does not name,
+    `'ignore'`, the environment's order (JavaScript's key order too), `cwd`
+    (empty, and a relative `PATH` entry), the child's inherited descriptors
+    (checked per arm against libuv's rule: 0 to 2 only on macOS, where the
+    Rust arm holds one descriptor without close-on-exec that no child may
+    see; on Linux also what the arm holds without close-on-exec, and the
+    Rust holds none it was not started with), the stdio sockets' buffer
+    sizes, writes (and the `writev` of writes buffered behind one),
     string, generator and throwing pipelines, 1 MiB each way, the stdin
     pipeline's outcome when its child goes away (a code Electron's Node
-    gives in that situation and Node's error object: exits, kills, a closed
-    stdin, a grandchild holding it, a row that waits for the exit),
+    gives in that situation on that platform and Node's error object:
+    exits, kills, a closed stdin, a grandchild holding it, a row that waits
+    for the exit; every run prints each arm's code),
     output nobody reads, backpressure (a slow consumer holds its child
     within a stated bound in reads of Node's size; an unread output stops
     being read at the high-water mark; a reader parked there stops when
@@ -2423,8 +2445,13 @@ there is no switch, the binary is built only in the verify's scratch, and
     and rule 2 per child. An arm that times out once fails its later cases
     at once and a program arm stops at its first stuck program, so a hang
     costs one deadline. `scripts/ledger-native/child-planted.mjs` (by hand)
-    plants 34 bugs (the builder's, the review's that had escaped, the fix
-    round's), each caught by a named test.
+    plants 36 bugs (the builder's, the review's that had escaped, the fix
+    round's), each caught by a named test. CI runs this file on Ubuntu and
+    on macOS (the verify); the Linux behaviour of the spawn search, the
+    socket buffers, the inherited descriptors and the stdin pipeline's
+    codes is established by CI's Ubuntu run, which prints them, not by a
+    run on a Mac (the glibc search itself is also unit-tested on macOS,
+    through `ledger_io::process::spawn_with`).
   - `scripts/ledger-native/porting-lint.mjs`: the porting rule's silent
     mistakes, refused in the ported modules (above), with a planted case of
     each.

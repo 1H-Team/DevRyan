@@ -184,6 +184,14 @@ struct Case {
     /// The bytes of its `total` the consumer had not taken when it first
     /// saw the watched file.
     ahead: Cell<Option<f64>>,
+    /// The descriptors this process held without close-on-exec when the
+    /// case started, and right before its spawn (a `descriptors` case).
+    started_with: Vec<i32>,
+    inheritable: RefCell<Option<Vec<i32>>>,
+}
+
+fn numbers(fds: &[i32]) -> W {
+    W::Array(fds.iter().map(|fd| W::Number(f64::from(*fd))).collect())
 }
 
 impl Case {
@@ -264,6 +272,10 @@ fn start_case(c: &W, case: &Rc<Case>) -> Option<(Finished, ChildProcess)> {
     let cwd = c.get("cwd");
     let free = c.get("free");
     let held = (!free.is_undefined()).then(|| hold_descriptors(to_number(&free) as usize));
+    if matches!(c.get("descriptors"), W::Bool(true)) {
+        // port: sync call (the arm's own descriptors, read before the spawn)
+        *case.inheritable.borrow_mut() = Some(ledger_io::fs::sys::inheritable_descriptors());
+    }
     let spawned = child::spawn(Spawn {
         file: text(&c.get("file")),
         args: strings(&c.get("args")),
@@ -613,6 +625,10 @@ fn record_of(case: &Case, child_final: Option<&ChildProcess>) -> W {
         if let Some(writing) = case.writing.borrow().clone() {
             fields.push(("writing", W::string(&writing)));
         }
+        if let Some(inheritable) = case.inheritable.borrow().as_deref() {
+            fields.push(("inheritable", numbers(inheritable)));
+            fields.push(("startedWith", numbers(&case.started_with)));
+        }
         let out = case.out.borrow();
         let mut shown: Vec<(&str, W)> = vec![
             ("length", W::Number(out.len() as f64)),
@@ -677,6 +693,11 @@ pub fn serve_cases(
             .expect("F_SETFD");
         file
     };
+    // What this process was started with (and, on macOS, the descriptor
+    // above): a descriptor case requires the same right before its spawn,
+    // so nothing of the port's own is ever inheritable.
+    // port: sync call (the arm's own descriptors)
+    let started_with = ledger_io::fs::sys::inheritable_descriptors();
     for line in lines {
         let Some(request) = decode(&line) else {
             out(&W::object(vec![("corrupt", W::Bool(true))]));
@@ -700,6 +721,8 @@ pub fn serve_cases(
             writing: RefCell::new(None),
             writing_error: RefCell::new(None),
             ahead: Cell::new(None),
+            started_with: started_with.clone(),
+            inheritable: RefCell::new(None),
         });
         let c = request.get("case");
         let reap = c.get("reap");

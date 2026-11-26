@@ -1627,11 +1627,17 @@ pub mod sys {
                 return Err(errno);
             }
         }
-        // macOS gives a local stream socket 8 KiB each way; a child of
-        // Electron's Node sees 64 KiB send and receive buffers on each of its
-        // three stdio sockets (measured, O2e fix round 1), so its reads are
-        // 64 KiB, not 8 KiB.
-        #[cfg(target_os = "macos")]
+        // A child of Node's (Electron's and plain Node's alike) sees 64 KiB
+        // send and receive buffers on each of its three stdio sockets on
+        // macOS, where a plain pair has 8 KiB (measured, O2e fix round 1 and
+        // the Linux round). Linux reports a 64 KiB request as 128 KiB (the
+        // kernel doubles it). On Linux the same request is inferred, not
+        // measured: on CI, Electron's Node took less than 200,000 bytes in
+        // one write to a fresh stdin where a default pair (208 KiB) takes
+        // them all. The outcome case that reads the child's buffer sizes
+        // compares them with Node's exactly on each platform. The sizes
+        // decide how much one `write(2)` takes, and so what `write()`
+        // returns and how far a child runs ahead of its reader.
         for fd in fds {
             for option in [libc::SO_SNDBUF, libc::SO_RCVBUF] {
                 let size: c_int = 64 * 1024;
@@ -1689,11 +1695,15 @@ pub mod sys {
         out
     }
 
-    /// One `posix_spawn(2)` of `path` as libuv's `uv__spawn_and_init_child_posix_spawn`
-    /// sets it up: every signal reset to its default and none blocked
-    /// (`POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK`); on macOS
+    /// One `posix_spawn(2)` of `path`, set up as libuv sets up its child:
+    /// none of the signals blocked (`POSIX_SPAWN_SETSIGMASK`) and signals
+    /// reset to their default (`POSIX_SPAWN_SETSIGDEF`): on macOS every
+    /// signal, as `uv__spawn_and_init_child_posix_spawn` sets it, with
     /// `POSIX_SPAWN_CLOEXEC_DEFAULT`, so the child gets only the three
-    /// descriptors set here; `stdio[i]` `dup2`ed onto `i` (`None` is
+    /// descriptors set here; on Linux, where libuv forks and resets signals
+    /// 1 to 31 in the child (`uv__process_child_init`), those, and the child
+    /// keeps every descriptor this process holds without close-on-exec, as
+    /// a forked libuv child does; `stdio[i]` `dup2`ed onto `i` (`None` is
     /// `/dev/null`, read-only for 0, read-write otherwise, as libuv opens it
     /// for an ignored stream); `cwd` by `posix_spawn_file_actions_addchdir_np`.
     /// Every descriptor in `stdio` must be above 2. Gives the child's pid, or
@@ -1735,7 +1745,17 @@ pub mod sys {
                     return Err(err);
                 }
                 let mut set: libc::sigset_t = std::mem::zeroed();
+                #[cfg(target_os = "macos")]
                 libc::sigfillset(&mut set);
+                #[cfg(not(target_os = "macos"))]
+                {
+                    libc::sigemptyset(&mut set);
+                    for signal in 1..32 {
+                        if signal != libc::SIGKILL && signal != libc::SIGSTOP {
+                            libc::sigaddset(&mut set, signal);
+                        }
+                    }
+                }
                 let err = libc::posix_spawnattr_setsigdefault(&mut attrs, &set);
                 if err != 0 {
                     return Err(err);
@@ -1923,6 +1943,29 @@ pub mod sys {
         } else {
             Ok(())
         }
+    }
+
+    /// The descriptors this process holds without close-on-exec, ascending:
+    /// what a child started now would keep besides the three it is given
+    /// (on Linux; macOS's `POSIX_SPAWN_CLOEXEC_DEFAULT` keeps them from it).
+    /// Only the probe's descriptor case uses it. The names are read from
+    /// `/dev/fd` first; the directory's own descriptor (close-on-exec) is
+    /// closed by the time the flags are read.
+    pub fn inheritable_descriptors() -> Vec<c_int> {
+        let Ok(entries) = std::fs::read_dir("/dev/fd") else {
+            return Vec::new();
+        };
+        let mut fds: Vec<c_int> = entries
+            .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse().ok())
+            .collect();
+        fds.sort_unstable();
+        fds.retain(|fd| {
+            // SAFETY: reads the descriptor flags of a descriptor number; one
+            // that is not open gives -1 (EBADF) and is left out.
+            let flags = unsafe { libc::fcntl(*fd, libc::F_GETFD) };
+            flags != -1 && flags & libc::FD_CLOEXEC == 0
+        });
+        fds
     }
 
     /// One `write(2)` to a non-blocking descriptor, retried on `EINTR`, as

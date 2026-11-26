@@ -27,6 +27,27 @@ import { fnv } from './fs-programs.mjs';
 
 const descriptors = () => fs.readdirSync('/dev/fd').length - 1;
 
+/**
+ * The descriptors this process holds without close-on-exec, ascending: what a
+ * child libuv forks keeps besides its three (Linux has no close-on-exec
+ * default). Linux shows the flag in `/proc/self/fdinfo/<fd>` (`flags`, octal,
+ * O_CLOEXEC 02000000); elsewhere it is not readable from JavaScript (null).
+ */
+function inheritable() {
+  if (process.platform !== 'linux') return null;
+  const out = [];
+  for (const name of fs.readdirSync('/proc/self/fd')) {
+    let info;
+    // The listing's own descriptor is closed by now.
+    try { info = fs.readFileSync(`/proc/self/fdinfo/${name}`, 'utf8'); } catch { continue; }
+    const flags = /^flags:\s+([0-7]+)$/m.exec(info);
+    if (flags && (Number.parseInt(flags[1], 8) & 0o2000000) === 0) out.push(Number(name));
+  }
+  return out.sort((a, b) => a - b);
+}
+/** What this arm was started with (computed once the module runs). */
+const startedWith = inheritable();
+
 const errorShape = (error) => {
   if (!(error instanceof Error)) return { value: String(error) };
   const out = { name: error.name, message: error.message };
@@ -74,6 +95,7 @@ function runCase(c) {
     const env = Object.fromEntries(c.env);
     let child;
     const held = c.free !== undefined ? holdDescriptors(c.free) : [];
+    if (c.descriptors) { record.inheritable = inheritable(); record.startedWith = startedWith; }
     try {
       child = spawn(c.file, c.args, { cwd: c.cwd, env, stdio: c.stdio ?? ['pipe', 'pipe', 'pipe'] });
     } catch (error) {

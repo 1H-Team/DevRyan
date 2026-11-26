@@ -20,8 +20,12 @@
 //   (consecutive data collapsed) exactly, the cross-source rules, the error
 //   objects, output bytes and the final state exactly (fields a case marks
 //   loose as sets: a stdin pipeline's outcome must be one Electron's Node
-//   gives in that situation, its error object Node's own; how far a child
-//   ran ahead of a slow consumer within its bound); around every case each
+//   gives in that situation on this platform, its error object Node's own;
+//   how far a child ran ahead of a slow consumer within its bound; a
+//   child's descriptors checked per arm against libuv's rule for this
+//   platform); every arm's pipeline outcome and descriptor listing is
+//   printed on every run, and a failure prints the platform and every
+//   arm's raw outputs and error objects; around every case each
 //   arm's descriptor count, live children, helper threads and open sources
 //   come back, and no child is left a zombie. Cases that need the
 //   descriptor limit run on a second pair of arms started under
@@ -216,12 +220,62 @@ export function caseRules(record) {
   return problems;
 }
 
+/** The descriptors a `descriptors` case's child listed, ascending. */
+const listedDescriptors = (record) => (record.out?.text ?? '').split('\n').filter(Boolean).map(Number).sort((a, b) => a - b);
+
+/**
+ * What libuv's spawn leaves a child on this platform: macOS spawns with
+ * POSIX_SPAWN_CLOEXEC_DEFAULT, so 0, 1 and 2 only; Linux forks and execs, so
+ * those and every descriptor the parent holds without close-on-exec.
+ */
+function expectedDescriptors(inheritable) {
+  if (process.platform !== 'linux') return [0, 1, 2];
+  return [...new Set([0, 1, 2, ...(inheritable ?? [])])].sort((a, b) => a - b);
+}
+
+/** What one arm's record of a `descriptors` case breaks of that rule (empty when it keeps it). */
+export function descriptorProblems(name, record) {
+  if (record.thrown || record.error) return [`${name}: the listing did not run (${JSON.stringify(record.thrown ?? record.error)})`];
+  const problems = [];
+  if (process.platform === 'linux' && !Array.isArray(record.inheritable)) problems.push(`${name}: its descriptors without close-on-exec were not read`);
+  const listed = listedDescriptors(record), expected = expectedDescriptors(record.inheritable);
+  if (canonical(listed) !== canonical(expected)) problems.push(`${name}: the child had ${JSON.stringify(listed)} where libuv on ${process.platform} leaves ${JSON.stringify(expected)}`);
+  // A descriptor of the port's own without close-on-exec reaches every child on Linux.
+  if (name === 'rust' && canonical(record.inheritable) !== canonical(record.startedWith)) {
+    problems.push(`rust: holds ${JSON.stringify(record.inheritable)} without close-on-exec before the spawn, but was started with ${JSON.stringify(record.startedWith)}`);
+  }
+  return problems;
+}
+
+/** One arm's descriptor case, for the log: the child's descriptors, their targets (Linux), what the arm holds without close-on-exec. */
+const descriptorsShown = (name, record) => `${name}: child ${JSON.stringify(listedDescriptors(record))}${record.err ? ` (${record.err.trim().split('\n').join('; ')})` : ''}, `
+  + `inheritable ${JSON.stringify(record.inheritable ?? null)}, started with ${JSON.stringify(record.startedWith ?? null)}`;
+
+/** The text of short outputs on every arm and the platform, for a failure message. */
+function shown(records) {
+  const lines = [`platform: ${process.platform} ${os.release()}`];
+  for (const [name, record] of Object.entries(records)) {
+    const parts = [];
+    if (record.thrown) parts.push(`thrown ${JSON.stringify(record.thrown)}`);
+    if (record.error) parts.push(`error ${JSON.stringify(record.error)}`);
+    if (record.out?.text !== undefined) parts.push(`out ${JSON.stringify(record.out.text)}`);
+    else if (record.out) parts.push(`out ${record.out.length} bytes`);
+    if (record.err) parts.push(`err ${JSON.stringify(record.err.slice(0, 600))}`);
+    if (record.writing !== undefined) parts.push(`writing ${record.writing} ${JSON.stringify(record.writingError ?? null)}`);
+    lines.push(`  ${name}: ${parts.join(', ') || '(nothing more)'}`);
+  }
+  return lines.join('\n');
+}
+
 /** The compared part of a record, the loose fields set aside. */
 function compared(record, entry) {
-  const { events, pidNumber: _pid, ...rest } = record;
+  const { events, pidNumber: _pid, inheritable: _inheritable, startedWith: _startedWith, ...rest } = record;
   const sources = perSource(events ?? []);
   const loose = entry.loose ?? {};
   delete rest.ahead;
+  // The arms are different processes: what each holds differs, and the rule
+  // is checked per arm (descriptorProblems).
+  if (entry.descriptors) { delete rest.out; delete rest.err; }
   if (loose.stdin) delete sources.stdin;
   if (loose.writing) { delete sources.writing; delete rest.writing; delete rest.writingError; }
   if (loose.out) delete rest.out;
@@ -280,13 +334,27 @@ describe('child processes: outcomes against Electron\'s Node, field by field', (
         ];
       }
       for (const arm of entry.free !== undefined ? limitedArms : arms) records[arm.name] = await runCase(arm, entry, index);
+      // Printed on every run, passing or not: one line tells what each arm
+      // gave on this platform (the Linux sets were inferred, not measured).
+      if (entry.loose?.writing) {
+        console.log(`information: stdin pipeline on ${process.platform}, "${entry.name}": ${Object.entries(records).map(([name, record]) => `${name} ${record.writing}`).join(', ')} (accepted: ${entry.loose.writing.join(', ')})`);
+      }
+      if (entry.descriptors) {
+        for (const [name, record] of Object.entries(records)) console.log(`information: descriptors on ${process.platform}, ${descriptorsShown(name, record)}`);
+      }
       for (const [name, record] of Object.entries(records)) assert.deepEqual(record.thrown ? [] : caseRules(record), [], `${name} breaks rule 2: ${JSON.stringify(record.events)}`);
       const difference = firstDifference(compared(records.electron, entry), compared(records.rust, entry));
-      assert.equal(difference, null, `the Rust differs from Electron's Node at ${difference}\n  electron: ${JSON.stringify(records.electron.events)}\n  rust:     ${JSON.stringify(records.rust.events)}`);
+      assert.equal(difference, null, `the Rust differs from Electron's Node at ${difference}\n  electron: ${JSON.stringify(records.electron.events)}\n  rust:     ${JSON.stringify(records.rust.events)}\n${shown(records)}`);
+      if (entry.descriptors) {
+        const problems = Object.entries(records).flatMap(([name, record]) => descriptorProblems(name, record));
+        assert.deepEqual(problems, [], `descriptors on ${process.platform}:\n${Object.entries(records).map(([name, record]) => `  ${descriptorsShown(name, record)}`).join('\n')}`);
+      }
       for (const [name, record] of Object.entries(records)) {
         if (entry.loose?.writing) {
-          assert.ok(entry.loose.writing.includes(record.writing), `${name}: writing ${record.writing} is not one of ${entry.loose.writing}`);
-          assert.deepEqual(record.writingError, writingErrorOf(record.writing), `${name}: the pipeline's ${record.writing} is not Node's error object`);
+          const reference = name === 'electron' ? ' (the reference: this platform\'s accepted set is wrong, not the port)' : '';
+          const detail = `writing ${record.writing}, error ${JSON.stringify(record.writingError ?? null)}, events ${JSON.stringify(record.events)}\n${shown(records)}`;
+          assert.ok(entry.loose.writing.includes(record.writing), `${name} on ${process.platform}${reference}: writing ${record.writing} is not one of ${entry.loose.writing}: ${detail}`);
+          assert.deepEqual(record.writingError, writingErrorOf(record.writing), `${name}: the pipeline's ${record.writing} is not Node's error object: ${detail}`);
         }
         if (entry.loose?.out) assert.ok(record.out.length > 100_000, `${name}: read ${record.out.length} bytes`);
         if (entry.loose?.ahead !== undefined) {
