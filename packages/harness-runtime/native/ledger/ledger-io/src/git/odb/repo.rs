@@ -85,7 +85,7 @@ impl Repository {
         if exists(&format!("{git_dir}/commondir"))? {
             return ask(Reason::RepositoryFormat, "a linked worktree (commondir)");
         }
-        let entries = match std::fs::read(format!("{git_dir}/config")) {
+        let entries = match super::inflate::read_regular(&format!("{git_dir}/config")) {
             Ok(data) => config::parse(&data)
                 .map_err(|what| AskGit::new(Reason::RepositoryFormat, format!("config: {what}")))?,
             Err(error) if not_found(&error) => Vec::new(),
@@ -213,7 +213,7 @@ impl Repository {
         let replaced = match *cache {
             Some((cached, replaced)) if cached == stamp => replaced,
             _ => {
-                let data = match std::fs::read(&path) {
+                let data = match super::inflate::read_regular(&path) {
                     Ok(data) => data,
                     Err(error) if not_found(&error) => return Ok(()),
                     Err(error) => return Err(io_ask(&error, "packed-refs")),

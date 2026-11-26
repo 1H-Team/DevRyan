@@ -613,6 +613,11 @@ impl<T: Clone + 'static, E: Clone + 'static> Promise<T, E> {
         promise
     }
 
+    /// Whether two handles are the same promise (`a === b`).
+    pub fn same(&self, other: &Promise<T, E>) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+
     /// Whether it is settled (tests and diagnostics; JavaScript cannot ask).
     pub fn is_settled(&self) -> bool {
         !matches!(*self.0.state.borrow(), State::Pending(_))

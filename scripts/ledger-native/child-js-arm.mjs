@@ -23,6 +23,10 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
+import { git as productGit, gitTokens as productGitTokens } from '../../packages/harness-runtime/lib/session-changes-git.js';
+import { runInRemoteExecutionContext } from '../../packages/harness-runtime/lib/execution-admission.js';
+import { changeError } from '../../packages/harness-runtime/lib/session-changes-git.js';
+import { commitTreeChanges, objectID } from '../../packages/harness-runtime/lib/session-changes-trees.js';
 import { fnv } from './fs-programs.mjs';
 
 const descriptors = () => fs.readdirSync('/dev/fd').length - 1;
@@ -426,6 +430,53 @@ function programs() {
     log(inner, `${st.l}.end`);
     return inner;
   }
+  /** The product's own `git()` or `gitTokens()` (L3b's port is the Rust arm's), in a cancellable execution context. */
+  async function portedGit(ctx, st) {
+    log(ctx, `${st.l}>`);
+    const controller = new AbortController();
+    if (st.abort === 'before') controller.abort(Object.assign(new Error('aborted'), { code: 'call_aborted' }));
+    const options = { env: Object.fromEntries(st.env ?? []), ...(st.input === undefined ? {} : { input: st.input }), ...(st.delimiter === undefined ? {} : { delimiter: st.delimiter }) };
+    const drain = async (tokens) => {
+      const out = [];
+      for await (const token of tokens) { out.push(token); if (st.breakAt !== undefined && out.length >= st.breakAt) break; }
+      return out;
+    };
+    // Open until it settles, so the driver waits for its child as for the program's own.
+    const callOpen = opened();
+    const settled = await runInRemoteExecutionContext({ cancellable: true },
+      () => (st.kind === 'tokens' ? drain(productGitTokens(dir, st.args, options)) : productGit(dir, st.args, options)), { signal: controller.signal });
+    callOpen();
+    // An aborted call settles with no I/O: its continuation is the pure part's.
+    const inner = st.abort === 'before' ? ctx : io(st.l);
+    if (st.abort !== 'before') bump();
+    const shown = settled.failed ? `!${settled.failure.code}` : Array.isArray(settled.result) ? `ok:${settled.result.length}` : `ok:${settled.result.length}`;
+    log(inner, `${st.l}=${shown}`);
+    return inner;
+  }
+  /**
+   * The product's `commitTreeChanges` (L3b's port is the Rust arm's) with no
+   * I/O: objects kept in memory, `writeObject` a settled promise of the id,
+   * `readTree` the async arrow `commitDirect` gives it, over a settled read.
+   * A first commit builds the tree from nothing, a second changes it (its
+   * trees read): every job is the pure part's, pinned by the chains.
+   */
+  async function portedTrees(ctx, st) {
+    log(ctx, `${st.l}>`);
+    const objects = new Map();
+    const writeObject = (type, content) => { const oid = objectID(type, content, 40); objects.set(oid, { oid, type, size: content.length, data: Buffer.from(content) }); return Promise.resolve(oid); };
+    const readObject = (oid) => Promise.resolve(objects.get(oid) ?? null);
+    const readTree = async (oid) => {
+      const found = await readObject(oid);
+      if (found?.type !== 'tree') throw changeError('invalid_change_record', 503);
+      return found.data;
+    };
+    let tree = null;
+    try {
+      for (const changes of st.commits) tree = await commitTreeChanges({ tree, changes: new Map(changes), oidLength: 40, readTree, writeObject });
+      log(ctx, `${st.l}=${tree}`);
+    } catch (error) { log(ctx, `${st.l}=!${error.code}:${error.status}`); }
+    return ctx;
+  }
   async function callFn(start, index) {
     let ctx = start;
     for (const st of fns[index]?.body ?? []) {
@@ -439,6 +490,8 @@ function programs() {
           break;
         }
         case 'git': ctx = await git(ctx, st); break;
+        case 'pgit': ctx = await portedGit(ctx, st); break;
+        case 'ptrees': ctx = await portedTrees(ctx, st); break;
         default: step(ctx, st);
       }
     }

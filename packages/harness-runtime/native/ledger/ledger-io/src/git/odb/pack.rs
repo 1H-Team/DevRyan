@@ -11,6 +11,7 @@
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::inflate::{FileSource, InflateError, Source, inflate, inflate_exact};
 use super::repo::Repository;
@@ -185,6 +186,17 @@ pub(crate) struct Pack {
     pub index: PackIndex,
     source: Box<dyn Source>,
     stamp: Stamp,
+    /// The `.pack` file's modification time when it was opened (seconds):
+    /// Git's `p->mtime`, by which `rearrange_packed_git` orders its list.
+    pub mtime: i64,
+    /// Git's state of the pack in a long-lived reader: its index mapped
+    /// (`open_pack_index`, on the first lookup that reaches this pack) and
+    /// its data opened (`is_pack_valid`, on the first lookup its index
+    /// answers). A pack that vanished from `objects/pack` stays in Git's
+    /// list for the process's life and keeps answering as far as these
+    /// reach (plan package L3b, S5).
+    pub(crate) index_open: AtomicBool,
+    pub(crate) data_open: AtomicBool,
 }
 
 /// What identifies an index file on disk between two listings.
@@ -236,6 +248,7 @@ impl Pack {
                 mtime: 0,
                 mtime_ns: 0,
             },
+            0,
         )
     }
 
@@ -245,6 +258,7 @@ impl Pack {
         index: PackIndex,
         source: Box<dyn Source>,
         stamp: Stamp,
+        mtime: i64,
     ) -> Answer<Pack> {
         let hash = index.format.raw_len() as u64;
         let mut header = [0u8; PACK_HEADER as usize];
@@ -278,6 +292,9 @@ impl Pack {
             index,
             source,
             stamp,
+            mtime,
+            index_open: AtomicBool::new(false),
+            data_open: AtomicBool::new(false),
         })
     }
 
@@ -384,7 +401,11 @@ impl Pack {
 /// The packs an `Odb` has listed.
 #[derive(Default)]
 pub(crate) struct PackSet {
+    /// Git's pack list, in its order.
     pub packs: Vec<Arc<Pack>>,
+    /// Git's `packed_git_mru`: the list's order after each listing, a pack
+    /// moved to the front by every lookup it answers.
+    pub mru: Vec<Arc<Pack>>,
     pub scanned: bool,
     /// Why a miss must ask Git: something in `objects/pack` not understood.
     pub unknown: Option<AskGit>,
@@ -450,6 +471,14 @@ pub(crate) fn scan(repo: &Repository, state: &PackSet) -> Answer<Scan> {
     let mut packs = Vec::new();
     let mut unstable = false;
     let mut next_id = state.next_id;
+    // The packs already listed, by name (one lookup per listed index, not a
+    // search of the whole list: a ledger can hold many packs and a miss lists
+    // them again).
+    let listed: std::collections::HashMap<&str, &Arc<Pack>> = state
+        .packs
+        .iter()
+        .map(|pack| (pack.name.as_str(), pack))
+        .collect();
     for name in names.iter().filter(|name| name.ends_with(".idx")) {
         let base = &name[..name.len() - 4];
         let index_path = format!("{directory}/{name}");
@@ -462,15 +491,11 @@ pub(crate) fn scan(repo: &Repository, state: &PackSet) -> Answer<Scan> {
             Err(error) => return Err(io_ask(&error, "pack index")),
         };
         let stamp = Stamp::of(&metadata);
-        if let Some(kept) = state
-            .packs
-            .iter()
-            .find(|pack| pack.name == *base && pack.stamp == stamp)
-        {
+        if let Some(kept) = listed.get(base).filter(|pack| pack.stamp == stamp) {
             packs.push(Arc::clone(kept));
             continue;
         }
-        let data = match std::fs::read(&index_path) {
+        let data = match super::inflate::read_regular(&index_path) {
             Ok(data) => data,
             Err(error) if not_found(&error) => {
                 unstable = true;
@@ -498,11 +523,30 @@ pub(crate) fn scan(repo: &Repository, state: &PackSet) -> Answer<Scan> {
             Err(error) => return Err(io_ask(&error, "pack")),
         };
         next_id += 1;
-        match Pack::with_stamp(next_id, base, index, Box::new(source), stamp) {
+        let mtime = source.mtime();
+        match Pack::with_stamp(next_id, base, index, Box::new(source), stamp, mtime) {
             Ok(pack) => packs.push(Arc::new(pack)),
             Err(refused) => note(refused),
         }
     }
+    // Git never drops a pack it listed (`prepare_pack` adds by path only):
+    // one that vanished stays, and answers as far as its index was mapped
+    // and its data opened. One whose index was never mapped would only fail
+    // to open, so it is let go. A pack listed again under the same name with
+    // another index (a rewrite in place) is read anew; Git would keep its
+    // first mapping, which for a pack named by its checksum is the same.
+    let current: BTreeSet<String> = packs.iter().map(|pack| pack.name.clone()).collect();
+    for old in &state.packs {
+        if current.contains(&old.name) {
+            continue;
+        }
+        if old.index_open.load(Ordering::SeqCst) {
+            packs.push(Arc::clone(old));
+        }
+    }
+    // `rearrange_packed_git`: newest `.pack` first (a stable sort; ties keep
+    // this listing's name order, where Git keeps its directory order).
+    packs.sort_by_key(|pack| std::cmp::Reverse(pack.mtime));
     Ok(Scan {
         packs,
         unknown,

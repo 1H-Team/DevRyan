@@ -69,7 +69,7 @@ fn read_loose(repo: &Repository, name: &str) -> Answer<Option<Oid>> {
             "a loose ref that is not a regular file (a symlink?)",
         );
     }
-    match std::fs::read(&path) {
+    match super::inflate::read_regular(&path) {
         Ok(data) => loose_content(&data, repo.format()).map(Some),
         // Removed between the two calls (`pack-refs`): read `packed-refs`.
         Err(error) if not_found(&error) => Ok(None),
@@ -83,7 +83,7 @@ fn read_loose(repo: &Repository, name: &str) -> Answer<Option<Oid>> {
 /// a missing final newline, any other line, and a file whose `sorted` trait
 /// is untrue ask Git (Git would then binary-search an unsorted file).
 fn read_packed(repo: &Repository) -> Answer<BTreeMap<String, Oid>> {
-    let data = match std::fs::read(format!("{}/packed-refs", repo.git_dir())) {
+    let data = match super::inflate::read_regular(&format!("{}/packed-refs", repo.git_dir())) {
         Ok(data) => data,
         Err(error) if not_found(&error) => return Ok(BTreeMap::new()),
         Err(error) => return Err(io_ask(&error, "packed-refs")),
@@ -216,7 +216,7 @@ impl Repository {
                         "a loose ref that is not a regular file (a symlink?)",
                     );
                 }
-                match std::fs::read(format!("{}/{name}", self.git_dir())) {
+                match super::inflate::read_regular(&format!("{}/{name}", self.git_dir())) {
                     Ok(data) => {
                         refs.insert(name, loose_content(&data, self.format())?);
                     }

@@ -46,6 +46,7 @@ mod tests;
 
 use std::collections::HashSet;
 use std::fmt;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 pub use refs::{Ref, valid_ref_name};
@@ -267,6 +268,8 @@ pub enum Reason {
     Promisor,
     /// `refs/replace/` holds refs: Git would answer with the replacement.
     ReplaceRefs,
+    /// A `<tree>:<path>` naming a gitlink, with `OdbOptions::ask_gitlinks`.
+    Gitlink,
     /// A multi-pack index exists and the object is in none of the pack
     /// indexes the reader read.
     MultiPackIndex,
@@ -331,6 +334,7 @@ impl Reason {
             Reason::Alternates => "alternates",
             Reason::Promisor => "promisor",
             Reason::ReplaceRefs => "replace_refs",
+            Reason::Gitlink => "gitlink",
             Reason::MultiPackIndex => "multi_pack_index",
             Reason::UnindexedPack => "unindexed_pack",
             Reason::UnstablePacks => "unstable_packs",
@@ -420,6 +424,11 @@ pub struct OdbOptions {
     pub max_tree_depth: usize,
     /// Most rows one listing returns.
     pub max_listing_rows: usize,
+    /// Ask Git for every `<tree>:<path>` that names a gitlink, its commit
+    /// present or not: Git's answer there depends on its version (`<id>
+    /// submodule` since 2.51, `<name> missing` before), so a reader that
+    /// must give what the installed Git gives leaves it to Git.
+    pub ask_gitlinks: bool,
 }
 
 impl Default for OdbOptions {
@@ -431,6 +440,7 @@ impl Default for OdbOptions {
             verify_ids: false,
             max_tree_depth: 4096,
             max_listing_rows: 10_000_000,
+            ask_gitlinks: false,
         }
     }
 }
@@ -585,6 +595,9 @@ impl Odb {
                 self.check_id(&tree)?;
                 match walk::resolve_path(self, &tree, &name[colon + 1..])? {
                     None => return Ok(NameLookup::Missing),
+                    Some((_, mode)) if mode == b"160000" && self.options.ask_gitlinks => {
+                        return ask(Reason::Gitlink, "a gitlink: the answer is Git's version's");
+                    }
                     Some((oid, mode)) => (oid, mode == b"160000"),
                 }
             }
@@ -656,23 +669,24 @@ impl Odb {
         Ok(ids)
     }
 
-    /// The packs already listed (listing them the first time).
-    fn current_packs(&self) -> Answer<Vec<Arc<Pack>>> {
+    /// Lists the packs the first time.
+    fn scanned(&self) -> Answer<()> {
         {
             let state = self
                 .packs
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             if state.scanned {
-                return Ok(state.packs.clone());
+                return Ok(());
             }
         }
-        Ok(self.rescan()?.0)
+        self.rescan().map(|_| ())
     }
 
     /// Lists `objects/pack` again, keeping the packs whose index did not
-    /// change, until nothing vanished during a listing (at most `RESCANS`
-    /// times). Returns the packs and, when something there is not
+    /// change and those that vanished but Git would still read (see
+    /// `pack::scan`), until nothing vanished during a listing (at most
+    /// `RESCANS` times). Returns the packs and, when something there is not
     /// understood, the reason a miss must ask Git.
     fn rescan(&self) -> Answer<(Vec<Arc<Pack>>, Option<AskGit>)> {
         let mut state = self
@@ -682,6 +696,7 @@ impl Odb {
         for attempt in 1..=RESCANS {
             let scan = pack::scan(&self.repo, &state)?;
             state.next_id = scan.next_id;
+            state.mru = scan.packs.clone();
             state.packs = scan.packs;
             state.scanned = true;
             state.unknown = scan.unknown;
@@ -698,19 +713,57 @@ impl Odb {
         Ok((state.packs.clone(), state.unknown.clone()))
     }
 
+    /// `find_pack_entry`: the packs in most-recently-used order, a hit
+    /// moving its pack to the front. Git maps a pack's index the first time
+    /// a lookup reaches it and opens its data the first time its index
+    /// answers; either fails once the file is gone, and the lookup goes on.
+    /// What was mapped or opened stays readable for the reader's life, the
+    /// files deleted or not (the reader here holds both already: the first
+    /// reach checks the file is still there, as Git's `open` would).
+    fn find_packed(&self, oid: &Oid) -> Answer<Option<Located>> {
+        let directory = format!("{}/objects/pack", self.repo.git_dir());
+        let present = |path: String| std::fs::symlink_metadata(path).is_ok();
+        let mut state = self
+            .packs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        for at in 0..state.mru.len() {
+            let pack = Arc::clone(&state.mru[at]);
+            if !pack.index_open.load(Ordering::SeqCst) {
+                if !present(format!("{directory}/{}.idx", pack.name)) {
+                    continue;
+                }
+                pack.index_open.store(true, Ordering::SeqCst);
+            }
+            let Some(offset) = pack.index.find(oid)? else {
+                continue;
+            };
+            if !pack.data_open.load(Ordering::SeqCst) {
+                if !present(format!("{directory}/{}.pack", pack.name)) {
+                    continue;
+                }
+                pack.data_open.store(true, Ordering::SeqCst);
+            }
+            let moved = state.mru.remove(at);
+            state.mru.insert(0, moved);
+            return Ok(Some(Located::Packed(pack, offset)));
+        }
+        Ok(None)
+    }
+
     /// Where `oid` is: the packs listed, then the loose object, then, after
     /// listing the packs again, both once more (Git's order). Absent only
     /// when nothing the reader did not understand could hold it.
     fn locate(&self, oid: &Oid) -> Answer<Option<Located>> {
-        let packs = self.current_packs()?;
-        if let Some(found) = find_packed(&packs, oid)? {
+        self.scanned()?;
+        if let Some(found) = self.find_packed(oid)? {
             return Ok(Some(found));
         }
         if let Some(file) = loose::open(self.repo.git_dir(), oid)? {
             return Ok(Some(Located::Loose(file)));
         }
-        let (packs, unknown) = self.rescan()?;
-        if let Some(found) = find_packed(&packs, oid)? {
+        let (_, unknown) = self.rescan()?;
+        if let Some(found) = self.find_packed(oid)? {
             return Ok(Some(found));
         }
         if let Some(file) = loose::open(self.repo.git_dir(), oid)? {
@@ -851,15 +904,6 @@ fn ref_base_in_pack(pack: &Pack, base: &Oid) -> Answer<u64> {
             format!("REF delta base {base} outside its pack"),
         ),
     }
-}
-
-fn find_packed(packs: &[Arc<Pack>], oid: &Oid) -> Answer<Option<Located>> {
-    for pack in packs {
-        if let Some(offset) = pack.index.find(oid)? {
-            return Ok(Some(Located::Packed(Arc::clone(pack), offset)));
-        }
-    }
-    Ok(None)
 }
 
 /// The bytes a source holds from `offset`, as many as `buffer` takes or up to

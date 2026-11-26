@@ -25,6 +25,7 @@ use std::rc::Rc;
 use ledger_core::js::{JsStr, number_to_string};
 
 use crate::agen::{self, Abrupt, AsyncGen, Co};
+use crate::ctx::{Remote, run_in_remote_execution_context};
 use crate::emitter::Listener;
 use crate::host::{self, EventLoop, RealClock};
 use crate::io_program::fnv;
@@ -32,6 +33,7 @@ use crate::js::{self, Promise, Resolution, Resolvers, Store, async_fn};
 use crate::node::child::{self, ChildProcess, Signal, Spawn, Stdio};
 use crate::node::net::{self, PipeInput, Socket};
 use crate::node::{code_of, fs as nfs};
+use crate::signal::Controller;
 use crate::value::{JsError, W, to_js_string, to_number};
 use crate::virtual_host::VirtualHost;
 
@@ -1246,6 +1248,173 @@ fn git(run: &Rc<Run>, ctx: &Ctx, statement: &W) -> Promise<Ctx, W> {
     })
 }
 
+/// The ported `git()` or `gitTokens()` (`crate::git`, plan package L3b),
+/// in a cancellable execution context, as the JavaScript arm calls the
+/// product's own.
+fn ported_git(run: &Rc<Run>, ctx: &Ctx, statement: &W) -> Promise<Ctx, W> {
+    let label = text(&statement.get("l"));
+    log(run, ctx, &format!("{label}>"));
+    let controller = Controller::new();
+    let aborted = text(&statement.get("abort")) == "before";
+    if aborted {
+        let mut error = JsError::new("Error", "aborted");
+        error.set_field("code", W::string("call_aborted"));
+        controller.abort(W::Error(Rc::new(error)));
+    }
+    let mut options = crate::git::GitOptions {
+        env: env_of(&statement.get("env"))
+            .into_iter()
+            .map(|(key, value)| (key, Some(value)))
+            .collect(),
+        ..crate::git::GitOptions::default()
+    };
+    if let W::String(input) = statement.get("input") {
+        options.input = crate::git::Input::Text(input);
+    }
+    let delimiter = statement.get("delimiter");
+    if !delimiter.is_undefined() {
+        options.delimiter = Some(to_number(&delimiter) as u8);
+    }
+    let tokens = text(&statement.get("kind")) == "tokens";
+    let break_at = statement.get("breakAt");
+    let break_at = (!break_at.is_undefined()).then(|| to_number(&break_at) as usize);
+    let (dir, args) = (run.dir.clone(), strings(&statement.get("args")));
+    let action: crate::ctx::Action = Box::new(move |execution| {
+        if !tokens {
+            return Ok(Resolution::Promise(crate::git::git(
+                &execution, &dir, &args, &options,
+            )));
+        }
+        let source = crate::git::git_tokens(&execution, &dir, &args, &options);
+        Ok(Resolution::Promise(async_fn(async move {
+            let mut out = Vec::new();
+            let rows = agen::for_await(source);
+            while let Some(token) = rows.next().await? {
+                out.push(token);
+                if break_at.is_some_and(|at| out.len() >= at) {
+                    rows.close().await?;
+                    break;
+                }
+            }
+            Ok(Resolution::Value(W::Array(out)))
+        })))
+    });
+    let settled = run_in_remote_execution_context(
+        &W::object(vec![("cancellable", W::Bool(true))]),
+        action,
+        Remote {
+            signal: Some(controller.signal()),
+            on_report: None,
+            on_progress: None,
+            progress_ms: 250.0,
+        },
+    );
+    let (run, start) = (run.clone(), ctx.clone());
+    async_fn(async move {
+        let outcome = settled.await?;
+        let inner = if aborted { start } else { Ctx::io(&label) };
+        let shown = if outcome.failed {
+            format!("!{}", code_of(&outcome.value))
+        } else {
+            match &outcome.value {
+                W::Array(items) => format!("ok:{}", items.len()),
+                W::Bytes(bytes) => format!("ok:{}", bytes.len()),
+                _ => String::from("ok:?"),
+            }
+        };
+        log(&run, &inner, &format!("{label}={shown}"));
+        Ok(Resolution::Value(inner))
+    })
+}
+
+/// The ported `commitTreeChanges` (`crate::store`, plan package L3b) with
+/// no I/O, as the JavaScript arm runs the product's: objects in memory,
+/// `writeObject` a settled promise of the id, `readTree` the async arrow
+/// of `commitDirect` over a settled read (the store's own `read_tree`
+/// shape); each commit's tree the next one's base.
+fn ported_trees(run: &Rc<Run>, ctx: &Ctx, statement: &W) -> Promise<Ctx, W> {
+    use crate::store::{Staged, TreeIo, commit_tree_changes};
+    let label = text(&statement.get("l"));
+    log(run, ctx, &format!("{label}>"));
+    type Objects = std::collections::HashMap<String, (String, Rc<Vec<u8>>)>;
+    let objects: Rc<RefCell<Objects>> = Rc::default();
+    let written = objects.clone();
+    let write_object = Rc::new(move |kind: &str, content: Rc<Vec<u8>>| -> crate::WPromise {
+        let oid = crate::node::odb::object_id(kind, &content, 40);
+        written
+            .borrow_mut()
+            .insert(oid.clone(), (kind.to_owned(), content));
+        js::value(W::string(&oid))
+    });
+    // `readObject`: `Promise.resolve(objects.get(oid) ?? null)`.
+    let read_tree = crate::store::tree_reader(Rc::new(move |name: &W| -> crate::Ret {
+        let found = objects
+            .borrow()
+            .get(&to_js_string(name).to_string_lossy())
+            .cloned();
+        Ok(Resolution::Promise(js::value(match found {
+            Some((kind, data)) => {
+                W::object(vec![("type", W::string(&kind)), ("data", W::Bytes(data))])
+            }
+            None => W::Null,
+        })))
+    }));
+    let io = TreeIo {
+        oid_length: 40,
+        read_tree,
+        write_object,
+    };
+    let commits: Vec<Vec<(JsStr, Staged)>> = list(&statement.get("commits"))
+        .iter()
+        .map(|changes| {
+            list(changes)
+                .iter()
+                .map(|pair| {
+                    let pair = list(pair);
+                    let key = pair.first().map(to_js_string).unwrap_or_default();
+                    let value = match pair.get(1) {
+                        Some(W::String(data)) => Staged::Data(data.clone()),
+                        _ => Staged::Null,
+                    };
+                    (key, value)
+                })
+                .collect()
+        })
+        .collect();
+    let (run, ctx) = (run.clone(), ctx.clone());
+    async_fn(async move {
+        let mut tree: Option<JsStr> = None;
+        let outcome: Result<(), W> = async {
+            for changes in commits {
+                let next = commit_tree_changes(io.clone(), tree.clone(), changes).await?;
+                tree = Some(to_js_string(&next));
+            }
+            Ok(())
+        }
+        .await;
+        match outcome {
+            Ok(()) => log(
+                &run,
+                &ctx,
+                &format!(
+                    "{label}={}",
+                    tree.map(|tree| tree.to_string_lossy()).unwrap_or_default()
+                ),
+            ),
+            Err(error) => log(
+                &run,
+                &ctx,
+                &format!(
+                    "{label}=!{}:{}",
+                    code_of(&error),
+                    number_to_string(to_number(&error.get("status")))
+                ),
+            ),
+        }
+        Ok(Resolution::Value(ctx))
+    })
+}
+
 fn call_fn(run: &Rc<Run>, ctx: &Ctx, index: usize) -> Promise<W, W> {
     let body = list(
         &run.fns
@@ -1279,6 +1448,12 @@ fn call_fn(run: &Rc<Run>, ctx: &Ctx, index: usize) -> Promise<W, W> {
                 }
                 "git" => {
                     ctx = git(&run, &ctx, &statement).await?;
+                }
+                "pgit" => {
+                    ctx = ported_git(&run, &ctx, &statement).await?;
+                }
+                "ptrees" => {
+                    ctx = ported_trees(&run, &ctx, &statement).await?;
                 }
                 _ => exec(&run, &ctx, std::slice::from_ref(&statement)),
             }

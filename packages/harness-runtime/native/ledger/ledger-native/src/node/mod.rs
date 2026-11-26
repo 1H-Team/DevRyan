@@ -48,6 +48,7 @@ use crate::value::{JsError, W};
 pub mod child;
 pub mod fs;
 pub mod net;
+pub mod odb;
 pub mod stream;
 pub mod zlib;
 

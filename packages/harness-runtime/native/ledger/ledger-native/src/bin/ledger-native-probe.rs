@@ -31,6 +31,9 @@
 //!   ledger-native-probe child-emfile-uncaught  (under `ulimit -n 256`) a spawn at the
 //!                                        descriptor limit without an 'error' listener:
 //!                                        the process ends, as the worker dies of it
+//!   ledger-native-probe store            stdin: one Git runner or store request per
+//!                                        line (scripts/ledger-native/store-js-arm.mjs);
+//!                                        stdout: its outcome per line
 //!   ledger-native-probe jobs             stdin: one job-order program per line
 //!                                        (scripts/ledger-native/jobs-programs.mjs);
 //!                                        stdout: its trace per line, as
@@ -86,6 +89,17 @@ fn main() {
             ledger_native::child_program::serve_cases(lines, print, |line| decode_line(line).ok());
         }
         Some("child-programs") => child_programs(),
+        Some("store") => {
+            let stdin = std::io::stdin();
+            let lines = stdin
+                .lock()
+                .split(b'\n')
+                .map(|line| line.expect("stdin"))
+                .filter(|line| !line.is_empty());
+            // Plain JSON, as the JavaScript arm's `JSON.stringify` prints it
+            // (own `__proto__` keys too, which the line codec drops).
+            ledger_native::store_program::serve(lines, print_json, |line| decode_line(line).ok());
+        }
         Some("child-emfile-uncaught") => ledger_native::child_program::emfile_uncaught(),
         Some("transcript") => transcript(),
         Some("jobs") => {
@@ -98,11 +112,20 @@ fn main() {
         }
         _ => {
             eprintln!(
-                "usage: ledger-native-probe codec | generate <seed> <count> | scenarios | transcript | fs-steps | fs-programs | child-cases | child-programs | child-emfile-uncaught | jobs [node26]"
+                "usage: ledger-native-probe codec | generate <seed> <count> | scenarios | transcript | fs-steps | fs-programs | child-cases | child-programs | child-emfile-uncaught | store | jobs [node26]"
             );
             std::process::exit(2);
         }
     }
+}
+
+fn print_json(value: &W) {
+    let mut line = ledger_core::js::stringify(&ledger_native::store::to_core(value))
+        .ok()
+        .flatten()
+        .map_or_else(|| b"{\"unencodable\":true}".to_vec(), |text| text.to_utf8());
+    line.push(b'\n');
+    std::io::stdout().write_all(&line).expect("stdout");
 }
 
 fn print(value: &W) {

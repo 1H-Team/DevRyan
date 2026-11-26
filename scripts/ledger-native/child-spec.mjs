@@ -149,6 +149,19 @@ export const CASES = Object.freeze([
   { name: 'the same found on PATH: ENOEXEC is thrown (macOS), /bin/sh runs the entry\'s path (Linux)', file: 'devryan-o2e-plain', args: ['x'], env: [['PATH', '/nonexistent-devryan-o2e:<dir>/bin']], dirs: [{ name: 'bin' }],
     files: [{ name: 'bin/devryan-o2e-plain', text: PLAIN_SCRIPT, mode: 0o755 }], stdout: 'data', stderr: 'data', input: 'none' },
   { name: 'a directory as the program: EACCES', file: './', args: [], stdout: 'data', stderr: 'data', input: 'none' },
+  // What normalizeSpawnArguments throws, in its order (the L3b review's S2: a
+  // NUL in Git's output passed on as an argument): ERR_INVALID_ARG_VALUE, a
+  // TypeError whose message inspects the value (quotes, escapes, the line
+  // split past 124 characters, the cut at 128).
+  { name: 'a NUL in the program: ERR_INVALID_ARG_VALUE is thrown', file: 'g\u0000it', args: ['x'], stdout: 'data', stderr: 'data', input: 'none' },
+  { name: 'an empty program: ERR_INVALID_ARG_VALUE (cannot be empty) is thrown', file: '', args: [], stdout: 'data', stderr: 'data', input: 'none' },
+  { name: 'a NUL in the third argument, after a NUL-free one: args[2] named, inspected with its quotes chosen', ...sh('exit 0'), args: ['-c', 'exit 0', "it's \"q\"\u0000\t\\\u007f"], stdout: 'data', stderr: 'data', input: 'none' },
+  { name: 'a NUL in a long argument with newlines: inspected line by line, cut at 128', ...sh('exit 0'), args: ['-c', `a\nb\u0000${'y'.repeat(150)}\n${'z'.repeat(20)}`], stdout: 'data', stderr: 'data', input: 'none' },
+  { name: 'a NUL in a 76-character argument with a newline: one piece (inspect splits past breakLength 80 - 4)', ...sh('exit 0'), args: ['-c', `a\n\u0000${'b'.repeat(73)}`], stdout: 'data', stderr: 'data', input: 'none' },
+  { name: 'a NUL in a 77-character argument with a newline: split at the newline', ...sh('exit 0'), args: ['-c', `a\n\u0000${'b'.repeat(74)}`], stdout: 'data', stderr: 'data', input: 'none' },
+  { name: 'a NUL in the working directory: ERR_INVALID_ARG_VALUE of options.cwd', ...sh('exit 0'), cwd: '/nonexistent-devryan-o2e\u0000x', stdout: 'data', stderr: 'data', input: 'none' },
+  { name: 'a NUL in an environment key, then in a value: the key is refused first', ...sh('exit 0'), env: [['DEVRYAN_A', 'fine'], ['DEVRYAN_\u0000B', 'x\u0000y']], stdout: 'data', stderr: 'data', input: 'none' },
+  { name: 'a NUL in an environment value: options.env[\'<key>\'] named', ...sh('exit 0'), env: [['DEVRYAN_C', 'x\u0000y']], stdout: 'data', stderr: 'data', input: 'none' },
   { name: 'at the descriptor limit: EMFILE on a tick, no stdio at all, close(-24) (the Git runner then throws, F2)', ...sh('exit 0'), free: 1, stdout: 'data', stderr: 'data', input: 'none' },
   { name: 'at the descriptor limit, the second socket pair fails: EMFILE, and the first pair is not set up either', ...sh('exit 0'), free: 3, stdout: 'data', stderr: 'data', input: 'none' },
   // The PATH search (uv__spawn_resolve_and_spawn).

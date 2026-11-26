@@ -889,6 +889,52 @@ pub fn env(name: &str) -> Option<String> {
     (current().env)(name)
 }
 
+thread_local! {
+    /// Changes made to `process.env` after the start, in order (`None`
+    /// deletes): only the differential tests' arm makes any.
+    static ENV_CHANGES: RefCell<Vec<(String, Option<String>)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// `process.env[name] = value` (`None`: `delete process.env[name]`), as the
+/// differential tests' JavaScript arm changes it (only the test probe calls
+/// it).
+pub fn set_process_env(name: &str, value: Option<&str>) {
+    ENV_CHANGES.with(|changes| {
+        changes
+            .borrow_mut()
+            .push((name.to_owned(), value.map(str::to_owned)))
+    });
+}
+
+/// `process.env` as an object's entries: the environment the process
+/// started with, in its order, with the changes made since applied as
+/// JavaScript applies them (a key set again keeps its place, a new one goes
+/// last, a deleted one is gone).
+pub fn process_env() -> Vec<(String, String)> {
+    let mut entries: Vec<(String, String)> = std::env::vars_os()
+        .map(|(key, value)| {
+            (
+                key.to_string_lossy().into_owned(),
+                value.to_string_lossy().into_owned(),
+            )
+        })
+        .collect();
+    ENV_CHANGES.with(|changes| {
+        for (key, value) in changes.borrow().iter() {
+            let at = entries.iter().position(|(known, _)| known == key);
+            match (at, value) {
+                (Some(at), Some(value)) => entries[at].1.clone_from(value),
+                (None, Some(value)) => entries.push((key.clone(), value.clone())),
+                (Some(at), None) => {
+                    entries.remove(at);
+                }
+                (None, None) => {}
+            }
+        }
+    });
+    entries
+}
+
 /// A loop on a hand-moved clock at 1000 ms, installed on this thread, for
 /// the unit tests of the modules on it.
 #[cfg(test)]

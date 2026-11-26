@@ -1647,13 +1647,12 @@ keep spawning Git (research file 28, section 5).
   here, and the caller that replaces a Git spawn with the reader decides
   whether to clear or check them, as `gitEnvironment` in
   `lib/session-changes-git.js` clears others today.
-- **Errors are not yet the ledger's.** The reader returns `odb::AskGit` with
-  its `Reason`, and the writer returns the system error with its Node errno
-  code (`ENOENT`, `EACCES`, …), as `writeLooseObject` throws it. Turning them
-  into the ledger's own codes (`invalid_change_record`, `storage_unavailable`,
-  `capture_git_failed` and the rest), and deciding which "ask Git" answers
-  fall back to a Git spawn, is left to the store package that will call this
-  one.
+- **Errors.** The reader returns `odb::AskGit` with its `Reason`, and the
+  writer returns the system error with its Node errno code (`ENOENT`,
+  `EACCES`, …), as `writeLooseObject` throws it. The Git runner (below, "The
+  Git runner and the store") turns every "ask Git" into a Git process for that
+  one name, so the ledger's codes are Git's own answers, classified as the
+  JavaScript's reader classifies them.
 - **Writes.** `write_loose_object` is `writeLooseObject` call for call:
   freshen with `utimes`, else up to five attempts of recursive `mkdir`,
   `stat`, `tmp_obj_<uuid>` written `wx` with mode 0o444, `link` (`EEXIST`
@@ -1685,7 +1684,9 @@ keep spawning Git (research file 28, section 5).
 The second crate of the native ledger workspace (research file 28, plan
 package L3d), `native/ledger/ledger-native`, builds the binary
 `devryan-ledger`: the ledger worker's stdio protocol, its execution context
-and its I/O pool, with **no ledger method implemented**. Nothing starts it:
+and its I/O pool, with **no ledger method implemented** (the Git runner and
+the store are ported, "The Git runner and the store" below, and no method
+calls them yet). Nothing starts it:
 there is no switch, the binary is built only in the verify's scratch, and
 `native/ledger` is excluded from packaging (above).
 
@@ -2090,8 +2091,11 @@ there is no switch, the binary is built only in the verify's scratch, and
     persistent reader's: the native process does not exit when its loop is
     idle, and the reader is replaced by the in-process object database),
     `exec`, `execFile` and the sync forms, `setEncoding`, `pause`/`resume`
-    by hand, `cork`; a NUL byte in an argument panics (Node's
-    `ERR_INVALID_ARG_VALUE` is not reproduced). Not reproduced: Node's job
+    by hand, `cork`. A NUL byte in the file, an argument, the working
+    directory or an environment pair, and an empty file, throw Node's
+    `ERR_INVALID_ARG_VALUE` `TypeError` from `spawn`, in Node's order and
+    with its message (`util.inspect` of the value, split past 76
+    characters, cut at 128). Not reproduced: Node's job
     and tick counts inside a write, a pipeline and a socket's end (file
     33); where reads split (up to 64 KiB, whatever the kernel hands over).
   - *Left free:* which of two ready units from different sources runs
@@ -2531,6 +2535,121 @@ there is no switch, the binary is built only in the verify's scratch, and
   registers that stream; old stalls are pruned only when a new one is kept,
   so a stall older than 30 minutes keeps counting until then; an I/O cap
   raised while callers queue admits new callers ahead of them.
+
+### The Git runner and the store
+
+`ledger-native/src/git.rs`, `store.rs` and `durability.rs` (plan package
+L3b) port `lib/session-changes-git.js`, `lib/session-changes-store.js` (with
+`commitTreeChanges` of `lib/session-changes-trees.js`) and the off-Windows
+part of `lib/object-durability.js` onto the job layer, by the porting rule:
+one async function one `async_fn`, one async generator one
+`agen::async_gen`, one `await` one `.await`, the execution context passed
+explicitly. **Nothing calls them**: no method of the process is wired to
+them, and the product is unchanged.
+
+- **The runner.** `start` (the abort listener, the `timeoutMs` timer, the
+  stderr head and tail and their classes, `done` classified into
+  `capture_timeout`, `storage_unavailable`, `capture_not_git`,
+  `capture_git_failed` with `command` and `failure`, `writing` with `EPIPE`
+  and `ERR_STREAM_PREMATURE_CLOSE` swallowed), `git`, `gitTokens`,
+  `gitRecords`, `createOwnedGitRunner`, `changeError`, `gitFailure`. The
+  failure classes' regular expressions are matched by hand over UTF-16 code
+  units, as JavaScript's non-unicode `/i` folds (ASCII letters only).
+  Today's defects are kept: a raw `ECANCELED` or `ENOTCONN` from the stdin
+  pipeline rejects `git()` before its classified failure (O2e's F1); at the
+  descriptor limit `start` throws a `TypeError` (no stderr to listen to) and
+  the spawn's `EMFILE`, which nobody listens to, then ends the process
+  (F2); `pin` on a store with no tree passes `null` to `update-ref` as the
+  text `null`. Not ported: `gitToFile` (a descriptor as stdout; no worker
+  method reaches it).
+- **The persistent reader.** `readGitObject` answers from the ledger
+  repository in-process (`node::odb::ObjectReader`, over the object database
+  above) where the JavaScript keeps a long-lived `cat-file --batch` and
+  `--batch-check` per repository: the same answers (`null` when absent;
+  `{ oid, type, size }` and, unless checked, `data`), settled in request
+  order per reader, and a reader closed, failing every request still pending
+  on it, where the JavaScript's closes: a gitlink's `<id> submodule` (the
+  defect of `session-changes-git.js:221-226`, kept where the installed Git
+  prints it), a malformed header, a `cat-file` that died. A reader lives as
+  the JavaScript's does: its database (opened on a thread of its own, so a
+  read stuck in a system call never holds the I/O pool) and every pack it
+  has opened, a pack a repack deleted included, as Git keeps them, last until
+  it closes; it closes 15 s after its last read settles, and its watchdog
+  (each second, `Date.now()`) fails it with `capture_timeout` (503) once its
+  oldest pending read is older than 30 s, killing its `cat-file` and failing
+  every pending read. A name the database cannot answer exactly ("ask Git")
+  is read by a `cat-file` process for that one name, one at a time per
+  reader in request order, with the environment the reader started with
+  (stderr ignored), parsed as the reader parses; every gitlink is asked
+  (Git's answer there is its version's), and every name when
+  `GIT_REPLACE_REF_BASE` is set; files that are not regular (a FIFO at an
+  object's path) are opened without blocking and asked of Git, which then
+  blocks as it would. Not ported: `ref`/`unref` (the native process does not
+  exit when its loop is idle). `DEVRYAN_LEDGER_PERSISTENT_READER=0`, read
+  when a store opens, gives the reader-less paths (`cat-file --batch` per
+  read, `gitRecords`, `rev-parse`, `ls-tree` identities), as in the
+  JavaScript.
+- **The store.** Every export of `openChangeStore` (`get`, `set`, `remove`,
+  `entries`, `records`, `list`, `setList`, `writeList`, `setListObjects`,
+  `commit`, `committedRows`, `readRows`, `stage`, `leaseRef`, `pin`,
+  `release`, `importPrefix`, `prefixIdentity`, `prefixIdentities`,
+  `committedIdentity`, `staged`, `tree`, `exists`, `pendingCount`), with the
+  same Git processes in the same order: the loose-ref read (trimmed, as
+  today: leading whitespace Git refuses is accepted, a directory at the ref's
+  path is `EISDIR`), `for-each-ref` and `rev-parse --show-object-format` at
+  open; whole listings with `ls-tree -r -l -z`, cached two per process and,
+  past `listingLimitBytes`, paged for the rest of the process; paged
+  listings read tree by tree through the persistent reader as
+  `listDirectPrefix` and `listTreeRows` read them
+  (`DEVRYAN_LEDGER_DIRECT_LISTINGS`, read per use), a failed read (an
+  aborted execution) leaving the listing to Git; commits as direct trees or through Git's index
+  (`DEVRYAN_LEDGER_DIRECT_TREES`, `DEVRYAN_LEDGER_PERSISTENT_INDEX`, read per
+  use); every ref move an `update-ref` compare-and-swap, a guard revoked
+  after it undone by a second one (`ledger_guard_rollback_failed`,
+  `committed`, `rollbackFailed` when that fails); `syncObjects(cwd)` before
+  every commit that stages anything. The process-wide blob cache (8 MiB,
+  4,096 values), listing cache and oversized stores are thread-locals of the
+  loop thread. Differs on purpose: staged keys are sorted by code unit where
+  the JavaScript calls `localeCompare` (D25; the host refuses the native
+  ledger where they disagree, "The locale check"); a `JSON.parse` failure is
+  a `SyntaxError` with a message of its own; a record nested deeper than
+  512 levels (the line codec's fail-closed bound, L1a) is refused with that
+  `SyntaxError` where the JavaScript reads it (no ledger record is deeper
+  than a few levels); a custom `gitRunner` is not taken (only an inline
+  JavaScript ledger has one).
+- **What a run spawns.** The JavaScript's persistent readers aside (one
+  `cat-file --batch` and one `--batch-check` per repository, which the
+  Rust reads in-process), and the Rust's ask-Git hand-backs aside, the Git
+  commands are the JavaScript's, argument for argument and in order (the
+  differential compares them as a multiset and in order, `hash-object`
+  and concurrent steps aside, in every repository it builds, ones the
+  database leaves to Git included).
+- **Tests.** `scripts/ledger-native/store-differential.mjs` (in the verify;
+  [testing](../../docs/TESTING.md#native-ledger-module-tests)) runs every
+  request on the product's modules under Electron's Node and on the Rust
+  (`ledger-native-probe store`): results and errors field by field, the Git
+  commands each arm started (a `git` shim first on `PATH` logs them), and
+  after each store scenario the refs, every object by id and content,
+  `git fsck --strict --full` on both arms, every file outside `objects/`, and
+  each arm's ledger read back by the other; the reader's deadline (a clock
+  run ahead on both arms), its life and census, deleted packs, the
+  environment it honours, a fake Git printing random bytes, and the object
+  directory's sync (a counting shim with injected faults on both arms, and
+  on macOS the interposed system calls per installed object and per
+  commit). Eight named programs of `child-differential.mjs` call the
+  runner and the direct tree commit at the trace level (the product's
+  `git()`, `gitTokens()` and `commitTreeChanges` against their port, beside
+  chains of every length). `cargo test` adds the runner's own: progress
+  recorded on success only, the failure classes, the command name, blocked
+  reads failing at the reader's deadline without the I/O pool, the idle
+  close. `scripts/ledger-native/store-planted.mjs` (by hand) plants 131 bugs
+  (the builder's, the review's and one undoing each fix of its first round)
+  and reports the named test that catches each.
+- **Not done.** No method calls the runner or the store (L3e onwards); the
+  native process does not start; nothing is packaged. Linux was linted
+  (clippy for `x86_64-unknown-linux-gnu`), not run; every failing
+  comparison of the store differential prints the platform, the installed
+  Git and both arms' raw values.
 
 ## Registered host-dependent operations
 

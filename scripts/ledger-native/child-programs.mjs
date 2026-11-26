@@ -22,6 +22,13 @@
 //        consume: 'data' (listeners on stdout and stderr) | 'none' (flushStdio drains them at the exit)
 // and in an async function also:
 //   { s: 'await' }, { s: 'sleep', ms }, { s: 'awaitIo', op, a, l }
+//   { s: 'pgit', l, args, kind, abort, input, delimiter, breakAt }   the Git runner itself (the
+//        product's `git()`/`gitTokens()`, the Rust's port) in a cancellable execution context:
+//        `l=ok:<bytes or tokens>` or `l=!<code>` in strand `l` (in the caller's strand when
+//        aborted before the call: no I/O happened)
+//   { s: 'ptrees', l, commits: [[[key, data | null], …], …] }   the product's
+//        `commitTreeChanges` (the Rust's port) with in-memory objects and the
+//        `readTree` arrow of `commitDirect`: no I/O, `l=<tree id>` in the caller's strand
 //   { s: 'git', l, file, args, env, input, exit }   `git()`'s shape; its entries are strand `l`:
 //        `l.c` (each chunk), `l.broke`, `l.done`, `l.writing=ok`, `l.resolved`, `l.caught=<code>`,
 //        `l.kill=<returned>` (when the loop ended normally), `l.end`; the function goes on in strand `l`.
@@ -220,6 +227,33 @@ export const FIXED_PROGRAMS = Object.freeze([
   { name: 'git(): a child exits while a grandchild holds its stdin: writing rejects with ECANCELED, which git() throws raw (F1)', program: {
     fns: [{ body: [{ s: 'git', l: 'g0', file: 'sh', args: ['-c', 'exec 3<&0; sleep 120 >/dev/null 2>&1 & echo $! > "$GC_PID_FILE"; exit 0'], env: [['GC_PID_FILE', '<dir>/gc.pid']], input: { pipeBytes: 1 << 20 } },
       { s: 'log', l: 'after' }] }], main: [{ s: 'call', f: 0 }] } },
+  // The Git runner itself (plan package L3b): the product's `git()` and
+  // `gitTokens()` on the JavaScript arm, their port on the Rust arm, each in
+  // a cancellable execution context, beside chains of every length so the
+  // pure part pins where each continuation lands.
+  { name: 'ported git(): aborted before the call, it rejects with no process, a job count the chains pin', program: {
+    fns: [{ body: [{ s: 'pgit', l: 'p0', args: ['--version'], abort: 'before' }, { s: 'log', l: 'after' }, { s: 'chain', n: 2, l: 'c0' }] }],
+    main: [{ s: 'call', f: 0 }, ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14].map((n) => ({ s: 'chain', n, l: `o${n}` }))] } },
+  { name: 'ported gitTokens(): aborted before its first next, the generator rejects', program: {
+    fns: [{ body: [{ s: 'pgit', l: 'p0', kind: 'tokens', args: ['--version'], abort: 'before' }, { s: 'log', l: 'after' }] }],
+    main: [{ s: 'call', f: 0 }, ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14].map((n) => ({ s: 'chain', n, l: `o${n}` }))] } },
+  { name: 'ported git(): output, then the continuation and its chains in the strand', program: {
+    fns: [{ body: [{ s: 'pgit', l: 'p0', args: ['--version'] }, { s: 'log', l: 'after' }, { s: 'chain', n: 3, l: 'c0' }] }], main: [{ s: 'call', f: 0 }, { s: 'chain', n: 6, l: 'outside' }] } },
+  { name: 'ported git(): a failing Git (not a repository) rejects classified', program: {
+    fns: [{ body: [{ s: 'pgit', l: 'p0', args: ['--git-dir', '<dir>/none', 'rev-parse', 'HEAD'] }, { s: 'log', l: 'after' }] }], main: [{ s: 'call', f: 0 }] } },
+  { name: 'ported git(): input through stdin (hash-object --stdin)', program: {
+    fns: [{ body: [{ s: 'pgit', l: 'p0', args: ['hash-object', '--stdin'], input: 'some bytes\n' }, { s: 'log', l: 'after' }] }], main: [{ s: 'call', f: 0 }] } },
+  { name: 'ported gitTokens(): newline tokens, a break after the first', program: {
+    fns: [{ body: [{ s: 'pgit', l: 'p0', kind: 'tokens', args: ['--version'], delimiter: 10 }, { s: 'pgit', l: 'p1', kind: 'tokens', args: ['--help'], delimiter: 10, breakAt: 1 }, { s: 'log', l: 'after' }] }], main: [{ s: 'call', f: 0 }] } },
+  // The direct tree commit (L3b review S6): one job per async function on
+  // the commit path (`readTree`'s arrow included), pinned by chains of every
+  // length beside it.
+  { name: 'ported commitTreeChanges(): a tree built, then changed (its trees read through readTree), against chains', program: {
+    fns: [{ body: [{ s: 'ptrees', l: 't0', commits: [[['a/b/c.json', '1'], ['a/d.json', '2'], ['e.json', '3']], [['a/b/c.json', null], ['a/b/f.json', '4'], ['a/d.json', '2'], ['g/h.json', '5']]] }, { s: 'log', l: 'after' }] }],
+    main: [{ s: 'call', f: 0 }, ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64].map((n) => ({ s: 'chain', n, l: `o${n}` }))] } },
+  { name: 'ported commitTreeChanges(): a removal that empties a subtree, and a refusal (a file over a directory)', program: {
+    fns: [{ body: [{ s: 'ptrees', l: 't0', commits: [[['a/b/c.json', '1']], [['a/b/c.json', null]]] }, { s: 'log', l: 'mid' }, { s: 'ptrees', l: 't1', commits: [[['a/b.json', '1']], [['a/b.json/c.json', '2']]] }, { s: 'log', l: 'after' }] }],
+    main: [{ s: 'call', f: 0 }, ...[1, 2, 3, 4, 6, 8, 12, 16, 24, 32].map((n) => ({ s: 'chain', n, l: `o${n}` }))] } },
   { name: 'two children, a file call and timers at once keep their own orders', program: {
     files: [{ name: 'f0', size: 70000 }],
     fns: [{ body: [gitOf('out', { l: 'g0' }), { s: 'awaitIo', op: 'readFile', a: 'f0', l: 'a0' }, { s: 'sleep', ms: 3 }, gitOf('cat', { l: 'g1', input: 'empty' })] }],

@@ -25,19 +25,51 @@ pub(crate) trait Source: Send + Sync {
 pub(crate) struct FileSource {
     file: std::fs::File,
     size: u64,
+    /// The file's modification time when it was opened (seconds).
+    mtime: i64,
+}
+
+/// Opens a file of the repository for reading without ever blocking in
+/// `open`: `O_NONBLOCK`, which changes nothing for a regular file, so a FIFO
+/// or a device at an object's path opens at once; anything but a regular
+/// file is then refused (`EISDIR`), so the reader asks Git, whose own `open`
+/// blocks or fails exactly as it would (the reader's deadline then fails the
+/// request, as the JavaScript's watchdog does: plan package L3b, S1).
+pub(crate) fn open_regular(path: &str) -> std::io::Result<(std::fs::File, std::fs::Metadata)> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err(std::io::Error::from_raw_os_error(libc::EISDIR));
+    }
+    Ok((file, metadata))
+}
+
+/// `std::fs::read` through [`open_regular`]: the whole of a regular file.
+pub(crate) fn read_regular(path: &str) -> std::io::Result<Vec<u8>> {
+    use std::io::Read;
+    let (mut file, metadata) = open_regular(path)?;
+    let mut data = Vec::with_capacity(usize::try_from(metadata.len()).unwrap_or(0));
+    file.read_to_end(&mut data)?;
+    Ok(data)
 }
 
 impl FileSource {
     pub(crate) fn open(path: &str) -> std::io::Result<FileSource> {
-        let file = std::fs::File::open(path)?;
-        let metadata = file.metadata()?;
-        if !metadata.is_file() {
-            return Err(std::io::Error::from_raw_os_error(libc::EISDIR));
-        }
+        use std::os::unix::fs::MetadataExt;
+        let (file, metadata) = open_regular(path)?;
         Ok(FileSource {
             file,
             size: metadata.len(),
+            mtime: metadata.mtime(),
         })
+    }
+
+    pub(crate) fn mtime(&self) -> i64 {
+        self.mtime
     }
 }
 

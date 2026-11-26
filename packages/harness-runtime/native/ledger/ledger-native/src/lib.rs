@@ -17,12 +17,18 @@
 //!   loop around them (units of work, Node's timers and immediates, blocking
 //!   work); `node`: what the worker calls of Node's library on that loop
 //!   (`fs.promises`, the file read stream, `zlib.deflate`, child processes
-//!   and their sockets); `runtime`: the
-//!   methods and the worker's options.
+//!   and their sockets, the ledger repository's object database); `runtime`:
+//!   the methods and the worker's options.
+//! - `git`, `store`, `durability`: the Git runner, the change store and the
+//!   object directory's sync (plan package L3b), ported and proven against
+//!   the JavaScript; no method calls them yet.
 //! - With the `test-hooks` feature only: `stub` (the stub methods of the
 //!   conformance suite), `program` (the job-order programs' interpreter),
 //!   `io_program` (the `node` module's programs and file-system steps),
-//!   `child_program` (its child-process cases and programs) and
+//!   `child_program` (its child-process cases and programs),
+//!   `store_program` (the Git runner's and the store's requests), `seams`
+//!   (what those tests observe the product through; without the feature
+//!   `seams_off.rs`, whose functions do nothing) and
 //!   `virtual_host` (a clock tests move by hand).
 #![forbid(unsafe_code)]
 
@@ -31,7 +37,9 @@ use std::rc::Rc;
 pub mod agen;
 pub mod codec;
 pub mod ctx;
+pub mod durability;
 pub mod emitter;
+pub mod git;
 pub mod host;
 pub mod iopool;
 pub mod js;
@@ -40,8 +48,14 @@ pub mod node;
 pub mod process;
 pub mod proto;
 pub mod runtime;
+#[cfg(feature = "test-hooks")]
+pub mod seams;
+#[cfg(not(feature = "test-hooks"))]
+#[path = "seams_off.rs"]
+pub mod seams;
 pub mod signal;
 pub mod stall;
+pub mod store;
 pub mod value;
 pub mod wire;
 
@@ -51,6 +65,8 @@ pub mod child_program;
 pub mod io_program;
 #[cfg(feature = "test-hooks")]
 pub mod program;
+#[cfg(feature = "test-hooks")]
+pub mod store_program;
 #[cfg(feature = "test-hooks")]
 pub mod stub;
 #[cfg(feature = "test-hooks")]

@@ -178,15 +178,8 @@ fn is_run_time(errno: i32) -> bool {
 /// `ErrnoException(err, 'spawn')`; the others give a child whose `error`
 /// comes on a tick.
 pub fn spawn(options: Spawn) -> Result<ChildProcess, W> {
-    for text in std::iter::once(&options.file)
-        .chain(&options.args)
-        .chain(options.cwd.iter())
-        .chain(options.env.iter().flat_map(|(key, value)| [key, value]))
-    {
-        assert!(
-            !text.contains('\0'),
-            "a NUL byte in a spawn argument is not ported (Node's ERR_INVALID_ARG_VALUE)"
-        );
+    if let Some(refused) = refused_arguments(&options) {
+        return Err(refused);
     }
     sys_reset_sigchld();
     let mut argv = vec![options.file.clone()];
@@ -310,6 +303,55 @@ pub fn spawn(options: Spawn) -> Result<ChildProcess, W> {
         *slot.borrow_mut() = Some(socket);
     }
     Ok(child)
+}
+
+/// What `normalizeSpawnArguments` throws before anything starts, in its
+/// order: a NUL in `file` (`validateArgumentNullCheck`), an empty `file`, a
+/// NUL in `args[i]`, in `options.cwd` (`getValidatedPath`), then per
+/// environment pair a NUL in its key, then in its value (both named
+/// `options.env['<key>']`). Each is Node's `ERR_INVALID_ARG_VALUE`
+/// `TypeError`. The texts are UTF-8 here, so a lone surrogate the caller's
+/// string held shows as U+FFFD in the message where Node shows `\ud800`
+/// (no Git output reaches it: Git's output is decoded as UTF-8 first).
+fn refused_arguments(options: &Spawn) -> Option<W> {
+    use super::fs::{inspect_string, invalid_arg_value};
+    const NO_NUL: &str = "must be a string without null bytes";
+    let nul = |name: &str, value: &str, reason: &str| {
+        value
+            .contains('\0')
+            .then(|| invalid_arg_value(name, &inspect_string(value), reason))
+    };
+    if let Some(refused) = nul("file", &options.file, NO_NUL) {
+        return Some(refused);
+    }
+    if options.file.is_empty() {
+        return Some(invalid_arg_value(
+            "file",
+            &inspect_string(""),
+            "cannot be empty",
+        ));
+    }
+    for (index, arg) in options.args.iter().enumerate() {
+        if let Some(refused) = nul(&format!("args[{index}]"), arg, NO_NUL) {
+            return Some(refused);
+        }
+    }
+    if let Some(cwd) = &options.cwd
+        && let Some(refused) = nul(
+            "options.cwd",
+            cwd,
+            "must be a string, Uint8Array, or URL without null bytes",
+        )
+    {
+        return Some(refused);
+    }
+    for (key, value) in &options.env {
+        let name = format!("options.env['{key}']");
+        if let Some(refused) = nul(&name, key, NO_NUL).or_else(|| nul(&name, value, NO_NUL)) {
+            return Some(refused);
+        }
+    }
+    None
 }
 
 /// `SIGCHLD` at its default, once per process (the design's Q5).
@@ -491,6 +533,11 @@ impl ChildProcess {
                 }
             },
         }
+    }
+
+    /// Whether two handles are the same child (`a === b`).
+    pub fn same(&self, other: &ChildProcess) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
     }
 
     /// `child.pid` (`None` when the spawn failed).

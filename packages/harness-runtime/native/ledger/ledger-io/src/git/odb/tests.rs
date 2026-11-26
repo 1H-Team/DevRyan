@@ -1021,6 +1021,124 @@ fn a_miss_lists_the_packs_again_and_a_vanished_pack_stays_readable() {
     );
 }
 
+/// A pack's `.pack` file dated `seconds` after the epoch (Git orders its
+/// list by that, newest first).
+fn date_pack(repo: &Scratch, name: &str, seconds: u64) {
+    let file = std::fs::File::options()
+        .write(true)
+        .open(format!("{}/objects/pack/pack-{name}.pack", repo.0))
+        .expect("pack");
+    file.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds))
+        .expect("mtime");
+}
+
+fn delete_pack(repo: &Scratch, name: &str) {
+    for extension in ["pack", "idx"] {
+        std::fs::remove_file(format!("{}/objects/pack/pack-{name}.{extension}", repo.0))
+            .expect("delete");
+    }
+}
+
+/// The L3b review's S5: Git never drops a pack it listed. After `repack -a
+/// -d` deleted a pack the reader has read from, a later miss lists the
+/// packs again and the reader still answers from the deleted pack (its
+/// index mapped, its data open), as a long-lived `cat-file` does.
+#[test]
+fn a_deleted_pack_the_reader_read_from_still_answers_after_a_rescan() {
+    let format = ObjectFormat::Sha1;
+    let repo = Scratch::repo("kept-pack", format);
+    let mut builder = PackBuilder::new(format);
+    let (first, _) = builder.object(Kind::Blob, b"read before the repack");
+    let (second, _) = builder.object(Kind::Blob, b"read only after it");
+    builder.install(&repo, "old");
+    let odb = open(&repo);
+    assert!(odb.read(&first).expect("answered").is_some());
+    delete_pack(&repo, "old");
+    let mut later = PackBuilder::new(format);
+    let (fresh, _) = later.object(Kind::Blob, b"in the new pack");
+    later.install(&repo, "new");
+    // A miss: the packs are listed again; the deleted one stays.
+    assert_eq!(
+        odb.read(&fresh).expect("answered").expect("found").data,
+        b"in the new pack"
+    );
+    assert_eq!(
+        odb.read(&second)
+            .expect("answered")
+            .expect("still read from the deleted pack")
+            .data,
+        b"read only after it"
+    );
+    // A fresh reader (the next `cat-file`) no longer sees it.
+    assert_eq!(open(&repo).read(&second).expect("answered"), None);
+}
+
+/// Git maps a pack's index when a lookup reaches it and opens its data
+/// only when the index answers; a deleted pack whose data was never opened
+/// fails to open and its objects are absent, and one whose index was never
+/// mapped is dropped. Lookups go newest pack first, a hit moving its pack
+/// to the front (`packed_git_mru`).
+#[test]
+fn a_deleted_pack_answers_only_as_far_as_git_had_it_open() {
+    let format = ObjectFormat::Sha1;
+    let repo = Scratch::repo("open-state", format);
+    let mut older = PackBuilder::new(format);
+    let (in_older, _) = older.object(Kind::Blob, b"only in the older pack");
+    older.install(&repo, "older");
+    date_pack(&repo, "older", 1_000);
+    let mut newer = PackBuilder::new(format);
+    let (in_newer, _) = newer.object(Kind::Blob, b"only in the newer pack");
+    newer.install(&repo, "newer");
+    date_pack(&repo, "newer", 2_000);
+    let odb = open(&repo);
+    // The newer pack answers first: the older one's index is not reached.
+    assert!(odb.read(&in_newer).expect("answered").is_some());
+    delete_pack(&repo, "older");
+    // Its index was never mapped and now cannot be: absent, and dropped
+    // from the list by the miss's listing.
+    assert_eq!(odb.read(&in_older).expect("answered"), None);
+    // Mapped, then the pack data deleted before it was ever opened.
+    let repo = Scratch::repo("index-only", format);
+    let mut first = PackBuilder::new(format);
+    let (in_first, _) = first.object(Kind::Blob, b"in the first pack");
+    first.install(&repo, "first");
+    date_pack(&repo, "first", 1_000);
+    let odb = open(&repo);
+    let absent = format.object_id(Kind::Blob, b"nowhere");
+    // A miss reaches (maps) every index.
+    assert_eq!(odb.read(&absent).expect("answered"), None);
+    std::fs::remove_file(format!("{}/objects/pack/pack-first.pack", repo.0)).expect("delete");
+    // The index answers, the data's open fails: absent, as Git prints it.
+    assert_eq!(odb.read(&in_first).expect("answered"), None);
+}
+
+/// A FIFO (or anything but a regular file) at an object's or a file's path
+/// is never opened in a way that blocks: the reader asks Git at once.
+#[test]
+fn a_fifo_in_the_repository_asks_git_without_blocking() {
+    let format = ObjectFormat::Sha1;
+    let repo = Scratch::repo("fifo", format);
+    let oid = format.object_id(Kind::Blob, b"x");
+    let hex = oid.hex();
+    std::fs::create_dir_all(format!("{}/objects/{}", repo.0, &hex[..2])).expect("fan-out");
+    let fifo = format!("{}/objects/{}/{}", repo.0, &hex[..2], &hex[2..]);
+    let made = std::process::Command::new("mkfifo")
+        .arg(&fifo)
+        .status()
+        .expect("mkfifo");
+    assert!(made.success());
+    let odb = open(&repo);
+    assert_eq!(reason(odb.read(&oid)), Reason::Io);
+    std::fs::remove_file(&fifo).expect("remove");
+    std::fs::remove_file(format!("{}/config", repo.0)).expect("config");
+    let made = std::process::Command::new("mkfifo")
+        .arg(format!("{}/config", repo.0))
+        .status()
+        .expect("mkfifo");
+    assert!(made.success());
+    assert!(Odb::open(&repo.0, OdbOptions::default()).is_err());
+}
+
 #[test]
 fn loose_objects_are_refused_as_git_refuses_them() {
     let format = ObjectFormat::Sha1;

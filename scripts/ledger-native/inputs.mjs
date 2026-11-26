@@ -29,6 +29,7 @@ export const LEDGER_NATIVE_INPUTS = Object.freeze([
   'packages/harness-runtime/lib/execution-admission.js',
   'packages/harness-runtime/lib/execution-io-pool.js',
   'packages/harness-runtime/lib/host-stall-clock.js',
+  'packages/harness-runtime/lib/object-durability.js',
   'packages/harness-runtime/lib/session-changes-git.js',
   'packages/harness-runtime/lib/session-changes-store.js',
   'packages/harness-runtime/lib/session-changes-trees.js',

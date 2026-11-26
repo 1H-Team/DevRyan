@@ -327,39 +327,68 @@ fn validated_bytes(name: &str, bytes: &[u8]) -> Result<(), W> {
     Err(null_bytes(name, &inspect_buffer(bytes)))
 }
 
-/// `ERR_INVALID_ARG_VALUE(name, value, 'must be … without null bytes')`:
-/// its message cuts `inspect(value)` at 128 characters (and adds `...`).
+/// `ERR_INVALID_ARG_VALUE(name, value, 'must be … without null bytes')`.
 fn null_bytes(name: &str, inspected: &str) -> W {
+    invalid_arg_value(
+        name,
+        inspected,
+        "must be a string, Uint8Array, or URL without null bytes",
+    )
+}
+
+/// `new ERR_INVALID_ARG_VALUE(name, value, reason)` from `inspect(value)`:
+/// a `TypeError` with `code`, the message `The argument|property '<name>'
+/// <reason>. Received <inspected>`, the inspection cut at 128 characters
+/// (and `...` added); "property" when the name has a `.`.
+pub(crate) fn invalid_arg_value(name: &str, inspected: &str, reason: &str) -> W {
     let units: Vec<u16> = inspected.encode_utf16().collect();
     let shown = if units.len() > 128 {
         format!("{}...", String::from_utf16_lossy(&units[..128]))
     } else {
         inspected.to_owned()
     };
+    let kind = if name.contains('.') {
+        "property"
+    } else {
+        "argument"
+    };
     let mut error = JsError::new(
         "TypeError",
-        &format!(
-            "The argument '{name}' must be a string, Uint8Array, or URL without null bytes. Received {shown}"
-        ),
+        &format!("The {kind} '{name}' {reason}. Received {shown}"),
     );
     error.set_field("code", W::String(JsStr::from("ERR_INVALID_ARG_VALUE")));
     W::Error(Rc::new(error))
 }
 
-/// `util.inspect` of a string (`formatPrimitive`, `strEscape`): a string
-/// longer than 124 characters is shown line by line (`'a\n' +\n  'b'`);
-/// each piece is quoted on its own.
-fn inspect_string(value: &str) -> String {
-    let length = value.encode_utf16().count();
-    // `value.length > kMinLineWidth (16) && value.length > breakLength (128) - 4`.
-    if length > 128 - 4 {
+/// `util.inspect` of a string (`formatPrimitive`, `strEscape`): past
+/// `maxStringLength` (10,000 characters) cut, with `... <n> more
+/// character(s)` after it; a string longer than 76 characters is shown
+/// line by line (`'a\n' +\n  'b'`); each piece is quoted on its own.
+pub(crate) fn inspect_string(value: &str) -> String {
+    let units: Vec<u16> = value.encode_utf16().collect();
+    let (value, trailer) = if units.len() > 10_000 {
+        let remaining = units.len() - 10_000;
+        (
+            String::from_utf16_lossy(&units[..10_000]),
+            format!(
+                "... {remaining} more character{}",
+                if remaining > 1 { "s" } else { "" }
+            ),
+        )
+    } else {
+        (value.to_owned(), String::new())
+    };
+    let length = units.len().min(10_000);
+    // `value.length > kMinLineWidth (16) && value.length > breakLength (80) - 4`.
+    if length > 80 - 4 {
         return value
             .split_inclusive('\n')
             .map(quoted)
             .collect::<Vec<_>>()
-            .join(" +\n  ");
+            .join(" +\n  ")
+            + &trailer;
     }
-    quoted(value)
+    quoted(&value) + &trailer
 }
 
 /// `strEscape(str)`: single quotes; double quotes for a string with a `'`
@@ -994,6 +1023,7 @@ impl FileHandle {
 
     /// `filehandle.sync()` (`F_FULLFSYNC`'s chain on macOS).
     pub fn sync(&self) -> Promise<(), W> {
+        crate::seams::sync_called();
         self.call("fsync", move |fd| Answer::Io(io(move || lio::fsync(fd))))
     }
 
