@@ -182,4 +182,198 @@ export const REQUEST_FORMS = defineScenario({
   waivers: Object.fromEntries(['put-charset-latin1', 'put-over-limit'].map((id) => [id, EDGE_WAIVER])),
 });
 
-export const SCENARIOS = Object.freeze([READS_AND_WRITES, WRITE_LOCK, RESTARTS, REQUEST_FORMS]);
+// What happens after the group (a method no route of it registers): the server's later layers answer it, which
+// the group host's tail stand-in stands for. Never sent to a candidate; compared reference against reference.
+const TAIL_WAIVER = { outcome: 'inconclusive', checks: ['tail-exchange'], reason: 'a tail exchange: a method no route of the group registers, answered by what the server composes after the group (the group host\'s stand-in); compared reference against reference only, and no candidate is sent it' };
+
+/** The four routes as [step name, method, path after the collection, extra request fields]. */
+const ROUTE_SPECS = Object.freeze([
+  ['get', 'GET', () => '', () => ({})],
+  ['put', 'PUT', (id) => `/${id}`, (v, name) => ({ headers: JSON_TYPE, body: jsonBody({ text: v.text(`text.${name}-spelling`, 'never the group\'s') }) })],
+  ['delete', 'DELETE', (id) => `/${id}`, () => ({})],
+  ['delete-all', 'DELETE', () => '', () => ({})],
+]);
+
+/**
+ * The forms the census (coverage-census.mjs) found no row for (BH5): every route in the routing forms (a
+ * trailing slash, another letter case, a query string, a percent-encoded id), the conditional forms of the GET
+ * route and of the writes, the body forms of the PUT route not covered elsewhere (no Content-Type, a form
+ * body, deflate, brotli, an encoding the parser does not know), a malformed JSON body on the routes that do not
+ * read one, the remote principal on the DELETE routes, and the methods no route registers (the tail).
+ */
+export const ROUTES_AND_FORMS = defineScenario({
+  id: 'magic-prompts.routes-and-forms', group: 'magic-prompts',
+  description: 'the routing, conditional and body forms of every route the other scenarios leave out, the remote principal on the DELETE routes and the methods no route registers',
+  principals,
+  fixture: (root, v) => { fs.writeFileSync(path.join(root, 'magic-prompts.json'), promptFile({ 'git.pr.generate.visible': v.text('text.seeded', 'seeded') })); },
+  steps: (v) => {
+    const id = v.id('id.visible', 'git.pr.generate.visible');
+    const other = v.id('id.instructions', 'git.pr.generate.instructions');
+    // The state the fixture writes, as GET answers it (the file is written with indentation, the answer without).
+    const current = v.token('etag.seeded', weakEtag(JSON.stringify({ version: 1, overrides: { [id]: 'seeded' } })));
+    const body = (name, text) => `{"text":"${v.text(name, text)}"}`;
+    const putAs = (target, contentType, bytes, extra = []) => ({ method: 'PUT', target, headers: [...(contentType ? [['Content-Type', contentType]] : []), ...extra], body: rawBody(bytes), principal: 'local-admin' });
+    const malformed = (spec) => ({ ...spec, headers: [...(spec.headers ?? []), ['Content-Type', 'application/json']], body: rawBody('{"text":'), edge: true });
+    const encoded = id.split('.').join('%2E');
+    const slashed = id.replace('.pr.', '%2Fpr.');
+    return [
+      // GET: conditional forms, compression asked for, a malformed body it never reads.
+      step.exchange('get-if-none-match-other', get('local-admin', { headers: [['If-None-Match', v.token('etag.other', 'W/"1c-0000000000000000000000000000"')]] })),
+      step.exchange('get-if-none-match-no-cache', get('local-admin', { headers: [['If-None-Match', current], ['Cache-Control', 'no-cache']] })),
+      step.exchange('get-if-modified-since', get('local-admin', { headers: [['If-Modified-Since', v.token('date.modified-since', 'Tue, 01 Jan 2030 00:00:00 GMT')]] })),
+      step.exchange('get-accept-gzip', get('local-admin', { headers: [['Accept-Encoding', 'gzip']] })),
+      step.exchange('get-malformed-body', malformed(get())),
+      // PUT: the routing forms (two letter cases: the shared parser picks its limit by the path as written), the conditional
+      // form, and the body forms the other scenarios leave out.
+      step.exchange('put-trailing-slash', putAs(`${BASE}/${id}/`, 'application/json', body('text.trailing', 'with a trailing slash'))),
+      step.exchange('put-other-case-api', putAs(`/api/Magic-Prompts/${id}`, 'application/json', body('text.case-api', 'another case under /api'))),
+      step.exchange('put-other-case-all', putAs(`/API/MAGIC-PROMPTS/${id}`, 'application/json', body('text.case-all', 'another case everywhere'))),
+      step.exchange('put-query', putAs(`${BASE}/${id}?x=1`, 'application/json', body('text.query', 'with a query'))),
+      step.exchange('put-percent-encoded', putAs(`${BASE}/${encoded}`, 'application/json', body('text.encoded', 'a percent-encoded id'))),
+      // %2F decodes into a slash inside the id (the group refuses it as an id); a % without two hex digits never reaches the group.
+      step.exchange('put-percent-slash', putAs(`${BASE}/${slashed}`, 'application/json', body('text.encoded-slash', 'an id holding a slash'))),
+      step.exchange('put-percent-malformed', { ...putAs(`${BASE}/%zz`, 'application/json', body('text.malformed-escape', 'an id the router cannot decode')), edge: true }),
+      step.exchange('put-if-none-match', putAs(`${BASE}/${id}`, 'application/json', body('text.conditional', 'a conditional write'), [['If-None-Match', '*']])),
+      step.exchange('put-no-content-type', putAs(`${BASE}/${id}`, null, body('text.untyped', 'no content type'))),
+      step.exchange('put-urlencoded', putAs(`${BASE}/${other}`, 'application/x-www-form-urlencoded', `text=${encodeURIComponent(v.text('text.form', 'from a form'))}`)),
+      step.exchange('put-urlencoded-nested', putAs(`${BASE}/${other}`, 'application/x-www-form-urlencoded', `text[${v.text('text.form-key', 'nested')}]=${v.text('text.form-value', 'value')}`)),
+      step.exchange('put-deflate', putAs(`${BASE}/${other}`, 'application/json', zlib.deflateSync(Buffer.from(body('text.deflate', 'inflated from deflate'))), [['Content-Encoding', 'deflate']])),
+      step.exchange('put-brotli', putAs(`${BASE}/${other}`, 'application/json', zlib.brotliCompressSync(Buffer.from(body('text.brotli', 'decompressed from brotli'))), [['Content-Encoding', 'br']])),
+      step.exchange('put-unknown-encoding', { ...putAs(`${BASE}/${other}`, 'application/json', body('text.compress', 'an encoding nobody reads'), [['Content-Encoding', 'compress']]), edge: true }),
+      step.exchange('get-after-puts', get()),
+      // DELETE of one id.
+      step.exchange('delete-trailing-slash', { ...del(other), target: `${BASE}/${other}/` }),
+      step.exchange('delete-other-case', { ...del(id), target: `/api/Magic-Prompts/${id}` }),
+      step.exchange('delete-query', { ...del(id), target: `${BASE}/${id}?x=1` }),
+      step.exchange('delete-percent-encoded', { ...del(id), target: `${BASE}/${encoded}` }),
+      step.exchange('delete-percent-slash', { ...del(id), target: `${BASE}/${slashed}` }),
+      step.exchange('delete-percent-malformed', { ...del(id), target: `${BASE}/%zz`, edge: true }),
+      step.exchange('delete-if-none-match', { ...del(id), headers: [['If-None-Match', '*']] }),
+      step.exchange('delete-malformed-body', malformed(del(id))),
+      step.exchange('delete-remote', { ...del(id, 'remote-unauthenticated'), edge: true }),
+      // DELETE of all.
+      step.exchange('delete-all-trailing-slash', { ...del(null), target: `${BASE}/` }),
+      step.exchange('delete-all-other-case', { ...del(null), target: '/API/Magic-Prompts' }),
+      step.exchange('delete-all-query', { ...del(null), target: `${BASE}?x=1` }),
+      step.exchange('delete-all-if-none-match', { ...del(null), headers: [['If-None-Match', '*']] }),
+      step.exchange('delete-all-malformed-body', malformed(del(null))),
+      step.exchange('delete-all-remote', { ...del(null, 'remote-unauthenticated'), edge: true }),
+      // Methods no route registers, on both paths: the tail.
+      step.exchange('options-collection', { method: 'OPTIONS', target: BASE, principal: 'local-admin', tail: true }),
+      step.exchange('post-collection', { method: 'POST', target: BASE, headers: JSON_TYPE, body: jsonBody({ text: v.text('text.post', 'posted') }), principal: 'local-admin', tail: true }),
+      step.exchange('options-item', { method: 'OPTIONS', target: `${BASE}/${id}`, principal: 'local-admin', tail: true }),
+      step.exchange('patch-item', { method: 'PATCH', target: `${BASE}/${id}`, headers: JSON_TYPE, body: jsonBody({ text: v.text('text.patch', 'patched') }), principal: 'local-admin', tail: true }),
+      // Spellings only a router that decodes or normalises before matching would give the group: a percent-encoded literal segment
+      // and an empty segment. Express routes neither to it (the tail answers), and a port must not either.
+      ...ROUTE_SPECS.flatMap(([name, method, suffix, extra]) => [
+        step.exchange(`${name}-literal-encoded`, { method, target: `/api/magic%2Dprompts${suffix(id)}`, principal: 'local-admin', ...extra(v, name), tail: true }),
+        step.exchange(`${name}-empty-segment`, { method, target: `//api/magic-prompts${suffix(id)}`, principal: 'local-admin', ...extra(v, name), tail: true }),
+      ]),
+      step.exchange('get-after', get()),
+    ];
+  },
+  waivers: Object.fromEntries([
+    ...['get-malformed-body', 'put-unknown-encoding', 'put-percent-malformed', 'delete-malformed-body', 'delete-percent-malformed', 'delete-remote', 'delete-all-malformed-body', 'delete-all-remote'].map((stepId) => [stepId, EDGE_WAIVER]),
+    ...['options-collection', 'post-collection', 'options-item', 'patch-item', ...ROUTE_SPECS.flatMap(([name]) => [`${name}-literal-encoded`, `${name}-empty-segment`])].map((stepId) => [stepId, TAIL_WAIVER]),
+  ]),
+});
+
+/**
+ * The data file in the states the runtime reads but never writes (BH5: branches of sanitizeOverrides and of the
+ * read's error handling the census found no row for), and the data file's path taken by a directory, so that
+ * every write fails with Node's EISDIR text (the 500 answers of PUT and of both DELETEs); then by a file the arm
+ * may not write (EACCES) and by a link to itself (ELOOP), each with its own text (CENSUS_ERRORS below).
+ */
+export const FILE_STATES = defineScenario({
+  id: 'magic-prompts.file-states', group: 'magic-prompts',
+  description: 'a data file without overrides, with overrides that are null, a string or an array, with keys and entries the read filters out, a directory where the data file belongs, a data file the arm cannot write, and a data file that is a link to itself',
+  principals,
+  fixture: () => {},
+  steps: (v) => {
+    const id = v.id('id.visible', 'git.pr.generate.visible');
+    const write = (stepId, text) => step.external(stepId, { op: 'write', path: 'magic-prompts.json', data: Buffer.from(text) });
+    return [
+      write('file-no-overrides', `{"version":1,"${v.text('text.other-key', 'other')}":true}`),
+      step.exchange('get-no-overrides', get()),
+      write('file-null', 'null'),
+      step.exchange('get-null-file', get()),
+      write('file-overrides-string', `{"version":1,"overrides":"${v.text('text.overrides-string', 'not an object')}"}`),
+      step.exchange('get-overrides-string', get()),
+      write('file-overrides-array', `{"version":1,"overrides":["${v.text('text.overrides-array', 'an array')}"]}`),
+      step.exchange('get-overrides-array', get()),
+      write('file-filtered', JSON.stringify({ version: 1, overrides: { [v.id('id.bad-key', 'Not A Valid Id')]: 'dropped', [v.id('id.number-entry', 'git.number.visible')]: 5, 'git.commit.plan.visible': v.text('text.deprecated', 'deprecated, dropped'), [id]: v.text('text.kept', 'kept') } }, null, 2)),
+      step.exchange('get-filtered', get()),
+      step.exchange('put-over-filtered', put(v.id('id.instructions', 'git.pr.generate.instructions'), jsonBody({ text: v.text('text.added', 'added') }))),
+      step.external('file-removed', { op: 'delete', path: 'magic-prompts.json' }),
+      step.external('file-is-directory', { op: 'mkdir', path: 'magic-prompts.json' }),
+      step.exchange('get-directory', get()),
+      step.exchange('put-directory', put(id, jsonBody({ text: v.text('text.directory', 'cannot be written') }))),
+      step.exchange('delete-directory', del(id)),
+      step.exchange('delete-all-directory', del(null)),
+      step.exchange('put-invalid-directory', put(v.id('id.invalid', 'Not.Valid'), jsonBody({ text: v.text('text.invalid', 'refused before the write') }))),
+      step.external('directory-removed', { op: 'delete', path: 'magic-prompts.json' }),
+      // A data file the arm may read but not write: every write answers Node's EACCES text (fix round 1 of BH5, S6). Written with
+      // its mode in one step (the write op chmods it): a chmod step alone changes the file's mode and not its mtime, which rule W's
+      // mtime window takes for a write made earlier (the mtime falls before the step that changed the file).
+      step.external('file-read-only', { op: 'write', path: 'magic-prompts.json', data: Buffer.from(promptFile({ [id]: v.text('text.read-only', 'read only') })), mode: 0o444 }),
+      step.exchange('get-read-only', get()),
+      step.exchange('put-read-only', put(id, jsonBody({ text: v.text('text.denied', 'denied by the file mode') }))),
+      step.exchange('delete-read-only', del(id)),
+      step.exchange('delete-all-read-only', del(null)),
+      step.external('read-only-removed', { op: 'delete', path: 'magic-prompts.json' }),
+      // The data file a link to itself: the read fails (and answers empty), every write answers Node's ELOOP text.
+      step.external('file-link-loop', { op: 'symlink', path: 'magic-prompts.json', target: 'magic-prompts.json' }),
+      step.exchange('get-link-loop', get()),
+      step.exchange('put-link-loop', put(id, jsonBody({ text: v.text('text.looped', 'a write through a loop') }))),
+      step.exchange('delete-link-loop', del(id)),
+      step.exchange('delete-all-link-loop', del(null)),
+      step.external('link-loop-removed', { op: 'delete', path: 'magic-prompts.json' }),
+      step.exchange('get-after', get()),
+    ];
+  },
+});
+
+export const SCENARIOS = Object.freeze([READS_AND_WRITES, WRITE_LOCK, RESTARTS, REQUEST_FORMS, ROUTES_AND_FORMS, FILE_STATES]);
+
+const GET_HANDLER = 'routes.js:registerMagicPromptRoutes>GET /api/magic-prompts handler';
+const PUT_HANDLER = 'routes.js:registerMagicPromptRoutes>PUT /api/magic-prompts/:id handler';
+const DELETE_HANDLER = 'routes.js:registerMagicPromptRoutes>DELETE /api/magic-prompts/:id handler';
+const RESET_HANDLER = 'routes.js:registerMagicPromptRoutes>DELETE /api/magic-prompts handler';
+const RUNTIME = 'runtime.js:createMagicPromptRuntime';
+const NEVER_THROWS = 'unreachable: readPromptState (runtime.js) catches every error and answers an empty state, so nothing in the GET handler\'s try throws';
+const ID_IS_STRING = 'unreachable: Express sets a named route parameter to the decoded path segment, a string, whenever the route matches';
+const ERRORS_ARE_ERRORS = 'unreachable: everything that reaches this catch is an Error (the runtime throws Error objects; fs.promises rejects with Error objects)';
+const TRIMMED_ID = 'unreachable: both routes pass req.params.id, a string, so the runtime\'s typeof check is always true';
+/** The census waivers (coverage-census.mjs): items of the group no scenario can exercise, each with why. */
+export const CENSUS_WAIVERS = Object.freeze({
+  // Managed principals: the reference cannot produce them (the same reason as the rows' principal-unavailable waivers).
+  ...Object.fromEntries(['GET /api/magic-prompts', 'PUT /api/magic-prompts/:id', 'DELETE /api/magic-prompts/:id', 'DELETE /api/magic-prompts'].flatMap((route) => ['managed-admin', 'managed-developer'].map((principalClass) => [`principal ${principalClass} ${route}`, { reason: MANAGED_WAIVER.reason }]))),
+  [`${GET_HANDLER}:catch catch (error)`]: { reason: NEVER_THROWS },
+  [`${GET_HANDLER}:answer res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to read ma…~5d541ad5`]: { reason: NEVER_THROWS },
+  [`${GET_HANDLER}:true error instanceof Error ? error.message`]: { reason: NEVER_THROWS },
+  [`${GET_HANDLER}:false error instanceof Error : 'Failed to read magic prompts'`]: { reason: NEVER_THROWS },
+  [`${PUT_HANDLER}:false typeof req.params?.id === 'string' : ''`]: { reason: ID_IS_STRING },
+  [`${PUT_HANDLER}:false error instanceof Error : String(error)`]: { reason: ERRORS_ARE_ERRORS },
+  [`${DELETE_HANDLER}:false typeof req.params?.id === 'string' : ''`]: { reason: ID_IS_STRING },
+  [`${DELETE_HANDLER}:false error instanceof Error : String(error)`]: { reason: ERRORS_ARE_ERRORS },
+  [`${RESET_HANDLER}:false error instanceof Error : String(error)`]: { reason: ERRORS_ARE_ERRORS },
+  [`${RESET_HANDLER}:reached 'Failed to reset magic prompts' (operand 2 of || chain message || 'Failed to reset magic prompts')`]: { reason: 'unreachable: the errors that reach this catch come from fs.promises (mkdir, writeFile), whose messages are never empty' },
+  ['runtime.js:isVisiblePromptID:decides typeof id === \'string\' (operand 1 of && chain typeof id === \'string\' && id.endsWith(\'.visible\'))']: { reason: 'unreachable: its one caller, setOverride, passes the trimmed id, a string' },
+  [`${RUNTIME}>readPromptState:decides error (operand 1 of && chain error && typeof error === 'object' && error.code …~81461a19)`]: { reason: 'unreachable: only fs.promises.readFile and JSON.parse run in the try, and both throw Error objects, never a falsy value' },
+  [`${RUNTIME}>readPromptState:decides typeof error === 'object' (operand 2 of && chain error && typeof error === 'object' && error.code …~81461a19)`]: { reason: 'unreachable: only fs.promises.readFile and JSON.parse run in the try, and both throw Error objects' },
+  [`${RUNTIME}>setOverride:false typeof id === 'string' : ''`]: { reason: TRIMMED_ID },
+  [`${RUNTIME}>setOverride:then if (typeof text !== 'string')`]: { reason: 'unreachable: the PUT route answers 400 before it calls setOverride unless text is a string' },
+  [`${RUNTIME}>setOverride:throw new Error('Prompt text must be a string')`]: { reason: 'unreachable: the PUT route answers 400 before it calls setOverride unless text is a string' },
+  [`${RUNTIME}>resetOverride:false typeof id === 'string' : ''`]: { reason: TRIMMED_ID },
+});
+
+/**
+ * The errors each write of the group can meet in a state of its data root (census `error` items: the call's block
+ * ran in an exchange whose answer holds Node's `<code>:` message). The file-states scenario makes each state:
+ * a directory at the data file's path (EISDIR), a file the arm may not write (EACCES), a link to itself (ELOOP).
+ * Not reachable from a data-root state: ENOENT (mkdir makes the directory first), ENOTDIR (the data root is a
+ * directory the harness owns), ENOSPC and EROFS (the machine, not the data root).
+ */
+export const CENSUS_ERRORS = Object.freeze([
+  Object.freeze({ call: `${RUNTIME}>writePromptState:call fsPromises.writeFile(filePath, JSON.stringify(state, null, 2), 'utf8')`, codes: Object.freeze(['EISDIR', 'EACCES', 'ELOOP']), why: 'a directory, a file the arm may not write, or a link to itself at the data file\'s path' }),
+]);

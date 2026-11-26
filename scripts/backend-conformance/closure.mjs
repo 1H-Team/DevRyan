@@ -13,7 +13,8 @@
 //   4. with a candidate: a candidate fault or a difference: failed; another problem or a part not
 //      compared: inconclusive; else passed. Without a candidate, J is the one judged: passed.
 //   An edge exchange (the edge answers it; never sent to a candidate) that is stable ends
-//   inconclusive with the check `edge-exchange`: nothing of the group's was judged on it.
+//   inconclusive with the check `edge-exchange`: nothing of the group's was judged on it; one the
+//   tail answers (what the server composes after the group) with `tail-exchange`.
 // What the judged arm did is never hidden by an earlier class (design §2.2 "never as a silent pass"):
 // a candidate fault or a difference of the candidate fails the row whatever 1 to 3 said (the earlier
 // class stays in the reason), and, on a row 1 to 3 left inconclusive, a fault of J or R against J
@@ -23,7 +24,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { REFERENCE_EDGE_FILES, REFERENCE_EDGE_STARTUP_FILES, candidateArm, referenceArm } from './arms.mjs';
-import { allOf, compareRecordings, differenceLine } from './compare.mjs';
+import { allOf, compareRecordings, dateLagOf, differenceLine } from './compare.mjs';
 import { CANDIDATE_FAULTS, UNRECORDABLE, recordingJson, runScenario } from './driver.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -58,8 +59,10 @@ const problemText = (label, step) => problemsOf(step).map((entry) => `${label} $
  */
 export function closureRows({ scenario, reference, second, js, candidate = null, declarations = {} }) {
   const stability = compareRecordings({ reference, other: second, mode: 'stability', declarations });
-  const closure = compareRecordings({ reference, other: js, mode: 'candidate', declarations });
-  const judged = candidate ? compareRecordings({ reference, other: candidate, mode: 'candidate', declarations }) : null;
+  // A candidate's Date is bounded by the lag Node's Date cache showed on this run's references (R and R'), measured, never assumed.
+  const dateLagMs = Math.max(dateLagOf(reference), dateLagOf(second));
+  const closure = compareRecordings({ reference, other: js, mode: 'candidate', declarations, dateLagMs });
+  const judged = candidate ? compareRecordings({ reference, other: candidate, mode: 'candidate', declarations, dateLagMs }) : null;
   const steps = (recording) => new Map((recording.steps ?? []).map((step) => [step.id, step]));
   const [stepsR, stepsR2, stepsJ, stepsC] = [reference, second, js, candidate].map((recording) => (recording ? steps(recording) : null));
   const rows = [];
@@ -91,6 +94,8 @@ export function closureRows({ scenario, reference, second, js, candidate = null,
       set('unstable', ['unstable'], ['the reference against a second reference on a fresh data root differs'], s.differences, s.inconclusive);
     } else if (s.inconclusive.length) {
       set('inconclusive', ['stability-incomplete'], ['the reference against a second reference could not be compared in full'], [], s.inconclusive);
+    } else if (at(stability, step.id).edge && at(stability, step.id).answeredBy === 'tail') {
+      set('inconclusive', ['tail-exchange'], ['a tail exchange: what the server composes after the group answers it (the group host\'s stand-in; stable: R against R\' equal), it is never sent to a candidate, and nothing of the group\'s is judged on it']);
     } else if (at(stability, step.id).edge) {
       set('inconclusive', ['edge-exchange'], ['an edge exchange: the edge answers it (stable: R against R\' equal), it is never sent to a candidate, and nothing of the group\'s is judged on it']);
     } else if (checksOf(j).length) {
@@ -129,12 +134,14 @@ export function closureRows({ scenario, reference, second, js, candidate = null,
  * Runs `scenario` on R, R' and J (and C when `candidateCommand` is given)
  * inside `run`, writes each recording to `recordings/<scenario>/<arm>.json`,
  * and returns `{ rows, recordings, comparisons }`. The arms of one scenario
- * run at the same time, each on its own data root and HOME.
+ * run at the same time, each on its own data root and HOME. `coverage`: R
+ * takes the group's block coverage (the census reads it).
  */
-export async function runClosure({ run, scenario, name, group, candidateCommand = null, candidateLabel = 'candidate', handlers = null, limits, env = process.env, recordings: given = {} }) {
+export async function runClosure({ run, scenario, name, group, candidateCommand = null, candidateLabel = 'candidate', handlers = null, limits, env = process.env, recordings: given = {}, coverage = true }) {
   const label = (arm) => `scenarios/${scenario.id}/${arm}`;
   const arms = {
-    reference: () => referenceArm({ run, name, group, label: label('reference'), env }),
+    // R takes the group's block coverage for the census (R' does not: R against R' also shows that taking it changed nothing).
+    reference: () => referenceArm({ run, name, group, label: label('reference'), env, coverage }),
     second: () => referenceArm({ run, name, group, label: label('reference-2'), env }),
     js: () => jsArm({ name, label: label(handlers ? 'js-planted' : 'js'), handlers, env }),
     ...(candidateCommand ? { candidate: () => candidateArm({ command: candidateCommand, label: label(candidateLabel), env, principals: JUDGED_PRINCIPALS }) } : {}),

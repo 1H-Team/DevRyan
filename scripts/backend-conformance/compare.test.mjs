@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { describe, test } from 'node:test';
 import {
-  RULES, allOf, compareRecordings, createPairing, createSubstitution, dateInWindow, deepDifference, labelTimes, writersOf,
+  RULES, allOf, compareRecordings, createPairing, createSubstitution, dateInWindow, dateLagOf, deepDifference, labelTimes, weakEtagOf, writersOf,
 } from './compare.mjs';
 
 // ------------------------------------------------------------------ builders
@@ -90,7 +90,7 @@ function recording(side, armName, steps, { start = [], exit = null, extraBlobs =
   let t = arm.t;
   for (const [id, spec] of steps) {
     if (spec.kind && spec.kind !== 'exchange') { out.steps.push({ id, problems: [], exchanges: [], ...spec }); continue; }
-    const record = exchange(side, arm, typeof spec.body === 'function' ? { ...spec, body: spec.body(arm) } : spec, t);
+    const record = exchange(side, arm, { ...spec, ...(typeof spec.body === 'function' ? { body: spec.body(arm) } : {}), ...(typeof spec.group === 'function' ? { group: spec.group(arm) } : {}) }, t);
     const s1 = spec.s1 ? tree(t + 10, spec.s1(arm, t)) : tree(t + 10, []);
     const s2 = spec.s2 ? tree(t + 20, spec.s2(arm, t)) : { ...s1, takenAt: { start: t + 20, end: t + 21 } };
     files.push(...(spec.s1 ? spec.s1(arm, t) : []), ...(spec.s2 ? spec.s2(arm, t) : []));
@@ -209,6 +209,32 @@ describe('the comparer', () => {
   test('rule W: the Date header falls in its exchange\'s window', () => {
     assert.equal(dateInWindow(new Date(T0 + 1).toUTCString(), { t0: T0, t1: T0 + 5 }), true);
     assert.equal(dateInWindow(new Date(T0 - 5_000).toUTCString(), { t0: T0, t1: T0 + 5 }), false);
+    // Without a measured lag the Date names the second of t0 or later: the previous second never passes, even 1 ms in.
+    assert.equal(dateInWindow(new Date(T0 - 1_000).toUTCString(), { t0: T0 + 1, t1: T0 + 5 }), false);
+    assert.equal(dateInWindow(new Date(T0 - 1_000).toUTCString(), { t0: T0, t1: T0 + 5 }), false);
+    assert.equal(dateInWindow(new Date(T0).toUTCString(), { t0: T0 + 999, t1: T0 + 1_005 }), true);
+    // Node's cached Date names the previous second for as long as its refresh is late: within the measured lag, never beyond it.
+    assert.equal(dateInWindow(new Date(T0 - 1_000).toUTCString(), { t0: T0 + 1, t1: T0 + 5 }, 2), true);
+    assert.equal(dateInWindow(new Date(T0 - 1_000).toUTCString(), { t0: T0 + 2, t1: T0 + 5 }, 2), false);
+    assert.equal(dateInWindow(new Date(T0 - 1_000).toUTCString(), { t0: T0 + 40, t1: T0 + 50 }, 41), true);
+    assert.equal(dateInWindow(new Date(T0 - 2_000).toUTCString(), { t0: T0 + 1, t1: T0 + 5 }, 900), false);
+    // A measured lag over a second (a loop frozen under load) reaches back one second at most: never two.
+    assert.equal(dateInWindow(new Date(T0 - 2_000).toUTCString(), { t0: T0, t1: T0 + 5 }, 1_700), false);
+    assert.equal(dateInWindow(new Date(T0 - 1_000).toUTCString(), { t0: T0 + 998, t1: T0 + 1_005 }, 1_700), true);
+    assert.equal(dateInWindow(new Date(T0 + 1_000).toUTCString(), { t0: T0, t1: T0 + 5 }, 900), false, 'a Date after t1 never passes');
+    assert.equal(dateInWindow('not a date', { t0: T0, t1: T0 + 5 }, 900), false);
+    assert.equal(dateInWindow(new Date(T0).toUTCString(), { t0: T0, t1: T0 + 5 }, -1), false, 'a lag is never negative');
+    // The reference's measured lag (recording.dateLagMs) is the candidate's bound; without one the candidate gets none.
+    const stale = [['Date', new Date(ARMS.C.t - 1_000).toUTCString()], ['Connection', 'close']];
+    const [lagless, staleCandidate] = pair([['a', {}]], [['a', { transport: stale }]]);
+    assertOnly(compare(lagless, staleCandidate), 'headers.date', 'time-window');
+    assert.equal(dateLagOf(lagless), 0);
+    assertEqual(compare({ ...lagless, dateLagMs: 1 }, staleCandidate));
+    assertEqual(compareRecordings({ reference: lagless, other: staleCandidate, mode: 'candidate', dateLagMs: 1 }));
+    assertOnly(compareRecordings({ reference: { ...lagless, dateLagMs: 1 }, other: staleCandidate, mode: 'candidate', dateLagMs: 0 }), 'headers.date', 'time-window');
+    // Two seconds stale is beyond any lag the window takes (it is under a second).
+    const older = [['Date', new Date(ARMS.C.t - 2_000).toUTCString()], ['Connection', 'close']];
+    assertOnly(compare({ ...lagless, dateLagMs: 999 }, pair([['a', {}]], [['a', { transport: older }]])[1]), 'headers.date', 'time-window');
     const late = [['Date', new Date(ARMS.C.t + 60_000).toUTCString()], ['Connection', 'close']];
     assertOnly(compare(...pair([['a', {}]], [['a', { transport: late }]])), 'headers.date', 'time-window');
     // Connection is framing (not compared); the presence of Date is a rule (M2 of the BH3/BH4 review).
@@ -256,6 +282,16 @@ describe('the comparer', () => {
     const result = compare(...pair([['a', { group: etag('W/"1-x"'), body: holding }]], [['a', { group: etag('W/"1-y"'), body: holding }]]));
     assert.deepEqual(differences(result), []);
     assert.ok(inconclusive(result).some((item) => item.component === 'headers.etag'));
+    // Unless each side's ETag is Express's weak ETag of its own body (the reference's checked to be): compared as that function.
+    const weak = (arm) => etag(weakEtagOf(Buffer.from(holding(arm))));
+    const own = compare(...pair([['a', { group: weak, body: holding }]]));
+    assert.deepEqual(differences(own), []);
+    assert.equal(inconclusive(own).some((item) => item.component === 'headers.etag'), false);
+    // Two references whose bodies hold their own roots, each with its body's weak ETag: equal (the owners' list too).
+    const references = ['R', 'C'].map((name) => recording('reference', name, [['a', { group: weak, body: holding }]]));
+    assert.deepEqual(differences(compare(references[0], references[1], { mode: 'stability' })), []);
+    // The candidate sends the reference's ETag (not its own body's), or a strong one: a difference.
+    for (const other of [() => etag(weakEtagOf(Buffer.from(holding(ARMS.R)))), (arm) => etag(weakEtagOf(Buffer.from(holding(arm))).slice(2))]) assertOnly(compare(...pair([['a', { group: weak, body: holding }]], [['a', { group: other, body: holding }]])), 'headers.etag', 'etag');
     assertOnly(compare(...pair([['a', { status: 400 }]], [['a', { status: 422 }]])), 'status', 'bytes');
     const body = compare(...pair([['a', { body: '{"version":1,"overrides":{}}' }]], [['a', { body: '{"version":1,"override":{}}' }]]));
     assertOnly(body, 'body', 'bytes');

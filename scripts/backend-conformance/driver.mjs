@@ -40,6 +40,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { forgetRecord, keepRecord, killRecorded, processFacts, recordFor } from './arm-groups.mjs';
 import { openExchange, sseItems } from './http-exchange.mjs';
+import { readRecords } from './arms.mjs';
 import { createObservation } from './observe.mjs';
 import { HARNESS_HEADERS, PRINCIPALS, createSuppliedValues, envelopeFor, validateSteps } from './scenario.mjs';
 import {
@@ -340,8 +341,10 @@ function launch(ctx, spec, hooks = {}) {
   const open = openExchange(ctx.proc.listen, wire, { deadlineMs: hooks.deadlineMs ?? ctx.limits.exchangeMs, ...hooks });
   live.exchanges.add(open);
   open.done.then(() => live.exchanges.delete(open));
-  return { open, seq, envelope, uses: ctx.values.usedIn(Buffer.concat([Buffer.from(spec.target), request.body ?? Buffer.alloc(0)])) };
+  return { open, seq, envelope, process: processIndex(ctx), principal: spec.principal, uses: ctx.values.usedIn(Buffer.concat([Buffer.from(spec.target), request.body ?? Buffer.alloc(0)])) };
 }
+/** The index of the arm's current process among its tap files (start order), or null for an arm without a tap. */
+const processIndex = (ctx) => (ctx.arm.capabilities.tap ? ctx.arm.tapFiles().length - 1 : null);
 /** Why a spec is not sent to this arm, or null. */
 function notSent(ctx, spec) {
   // An edge exchange is never a candidate's, whatever its principal.
@@ -394,8 +397,9 @@ function tapChecks(ctx, result, armSeq, spec, recordsNow) {
   const record = recordsNow.find((entry) => entry.type === 'exchange' && entry.seq === armSeq);
   if (!record) { problem(result, 'correlation', `the tap wrote no exchange record for exchange ${armSeq}`); return null; }
   const isGroup = record.kind === 'group';
-  if (record.kind === 'tail') problem(result, 'tap-marks', `exchange ${armSeq} was answered by the tail stand-in`);
-  if (spec.edge === isGroup && record.kind !== 'tail') problem(result, 'edge-expectation', `the step says ${spec.edge ? 'edge' : 'group'}; the tap says ${record.kind}`);
+  // A step marked tail expects the tail stand-in (a method the group does not register); anywhere else the tail is a mark.
+  if (record.kind === 'tail' && !spec.tail) problem(result, 'tap-marks', `exchange ${armSeq} was answered by the tail stand-in`);
+  if (spec.tail ? record.kind !== 'tail' : spec.edge === isGroup && record.kind !== 'tail') problem(result, 'edge-expectation', `the step says ${spec.tail ? 'tail' : spec.edge ? 'edge' : 'group'}; the tap says ${record.kind}`);
   if (isGroup) {
     if (record.blind?.length) problem(result, 'tap-marks', `exchange ${armSeq} has blind marks ${JSON.stringify(record.blind)}`);
     if (record.crossed?.length) problem(result, 'tap-marks', `exchange ${armSeq} is crossed ${JSON.stringify(record.crossed)}`);
@@ -510,13 +514,13 @@ async function singleExchange(ctx, result, spec, { member = null } = {}) {
   trace(ctx, 'hold');
   const held = hold(ctx);
   try {
-    const { open, seq, envelope, uses } = launch(ctx, spec);
+    const { open, seq, envelope, uses, process: processAt, principal } = launch(ctx, spec);
     try { await open.connected; } catch { open.close(); }
     trace(ctx, 'send');
     open.send();
     const response = await open.done;
     trace(ctx, 'response');
-    const record = { member, seq, envelope, uses, response: responseRecord(response) };
+    const record = { member, seq, envelope, uses, process: processAt, principal, response: responseRecord(response) };
     result.exchanges.push(record);
     responseChecks(result, response, `${spec.method} ${spec.target}`);
     if (armGone(ctx)) { noteDeath(ctx, result, `the arm exited during ${spec.method} ${spec.target}`); return record; }
@@ -566,7 +570,7 @@ async function concurrentStep(ctx, result, entry) {
     for (const { open } of launched) open.send();
     const responses = await Promise.all(launched.map(({ open }) => open.done));
     trace(ctx, 'response');
-    const records = launched.map(({ member, seq, envelope, uses }, index) => ({ member: member.member, seq, envelope, uses, response: responseRecord(responses[index]) }));
+    const records = launched.map(({ member, seq, envelope, uses, process: processAt, principal }, index) => ({ member: member.member, seq, envelope, uses, process: processAt, principal, response: responseRecord(responses[index]) }));
     result.exchanges.push(...records);
     responses.forEach((response, index) => responseChecks(result, response, `member ${launched[index].member.member}`));
     // The members overlapped on the wire: every request was handed to its socket before any answer began.
@@ -639,13 +643,13 @@ async function killAfterStep(ctx, result, entry) {
   const held = hold(ctx);
   let record;
   try {
-    const { open, seq, envelope, uses } = launch(ctx, entry.request, { onSent: () => { if (entry.point === 'request-sent') kill(); }, onHead: () => { if (entry.point === 'response-head') kill(); } });
+    const { open, seq, envelope, uses, process: processAt, principal } = launch(ctx, entry.request, { onSent: () => { if (entry.point === 'request-sent') kill(); }, onHead: () => { if (entry.point === 'response-head') kill(); } });
     try { await open.connected; } catch { open.close(); }
     trace(ctx, 'send');
     open.send();
     const response = await open.done;
     trace(ctx, 'response');
-    record = { seq, envelope, uses, point: entry.point, response: responseRecord(response) };
+    record = { seq, envelope, uses, process: processAt, principal, point: entry.point, response: responseRecord(response) };
     result.exchanges.push(record);
     if (entry.point === 'response-end') { responseChecks(result, response, `${entry.request.method} ${entry.request.target}`); kill(); }
     kill();
@@ -889,8 +893,47 @@ async function finishRecording(ctx, recording) {
   recording.blobs = Object.fromEntries(ctx.blobs);
   recording.edgeFiles = [...(ctx.arm.capabilities.edgeFiles ?? [])];
   recording.tapFiles = ctx.arm.tapFiles();
+  Object.assign(recording, groupCoverage(recording.tapFiles));
   recording.endedAt = Date.now();
   return recording;
+}
+
+/**
+ * What the census and the comparer read from the reference's tap files (BH5):
+ * the group's registrations as the first process saw them; every block
+ * coverage take, each with the index of the process (the arm's tap file, in
+ * start order) whose take it is (an exchange record's `process` is the same
+ * index, so a take of `seq` in process `p` belongs to the exchange with
+ * `armSeq` `seq` and `process` `p`); and the Date lag of the arm's Node hosts
+ * (`dateLagMs`, rule W): the most any head the tap saw written named a second
+ * already over (its `Date` against `headAt`, when it was written), and the
+ * most the host's timer aimed at a second boundary fired late (`clock`
+ * records): Node clears its cached Date string with such a timer. Empty for
+ * an arm without a tap; no coverage for a host run without --coverage.
+ */
+export function groupCoverage(tapFiles) {
+  const registrations = [];
+  const coverage = [];
+  let groupSources = null;
+  const dateLag = { heads: 0, timer: 0 };
+  tapFiles.forEach((file, index) => {
+    for (const record of readRecords(file)) {
+      if (record.type === 'registration' && record.group && index === 0) registrations.push({ kind: record.kind, method: record.method, path: record.path, file: record.file, line: record.line });
+      if (record.type === 'coverage') coverage.push({ process: index, phase: record.phase, seq: record.seq, files: record.files });
+      if (record.type === 'host' && index === 0) groupSources = record.groupSources ?? null;
+      if (record.type === 'clock' && Number.isFinite(record.dateLagMs)) dateLag.timer = Math.max(dateLag.timer, record.dateLagMs);
+      if (record.type === 'exchange') dateLag.heads = Math.max(dateLag.heads, staleDateMs(record.response));
+    }
+  });
+  return { registrations, coverage, groupSources, dateLag, dateLagMs: Math.max(dateLag.heads, dateLag.timer) };
+}
+/** How long the second a written head's Date names had been over when the head was written (0 when it had not). */
+export function staleDateMs(response) {
+  const date = /\r\ndate: *([^\r]*)/i.exec(response?.head ?? '')?.[1];
+  const named = date ? Date.parse(date) : NaN;
+  if (!Number.isFinite(named) || !Number.isFinite(response?.headAt)) return 0;
+  // The second named ends at named + 1000; a head written at or after that names a second already over.
+  return Math.max(0, response.headAt - (named + 1000) + 1);
 }
 
 // ------------------------------------------------------------------ rows

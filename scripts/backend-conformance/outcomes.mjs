@@ -13,7 +13,9 @@
 //       about the whole recording, `whole: true`, never counts for that)
 //   1   any failed row (a failure is never waivable)
 //   2   anything else not waived: an inconclusive, unstable or unrecordable row,
-//       a census gap, a waiver that waives nothing, or zero rows
+//       a census gap, a waiver that waives nothing, zero rows, or a part of the run's
+//       judgement not made (`unjudged`: the census of a --scenario subset), which the last
+//       line names
 //   64  refused: a usage error, outside the isolation guard, an output path refused
 // The last line of the report prints every count, whatever the verdict.
 
@@ -63,12 +65,14 @@ export function waiverProblems(waivers) {
 
 /**
  * Judges a run. `rows` are the judged rows; `waivers` the waiver table;
- * `gaps` census gaps (strings), each of which makes the run incomplete.
+ * `gaps` census gaps (strings), each of which makes the run incomplete;
+ * `unjudged` the names of judgements the run did not make (the census when
+ * --scenario chose some scenarios), each of which makes it incomplete too.
  * Returns `{ exit, verdict, counts, rows, problems }` where every row carries
  * `waived` (the reason) or null, and `problems` lists waiver and census
  * problems in the order they decide the exit.
  */
-export function judgeRun({ rows, waivers = {}, gaps = [], limits = [] }) {
+export function judgeRun({ rows, waivers = {}, gaps = [], limits = [], unjudged = [] }) {
   validateRows(rows);
   const tableProblems = waiverProblems(waivers);
   const byId = new Map(rows.map((row) => [row.id, row]));
@@ -102,10 +106,10 @@ export function judgeRun({ rows, waivers = {}, gaps = [], limits = [] }) {
   let verdict;
   if (counts.failed) { exit = EXIT.failed; verdict = 'FAILED'; }
   else if (judged.length === 0) { exit = EXIT.incomplete; verdict = 'NOTHING RECORDED'; }
-  else if (open.length || waiverFailures.length || census.length) { exit = EXIT.incomplete; verdict = 'INCOMPLETE'; }
+  else if (open.length || waiverFailures.length || census.length || unjudged.length) { exit = EXIT.incomplete; verdict = 'INCOMPLETE'; }
   else if (passedExchanges === 0) { exit = EXIT.incomplete; verdict = 'NOTHING JUDGED'; }
   else { exit = EXIT.passed; verdict = 'passed'; }
-  return { exit, verdict, counts: { rows: judged.length, ...counts, waived, waivers: Object.keys(waivers).length, gaps: gaps.length }, rows: judged, problems: [...waiverFailures, ...census], limits };
+  return { exit, verdict, counts: { rows: judged.length, ...counts, waived, waivers: Object.keys(waivers).length, gaps: gaps.length }, rows: judged, problems: [...waiverFailures, ...census], limits, unjudged: [...unjudged] };
 }
 
 const MARK = Object.freeze({ passed: 'ok  ', failed: 'FAIL', inconclusive: 'INCONCLUSIVE', unstable: 'UNSTABLE', unrecordable: 'UNRECORDABLE' });
@@ -113,7 +117,8 @@ const MARK = Object.freeze({ passed: 'ok  ', failed: 'FAIL', inconclusive: 'INCO
 /** The last line: the verdict and every count, always. */
 export function lastLine(judgement, { title = 'backend conformance' } = {}) {
   const { counts } = judgement;
-  return `${title}: ${judgement.verdict} (${counts.rows} rows: ${counts.passed} passed, ${counts.failed} failed, ${counts.inconclusive} inconclusive, ${counts.unstable} unstable, ${counts.unrecordable} unrecordable; ${counts.waived} waived by ${counts.waivers} waivers; ${counts.gaps} census gaps; ${judgement.problems.length} problems) exit ${judgement.exit}`;
+  const unjudged = judgement.unjudged?.length ? `; not judged: ${judgement.unjudged.join(', ')}` : '';
+  return `${title}: ${judgement.verdict} (${counts.rows} rows: ${counts.passed} passed, ${counts.failed} failed, ${counts.inconclusive} inconclusive, ${counts.unstable} unstable, ${counts.unrecordable} unrecordable; ${counts.waived} waived by ${counts.waivers} waivers; ${counts.gaps} census gaps; ${judgement.problems.length} problems${unjudged}) exit ${judgement.exit}`;
 }
 
 /** The report as lines: one per row (with its reason and differences), the problems, then the last line. */

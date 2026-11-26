@@ -22,7 +22,7 @@ import { GROUPS } from './groups.mjs';
 import { CANDIDATE_EFFECT_LIMIT } from './observe.mjs';
 import { ALL_PLANTS, plantResult, plantedFiles } from './plants.mjs';
 import { RunRefused, createBackendRun } from './run-scratch.mjs';
-import { READS_AND_WRITES, REQUEST_FORMS, SCENARIOS } from './scenarios/magic-prompts.mjs';
+import { READS_AND_WRITES, REQUEST_FORMS, ROUTES_AND_FORMS, SCENARIOS } from './scenarios/magic-prompts.mjs';
 
 const NAME = 'magic-prompts';
 const GROUP = GROUPS[NAME];
@@ -32,6 +32,8 @@ export const EXPECTED_OPEN = new Map([
   ...MANAGED.map((id) => [`${READS_AND_WRITES.id}/${id}`, 'principal-unavailable']),
   ...['put-body-null', 'put-malformed-json', 'get-remote', 'put-remote'].map((id) => [`${READS_AND_WRITES.id}/${id}`, 'edge-exchange']),
   ...['put-charset-latin1', 'put-over-limit'].map((id) => [`${REQUEST_FORMS.id}/${id}`, 'edge-exchange']),
+  ...['get-malformed-body', 'put-unknown-encoding', 'put-percent-malformed', 'delete-malformed-body', 'delete-percent-malformed', 'delete-remote', 'delete-all-malformed-body', 'delete-all-remote'].map((id) => [`${ROUTES_AND_FORMS.id}/${id}`, 'edge-exchange']),
+  ...['options-collection', 'post-collection', 'options-item', 'patch-item', ...['get', 'put', 'delete', 'delete-all'].flatMap((name) => [`${name}-literal-encoded`, `${name}-empty-segment`])].map((id) => [`${ROUTES_AND_FORMS.id}/${id}`, 'tail-exchange']),
 ]);
 const WORKERS = 3;
 

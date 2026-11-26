@@ -19,6 +19,7 @@
 // exactly by a rule (and the substitution is itself checked), or compared as
 // it is. This module imports only Node built-ins, so the comparer's own
 // planted-fault test can run a copy of it alone.
+import crypto from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 
 /** Each rule of design §7, as the comparer applies it. A difference names the rule that found it. */
@@ -26,7 +27,7 @@ export const RULES = Object.freeze({
   supplied: 'S: a supplied value (a root: the data root, HOME; a listen or stub port) is replaced by the other arm\'s value of the same name, in each spelling (as given, canonical, the firmlink alias /var for /private/var, URL-encoded), only where it stands as a whole path (or a whole port after a colon); a value that merely contains a root as text, or a path outside every supplied root, is compared as it is',
   paired: 'P: an identifier at a place the group declares is paired with the value the other arm put at the same place (same JSON path), one to one; a conflict is a difference; a value only one side has is never paired; a pair seen only once is reported',
   'time-window': 'W: a time at a key the group declares, a file\'s mtime and the Date header must fall in the window the harness observed (the exchange\'s, or between two snapshots); times are compared as their window and rank (order and equality within one record); a time outside every window is compared as it is',
-  etag: 'ETag is compared exactly (a contract: clients send it back); over a body holding a supplied value it cannot be compared and is inconclusive',
+  etag: 'ETag is compared exactly (a contract: clients send it back); over a body holding a supplied value (its bytes differ by arm) it must be, on each side, Express\'s weak ETag of that side\'s own body, which the reference\'s value is checked to be (otherwise inconclusive)',
   inode: 'a file is compared as replaced or rewritten in place (descriptors the driver held across the exchange), with its type, mode, bytes and link target; inode numbers and timestamps are never compared as values',
   'last-writer': 'the step that last changed each path (a change of any fact, mtime and inode included) is compared',
   'listing-order': 'each directory\'s listing order is compared exactly (both arms read one file system in one run)',
@@ -269,15 +270,31 @@ export function labelTimes(buffer, { keys = [], windows = [] } = {}) {
   for (const item of found.filter((entry) => entry.label).sort((x, y) => x.start - y.start)) { out += text.slice(cursor, item.start) + item.label; cursor = item.end; }
   return { buffer: Buffer.from(out + text.slice(cursor), 'latin1'), labelled: found };
 }
-/** Rule W for the Date header: its second falls between the exchange's t0 and t1. */
-export function dateInWindow(value, { t0, t1 }) {
+/**
+ * Rule W for the Date header: the second it names (`at`, whole seconds) had not ended `lagMs` before the
+ * exchange's t0, and began by t1: `at + 1000 + lagMs > t0` and `at <= t1`. With no lag that is exactly "the
+ * second of t0 or later". The lag is Node's own: Node writes the Date string it cached and clears the cache
+ * on a timer due at the next second, which fires late when the loop is busy, so for that long into a second
+ * the header still names the one before. It is measured on the run's reference (dateLagOf), never assumed,
+ * and it reaches back one second at most (DATE_LAG_CAP_MS): a measured stall longer than that (a loop frozen
+ * for a snapshot under heavy load) never lets a date two seconds old pass.
+ */
+export const DATE_LAG_CAP_MS = 999;
+export function dateInWindow(value, { t0, t1 }, lagMs = 0) {
   const at = Date.parse(value);
-  if (!Number.isFinite(at) || !Number.isFinite(t0) || !Number.isFinite(t1)) return false;
-  return at >= Math.floor(t0 / 1000) * 1000 && at <= t1;
+  if (!Number.isFinite(at) || !Number.isFinite(t0) || !Number.isFinite(t1) || !(Number.isFinite(lagMs) && lagMs >= 0)) return false;
+  return at + 1000 + Math.min(lagMs, DATE_LAG_CAP_MS) > t0 && at <= t1;
 }
+/**
+ * How late a recording's Node host was to refresh its cached Date header, in ms: the driver's reading of
+ * its tap (recording.dateLagMs: the most any head the tap saw written named a second already over, and the
+ * most a timer aimed at a second boundary fired late on that host). 0 when nothing was measured (an arm
+ * without a tap): such an arm's Date must name the second of t0 or later.
+ */
+export const dateLagOf = (recording) => (Number.isFinite(recording?.dateLagMs) && recording.dateLagMs > 0 ? recording.dateLagMs : 0);
 
 // ------------------------------------------------------------------ the comparison context
-function createContext({ reference, other, mode, declarations }) {
+function createContext({ reference, other, mode, declarations, dateLagMs }) {
   const scenario = reference.scenario;
   const out = { steps: new Map(), differences: [], inconclusive: [], notes: [] };
   const entryFor = (step) => {
@@ -290,6 +307,8 @@ function createContext({ reference, other, mode, declarations }) {
     local: null,
     pairing: createPairing({ keys: declarations.identifierKeys ?? [] }),
     windows: { reference: windowsOf(reference), other: windowsOf(other) },
+    // Each side's Date lag: a tapped reference its own measurement; a candidate (no tap) the lag measured on the run's reference.
+    dateLag: { reference: dateLagOf(reference), other: mode === 'stability' ? dateLagOf(other) : (Number.isFinite(dateLagMs) ? dateLagMs : dateLagOf(reference)), candidate: Number.isFinite(dateLagMs) ? dateLagMs : dateLagOf(reference) },
     edgeFiles: new Set([...(declarations.edgeFiles ?? []), ...(reference.edgeFiles ?? [])]),
     startupFiles: new Set(declarations.startupFiles ?? []),
     step: '(recording)',
@@ -408,8 +427,10 @@ function contentLengthCheck(ctx, side, headers, body) {
   if (!line) return;
   if (line.values.length !== 1 || Number(line.values[0]) !== body.length) ctx.differ('headers.content-length', `${side}: the body has ${body.length} bytes`, 'headers', side === 'reference' ? line.values.join(',') : body.length, side === 'reference' ? body.length : line.values.join(','));
 }
-/** Header sets by name: the reference's (group or whole) against the other's. */
-function compareHeaderSets(ctx, referenceHeaders, otherHeaders, { substitutedBody }) {
+/** Express's default weak ETag of a body (the etag package: the length in hex, then 27 characters of the SHA-1 in base64). */
+export const weakEtagOf = (body) => `W/"${body.length.toString(16)}-${crypto.createHash('sha1').update(body).digest('base64').slice(0, 27)}"`;
+/** Header sets by name: the reference's (group or whole) against the other's; `bodies` are each side's own body bytes. */
+function compareHeaderSets(ctx, referenceHeaders, otherHeaders, { substitutedBody, bodies = null }) {
   for (const key of new Set([...referenceHeaders.keys(), ...otherHeaders.keys()])) {
     const left = referenceHeaders.get(key);
     const right = otherHeaders.get(key);
@@ -420,7 +441,14 @@ function compareHeaderSets(ctx, referenceHeaders, otherHeaders, { substitutedBod
     // value then follows from the body, which is compared by itself (a supplied value may change its length).
     if (key === 'content-length') continue;
     if (key === 'etag') {
-      if (substitutedBody) { if (!isDeepStrictEqual(left.values, right.values)) ctx.unsure(component, 'the ETag is computed over a body that holds a supplied value (its bytes differ by arm), so it cannot be compared exactly'); continue; }
+      if (substitutedBody) {
+        // The bytes differ by arm, so the values do: each must be the same function of its own body, and the reference's must be the known one.
+        const [ownLeft, ownRight] = bodies ?? [];
+        const isWeakOf = (values, own) => Buffer.isBuffer(own) && values.length === 1 && values[0] === weakEtagOf(own);
+        if (!isWeakOf(left.values, ownLeft)) { if (!isDeepStrictEqual(left.values, right.values)) ctx.unsure(component, 'the ETag is computed over a body that holds a supplied value (its bytes differ by arm), and the reference\'s is not Express\'s weak ETag of its own body, so it cannot be compared'); continue; }
+        if (!isWeakOf(right.values, ownRight)) ctx.differ(component, 'not the weak ETag of its own body (the body holds a supplied value)', 'etag', `${left.values.join(', ')} (the weak ETag of the reference's body)`, right.values.join(', '));
+        continue;
+      }
       if (!isDeepStrictEqual(left.values, right.values)) ctx.differ(component, 'value', 'etag', left.values.join(', '), right.values.join(', '));
       continue;
     }
@@ -432,7 +460,7 @@ function compareHeaderSets(ctx, referenceHeaders, otherHeaders, { substitutedBod
 /** The transport's headers of a client view: Date by window, the rest framing (not compared). */
 function transportChecks(ctx, side, view) {
   const date = view.transport?.get('date');
-  if (date) for (const value of date.values) if (!dateInWindow(value, view)) ctx.differ('headers.date', `${side}: outside its exchange's window`, 'time-window', side === 'reference' ? value : `${view.t0}..${view.t1}`, side === 'reference' ? `${view.t0}..${view.t1}` : value);
+  if (date) for (const value of date.values) if (!dateInWindow(value, view, ctx.dateLag[side] ?? 0)) ctx.differ('headers.date', `${side}: outside its exchange's window`, 'time-window', side === 'reference' ? value : `${view.t0}..${view.t1}`, side === 'reference' ? `${view.t0}..${view.t1}` : value);
 }
 
 /** The body bytes the driver wrote on the wire after a request's head. */
@@ -548,7 +576,7 @@ function compareGroupExchange(ctx, referenceRecord, otherRecord, referenceStep) 
   if (!right.complete) ctx.differ('body', 'the candidate\'s response was not complete', 'bytes', 'complete', right.error ?? 'incomplete');
   learnPairs(ctx, left.body, right.body);
   const substitutedBody = Buffer.compare(ctx.substitution.apply(left.body), left.body) !== 0;
-  compareHeaderSets(ctx, left.headers, right.headers, { substitutedBody });
+  compareHeaderSets(ctx, left.headers, right.headers, { substitutedBody, bodies: [left.body, right.body] });
   if (referenceRecord.tap?.entry?.method === 'HEAD') {
     // A HEAD answer has no body: its Content-Length is the GET body's length, compared as a value (both must have it).
     const [x, y] = [left.headers.get('content-length')?.values ?? null, right.headers.get('content-length')?.values ?? null];
@@ -578,7 +606,7 @@ function compareReferenceExchange(ctx, a, b) {
   learnPairs(ctx, left.body, right.body);
   const substitutedBody = Buffer.compare(ctx.substitution.apply(left.body), left.body) !== 0;
   const wireHeaders = (view) => new Map([...view.headers, ...[...view.transport].filter(([key]) => key !== 'date')]);
-  compareHeaderSets(ctx, wireHeaders(left), wireHeaders(right), { substitutedBody });
+  compareHeaderSets(ctx, wireHeaders(left), wireHeaders(right), { substitutedBody, bodies: [left.body, right.body] });
   if (left.transport.has('date') !== right.transport.has('date')) ctx.differ('headers.date', 'presence', 'headers', left.transport.has('date'), right.transport.has('date'));
   compareBytes(ctx, 'body', left.body, right.body);
   // Inside: the tap's records.
@@ -591,12 +619,14 @@ function compareReferenceExchange(ctx, a, b) {
     const groupA = groupView(a);
     const groupB = groupView(b);
     if (groupA.status !== groupB.status) ctx.differ('status', 'group status', 'bytes', groupA.status, groupB.status);
-    compareHeaderSets(ctx, groupA.headers, groupB.headers, { substitutedBody });
+    compareHeaderSets(ctx, groupA.headers, groupB.headers, { substitutedBody, bodies: [groupA.body, groupB.body] });
     compareBytes(ctx, 'body', groupA.body, groupB.body);
     compareEffects(ctx, groupA.effects, groupB.effects);
     // Every header of the final head with its owner (and each element's owner), Date apart.
-    const owners = (tap) => (tap.response.headers ?? []).filter((summary) => summary.name.toLowerCase() !== 'date').map((summary) => ({ name: summary.name.toLowerCase(), value: summary.value, owner: summary.owner, group: summary.group, elements: summary.elements ?? null }));
-    compareValue(ctx, 'headers(owners)', 'headers', JSON.parse(ctx.substitution.applyText(JSON.stringify(owners(tapA).filter((item) => item.name !== 'content-length')))), JSON.parse(JSON.stringify(owners(tapB).filter((item) => item.name !== 'content-length'))));
+    // Over a body holding a supplied value, an ETag that is the weak ETag of its own body is that (rule etag), whatever its bytes.
+    const ownEtag = (name, value, body) => (substitutedBody && name.toLowerCase() === 'etag' && value === weakEtagOf(body) ? '<the weak ETag of its own body>' : value);
+    const owners = (tap, body) => (tap.response.headers ?? []).filter((summary) => summary.name.toLowerCase() !== 'date').map((summary) => ({ name: summary.name.toLowerCase(), value: ownEtag(summary.name, summary.value, body), owner: summary.owner, group: summary.group ? { ...summary.group, value: ownEtag(summary.name, summary.group.value, body) } : summary.group, elements: summary.elements ?? null }));
+    compareValue(ctx, 'headers(owners)', 'headers', JSON.parse(ctx.substitution.applyText(JSON.stringify(owners(tapA, groupA.body).filter((item) => item.name !== 'content-length')))), JSON.parse(JSON.stringify(owners(tapB, groupB.body).filter((item) => item.name !== 'content-length'))));
     const entry = (tap) => ({ method: tap.entry?.method, url: tap.entry?.url, originalUrl: tap.entry?.originalUrl, principal: tap.entry?.principal, context: tap.entry?.context, registration: { kind: tap.entry?.registration?.kind, method: tap.entry?.registration?.method, path: tap.entry?.registration?.path }, edgeHeaders: tap.entry?.edgeHeaders, statusAtEntry: tap.entry?.statusAtEntry });
     compareValue(ctx, 'entry', 'request', JSON.parse(ctx.substitution.applyText(JSON.stringify(entry(tapA)))), JSON.parse(JSON.stringify(entry(tapB))));
     compareReferenceBodies(ctx, a, b);
@@ -769,8 +799,9 @@ function compareExchanges(ctx, referenceStep, otherStep) {
 function compareOneExchange(ctx, referenceStep, key, a, b) {
   {
     if (ctx.mode === 'candidate') {
-      if (a.tap?.kind === 'edge') {
-        ctx.entry().edge = true;
+      // An exchange the edge, or what the server composes after the group (the tail), answers: never the group's.
+      if (a.tap?.kind === 'edge' || a.tap?.kind === 'tail') {
+        Object.assign(ctx.entry(), { edge: true, answeredBy: a.tap.kind });
         if (b.notSent === undefined) ctx.differ(`exchange ${key}`, 'an edge exchange was sent to the candidate', 'steps', 'not sent (the edge answers it)', 'sent');
         return;
       }
@@ -778,7 +809,7 @@ function compareOneExchange(ctx, referenceStep, key, a, b) {
       compareGroupExchange(ctx, a, b, referenceStep);
     } else {
       if (b.notSent !== undefined) { ctx.differ(`exchange ${key}`, 'presence', 'steps', 'made', `not sent: ${b.notSent}`); return; }
-      if (a.tap?.kind === 'edge') ctx.entry().edge = true;
+      if (a.tap?.kind === 'edge' || a.tap?.kind === 'tail') Object.assign(ctx.entry(), { edge: true, answeredBy: a.tap.kind });
       compareReferenceExchange(ctx, a, b);
     }
     // Rule inode: which files the exchange replaced (a new inode at the path) and which it removed.
@@ -803,7 +834,7 @@ function compareConcurrent(ctx, referenceStep, otherStep) {
   for (const serial of serials) {
     if (!serial.tree) { tried.push({ order: serial.order, first: 'the serialisation has no final tree' }); continue; }
     // Each serialisation is compared with a scratch context: its differences decide admissibility, never the row by themselves.
-    const scratch = createContext({ reference: ctx.reference, other: ctx.other, mode: ctx.mode, declarations: ctx.declarations });
+    const scratch = createContext({ reference: ctx.reference, other: ctx.other, mode: ctx.mode, declarations: ctx.declarations, dateLagMs: ctx.dateLag.candidate });
     scratch.step = ctx.step;
     scratch.pairing = ctx.pairing;
     compareExchanges(scratch, { ...serial, kind: 'concurrent', exchanges: serial.exchanges.map((record) => ({ ...record, replaced: undefined, removed: undefined })) }, { ...otherStep, exchanges: otherStep.exchanges.map((record) => ({ ...record, replaced: undefined, removed: undefined })) });
@@ -869,9 +900,9 @@ function compareStep(ctx, referenceStep, otherStep) {
  * id -> { differences, inconclusive, notes, edge }), differences,
  * inconclusive, notes }` (recording-level entries apart).
  */
-export function compareRecordings({ reference, other, mode, declarations = {} }) {
+export function compareRecordings({ reference, other, mode, declarations = {}, dateLagMs = undefined }) {
   if (!['stability', 'candidate'].includes(mode)) throw new TypeError(`compare: unknown mode ${mode}`);
-  const ctx = createContext({ reference, other, mode, declarations });
+  const ctx = createContext({ reference, other, mode, declarations, dateLagMs });
   if (reference.scenario !== other.scenario) ctx.differ('scenario', 'id', 'steps', reference.scenario, other.scenario);
   for (const text of ctx.substitution.problems) ctx.unsure('values', text);
   const scenarioValues = (recording) => (recording.values?.scenario ?? []).map(({ name, kind, value }) => ({ name, kind, value }));

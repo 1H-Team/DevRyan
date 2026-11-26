@@ -16,7 +16,8 @@
 //   registration    every route, use() and param() registration the router saw
 //   problem         a registration the tap could not classify, or classified oddly
 //   exchange-start  when a request starts (so a crash mid-exchange leaves a trace)
-//   exchange        when the response ends: request, entry, response, effects
+//   exchange        when the response ends: request, entry, response (`headAt`: when its head
+//                   was written), effects
 //   blind           something the tap cannot see completely, after the exchange record
 //   quiescent       when no async resource the exchange started is pending
 //   late            an effect or new work after the exchange ended or went quiescent
@@ -25,6 +26,10 @@
 //                   that changed afterwards: its whole new state, written when it finishes
 //                   (a child's exit, an outbound answer or failure), when its exchange goes
 //                   quiescent, or when /quiescent times out
+//   coverage        a take of the group files' block coverage, written by the group host when it
+//                   runs with --coverage (phase start, quiescent, pending or stop; seq; files)
+//   clock           how late the group host's timer aimed at a second boundary fired, each time it
+//                   was later than before (Node refreshes its cached Date header with such a timer)
 // Bodies are base64. Nothing is redacted (records never leave the run's
 // scratch), except child environment values, which are written as digests.
 //
@@ -85,7 +90,7 @@ const TAP_KEY = Symbol.for('devryan.backend-conformance.tap');
 const inert = Object.freeze({
   armed: false, tagServer() {}, recordHub() {}, whenQuiescent: async () => { throw new Error('the tap is not armed'); },
   pendingOf: () => [], blindOf: () => [], registrations: () => [], problems: () => [], beginGroupRegistration() {}, endGroupRegistration() {},
-  markTopRouter() {}, claimHandler: (fn) => fn, markTail() {}, recordHost() {}, flushOf() {}, flushAll() {}, observeEntry() {}, file: null,
+  markTopRouter() {}, claimHandler: (fn) => fn, markTail() {}, recordHost() {}, recordCoverage() {}, recordClock() {}, flushOf() {}, flushAll() {}, observeEntry() {}, file: null,
 });
 
 function readSetup() {
@@ -152,7 +157,7 @@ function arm(setup) {
     if (!realCache.has(file)) { try { realCache.set(file, fs.realpathSync(file)); } catch { realCache.set(file, file); } }
     return realCache.get(file);
   };
-  const FRAME = /\(?((?:file:\/\/)?\/[^():]+|node:[^():]+):(\d+):\d+\)?$/;
+  const FRAME = /\(?((?:file:\/\/)?\/[^():]+|node:[^():]+):(\d+):(\d+)\)?$/;
   const frames = (stack) => {
     const out = [];
     for (const line of String(stack).split('\n').slice(1)) {
@@ -163,7 +168,7 @@ function arm(setup) {
       const absolute = raw.startsWith('file://') ? fileURLToPath(raw) : raw;
       const resolved = real(absolute);
       if (resolved === SELF) continue;
-      out.push({ file: resolved, line: Number(match[2]), node: false });
+      out.push({ file: resolved, line: Number(match[2]), column: Number(match[3]), node: false });
     }
     return out;
   };
@@ -205,7 +210,7 @@ function arm(setup) {
     let helper = null;
     for (const frame of stackFrames) {
       if (frame.node) continue;
-      if (isGroupFile(frame.file)) return { owner: 'group', file: frame.file, line: frame.line };
+      if (isGroupFile(frame.file)) return { owner: 'group', file: frame.file, line: frame.line, column: frame.column };
       if (ACTS_FOR_CALLER.test(frame.file)) continue;
       const pkg = packageOf(frame.file);
       if (pkg) {
@@ -323,7 +328,8 @@ function arm(setup) {
     inWriteHead += 1;
     let result;
     try { result = callThrough(originalWriteHead, self, args); } finally { inWriteHead -= 1; }
-    if (exchange && exchange.head === null && typeof self._header === 'string') exchange.head = self._header;
+    // When the head was written (the Date header Node put in it is checked against this: the comparer's Date lag).
+    if (exchange && exchange.head === null && typeof self._header === 'string') { exchange.head = self._header; exchange.headAt = Date.now(); }
     return result;
   }, originalWriteHead.length);
   for (const name of ['write', 'end']) {
@@ -469,7 +475,7 @@ function arm(setup) {
       },
       entry: exchange.entry,
       response: {
-        status: res.statusCode, head: exchange.head,
+        status: res.statusCode, head: exchange.head, headAt: exchange.headAt ?? null,
         headers: headerSummary(exchange, finalHeaders),
         ops: exchange.ops,
         body: body.toString('base64'),
@@ -939,6 +945,10 @@ function arm(setup) {
     markTail(req) { const exchange = exchangeOfRequest.get(req); if (exchange) exchange.tail = true; },
     /** What the host composed (written once, before serving). */
     recordHost(info) { emit({ type: 'host', ...info }); },
+    /** A take of the group's block coverage (group-host.mjs --coverage): `{ phase, seq, files }`. */
+    recordCoverage(take) { emit({ type: 'coverage', ...take }); },
+    /** How late the host's timer aimed at a second boundary fired, when it was the latest so far (group-host.mjs): `{ dateLagMs, at }`. */
+    recordClock(entry) { emit({ type: 'clock', ...entry }); },
     /** A hub publication by the group, through the recorder the group host injects. */
     recordHub(channel, payload) {
       let copy;

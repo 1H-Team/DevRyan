@@ -51,6 +51,12 @@ describe('the closure check on the pilot\'s write lock', { concurrency: true, ..
     // J was observed from outside (stubs, PATH shim, process group) on every exchange it was sent.
     assert.deepEqual(recordings.js.observation.seenBy, ['path-shim', 'stubs', 'process-group']);
     assert.ok(recordings.js.observation.exchanges > 0);
+    // R takes the group's block coverage for the census, from the start and at every exchange; R' and J do not.
+    assert.ok(recordings.reference.coverage.some((take) => take.phase === 'start') && recordings.reference.coverage.some((take) => take.seq > 0), 'R records block coverage');
+    assert.deepEqual([recordings.second.coverage.length, recordings.js.coverage.length], [0, 0]);
+    // Rule W's Date lag is measured on both references (their taps), never on J.
+    for (const key of ['reference', 'second']) assert.ok(Number.isFinite(recordings[key].dateLagMs) && recordings[key].dateLag.timer >= 0, key);
+    assert.equal(recordings.js.dateLagMs, 0);
   });
 
   test('planted differences: each caught by its named rule, or under the named limit', DEADLINE, async (t) => {

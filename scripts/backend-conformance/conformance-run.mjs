@@ -47,8 +47,9 @@ export function parseArguments(argv, groups = GROUPS) {
  * One run. `checkComposition({ run, group, name, log })` returns the
  * composition problems (any makes the run inconclusive before a row is
  * produced); `produceRows({ run, group, name })` returns the judged rows and
- * the group's waiver table (`{ rows, waivers }`; it also gets `options`, the
- * parsed command line). `onInterrupt` runs on SIGINT, SIGTERM and SIGHUP
+ * the group's waiver table (`{ rows, waivers, gaps?, limits?, unjudged? }`; it
+ * also gets `options`, the parsed command line; `unjudged` names a judgement
+ * the run did not make, which keeps it from passing). `onInterrupt` runs on SIGINT, SIGTERM and SIGHUP
  * before the run root is removed (the driver kills what it started).
  * A row awaiting comparison (`awaiting` set: recorded, nothing judged it) can
  * never be waived: a waiver of one is refused.
@@ -100,7 +101,7 @@ async function judgedRun({ run, options, produceRows, checkComposition, log, err
     // A table waiver of a row awaiting comparison waives nothing judged: it is dropped and counted as a gap.
     const gaps = [...(produced.gaps ?? [])];
     for (const row of produced.rows) if (row.awaiting && Object.hasOwn(waivers, row.id)) { delete waivers[row.id]; gaps.push(`waiver ${row.id} covers a row awaiting comparison (nothing judged it)`); }
-    const judgement = judgeRun({ rows: produced.rows, waivers, gaps, limits: produced.limits ?? [] });
+    const judgement = judgeRun({ rows: produced.rows, waivers, gaps, limits: produced.limits ?? [], unjudged: produced.unjudged ?? [] });
     run.writeFile('report.json', `${JSON.stringify({ group: options.group, ...judgement }, null, 2)}\n`);
     for (const line of reportLines(judgement)) log(line);
     return judgement.exit;

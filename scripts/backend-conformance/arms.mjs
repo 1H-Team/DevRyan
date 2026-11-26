@@ -80,8 +80,10 @@ export const REFERENCE_EDGE_STARTUP_FILES = Object.freeze(['multi-user-vault.key
 /**
  * The reference arm: the landed group host (BH1) with the tap, for group
  * `name` of `table` (a group table module in this folder, or the default).
+ * `coverage`: the host takes the group's block coverage (group-host.mjs
+ * --coverage=block), which the census reads (`recording.coverage`).
  */
-export function referenceArm({ run, name, group, table = null, label, env = process.env, limits = ARM_LIMITS }) {
+export function referenceArm({ run, name, group, table = null, label, env = process.env, coverage = false, limits = ARM_LIMITS }) {
   let host = null;
   let starts = 0;
   const tapFiles = [];
@@ -91,7 +93,7 @@ export function referenceArm({ run, name, group, table = null, label, env = proc
     async start({ dataRoot, home, stubs = {}, environment = {} }) {
       starts += 1;
       // The host checks the guard's isolation with the guard's HOME, then takes the run's (--home): group-host.mjs.
-      host = await withArmUmask(() => startGroupHost({ run, name, group, label: `${label}/process-${starts}`, table, env: { ...env, ...ARM_ENVIRONMENT, ...environment }, dataRoot, home, stubs, processGroup: true, limits: { readyMs: limits.readyMs, controlMs: limits.controlMs, stopMs: limits.stopMs } }));
+      host = await withArmUmask(() => startGroupHost({ run, name, group, label: `${label}/process-${starts}`, table, env: { ...env, ...ARM_ENVIRONMENT, ...environment }, dataRoot, home, stubs, processGroup: true, coverage, limits: { readyMs: limits.readyMs, controlMs: limits.controlMs, stopMs: limits.stopMs } }));
       tapFiles.push(host.tapFile);
       return { pid: host.child.pid, pgid: host.child.pid, listen: host.ready.listen, control: host.ready.control };
     },

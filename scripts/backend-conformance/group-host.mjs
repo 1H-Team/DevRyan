@@ -7,6 +7,9 @@
 //   node --import=<tap.mjs> scripts/backend-conformance/group-host.mjs --group=<name> --data-root=<dir>
 //       [--listen=127.0.0.1:0] [--control=127.0.0.1:0] [--table=<module in this folder>] [--variants=<name>,...]
 //       [--stubs=<name>=http://127.0.0.1:<port>,...]   harness stubs, handed to the group table's dependencies
+//       [--coverage=block]   V8 block coverage of the group's files, written to the tap as `coverage` records
+//                            (block-coverage.mjs): one at ready (phase start), one at every /quiescent answer
+//                            (phase quiescent, or pending when the time passed), one at the stop (phase stop)
 //
 // It refuses (exit 64) outside the test isolation guard, without an armed tap
 // set up for the same group, on an unknown group, variant or option, and on a
@@ -38,10 +41,11 @@ import { tap } from './tap.mjs';
 import { isolationRefusal } from './run-scratch.mjs';
 import { EDGE_STEPS, REPOSITORY_ROOT, SERVER_ROOT, composeEdge, createAbsentDependencies, importFromServer } from './edge.mjs';
 import { GROUPS } from './groups.mjs';
+import { startBlockCoverage } from './block-coverage.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const EXIT = Object.freeze({ stopped: 0, startup: 1, refused: 64 });
-const OPTIONS = new Set(['group', 'data-root', 'listen', 'control', 'table', 'variants', 'stubs', 'home']);
+const OPTIONS = new Set(['group', 'data-root', 'listen', 'control', 'table', 'variants', 'stubs', 'home', 'coverage']);
 const QUIESCENT_DEFAULT_MS = 30_000;
 const QUIESCENT_MAX_MS = 600_000;
 
@@ -155,6 +159,25 @@ function watchLauncher(stop) {
   timer.unref();
 }
 
+/**
+ * How late Node refreshes its cached Date header on this host, measured the way Node schedules it: an
+ * unreferenced timer due at the next second boundary (Node clears the cached string with one), and how late
+ * it fires. Each lateness above the latest so far is a tap `clock` record; the driver takes the most of them
+ * and of the stale heads the tap saw as the arm's Date lag (rule W, compare.mjs dateInWindow).
+ */
+function watchDateLag() {
+  let most = 0;
+  const arm = () => {
+    const due = (Math.floor(Date.now() / 1000) + 1) * 1000;
+    setTimeout(() => {
+      const late = Date.now() - due;
+      if (late > most) { most = late; tap.recordClock({ dateLagMs: late, at: due }); }
+      arm();
+    }, due - Date.now()).unref();
+  };
+  arm();
+}
+
 export async function main(argv = process.argv.slice(2)) {
   const refusal = isolationRefusal();
   if (refusal) return refuse(refusal);
@@ -164,6 +187,9 @@ export async function main(argv = process.argv.slice(2)) {
   const listen = address(options.listen, '127.0.0.1:0');
   const control = address(options.control, '127.0.0.1:0');
   if (!listen || !control) return refuse('--listen and --control take 127.0.0.1:<port>');
+  if (options.coverage !== undefined && options.coverage !== 'block') return refuse('--coverage takes block');
+  // Started before anything of the group is imported: a function compiled earlier has no block counters.
+  const coverage = options.coverage ? startBlockCoverage() : null;
   let loaded;
   try { loaded = await loadTable(options.table); } catch (error) { return refuse(error.message); }
   const { table } = loaded;
@@ -246,6 +272,8 @@ export async function main(argv = process.argv.slice(2)) {
   });
 
   for (const { state } of composed) tap.tagServer(state.server);
+  // What ran in the group's files, from the previous take to now, for `seq` (0: no exchange).
+  const takeCoverage = (phase, seq) => { if (coverage) tap.recordCoverage({ phase, seq, files: coverage.take(groupFiles) }); };
   if (group.edge === 'web-api') tap.observeEntry(await entryObserver(composed[0].state));
   const controlServer = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1');
@@ -261,8 +289,8 @@ export async function main(argv = process.argv.slice(2)) {
     if (req.method === 'GET' && url.pathname === '/quiescent') {
       const asked = Number(url.searchParams.get('timeoutMs') ?? QUIESCENT_DEFAULT_MS);
       if (!Number.isInteger(asked) || asked < 1 || asked > QUIESCENT_MAX_MS) return reply(400, { error: `timeoutMs must be an integer from 1 to ${QUIESCENT_MAX_MS}` });
-      const timer = setTimeout(() => { tap.flushOf(seq); reply(200, { seq, quiescent: false, pending: tap.pendingOf(seq), ...tap.blindOf(seq) }); }, asked);
-      tap.whenQuiescent(seq).then((result) => { clearTimeout(timer); reply(200, result); }, (error) => { clearTimeout(timer); reply(404, { error: error.message }); });
+      const timer = setTimeout(() => { tap.flushOf(seq); takeCoverage('pending', seq); reply(200, { seq, quiescent: false, pending: tap.pendingOf(seq), ...tap.blindOf(seq) }); }, asked);
+      tap.whenQuiescent(seq).then((result) => { clearTimeout(timer); if (!replied) takeCoverage('quiescent', seq); reply(200, result); }, (error) => { clearTimeout(timer); reply(404, { error: error.message }); });
       return;
     }
     if (req.method === 'GET' && url.pathname === '/pending') return reply(200, { seq, pending: tap.pendingOf(seq), ...tap.blindOf(seq) });
@@ -274,6 +302,7 @@ export async function main(argv = process.argv.slice(2)) {
   let stopping = null;
   const servers = composed.map(({ state }) => state.server);
   const stop = () => {
+    if (!stopping) takeCoverage('stop', 0);
     tap.flushAll();
     stopping ??= Promise.all(servers.map((server) => new Promise((resolve) => {
       server.closeAllConnections?.();
@@ -289,6 +318,8 @@ export async function main(argv = process.argv.slice(2)) {
   } catch (error) { process.stderr.write(`group host: cannot listen: ${error.message}\n`); return EXIT.startup; }
   for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.once(signal, () => { stop(); });
   watchLauncher(stop);
+  watchDateLag();
+  takeCoverage('start', 0);
   process.stdout.write(`${JSON.stringify({ ready: { listen: servers[0].address().port, control: controlServer.address().port, pid: process.pid, tap: tap.file, group: options.group,
     variants: Object.fromEntries(composed.slice(1).map(({ name, state }) => [name, state.server.address().port])) } })}\n`);
   await new Promise((resolve) => { servers[0].once('close', resolve); });

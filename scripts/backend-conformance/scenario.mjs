@@ -13,7 +13,9 @@
 //                                                 row with any other problem is not waived }
 // Step kinds (each has a plain id unique in the scenario):
 //   exchange      one request: method, target, headers, body, principal; `edge: true` when the edge
-//                 answers it (recorded on the reference, never sent to a candidate)
+//                 answers it (recorded on the reference, never sent to a candidate); `tail: true` when
+//                 what the server composes after the group answers it (the group host's tail stand-in:
+//                 a method no route of the group registers), which is an edge exchange too
 //   concurrent    2 or 3 exchanges sent at once (the reference also runs every order, §5.6)
 //   external      the harness changes the data root between exchanges (write, delete, rename, mkdir, symlink, chmod)
 //   restart       the arm stops and starts again on the tree it left
@@ -48,7 +50,7 @@ export const jsonBody = (value) => Object.freeze({ kind: 'json', bytes: Buffer.f
 export const rawBody = (bytes, encoding = 'utf8') => Object.freeze({ kind: 'raw', bytes: Buffer.isBuffer(bytes) ? Buffer.from(bytes) : Buffer.from(String(bytes), encoding) });
 
 // ------------------------------------------------------------------ steps
-const request = ({ method, target, headers = [], body = null, principal, edge = false }) => ({ method, target, headers: headers.map(([name, value]) => [name, value]), body, principal, edge });
+const request = ({ method, target, headers = [], body = null, principal, edge = false, tail = false }) => ({ method, target, headers: headers.map(([name, value]) => [name, value]), body, principal, edge: edge || tail, tail });
 export const step = Object.freeze({
   exchange: (id, spec) => ({ kind: 'exchange', id, request: request(spec) }),
   concurrent: (id, members) => ({ kind: 'concurrent', id, members: members.map(([member, spec]) => ({ member, request: request(spec) })) }),

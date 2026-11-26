@@ -46,10 +46,18 @@ export const COMPARER_PLANTS = Object.freeze([
   { id: 'root-mode-ignored', find: '    if (a !== b) ctx.differ(`tree.${prefix}(root).mode`', replace: '    if (false) ctx.differ(`tree.${prefix}(root).mode`' },
   { id: 'date-presence-ignored', find: "  if (wire && wire.transport.has('date') !== right.transport.has('date')) ctx.differ(", replace: '  if (false) ctx.differ(' },
   { id: 'mtime-lag-unbounded', find: '!(entry.mtimeMs >= span.start - granularity &&', replace: '!(entry.mtimeMs >= span.start - granularity - 1e9 &&' },
+  // The census package's rule (BH5): an ETag over a body holding a supplied value, as Express's weak ETag of each side's own body.
+  { id: 'etag-function-unchecked', find: '        if (!isWeakOf(right.values, ownRight)) ctx.differ(', replace: '        if (false) ctx.differ(' },
+  { id: 'etag-owners-raw', find: "? '<the weak ETag of its own body>' : value", replace: '? value : value' },
+  // The Date lag measured on the reference (fix round 1 of BH5): bounded by the measurement, and the candidate's is the reference's.
+  { id: 'date-lag-a-second-more', find: '  return at + 1000 + Math.min(lagMs, DATE_LAG_CAP_MS) > t0 && at <= t1;', replace: '  return at + 2000 + Math.min(lagMs, DATE_LAG_CAP_MS) > t0 && at <= t1;' },
+  { id: 'date-lag-uncapped', find: '  return at + 1000 + Math.min(lagMs, DATE_LAG_CAP_MS) > t0 && at <= t1;', replace: '  return at + 1000 + lagMs > t0 && at <= t1;' },
+  { id: 'date-lag-candidate-unbounded', find: 'candidate: Number.isFinite(dateLagMs) ? dateLagMs : dateLagOf(reference) },', replace: 'candidate: 1e9 },' },
+  { id: 'date-lag-negative-accepted', find: ' || !(Number.isFinite(lagMs) && lagMs >= 0)) return false;', replace: ') return false;' },
   // The 34 weakened copies of the BH3/BH4 review (reports/BH34-review-probes/review-comparer-plants.mjs), each as the reviewer wrote it.
   { id: 'key-order-ignored', review: true, pair: ["    if (!isDeepStrictEqual(Object.keys(a), Object.keys(b))) return { where: `${where}(key order)`", "    if (false) return { where: `${where}(key order)`"] },
   { id: 'number-loose-equal', review: true, pair: ['  return Object.is(a, b) ? null :', '  return a == b ? null :'] },
-  { id: 'date-always-in-window', review: true, pair: ['  return at >= Math.floor(t0 / 1000) * 1000 && at <= t1;', '  return true;'] },
+  { id: 'date-always-in-window', review: true, pair: ['  return at + 1000 + Math.min(lagMs, DATE_LAG_CAP_MS) > t0 && at <= t1;', '  return true;'] },
   { id: 'missing-supplied-value-ignored', review: true, pair: ["    if (!other) { problems.push(`supplied value ${entry.name} is in one arm only`); continue; }", '    if (!other) continue;'] },
   { id: 'shared-root-ignored', review: true, pair: ["      if (a.given === b.given || (a.canonical && a.canonical === b.canonical)) problems.push(", '      if (false) problems.push('] },
   { id: 'request-method-ignored', review: true, pair: ["  if (tap.entry?.method !== sent.method) ctx.differ(", '  if (false) ctx.differ('] },

@@ -275,10 +275,14 @@ test('the command line refuses outside the guard and, on the real tree, judges t
   assert.equal(refused.code, EXIT.refused, refused.stderr);
   assert.deepEqual(fs.readdirSync(env.TMPDIR), []);
   // The closure check (R, R' and J) judges the rows: every row of the write lock passes; on drift no row is produced at all.
+  // One scenario of the group has no census: the run is never complete (exit 2), and its last line says why.
   const last = /backend conformance: (passed|INCOMPLETE|COMPOSITION DRIFT) \((\d+) rows: (\d+) passed, (\d+) failed, (\d+) inconclusive, (\d+) unstable, (\d+) unrecordable/.exec(real.stdout);
   assert.ok(last, real.stdout);
   if (last[1] === 'COMPOSITION DRIFT') { t.diagnostic(real.stdout); assert.equal(last[2], '0'); assert.equal(real.code, EXIT.incomplete); } else {
-    assert.equal(real.code, EXIT.passed, real.stdout + real.stderr);
+    assert.equal(real.code, EXIT.incomplete, real.stdout + real.stderr);
+    assert.equal(last[1], 'INCOMPLETE', real.stdout);
+    assert.match(real.stdout, /; 0 census gaps; 0 problems; not judged: census\) exit 2\n?$/, real.stdout);
+    assert.match(real.stdout, /^LIMIT census-not-judged \(1 of \d+ scenarios run\): /m);
     assert.deepEqual([last[2], last[3], last[4], last[5], last[6], last[7]], ['5', '5', '0', '0', '0', '0'], real.stdout);
     assert.match(real.stdout, /^ok {3}magic-prompts\.write-lock\/two-puts: the JavaScript candidate adapter equals the reference, and the reference is stable$/m);
     // The named limit of what a candidate's observation cannot see is printed in the summary, with its count.
