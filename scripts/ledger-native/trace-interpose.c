@@ -34,6 +34,15 @@ static int fail_fsync = 0;
 static _Atomic unsigned char traced[MAX_FDS];
 
 __attribute__((constructor)) static void trace_init(void) {
+  // Only the first process the library is loaded into is traced and made to
+  // fail: a child it starts (Git, where the system lets the library into it)
+  // inherits the owner's pid in the environment and stays untouched, so its
+  // own object writes are never taken for the traced process's.
+  const char *owner = getenv("LEDGER_TRACE_OWNER");
+  char self[32];
+  snprintf(self, sizeof self, "%d", (int)getpid());
+  if (!owner) setenv("LEDGER_TRACE_OWNER", self, 1);
+  else if (strcmp(owner, self) != 0) return;
   const char *out = getenv("LEDGER_TRACE_OUT");
   filter = getenv("LEDGER_TRACE_FILTER");
   const char *fail = getenv("LEDGER_TRACE_FAIL");
