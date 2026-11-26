@@ -132,7 +132,9 @@ test('a rate-limited failure shows the provider reset time and persists it witho
         root.render(<SessionFailureNotice sessionId="s" />);
       });
       expect(container.textContent).toContain('The provider is limiting requests');
-      expect(container.textContent).toContain('Resets at');
+      // Ten minutes ahead is another calendar day in the last ten minutes of a day: the notice then names the date.
+      const sameDay = new Date(now).toDateString() === new Date(now + 10 * 60_000).toDateString();
+      expect(container.textContent).toContain(sameDay ? 'Resets at' : 'Resets on');
       const persisted = JSON.parse(getSafeStorage().getItem('devryan:notification-completions:v1') ?? '[]') as Array<{ error?: { code?: string; retryAt?: number } }>;
       expect(persisted.at(-1)?.error).toMatchObject({ code: 'provider_rate_limited', retryAt: now + 10 * 60_000 });
       expect(JSON.stringify(persisted)).not.toContain('private provider text');
