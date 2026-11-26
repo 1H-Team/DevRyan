@@ -296,8 +296,12 @@ describe('maintenance validation selection', () => {
     const all = discoverScriptTestFiles();
     const scriptsCommand = file => buildPlan('fast', [file]).commands.find(c => c.label === 'test:scripts');
     const scheduled = command => testUnitsForPlan([command]).flatMap(unit => unit.args.filter(arg => /test\.[cm]?[jt]sx?$/.test(arg))).map(arg => arg.replace(/^\.\//, '')).sort();
-    const leaf = scriptsCommand('scripts/release-ci-wait.mjs');
-    assert.ok(leaf.tests.includes('scripts/release-ci-wait.test.mjs'));
+    // The leaf's name is put together here and never written out: a source that
+    // names a script reaches it in the graph, so spelling it would make this
+    // file, and everything that reaches this file, part of the leaf's selection.
+    const leafStem = ['scripts', ['release', 'status'].join('-')].join('/');
+    const leaf = scriptsCommand(`${leafStem}.mjs`);
+    assert.ok(leaf.tests.includes(`${leafStem}.test.mjs`));
     assert.ok(leaf.tests.length < all.length / 10, `${leaf.tests.length} tests`);
     assert.ok(!leaf.tests.some(file => /\.graph\.test\./.test(file)));
     assert.deepEqual(scheduled(leaf), leaf.tests);
@@ -309,7 +313,7 @@ describe('maintenance validation selection', () => {
     assert.ok(helper.tests.length < all.length);
     assert.deepEqual(scheduled(helper), helper.tests);
     // A subset leaves the startup contract's scripts group to run; the whole suite covers it.
-    const subset = buildPlan('fast', ['scripts/release-ci-wait.mjs']);
+    const subset = buildPlan('fast', [`${leafStem}.mjs`]);
     assert.deepEqual(subset.commands.at(-1).coveredBy, []);
     const lines = describeScriptSelection(subset.scriptSelection, all.length);
     // A third line names the full-suite-only tests the selection reached, which fast mode leaves to validate:full and CI.
@@ -318,7 +322,7 @@ describe('maintenance validation selection', () => {
     if (deferred.length) assert.equal(lines[2], `Left to validate:full and CI (full-suite only): ${deferred.join(', ')}.`);
     assert.ok(deferred.every(file => FULL_SUITE_ONLY.test(file) && !leaf.tests.includes(file)));
     assert.match(lines[0], new RegExp(`^Script tests: ${leaf.tests.length} of ${all.length} selected`));
-    assert.match(lines[1], /scripts\/release-ci-wait\.mjs: \d+ reaching it.*CI runs every script test/);
+    assert.match(lines[1], new RegExp(`${leafStem}\\.mjs: \\d+ reaching it.*CI runs every script test`));
     // The whole suite, less the full-suite-only tests, which only validate:full and CI run.
     const fullOnly = all.filter(file => FULL_SUITE_ONLY.test(file));
     const fast = all.filter(file => !FULL_SUITE_ONLY.test(file)).sort();
