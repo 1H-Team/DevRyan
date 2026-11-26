@@ -36,9 +36,19 @@ import { expandStrings, openEngine, PROTOCOL, shareStrings, typescriptEngine } f
 import { checkManifest, readManifestText, recordedFamilies } from './manifest.mjs';
 import { loadPortMap } from './port-map.mjs';
 import { createScratch, EXIT, HARNESS_DIR, parseOptions, recordOnce, REPOSITORY_ROOT, stopOnInterrupt, TOY_EXPECTED } from './record.mjs';
-import { bindPlan, compareReplayed, envOf, notReplayable } from './replay-compare.mjs';
+import { compareCandidate } from './candidate-compare.mjs';
+import { bindPlan, caseLayout, envOf, groupHolds, notReplayable, stepSequence } from './replay-compare.mjs';
+
+export { groupHolds };
 
 export const MODES = Object.freeze(['file', 'isolated']);
+/**
+ * The recording semantics this replayer and the candidate comparer read (the
+ * recorder's RECORDING_VERSION, which the self-test pins equal): a container
+ * of another recording is refused, never read by rules it was not made by
+ * (the group layout rests on how this recording places effects).
+ */
+export const RECORDING = 9;
 export const REPLAY_TOY_DIR = path.join(HARNESS_DIR, 'toy', 'replay');
 export const REPLAY_PORT_MAP = path.join(REPLAY_TOY_DIR, 'replay-port-map.json');
 export const REPLAY_TOYS = Object.freeze(['toy-relay.toy.mjs', 'toy-store.toy.mjs']);
@@ -125,24 +135,11 @@ export const isStatefulFamily = (family) => Boolean(family.store || family.modul
 const deliverable = (kase) => kase.steps.every((step) => ['call', 'new', 'get', 'timer', 'settle', 'callback'].includes(step.input.kind) && (step.input.during === undefined || step.input.duringCall !== undefined));
 
 /**
- * The top-level steps a replay holds (sends with `hold`), so that the engine delivers a group (recording 8): a step
- * whose next top-level step arrived together with it, and every step from the one that made a port call up to its
- * immediate answer (one the recording counted as settling in the call's own drain), so the engine has the answer
- * when the call is made.
+ * The closure's comparison (the exact rules): replay-compare.mjs compareExact
+ * on the engine's protocol-5 answer, through the candidate comparer so the
+ * order of each group is compared as well (candidate-compare.mjs).
  */
-export function groupHolds(steps) {
-  const top = steps.map((step, index) => [step, index]).filter(([step]) => step.input.during === undefined).map(([, index]) => index);
-  const holds = new Set();
-  top.forEach((index, at) => { const next = top[at + 1]; if (next !== undefined && steps[next].input.together === true) holds.add(index); });
-  for (const [at, index] of top.entries()) {
-    const step = steps[index];
-    if (step.input.kind !== 'settle' || step.input.immediate === undefined) continue;
-    let made = -1;
-    for (let back = at - 1; back >= 0 && made < 0; back -= 1) if (steps[top[back]].effects.some((item) => item.kind === 'port' && item.call === step.input.call)) made = back;
-    for (let hold = made < 0 ? at - 1 : made; hold >= 0 && hold < at; hold += 1) holds.add(top[hold]);
-  }
-  return holds;
-}
+export const compareClosure = (kase, replayed, options) => compareCandidate(kase, replayed, { ...options, rules: 'exact' });
 
 /** Two codec trees with the same content, identity numbers aside (each read alone, its numbers by first appearance). */
 export function sameContent(left, right) {
@@ -186,6 +183,7 @@ export function planContainers(list, portMap, { families = null } = {}) {
     const family = familyDescriptor(portMap, header.family);
     if (!family) { problems.push({ check: 'family', container: name, detail: `family ${header.family} is not in the port map` }); continue; }
     if (header.portMap !== portMap.digest) { problems.push({ check: 'header', container: name, detail: `recorded with port map ${header.portMap}, replayed with ${portMap.digest}` }); continue; }
+    if (header.recording !== RECORDING) { problems.push({ check: 'header', container: name, detail: `made by recording ${header.recording}, and this replayer reads recording ${RECORDING} only: record it again` }); continue; }
     const cases = reader.cases.map((record) => {
       const verdict = { id: record.id, outcome: record.outcome, judge: false, reason: null, later: null, deliver: false };
       if (record.outcome === 'unrecordable') verdict.reason = record.reason ?? 'unrecordable';
@@ -210,7 +208,7 @@ const outcomeOf = (verdict) => (verdict.judge ? null : verdict.outcome === 'unre
 const outsideDifference = (entries, when) => ({ check: 'outside', kind: 'value', step: null, path: '/outside', expected: `nothing ${when}`, actual: JSON.stringify(entries.map((entry) => entry.what)).slice(0, 400) });
 
 /** Runs one unit (a fresh module instance) on the engine: its cases in order, each step to quiescence before the next. */
-async function runUnit(engine, unit, plants, results, notes) {
+async function runUnit(engine, unit, plants, results, notes, compare = compareClosure) {
   const { container, mode, items, id } = unit;
   const where = `${container.name} (${mode})`;
   // What the family's module graph took when it loaded (container format 5): the same for every case of the container.
@@ -259,7 +257,10 @@ async function runUnit(engine, unit, plants, results, notes) {
       // Only a judged case's end is where the engine's own history stands; after any other the next case is seeded.
       endedWith = item.verdict.judge ? (kase.end?.state ?? null) : null;
       // One step's message: its input, the answers of its effects, the bind plan, and the inputs the test made inside
-      // its port calls (`during`), which travel with it and are delivered inside those calls.
+      // its port calls (`during`), which travel with it and are delivered inside those calls. Protocol 5: a top-level
+      // step's env answers its effects and those of the inputs nested in it, in the order they were made (its part of
+      // its group's answers); a nested input's own env is empty.
+      const layout = caseLayout(kase.steps);
       const stepMessage = (index) => {
         const step = kase.steps[index];
         const given = { kind: step.input.kind, entry: step.input.entry, args: step.input.args, now: step.input.now };
@@ -269,7 +270,8 @@ async function runUnit(engine, unit, plants, results, notes) {
         if (Object.prototype.hasOwnProperty.call(step.input, 'target')) given.target = step.input.target;
         const during = [];
         kase.steps.forEach((inner, at) => { if (at > index && inner.input.during === step.n && inner.input.duringCall !== undefined) during.push({ call: inner.input.duringCall, step: stepMessage(at) }); });
-        return { input: shareStrings(given, table), env: shareStrings(envOf(step), table), bind: plan[index], ...(during.length ? { during } : {}) };
+        const env = step.input.during === undefined ? envOf({ effects: stepSequence(layout, index) }) : [];
+        return { input: shareStrings(given, table), env: shareStrings(env, table), bind: plan[index], ...(during.length ? { during } : {}) };
       };
       const holds = groupHolds(kase.steps);
       for (const [index, step] of kase.steps.entries()) {
@@ -288,7 +290,7 @@ async function runUnit(engine, unit, plants, results, notes) {
       if (!ended.ok) throw new Error(ended.error);
       const replayed = readReplayed(ended.replayed, kase);
       if (!item.verdict.judge) { if (replayed.outside.length) notes.push(`${where}: ${kase.id}, not judged, made ${JSON.stringify(replayed.outside.map((entry) => entry.what)).slice(0, 300)} while no step was open`); continue; }
-      const { differences, stepsCompared } = compareReplayed(kase, replayed, { unordered: container.family.unordered });
+      const { differences, stepsCompared, freedoms } = compare(kase, replayed, { unordered: container.family.unordered });
       const halt = replayed.halt;
       const inconclusive = halt && INCONCLUSIVE_HALTS.has(halt.check) && differences.every((entry) => entry.check === 'halt' || entry.step === halt.step);
       results.get(item.key)[mode] = {
@@ -297,6 +299,8 @@ async function runUnit(engine, unit, plants, results, notes) {
         detail: inconclusive ? `the replayer could not deliver step ${halt.step}: ${halt.check}: ${halt.detail}` : null,
         // A binding not found is no difference by itself: a later input that names the object then differs by identity.
         notes: replayed.bindFailures.length ? [`${replayed.bindFailures.length} bindings not found`] : [],
+        // The freedoms a candidate engine's comparison needed to reproduce the case (none for the exact rules).
+        ...(freedoms?.length ? { freedoms } : {}),
       };
     } catch (error) {
       lost = `the engine failed on ${kase.id}: ${error.message}`;
@@ -311,26 +315,31 @@ async function runUnit(engine, unit, plants, results, notes) {
 /**
  * What an engine's `end` answered, in the shape the comparison reads: its
  * strings put back, and every member a careless engine might leave out
- * present (no steps is a step-count difference, not an engine failure). The
+ * present (no steps is a step-count difference, not an engine failure; no
+ * groups, a difference of every effect). Protocol 5: steps carry their group
+ * and positions, `groups` the effects in the order the engine made them. The
  * halt's step is the engine's count, mapped back to the recorded step number.
  */
 function readReplayed(replayed, kase) {
   const given = replayed !== null && typeof replayed === 'object' ? replayed : {};
   const strings = Array.isArray(given.strings) ? given.strings : [];
-  const steps = Array.isArray(given.steps) ? expandStrings(given.steps, strings).filter((step) => step !== null && typeof step === 'object').map((step) => ({ ...step, input: step.input ?? {}, effects: Array.isArray(step.effects) ? step.effects : [] })) : [];
+  const steps = Array.isArray(given.steps) ? expandStrings(given.steps, strings).filter((step) => step !== null && typeof step === 'object').map((step) => ({ ...step, input: step.input ?? {} })) : [];
+  const groups = Array.isArray(given.groups) ? expandStrings(given.groups, strings).map((group) => ({ effects: Array.isArray(group?.effects) ? group.effects : [] })) : [];
   const halt = given.halt && typeof given.halt === 'object' ? { ...given.halt, step: Number.isInteger(given.halt.step) ? (kase.steps[given.halt.step - 1]?.n ?? given.halt.step) : given.halt.step } : null;
   const state = (key) => (Object.prototype.hasOwnProperty.call(given, key) ? expandStrings(given[key], strings) : undefined);
-  return { steps, entry: state('entry'), end: state('end'), pending: Array.isArray(given.pending) ? expandStrings(given.pending, strings) : undefined, halt, outside: Array.isArray(given.outside) ? given.outside : [], bindFailures: Array.isArray(given.bindFailures) ? given.bindFailures : [] };
+  return { steps, groups, entry: state('entry'), end: state('end'), pending: Array.isArray(given.pending) ? expandStrings(given.pending, strings) : undefined, halt, outside: Array.isArray(given.outside) ? given.outside : [], bindFailures: Array.isArray(given.bindFailures) ? given.bindFailures : [] };
 }
 
 /**
  * Replays the planned containers on `engine` (a process description:
  * engine.mjs typescriptEngine) in `modes`, `concurrency` units at a time.
  * `plants` ({ module, source }) load a planted copy of a module in place of
- * its file. Resolves `{ cases, problems, engineStderr }`; each case
+ * its file. `compare` judges each replayed case (replay-compare.mjs
+ * compareClosure, the exact rules; a candidate engine's comparer passes its own).
+ * Resolves `{ cases, problems, engineStderr }`; each case
  * `{ container, family, id, outcome, modes: { file?, isolated? }, reason, later }`.
  */
-export async function replayPlanned(planned, { engine, modes = MODES, plants = [], concurrency, deadlineMs = DEFAULT_DEADLINE_MS, startDeadlineMs }) {
+export async function replayPlanned(planned, { engine, modes = MODES, plants = [], concurrency, deadlineMs = DEFAULT_DEADLINE_MS, startDeadlineMs, compare = compareClosure }) {
   const results = new Map();
   const units = [];
   let unitId = 0;
@@ -356,7 +365,7 @@ export async function replayPlanned(planned, { engine, modes = MODES, plants = [
       while (next < units.length) {
         const unit = units[next];
         next += 1;
-        await runUnit(engineProcess, unit, plants, results, notes);
+        await runUnit(engineProcess, unit, plants, results, notes, compare);
       }
     }));
   } catch (error) {

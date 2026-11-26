@@ -197,7 +197,9 @@ export const PRODUCT_PLANTS = Object.freeze([
     expect: { check: 'halt', kind: 'effect-order', family: 'claude-catalog-recovery' } },
   { name: 'c0e-superseded-cleanup-runs', origin: 'C0e', file: `${SYNC}/directory-disposal.ts`, families: ['directory-disposal'],
     anchor: '        if (generation === activeGeneration) {\n', replacement: '        if (generation >= activeGeneration) {\n',
-    expect: { check: 'halt', kind: 'unanswered', family: 'directory-disposal' } },
+    // Protocol 5 (C0g fix round): the engine answers a group from one list, so the superseded cleanup's port call is
+    // asked before its turn there (`effect-order`), where a step's own list had no answer for it (`unanswered`).
+    expect: { check: 'halt', kind: 'effect-order', family: 'directory-disposal' } },
   { name: 'c0e-creation-deadline-off-by-one', origin: 'C0e', file: `${SYNC}/session-creation.ts`, families: ['session-creation'],
     anchor: 'export const SESSION_CREATION_DEADLINE_MS = 120_000\n', replacement: 'export const SESSION_CREATION_DEADLINE_MS = 119_999\n',
     expect: { check: 'effects', kind: 'value', family: 'session-creation' } },

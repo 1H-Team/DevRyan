@@ -565,6 +565,12 @@ export const PLANTED = Object.freeze([
     anchor: "    .map((line) => TIMED_IN_TEST_CODE.reduce((text, { line: shape }) => text.replace(shape, '$1#$2'), line))", replacement: "    .map((line) => line.replace(/max [0-9]+ ms/, 'max # ms'))" },
   { name: 'c0f-fix-parity-timed-line-compared', origin: 'C0f fix: S2, the timed line compared', file: 'parity.mjs', tool: 'tools', expect: { check: 'parity-output-timed-in-test-code' },
     anchor: "    .map((line) => TIMED_IN_TEST_CODE.reduce((text, { line: shape }) => text.replace(shape, '$1#$2'), line))", replacement: '' },
+  // The C0g fix round (the C0g review's S3): the manifest's verdict is the family command's exit code, and its items
+  // hold every export the census judges (familychecks.mjs family-out pins them for the toys).
+  { name: 'c0g-fix-manifest-verdict-always-0', origin: 'C0g fix: S3, the manifest verdict is the exit code', file: 'family-run.mjs', tool: 'family', expect: { check: 'family-out' },
+    anchor: 'verdict: { code, failures: failures.length,', replacement: 'verdict: { code: 0, failures: failures.length,' },
+  { name: 'c0g-fix-census-items-lose-an-export', origin: 'C0g fix: S3, the census items hold every judged export', file: 'census.mjs', tool: 'family', expect: { check: 'family-out' },
+    anchor: "    const exports = Object.entries(kinds).filter(([name, kind]) => kind !== 'data' && !inline.has(name) && name !== family.state).map(([name]) => name).sort();", replacement: "    const exports = Object.entries(kinds).filter(([name, kind]) => kind !== 'data' && !inline.has(name) && name !== family.state).map(([name]) => name).sort().slice(1);" },
 ]);
 
 /**

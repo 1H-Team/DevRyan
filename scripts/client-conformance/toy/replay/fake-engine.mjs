@@ -20,7 +20,10 @@
 // Protocol 3 (package C0e): `seed` is answered and, for `echo`, the seeded state
 // is echoed as the case's entry and end state; timer, settle and callback
 // inputs are echoed like calls. `lookup` answers the pending timers recorded
-// for the id too (C0e fix round).
+// for the id too (C0e fix round). Protocol 5 (package C0g fix round): every
+// answer is in its shape (steps with their group and positions, the groups'
+// effects); `lookup` lays the recorded case out as the comparer does, so with
+// the id it would be an exact answer.
 // Its subject is the replayer's toy recording only; product code never runs here.
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -31,6 +34,7 @@ const [mode, directory] = process.argv.slice(2);
 const here = path.dirname(new URL(import.meta.url).pathname);
 const { expandStrings, PROTOCOL, protocolLine } = await import(pathToFileURL(path.join(here, '..', '..', 'engine.mjs')).href);
 const { readContainer, VALUE_REF } = await import(pathToFileURL(path.join(here, '..', '..', 'container.mjs')).href);
+const { caseLayout, pendingByGroup } = await import(pathToFileURL(path.join(here, '..', '..', 'replay-compare.mjs')).href);
 
 // The recording, read as an engine that cheats would read it: every case's steps with their values resolved.
 const recorded = [];
@@ -42,8 +46,16 @@ if (directory) {
   }
 }
 const byId = new Map(recorded.map((item) => [item.id, item.steps]));
+// A protocol-5 answer: steps laid out in groups as the comparer lays out a recording (replay-compare.mjs caseLayout).
+const asProtocol5 = (steps) => {
+  const layout = caseLayout(steps);
+  return {
+    steps: steps.map(({ effects: _effects, returnedAt: _returnedAt, ...rest }, index) => ({ ...rest, group: layout.groupOf[index] + 1, openedAt: layout.openedAt[index], ...(layout.returnedAt[index] !== undefined ? { returnedAt: layout.returnedAt[index] } : {}) })),
+    groups: layout.sequences.map((effects) => ({ effects })),
+  };
+};
 const statesById = new Map(recorded.map((item) => [item.id, { entry: item.entry ?? undefined, end: item.end ?? undefined }]));
-const pendingById = new Map(recorded.map((item) => [item.id, item.pending]));
+const pendingById = new Map(recorded.map((item) => [item.id, pendingByGroup(item.pending, item.steps)]));
 const keyOf = (input) => JSON.stringify([input.entry, input.args]);
 const byFirstInput = new Map();
 for (const item of recorded) if (item.steps[0] && !byFirstInput.has(keyOf(item.steps[0].input))) byFirstInput.set(keyOf(item.steps[0].input), item.steps);
@@ -86,7 +98,7 @@ for await (const line of createInterface({ input: process.stdin })) {
     const states = mode === 'echo' && kase.seeded !== undefined ? { entry: kase.seeded, end: kase.seeded } : looked ? Object.fromEntries(Object.entries(looked).filter(([, value]) => value !== undefined && value !== null)) : {};
     // `lookup` also answers the timers recorded as pending at the end (C0e fix round); the others report none.
     const pending = mode === 'lookup' ? (pendingById.get(kase.asked) ?? []) : [];
-    write({ id, ok: true, replayed: { steps, ...states, pending, strings: [], halt: null, outside: [], bindFailures: [] } });
+    write({ id, ok: true, replayed: { ...asProtocol5(steps ?? []), ...states, pending, strings: [], halt: null, outside: [], bindFailures: [] } });
     continue;
   }
   if (op === 'close') { write({ id, ok: true, between: [] }); continue; }

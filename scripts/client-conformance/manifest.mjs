@@ -9,9 +9,18 @@
 // case whose outcome changed (each changes the container's digest) is a
 // problem of the directory, never a smaller recording that passes.
 //
-//   {"format":"devryan-client-conformance-recording","version":1,"portMap":"<digest>","scope":null|[names],
+//   {"format":"devryan-client-conformance-recording","version":2,"portMap":"<digest>","scope":null|[names],
 //    "families":{"<family>":{"containers":["<file>",...],"cases":n,"outcomes":{"recorded":n,...}}},
-//    "containers":{"<file>":{"family":"<family>","digest":"sha256:<hex>","bytes":n,"cases":n,"outcomes":{...}}}}
+//    "containers":{"<file>":{"family":"<family>","digest":"sha256:<hex>","bytes":n,"cases":n,"outcomes":{...}}},
+//    "verdict":{"code":n,"failures":n,"inconclusive":n,"unstable":n}?,
+//    "items":{"<family>":{"exports":[...],"ports":[...],"events":[...]}}?}
+//
+// Version 2 (package C0g) adds what the family command judged: `verdict`, its
+// exit code and the counts behind it, and `items`, what its census judges per
+// family (census.mjs censusItems), so a reader that judges an engine's
+// coverage knows the items no case exercises and whether the recording passed
+// its own checks. Both are written by the family command; the replayer does
+// not need them, the candidate comparer requires them.
 //
 // It guards a directory against loss and damage (a container dropped or cut
 // short, a case re-marked, a file from another recording), not against a
@@ -22,7 +31,7 @@ import path from 'node:path';
 
 export const MANIFEST_FILE = 'recording-manifest.json';
 export const MANIFEST_FORMAT = 'devryan-client-conformance-recording';
-export const MANIFEST_VERSION = 1;
+export const MANIFEST_VERSION = 2;
 
 const digestOf = (text) => `sha256:${createHash('sha256').update(text, 'utf8').digest('hex')}`;
 const familyOfName = (name) => String(name).split('.').slice(-2, -1)[0] ?? '?';
@@ -43,9 +52,11 @@ export function countOutcomes(text) {
   return { cases, outcomes };
 }
 
-/** The manifest of `containers` (`[{ name, text }]`, as written), for the families asked for. */
-export function buildManifest(containers, { portMap, families, scope = null }) {
+/** The manifest of `containers` (`[{ name, text }]`, as written), for the families asked for, with the family command's `verdict` and census `items` when given. */
+export function buildManifest(containers, { portMap, families, scope = null, verdict = null, items = null }) {
   const manifest = { format: MANIFEST_FORMAT, version: MANIFEST_VERSION, portMap, scope, families: {}, containers: {} };
+  if (verdict) manifest.verdict = { code: verdict.code, failures: verdict.failures, inconclusive: verdict.inconclusive, unstable: verdict.unstable };
+  if (items) manifest.items = items;
   for (const name of families) manifest.families[name] = { containers: [], cases: 0, outcomes: {} };
   for (const { name, text } of [...containers].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
     const family = familyOfName(name);
@@ -79,6 +90,8 @@ export function checkManifest(manifestText, list, { portMap = null } = {}) {
     fail(`${MANIFEST_FILE} is not a ${MANIFEST_FORMAT}@${MANIFEST_VERSION} manifest`);
     return { problems, manifest: null };
   }
+  if (manifest.verdict !== undefined && (manifest.verdict === null || typeof manifest.verdict !== 'object' || !Number.isInteger(manifest.verdict.code))) fail(`${MANIFEST_FILE}: its verdict has no exit code`);
+  if (manifest.items !== undefined && (manifest.items === null || typeof manifest.items !== 'object' || Array.isArray(manifest.items))) fail(`${MANIFEST_FILE}: its items are not an object of families`);
   if (portMap !== null && manifest.portMap !== portMap) fail(`recorded with port map ${manifest.portMap}, read with ${portMap}`);
   const present = new Map(list.map((item) => [item.name, item.text]));
   for (const [name, entry] of Object.entries(manifest.containers)) {

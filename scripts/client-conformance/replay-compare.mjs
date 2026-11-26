@@ -124,12 +124,238 @@ export function envOf(step) {
   return env;
 }
 
+// --------------------------------------------------------------- groups (protocol 5)
+
+/**
+ * The top-level steps a replay holds (sends with `hold`), so that the engine delivers a group (recording 8): a step
+ * whose next top-level step arrived together with it, and every step from the one that made a port call up to its
+ * immediate answer (one the recording counted as settling in the call's own drain), so the engine has the answer
+ * when the call is made.
+ */
+export function groupHolds(steps) {
+  const top = steps.map((step, index) => [step, index]).filter(([step]) => step.input.during === undefined).map(([, index]) => index);
+  const holds = new Set();
+  top.forEach((index, at) => { const next = top[at + 1]; if (next !== undefined && steps[next].input.together === true) holds.add(index); });
+  for (const [at, index] of top.entries()) {
+    const step = steps[index];
+    if (step.input.kind !== 'settle' || step.input.immediate === undefined) continue;
+    let made = -1;
+    for (let back = at - 1; back >= 0 && made < 0; back -= 1) if (steps[top[back]].effects.some((item) => item.kind === 'port' && item.call === step.input.call)) made = back;
+    for (let hold = made < 0 ? at - 1 : made; hold >= 0 && hold < at; hold += 1) holds.add(top[hold]);
+  }
+  return holds;
+}
+
+const makesCall = (step, call) => step.effects.some((item) => (item.kind === 'port' || item.kind === 'new') && item.call === call);
+
+/**
+ * The groups of a recorded case (protocol 5): what one delivery set in motion,
+ * up to the next input the engine is given only once it ran out. A group
+ * starts at every top-level step but one that arrived `together` with the
+ * held step before it and an `immediate` answer to a call made in the same
+ * delivery (both delivered before the engine runs out, engine.mjs); a test's
+ * later call held in the same delivery (between a port call and its
+ * immediate answer) is delivered once the engine ran out, so it starts a
+ * group. An input nested in a port call is in the group of the step that made
+ * the call. Returns `{ groups, groupOf }`: each group the indices of its
+ * steps in step order; `groupOf[index]` the group of a step (0-based).
+ */
+export function caseGroups(steps) {
+  const holds = groupHolds(steps);
+  const indexOfN = new Map(steps.map((step, index) => [step.n, index]));
+  const groups = [];
+  const groupOf = new Array(steps.length);
+  const put = (index, at) => { groups[at].push(index); groupOf[index] = at; };
+  let delivery = null; // the steps of the delivery open so far (top-level and nested), while its last step was held
+  steps.forEach((step, index) => {
+    if (step.input.during !== undefined) {
+      const outer = indexOfN.get(step.input.during);
+      const at = outer !== undefined && groupOf[outer] !== undefined ? groupOf[outer] : groups.length - 1;
+      if (at < 0) { groups.push([]); put(index, 0); } else put(index, at);
+      if (delivery) delivery.push(index);
+      return;
+    }
+    const sameGroup = delivery !== null && (step.input.together === true || (step.input.kind === 'settle' && step.input.immediate !== undefined && delivery.some((at) => makesCall(steps[at], step.input.call))));
+    if (!sameGroup) groups.push([]);
+    put(index, groups.length - 1);
+    if (delivery === null) delivery = [];
+    delivery.push(index);
+    if (!holds.has(index)) delivery = null;
+  });
+  return { groups, groupOf };
+}
+
+/**
+ * Where everything a recorded case did sits in its groups (protocol 5): per
+ * group, its effects in the order they were made (`sequences`): the steps of
+ * the group in step order, each one's effects with the inputs nested in a port
+ * call placed right after that call's effect (they were delivered inside it);
+ * per step, `openedAt` and `returnedAt` (positions in its group's sequence:
+ * how many of the group's effects came before the step opened, and before its
+ * synchronous part returned; none for a step that records no return), and
+ * `place` (the position of each of its own effects). The recorder gives
+ * whatever lands after a later member of a group opened to that member
+ * (forwarding), so this order is the order the effects were made in.
+ */
+export function caseLayout(steps) {
+  const { groups, groupOf } = caseGroups(steps);
+  const sequences = groups.map(() => []);
+  const openedAt = new Array(steps.length);
+  const returnedAt = new Array(steps.length);
+  const place = steps.map(() => []);
+  const nested = new Map(); // `${outer n}\0${call}` -> indices nested in that call
+  steps.forEach((step, index) => {
+    if (step.input.during === undefined || step.input.duringCall === undefined) return;
+    const key = `${step.input.during}\0${step.input.duringCall}`;
+    if (!nested.has(key)) nested.set(key, []);
+    nested.get(key).push(index);
+  });
+  const laid = new Set();
+  const spans = steps.map(() => null); // per top-level step: the positions it and the inputs nested in it hold
+  const lay = (index, root) => {
+    if (laid.has(index)) return;
+    laid.add(index);
+    const step = steps[index];
+    spans[root] ??= [];
+    const sequence = sequences[groupOf[index]];
+    const returns = Number.isInteger(step.returnedAt) ? step.returnedAt : undefined;
+    openedAt[index] = sequence.length;
+    if (returns === 0) returnedAt[index] = sequence.length;
+    (step.effects ?? []).forEach((item, at) => {
+      place[index][at] = sequence.length;
+      spans[root].push(sequence.length);
+      sequence.push(item);
+      if ((item.kind === 'port' || item.kind === 'new') && item.call !== undefined) for (const inner of nested.get(`${step.n}\0${item.call}`) ?? []) lay(inner, root);
+      if (returns === at + 1) returnedAt[index] = sequence.length;
+    });
+    if (returns !== undefined && returnedAt[index] === undefined) returnedAt[index] = sequence.length;
+  };
+  steps.forEach((step, index) => { if (step.input.during === undefined) lay(index, index); });
+  // A nested input whose call no effect of its outer step holds is laid at the end of its group (no recording has one).
+  steps.forEach((_, index) => lay(index, index));
+  return { groups, groupOf, sequences, openedAt, returnedAt, place, spans };
+}
+
+/**
+ * The order caseLayout reconstructs, held against the recorder's own counters
+ * (the C0g review 2's cross-check): the containers keep per-step lists, and
+ * the order across a group's members comes from where the recorder places
+ * effects (forwarding to the member that opened later, a chain moved to its
+ * settle step, the `interleaved` refusal). The recorder numbers a case's port
+ * calls and `new`s (`call`) and its timers (`id`) as each is made, so along
+ * the laid-out order, groups in order, every call number and every timer id
+ * rises, and a settle opens after the effect of the call it answers. Effects
+ * with no counter (clock, notify, settled, set, read) are left to the
+ * closure. Returns `{ calls, timers, settles, violations }`: the counts of
+ * each check made and a line per violation.
+ */
+export function layoutCounterCheck(steps, layout = caseLayout(steps)) {
+  const out = { calls: 0, timers: 0, settles: 0, violations: [] };
+  let lastCall = -Infinity;
+  let lastTimer = -Infinity;
+  const madeAt = new Map(); // call -> [group, position]
+  layout.sequences.forEach((sequence, group) => sequence.forEach((item, position) => {
+    if ((item.kind === 'port' || item.kind === 'new') && Number.isInteger(item.call)) {
+      out.calls += 1;
+      if (item.call <= lastCall) out.violations.push(`call ${item.call} is laid out after call ${lastCall} (group ${group + 1}, position ${position})`);
+      lastCall = Math.max(lastCall, item.call);
+      madeAt.set(item.call, [group, position]);
+    }
+    if (item.kind === 'timer.set' && Number.isInteger(item.id)) {
+      out.timers += 1;
+      if (item.id <= lastTimer) out.violations.push(`timer ${item.id} is laid out after timer ${lastTimer} (group ${group + 1}, position ${position})`);
+      lastTimer = Math.max(lastTimer, item.id);
+    }
+  }));
+  steps.forEach((step, index) => {
+    if (step.input.kind !== 'settle' || !Number.isInteger(step.input.call) || !madeAt.has(step.input.call)) return;
+    out.settles += 1;
+    const [group, position] = madeAt.get(step.input.call);
+    const mine = layout.groupOf[index];
+    if (mine < group || (mine === group && layout.openedAt[index] <= position)) out.violations.push(`the settle of call ${step.input.call} (step ${step.n}) opens at ${mine + 1}:${layout.openedAt[index]}, before its call at ${group + 1}:${position}`);
+  });
+  return out;
+}
+
+/** The effects of a top-level step and of the inputs nested in its port calls, in the order they were made (its part of its group's sequence). */
+export const stepSequence = (layout, index) => (layout.spans[index] ?? []).map((position) => layout.sequences[layout.groupOf[index]][position]);
+
+/** A recorded case's pending timers named by their group (protocol 5: the number of the group that set each, 1-based). */
+export function pendingByGroup(pending, steps, groupOf = caseGroups(steps).groupOf) {
+  const indexOfN = new Map(steps.map((step, index) => [step.n, index]));
+  return (pending ?? []).map((item) => {
+    const { step, ...rest } = item;
+    const index = indexOfN.get(step);
+    return index === undefined ? item : { ...rest, group: groupOf[index] + 1 };
+  });
+}
+
+/**
+ * A protocol-5 answer (`replayed`: steps with `group`, `openedAt` and
+ * `returnedAt`, and `groups` with their effects in order) put back into steps
+ * the recorder's way, for the exact rules: an effect is the innermost nested
+ * input's that was open at its position (opened at or before it, returned
+ * after it), else the top-level step of its group opened last at or before it
+ * (the later one when two opened at one position), as the recorder forwards a
+ * group's continuations; each step's `returnedAt` becomes how many of its own
+ * effects came before its return. `recorded` tells which steps are nested.
+ * An effect no step of its group can hold is given to the last step, so it is
+ * a difference.
+ */
+export function attribute(replayed, recorded) {
+  const steps = Array.isArray(replayed.steps) ? replayed.steps : [];
+  const groups = Array.isArray(replayed.groups) ? replayed.groups : [];
+  const isNested = (index) => recorded.steps[index]?.input?.during !== undefined;
+  const out = steps.map((step) => { const { openedAt: _openedAt, returnedAt: _returnedAt, ...rest } = step; return { ...rest, effects: [] }; });
+  const owned = steps.map(() => []);
+  const members = new Map();
+  steps.forEach((step, index) => { if (Number.isInteger(step.group)) { if (!members.has(step.group)) members.set(step.group, []); members.get(step.group).push(index); } });
+  const stray = [];
+  groups.forEach((entry, at) => {
+    const list = members.get(at + 1) ?? [];
+    const effects = Array.isArray(entry?.effects) ? entry.effects : [];
+    effects.forEach((item, position) => {
+      let owner = -1;
+      for (const index of list) {
+        const { openedAt, returnedAt } = steps[index];
+        if (isNested(index) && Number.isInteger(openedAt) && Number.isInteger(returnedAt) && openedAt <= position && position < returnedAt && (owner < 0 || openedAt >= steps[owner].openedAt)) owner = index;
+      }
+      if (owner < 0) for (const index of list) if (!isNested(index) && Number.isInteger(steps[index].openedAt) && steps[index].openedAt <= position) owner = index;
+      if (owner < 0) { stray.push(item); return; }
+      out[owner].effects.push(item);
+      owned[owner].push(position);
+    });
+  });
+  if (stray.length && out.length) out[out.length - 1].effects.push(...stray);
+  steps.forEach((step, index) => { if (Number.isInteger(step.returnedAt)) out[index].returnedAt = owned[index].filter((position) => position < step.returnedAt).length; });
+  return { ...replayed, steps: out };
+}
+
+/**
+ * The exact rules (the TypeScript closure's) on a protocol-5 answer: the
+ * answer put back into steps (attribute) and compared step by step as before,
+ * each step's group compared, the pending timers by group; and when that
+ * agrees, the groups as the engine made them (`exactOrder`, the candidate
+ * comparer's view with no freedom): every group's effects in order, and every
+ * step's opening and return positions in it, so what the steps hold and the
+ * order it was made in both match the recording.
+ */
+export function compareExact(recorded, replayed, { unordered = [], exactOrder = null } = {}) {
+  const { groupOf } = caseGroups(recorded.steps);
+  const expected = { ...recorded, steps: recorded.steps.map((step, index) => ({ ...step, group: groupOf[index] + 1 })), end: recorded.end ? { ...recorded.end, pending: pendingByGroup(recorded.end.pending, recorded.steps, groupOf) } : recorded.end };
+  const result = compareReplayed(expected, attribute(replayed, recorded), { unordered });
+  if (result.differences.length || !exactOrder) return result;
+  return exactOrder(recorded, replayed, { unordered });
+}
+
 // The slots of a recorded step in written order, each `[key, tree, output]`: output slots are what the engine makes.
-function stepSlots(step) {
+// An effect's slot is named by its position in the step's group (`place`, protocol 5), else in the step.
+function stepSlots(step, place = null) {
   const slots = [['input.args', step.input.args, false]];
   if (Object.prototype.hasOwnProperty.call(step.input, 'value')) slots.push(['input.value', step.input.value, false]);
   if (Object.prototype.hasOwnProperty.call(step.input, 'target')) slots.push(['input.target', step.input.target, false]);
-  step.effects.forEach((item, index) => {
+  step.effects.forEach((item, at) => {
+    const index = place ? place[at] : at;
     if (item.args !== undefined) slots.push([`effects.${index}.args`, item.args, true]);
     // What the engine wrote on a port object (`set`: a socket's handler, package C0f) is the engine's own, as a settled value is.
     for (const key of ['answer', 'throws', 'value']) if (Object.prototype.hasOwnProperty.call(item, key)) slots.push([`effects.${index}.${key}`, item[key], item.kind === 'settled' || (item.kind === 'set' && key === 'value')]);
@@ -183,8 +409,16 @@ export function forEachIdPath(tree, visit) {
  * For each step, the objects first named in one of its output slots, as
  * `{slot, path, n}`: the engine binds the object at that path of what it made
  * to the recording's n, so a later input naming n gets that very object.
+ * Protocol 5: an effect's slot (`effects.<i>.<key>`) and a timer (`{timer,
+ * index}`: the group's index-th timer set) are named by their position in
+ * the step's group (caseLayout), never by the step, so an engine that makes
+ * them in another step of the group binds them alike.
  */
 export function bindPlan(kase) {
+  const layout = caseLayout(kase.steps);
+  // The ordinal of every timer.set among its group's, in the order the group made them.
+  const timerOrdinal = new Map();
+  for (const sequence of layout.sequences) { let sets = 0; for (const item of sequence) if (item.kind === 'timer.set') { timerOrdinal.set(item, sets); sets += 1; } }
   const seen = new Set();
   const visit = (bind, slot, tree, output) => forEachIdPath(tree, (n, path) => {
     if (seen.has(n)) return;
@@ -194,14 +428,13 @@ export function bindPlan(kase) {
   // A stateful family's entry state is the engine's own (as it stands, or as seeded): its objects are bound first.
   const entry = [];
   if (kase.entry?.state) visit(entry, 'entry', kase.entry.state, true);
-  const plan = kase.steps.map((step) => {
+  const plan = kase.steps.map((step, index) => {
     const bind = [];
-    for (const [slot, tree, output] of stepSlots(step)) visit(bind, slot, tree, output);
+    for (const [slot, tree, output] of stepSlots(step, layout.place[index])) visit(bind, slot, tree, output);
     // What the step handed the test as engine code is named `<entry>#<n>` by later steps (recording 7: `handedOut`).
     if (Number.isInteger(step.handedOut)) bind.push({ slot: 'returns', path: [], name: `${step.input.entry}#${step.handedOut}` });
-    // The j-th timer the step sets is the recording's timer `id`, which a later `timer` input names (ids are each side's own).
-    let sets = 0;
-    for (const item of step.effects) if (item.kind === 'timer.set') { bind.push({ timer: item.id, index: sets }); sets += 1; }
+    // The group's j-th timer set is the recording's timer `id`, which a later `timer` input names (ids are each side's own).
+    for (const item of step.effects) if (item.kind === 'timer.set') bind.push({ timer: item.id, index: timerOrdinal.get(item) });
     return bind;
   });
   plan.entry = entry;
@@ -441,6 +674,10 @@ export function compareReplayed(recorded, replayed, { unordered = [] } = {}) {
       const settled = l.value === undefined || r.value === undefined ? { path: `/steps/${index}/input/value`, kind: 'value', expected: l.value === undefined ? '(none)' : 'a value', actual: r.value === undefined ? '(none)' : 'a value' } : value(l.value, r.value, `/steps/${index}/input/value`);
       if (settled) add('input', settled);
     }
+    // The step's group (protocol 5): which inputs one delivery set in motion, up to quiescence, is observable.
+    if ((Object.prototype.hasOwnProperty.call(expected, 'group') || Object.prototype.hasOwnProperty.call(actual, 'group')) && expected.group !== actual.group) {
+      add('groups', { kind: 'value', path: `/steps/${index}/group`, expected: show(expected.group), actual: show(actual.group), detail: 'the step is in another group: what one delivery set in motion before the engine ran out is not what the recording has' });
+    }
     // Effects, in order: their kinds and names first, then each one's members and payloads.
     const expectedEffects = expected.effects.map(stripSite);
     const actualEffects = actual.effects.map(stripSite);
@@ -495,6 +732,13 @@ export function compareReplayed(recorded, replayed, { unordered = [] } = {}) {
       add('effects', { kind: 'return-position', path: `/steps/${index}/returnedAt`, expected: position(expected.returnedAt), actual: position(actual.returnedAt),
         detail: expected.returnedAt === undefined || actual.returnedAt === undefined ? 'one side does not say where the return was' : actual.returnedAt < expected.returnedAt ? 'an effect the recording made before the return came after it' : 'an effect the recording made after the return came before it' });
     }
+    // Where the step opened in its group's sequence (protocol 5, the candidate comparer's view): how many of the group's
+    // effects came before the test's input was delivered. Compared once the effects themselves agree.
+    if (!found.some((item) => item.check === 'effects') && (Object.prototype.hasOwnProperty.call(expected, 'openedAt') || Object.prototype.hasOwnProperty.call(actual, 'openedAt')) && expected.openedAt !== actual.openedAt) {
+      const position = (count) => (count === undefined ? '(not reported)' : `${count} of the group's effects before the input`);
+      add('effects', { kind: 'open-position', path: `/steps/${index}/openedAt`, expected: position(expected.openedAt), actual: position(actual.openedAt),
+        detail: expected.openedAt === undefined || actual.openedAt === undefined ? 'one side does not say where the input came' : actual.openedAt < expected.openedAt ? 'an effect the recording made before this input came after it' : 'an effect the recording made after this input came before it' });
+    }
     if (replayed.halt && replayed.halt.step === step) found.unshift({ check: 'halt', kind: replayed.halt.check, step, path: `/steps/${index}`, expected: 'the step answered from the recording', actual: replayed.halt.detail, detail: replayed.halt.detail });
     if (found.length) { differences.push(...found); return { differences, stepsCompared }; }
     stepsCompared += 1;
@@ -537,7 +781,7 @@ export function comparePending(recorded, replayed, steps, judge) {
     const right = mapped[index];
     const where = `/end/pending/${index}`;
     if (!left || !right) return { kind: 'value', path: where, expected: left ? show({ timer: left.timer, step: left.step }) : '(none)', actual: right ? show({ timer: right.timer, step: right.step }) : '(none)' };
-    for (const key of ['timer', 'repeat', 'step']) if (left[key] !== right[key]) return { kind: 'value', path: `${where}/${key}`, expected: show(left[key]), actual: show(right[key]) };
+    for (const key of ['timer', 'repeat', 'step', 'group']) if (left[key] !== right[key]) return { kind: 'value', path: `${where}/${key}`, expected: show(left[key]), actual: show(right[key]) };
     const found = compareValues(left.delay, right.delay, judge, `${where}/delay`);
     if (found) return found;
   }

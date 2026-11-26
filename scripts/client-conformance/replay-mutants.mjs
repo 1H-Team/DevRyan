@@ -164,7 +164,7 @@ export const REPLAYER_PLANTS = Object.freeze([
   { name: 'fix-protocol-unchecked', origin: 'C0d fix', file: RP, anchor: '    if (hello.protocol !== PROTOCOL) throw', replacement: '    if (false) throw', fails: 'engines' },
   // Package C0e: its own changes to the recorder, the codec, the engine and the replayer, each failing a part of the self-test.
   { name: 'c0e-return-position-not-compared', origin: 'C0e', file: RC, anchor: "    if (!found.some((item) => item.check === 'effects') && (Object.prototype.hasOwnProperty.call(expected, 'returnedAt')", replacement: "    if (false && (Object.prototype.hasOwnProperty.call(expected, 'returnedAt')", fails: 'compare' },
-  { name: 'c0e-engine-counts-the-return-late', origin: 'C0e', file: ET, anchor: '    // The effects made before the entry returned or threw; the rest come from the jobs it started.\n    record.returnedAt = record.effects.length;\n    const list = [];', replacement: '    realQueueMicrotask(() => { record.returnedAt = record.effects.length; });\n    const list = [];', fails: 'closure' },
+  { name: 'c0e-engine-counts-the-return-late', origin: 'C0e', file: ET, anchor: '    // The effects made before the entry returned or threw (the group\'s, protocol 5); the rest come from the jobs it started.\n    record.returnedAt = record.cg.effects.length;\n    const list = [];', replacement: '    realQueueMicrotask(() => { record.returnedAt = record.cg.effects.length; });\n    const list = [];', fails: 'closure' },
   { name: 'c0e-recorder-counts-the-return-late', origin: 'C0e', file: 'recorder.mjs', anchor: '    step.returnedAt = step.effects.length;\n    Object.assign(step, fields);', replacement: '    apply(PromiseThen, RESOLVED, [() => { step.returnedAt = step.effects.length; }]);\n    Object.assign(step, fields);', fails: 'closure' },
   { name: 'c0e-recorder-notify-not-recorded', origin: 'C0e', file: 'recorder.mjs', anchor: "    if (store && store.kind === 'engine' && store.family === family && !isLate(store)) { record({ kind: 'notify', state: ref(state, store.case), previous: ref(previous, store.case) }, store); return; }", replacement: "    if (store && store.kind === 'engine' && store.family === family && !isLate(store)) return;", fails: 'closure' },
   { name: 'c0e-engine-notify-dropped', origin: 'C0e', file: ET, anchor: "        current.effects.push({ kind: 'notify', state: snap(state), previous: snap(previous) });", replacement: '        if (current === null) return;', fails: 'closure' },
@@ -209,10 +209,12 @@ export const REPLAYER_PLANTS = Object.freeze([
   { name: 'c0f-engine-set-not-an-effect', origin: 'C0f', file: ET, anchor: "        effect({ kind: 'set', port: name, key: snap(key), value: snap(value) });\n", replacement: '', fails: 'closure', check: 'effects/missing' },
   { name: 'c0f-engine-port-data-ignored', origin: 'C0f', file: ET, anchor: '        if (unit.load?.portData && hasOwn(unit.load.portData, name)) return decode(unit.load.portData[name]);\n', replacement: '', fails: 'closure', check: 'effects/value' },
   { name: 'c0f-engine-new-is-a-call', origin: 'C0f', file: ET, anchor: "    const kind = isNew ? 'new' : 'port';", replacement: "    const kind = 'port';", fails: 'closure', check: 'halt/unanswered' },
-  { name: 'c0f-engine-together-after-quiescence', origin: 'C0f', file: ET, anchor: '    if (next.given.together === true) { if (member.syncing) member.nextNow = next; else deliverMember(next); return; }\n', replacement: '', fails: 'closure', check: 'halt/unanswered' },
+  // Protocol 5 (C0g fix round): the group's answers are one list, so the late member is answered and its effects land after the group's; it was unanswered by a step's own list.
+  { name: 'c0f-engine-together-after-quiescence', origin: 'C0f', file: ET, anchor: '    if (next.given.together === true) { if (member.syncing) member.nextNow = next; else deliverMember(next); return; }\n', replacement: '', fails: 'closure', check: 'effects/extra' },
   { name: 'c0f-engine-nested-callback-as-a-call', origin: 'C0f', file: ET, anchor: "      try { if (record.given.kind === 'callback') deliverCallback(record); else deliverCall(record); } finally { current = outer; }", replacement: '      try { deliverCall(record); } finally { current = outer; }', fails: 'closure', check: 'result/value' },
-  { name: 'c0f-replay-holds-never-sent', origin: 'C0f', file: RP, anchor: '  const holds = new Set();\n', replacement: '  const holds = new Set();\n  if (steps.length) return holds;\n', fails: 'closure', check: 'halt/unanswered' },
-  { name: 'c0f-replay-arrival-not-sent', origin: 'C0f', file: RP, anchor: "for (const key of ['id', 'port', 'call', 'outcome', 'together', 'immediate'])", replacement: "for (const key of ['id', 'port', 'call', 'outcome'])", fails: 'closure', check: 'halt/unanswered' },
+  { name: 'c0f-replay-holds-never-sent', origin: 'C0f', file: RC, anchor: '  const holds = new Set();\n', replacement: '  const holds = new Set();\n  if (steps.length) return holds;\n', fails: 'closure', check: 'halt/unanswered' },
+  // Protocol 5 (C0g fix round): without the arrival the engine cuts the group at the member, which the step's group shows; it was unanswered by a step's own list.
+  { name: 'c0f-replay-arrival-not-sent', origin: 'C0f', file: RP, anchor: "for (const key of ['id', 'port', 'call', 'outcome', 'together', 'immediate'])", replacement: "for (const key of ['id', 'port', 'call', 'outcome'])", fails: 'closure', check: 'groups/value' },
   { name: 'c0f-replay-reads-not-answered', origin: 'C0f', file: RC, anchor: "    if (item.kind === 'port' || item.kind === 'new') env.push(", replacement: "    if (item.kind === 'read') continue;\n    if (item.kind === 'port' || item.kind === 'new') env.push(", fails: 'closure', check: 'halt/unanswered' },
   // The C0f fix round (the review's S7): the generation an immediate answer is given at, one off each way (the race
   // cases of the immediates toy), the codec's wrapper unification (the injected-api case of the transport toy), and
@@ -600,16 +602,21 @@ export async function protocolChecks({ harnessDir, root }) {
     const ended = await engine.request({ op: 'end', unit: 1 });
     const entry = plain(ended.replayed?.entry);
     checks.push(['protocol-seeded-entry', entry?.store?.count === 41 && entry?.module?.ticks === 3 && JSON.stringify(entry?.module?.remembered).includes('seeded') ? null : `entry ${JSON.stringify(entry).slice(0, 200)}`]);
+    // Protocol 5: the step names its group and positions in it; the notification is the group's first effect.
     const first = plain(ended.replayed?.steps?.[0]);
-    checks.push(['protocol-notify-effect', first?.effects?.[0]?.kind === 'notify' && first.returnedAt === 1 && first.state?.store?.count === 42 ? null : `step ${JSON.stringify(first).slice(0, 300)}`]);
+    const firstGroup = plain(ended.replayed?.groups?.[(first?.group ?? 0) - 1]);
+    checks.push(['protocol-notify-effect', firstGroup?.effects?.[0]?.kind === 'notify' && first.openedAt === 0 && first.returnedAt === 1 && first.state?.store?.count === 42 ? null : `step ${JSON.stringify(first).slice(0, 300)}; group ${JSON.stringify(firstGroup).slice(0, 200)}`]);
     // An input the test makes inside a subscriber's call is delivered inside that call, as a step of its own.
     await engine.request({ op: 'case', unit: 1 });
     await engine.request({ op: 'seed', unit: 1, state: { store: storeState(0), module: { remembered: { $dr: 'map', entries: [] }, ticks: 0 } } });
     await step({ kind: 'call', entry: 'counterStore.subscribe', args: [{ $dr: 'function', name: '' }] });
-    const nested = await step({ kind: 'call', entry: 'counterStore.add', args: ['y'] }, { env: [{ kind: 'port', port: 'subscriber@1', call: 1, answer: { $dr: 'undefined' } }], during: [{ call: 1, step: { input: { kind: 'call', entry: 'counterStore.tag', args: ['nested'], now: 0 }, env: [{ kind: 'port', port: 'subscriber@1', call: 2, answer: { $dr: 'undefined' } }], bind: [] } }] });
+    // Protocol 5: the top-level step's env answers the nested input's effects too, in the order they are made.
+    const nested = await step({ kind: 'call', entry: 'counterStore.add', args: ['y'] }, { env: [{ kind: 'port', port: 'subscriber@1', call: 1, answer: { $dr: 'undefined' } }, { kind: 'port', port: 'subscriber@1', call: 2, answer: { $dr: 'undefined' } }], during: [{ call: 1, step: { input: { kind: 'call', entry: 'counterStore.tag', args: ['nested'], now: 0 }, env: [], bind: [] } }] });
     const nestedEnd = await engine.request({ op: 'end', unit: 1 });
     const steps = plain(nestedEnd.replayed?.steps ?? []);
-    checks.push(['protocol-during', nested.halted === null && steps.length === 3 && steps[2].input.entry === 'counterStore.tag' && [...(steps[2].state?.store?.tags?.values ?? [])].includes('nested') ? null : `steps ${JSON.stringify(steps.map((item) => [item.input.entry, item.effects.map((effect) => effect.kind)]))}; halted ${JSON.stringify(nested.halted)}`]);
+    const nestedGroup = plain(nestedEnd.replayed?.groups?.[(steps[2]?.group ?? 0) - 1]);
+    // The nested input opens inside the outer step's port call, after its notification and that call: in the outer step's group.
+    checks.push(['protocol-during', nested.halted === null && steps.length === 3 && steps[2].input.entry === 'counterStore.tag' && [...(steps[2].state?.store?.tags?.values ?? [])].includes('nested') && steps[2].group === steps[1].group && steps[2].openedAt === 2 && nestedGroup?.effects?.map((effect) => effect.kind).join() === 'notify,port,notify,port' ? null : `steps ${JSON.stringify(steps.map((item) => [item.input.entry, item.group, item.openedAt, item.returnedAt]))}; group ${JSON.stringify(nestedGroup?.effects?.map((effect) => effect.kind))}; halted ${JSON.stringify(nested.halted)}`]);
     await engine.request({ op: 'close', unit: 1 });
     // A fresh unit (no subscriber left from the cases above) for what the C0e review and fix round added.
     const reopened = await engine.request({ op: 'open', unit: 2, family });
@@ -621,13 +628,13 @@ export async function protocolChecks({ harnessDir, root }) {
     checks.push(['protocol-port-served-by-name', otherPort.halted?.check === 'unanswered' ? null : `a log call was served another port's answer: halted ${JSON.stringify(otherPort.halted)}`]);
     await engine.request({ op: 'end', unit: 2 });
     // The timers still pending when the case ends are reported (C0e fix round): the recording's name the bind gave
-    // each, its delay, timeout or interval, the engine's count of the step that set it; a timeout that fired is not.
+    // each, its delay, timeout or interval, the group that set it (protocol 5); a timeout that fired is not.
     await engine.request({ op: 'case', unit: 2 });
     await step2({ kind: 'call', entry: 'later', args: [250, 'kept'] }, { bind: [{ timer: 9, index: 0 }] });
     await step2({ kind: 'call', entry: 'later', args: [5, 'second'] }, { bind: [{ timer: 10, index: 0 }] });
     const pendingEnd = await engine.request({ op: 'end', unit: 2 });
     const pending = plain(pendingEnd.replayed?.pending);
-    checks.push(['protocol-pending-timers', JSON.stringify(pending) === JSON.stringify([{ timer: 9, delay: 250, repeat: false, step: 1 }, { timer: 10, delay: 5, repeat: false, step: 2 }]) ? null : `pending ${JSON.stringify(pending)}`]);
+    checks.push(['protocol-pending-timers', JSON.stringify(pending) === JSON.stringify([{ timer: 9, delay: 250, repeat: false, group: 1 }, { timer: 10, delay: 5, repeat: false, group: 2 }]) ? null : `pending ${JSON.stringify(pending)}`]);
     // A timeout fires once: a second firing of it is refused (C0e review), and once fired it is no longer pending.
     await engine.request({ op: 'case', unit: 2 });
     await step2({ kind: 'call', entry: 'later', args: [5, 'fires'] }, { bind: [{ timer: 4, index: 0 }] });

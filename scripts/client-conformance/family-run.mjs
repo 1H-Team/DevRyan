@@ -39,7 +39,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import path from 'node:path';
-import { applyExclusions, checkChangeSets, judgeUnrecordable, judgeUnstable, loadCensus, mergeExports, passedThrough, runCensus, staleNoFrame, unclassifiedCallers } from './census.mjs';
+import { applyExclusions, censusItems, checkChangeSets, judgeUnrecordable, judgeUnstable, loadCensus, mergeExports, passedThrough, runCensus, staleNoFrame, unclassifiedCallers } from './census.mjs';
 import { stringifyTree } from './codec.mjs';
 import { createContainerWriter, readContainer } from './container.mjs';
 import { writeManifest } from './manifest.mjs';
@@ -213,14 +213,16 @@ export async function recordFamilies({ setup, targets = [], runs = 2, families =
   };
   report.families = censusResult.families;
   for (const family of Object.values(censusResult.families)) for (const [outcome, count] of Object.entries(family.outcomes)) report.outcomes[outcome] = (report.outcomes[outcome] ?? 0) + count;
+  const code = incomplete.length ? EXIT.inconclusive : unstableJudged.remaining.length ? EXIT.unstable : failures.length ? EXIT.fail : EXIT.pass;
   if (out) {
     mkdirSync(out, { recursive: true });
     const written = markUnstable(first.containers, stability.unstable, waivedReasons);
     for (const container of written) writeFileSync(path.join(out, container.name), container.text);
-    // What the directory holds, so a reader sees a container that went missing or changed (manifest.mjs).
-    writeManifest(out, written, { portMap: portMap.digest, families: scope ?? all, scope });
+    // What the directory holds, so a reader sees a container that went missing or changed (manifest.mjs), with this
+    // run's verdict and the items its census judges (a reader of an engine's coverage needs both: manifest version 2).
+    const items = censusItems({ portMap, census, moduleExports: merged.exports, readSource: (file) => readFileSync(file, 'utf8'), families: scope });
+    writeManifest(out, written, { portMap: portMap.digest, families: scope ?? all, scope, verdict: { code, failures: failures.length, inconclusive: incomplete.length, unstable: unstableJudged.remaining.length }, items });
   }
-  const code = incomplete.length ? EXIT.inconclusive : unstableJudged.remaining.length ? EXIT.unstable : failures.length ? EXIT.fail : EXIT.pass;
   return { code, report, unstable: stability.unstable };
 }
 

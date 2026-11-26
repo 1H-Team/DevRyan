@@ -5,9 +5,11 @@
 // that the replayer, its comparison and its outcomes stay as they are and only
 // the engine process changes (replay.mjs `--engine=` points it at another one).
 //
-// PROTOCOL 4 (package C0f; 3 was calls, timers, promise answers and state, 2
-// synchronous calls only): transports, and inputs placed in their microtask
-// drain. One engine process, one JSON request per line on
+// PROTOCOL 5 (package C0g fix round: one ordered sequence of effects per
+// group, positions instead of per-step effect lists, binds by group position;
+// 4 was transports and inputs placed in their microtask drain, 3 calls,
+// timers, promise answers and state, 2 synchronous calls only). One engine
+// process, one JSON request per line on
 // its stdin, one JSON response per line on its stdout, each response carrying
 // the `id` of its request. Values are codec trees (codec.mjs), never live
 // objects. The engine is told what a real engine needs to run a step and
@@ -76,7 +78,11 @@
 //       bound to n), delivers the input, and runs to quiescence (no job of the
 //       step left) before it answers. `now` is the clock value of the step.
 //       `env` is what the step's effects were answered with, in recorded
-//       order, and nothing else: {kind:"port", port, call, answer | throws},
+//       order, and nothing else (protocol 5: a top-level step's env answers
+//       its own effects and those of the inputs nested in its port calls, in
+//       the order they were made, and a nested input's env is empty; the
+//       engine answers a GROUP's effects from one list, the concatenation of
+//       its top-level steps' envs, whichever step makes them): {kind:"port", port, call, answer | throws},
 //       {kind:"read", port, key, value} (a data member of a port object the
 //       engine was answered with), {kind:"clock", source, value},
 //       {kind:"draw", source, value}, and (protocol 4) {kind:"new", port, call,
@@ -104,8 +110,11 @@
 //       throws, after, changes, state, stateChanges, effects.<i>.args,
 //       effects.<i>.state, effects.<i>.value; the object at `path` in it is the
 //       recording's n from then on), {slot, path, name} (the value there is
-//       the handed-out engine code `name`) and {timer, index} (the step's
-//       index-th timer is the recording's timer `timer`). Binding tells where
+//       the handed-out engine code `name`) and {timer, index} (the
+//       index-th timer is the recording's timer `timer`). Protocol 5: an
+//       `effects.<i>` slot and a {timer, index} name a position in the step's
+//       GROUP (its i-th effect, its index-th timer set), whichever step of the
+//       group makes it; the engine pools the binds of a group's steps. Binding tells where
 //       an object sits in an output, never what the output holds. `during`
 //       lists {call, step}: inputs the test made inside that port call of this
 //       step (a subscriber calling back into the store), each delivered,
@@ -134,22 +143,33 @@
 //       state. `strings` (optional) are long strings added to the case's
 //       string table (below), in order.
 //   {id, op:"end", unit}                        -> {id, ok, replayed}
-//       Closes the case: `replayed` is {steps, entry?, end?, pending, halt,
-//       outside, bindFailures, strings?} with every value slot of the case written in one
-//       identity scope (codec emitSlots: the entry state, the steps, the end
-//       state), in the shape of a recorded case's steps (n the engine's own
-//       count, input args as the engine saw them, effects in observed order,
-//       `returnedAt`: how many of the step's effects came before its
-//       synchronous part returned or threw, returns or throws, after, changes,
-//       and for a stateful family `state` and `stateChanges` after the
-//       synchronous part); `entry` and `end` are a stateful family's state when
-//       the case began and ended. `pending` lists the case's timers still
-//       pending when its test ended (set, not cleared, a timeout not fired),
-//       in the order they were set: {timer (the recording's name its bind
-//       gave it, or null), delay (a codec tree), repeat, step (the engine's
-//       count of the step that set it)}; compared as `pending-timers`. A step
-//       that has no synchronous part of the module's own (`settle`) reports no
-//       `returnedAt`, as none is recorded. `halt` is {step, check, detail} (step: the
+//       Closes the case: `replayed` is {steps, groups, entry?, end?, pending,
+//       halt, outside, bindFailures, strings?} with every value slot of the
+//       case written in one identity scope (codec emitSlots). GROUPS (protocol
+//       5): a group starts at every input delivered once the engine ran out
+//       (a top-level step that came neither `together` with the held one
+//       before it nor as an `immediate` answer to a call of its own
+//       delivery), runs to the quiescence of what it set in motion, and holds
+//       the inputs nested in its port calls; groups are numbered 1, 2, ... in
+//       the case. `groups[g-1]` is {effects}: everything observable the engine
+//       made in group g, ONE list in the order it made them, whichever step it
+//       counts them to (port calls, `new`, reads, clock reads, draws,
+//       timer.set and timer.clear, store notifications, `settled` answers,
+//       `set` writes). `steps` are in the recording's order, each {n (the
+//       engine's own count), group, input (args as the engine saw them),
+//       openedAt, returnedAt?, returns or throws, after, changes, and for a
+//       stateful family `state` and `stateChanges` after the synchronous
+//       part} and no effects: `openedAt` is how many of its group's effects
+//       came before the step opened (a call, `new`, `get`, callback or timer
+//       before its synchronous part; a nested input when it is delivered
+//       inside its call; a settle at the first reaction of its promise),
+//       `returnedAt` how many came before its synchronous part returned or
+//       threw (none for a settle). `entry` and `end` are a stateful family's
+//       state when the case began and ended. `pending` lists the case's timers
+//       still pending when its test ended (set, not cleared, a timeout not
+//       fired), in the order they were set: {timer (the recording's name its
+//       bind gave it, or null), delay (a codec tree), repeat, group (the
+//       number of the group that set it)}; compared as `pending-timers`. `halt` is {step, check, detail} (step: the
 //       engine's count) or null. `outside` lists what was made or thrown while
 //       no step of the case was open, charged to the case (an effect, an
 //       uncaught error from a job the case scheduled); before answering, the
@@ -202,37 +222,47 @@
 // runner is a test program over the fixtures; it must keep the part that reads
 // recorded outputs (to compare) apart from the engine it runs.
 //
-// What protocol 4 still lacks (package C0f report, "Not done"): a module the
+// What the protocol still lacks (package C0f report, "Not done"): a module the
 // test mocked (its exports as ports the map does not list, answered by the
 // test's factory); a promise or a body inside an answer; inputs a drain places
 // some generations after the one before them other than a port's own answer
 // (they come once the engine ran out, which the replay judges); the abort of
 // a signal the test handed in (flagged `signal-aborted`).
 //
-// What a comparer must allow a runner that is no JavaScript executor (the C0f
-// fix round, from the review's S6; for package C0g). Inside a `together`
-// group, what an earlier member's continuations do after the later member
-// opened is recorded in the later member's step (forwarding), because the
-// group is delivered at once and no input of the protocol can tell them
-// apart; a sans-IO Rust engine will attribute those effects to the member
-// whose continuation made them. So a comparer must compare a group's effects
-// as one sequence, in order, keeping each member's synchronous part and its
-// `returnedAt`, and not by step; the TypeScript replay is unaffected, since it
-// delivers a group as the recorder saw it. Likewise `immediate: g` asks for
-// JavaScript's promise generations (counted up to IMMEDIATE_GENERATIONS, 64;
-// an answer later in its call's drain is refused, `immediate-expired`): a
-// runner without them may give an immediate answer before the engine runs
-// out, in recorded order, and be judged on the group's sequence. The counts
-// themselves belong to the JavaScript engine (a Bun upgrade can move them,
-// and the recorder's own promise wrappers move them by a generation in some
-// patterns: the immediates toy), so a change of Bun regenerates the corpus.
+// What a comparer allows a runner that is no JavaScript executor (package
+// C0g, candidate-compare.mjs; protocol 5 carries it). Inside a group, what an
+// earlier member's continuations do after a later member opened is recorded
+// in the later member's step (forwarding), because no input of the protocol
+// can tell them apart; a sans-IO Rust engine attributes them to the member
+// whose continuation made them. So the engine reports a group's effects as
+// one sequence in the order it made them, and the comparer compares that
+// order exactly and the attribution not at all; each step's synchronous part
+// is pinned by its opening and return positions in that sequence. That order
+// is exact, so the timing of an immediate answer is judged too: `immediate:
+// g` is JavaScript's promise generations (counted up to
+// IMMEDIATE_GENERATIONS, 64; an answer later in its call's drain is refused,
+// `immediate-expired`), and where other continuation work of the group runs
+// between the call and the answer's first reaction, a runner that gives the
+// answer at another generation, or once the engine ran out, makes the
+// group's effects in another order and differs. The C0g review 2 measured it
+// on the product: 56 of the recording's 202 immediate answers, in 13 cases,
+// have such work between; an engine that gives every immediate answer at
+// generation 0 fails 4 judged cases (bootstrap 3, directory-bootstrap-request
+// 1), one generation late 7 (bootstrap), in the next macrotask 11 (bootstrap
+// 10, directory-bootstrap-request 1). A runner reproduces JavaScript's
+// reaction order for these answers (docs/TESTING.md, the runner's
+// checklist), or those cases are waived by name and their families' pins
+// lowered. The counts themselves belong to the JavaScript engine (a Bun
+// upgrade can move them, and the recorder's own promise wrappers move them by
+// a generation in some patterns: the immediates toy), so a change of Bun
+// regenerates the corpus.
 // `load.portData` is drawn per test file, so with a case's ordinal it names
 // the container: never hand a runner the recording.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnTracked } from './children.mjs';
 
-export const PROTOCOL = 4;
+export const PROTOCOL = 5;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPTS = path.resolve(HERE, '..');
 /** From this length (UTF-16 units) a string may travel once per case in a string table (see above). */

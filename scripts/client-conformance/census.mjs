@@ -713,3 +713,31 @@ export function staleNoFrame(passed, census, { complete = true } = {}) {
   if (!complete) return [];
   return census.noFrame.filter((item) => !(passed.noFrame[`${item.family}#${item.export}`] > 0)).map((item) => ({ check: 'waiver-stale', name: `${item.family}#${item.export}`, detail: `${item.family}#${item.export} is named as called by engine code with no frame ("${item.reason}") but no such call was seen: remove it` }));
 }
+
+/**
+ * The items a recording's census judges, per family in scope (package C0g):
+ * `{ <family>: { exports: [names], ports: [names], events: [types] } }`. An
+ * export is a name of the family module's namespace (and its store's
+ * actions, `<store>.<action>`) that an entry can exercise: neither a data
+ * export, nor inlined by the map, nor the family's state export. The family
+ * command writes them into the recording's manifest, so a reader of the
+ * directory (the candidate census) knows the items no case exercises too.
+ */
+export function censusItems({ portMap, census, moduleExports, readSource, families: scope = null }) {
+  const items = {};
+  for (const family of portMap.families) {
+    if (scope !== null && !scope.includes(family.name)) continue;
+    const kinds = moduleExports[family.relModule] ?? {};
+    const inline = portMap.modules.get(family.module)?.all?.inline ?? new Set();
+    const exports = Object.entries(kinds).filter(([name, kind]) => kind !== 'data' && !inline.has(name) && name !== family.state).map(([name]) => name).sort();
+    const ports = [];
+    for (const [, target] of portMap.modules) for (const [, port] of target.ports) if (port.families.includes(family.name)) ports.push(port.name);
+    const events = new Set();
+    for (const source of census.events.filter((item) => item.family === family.name)) {
+      const read = eventTypesOf(readSource(family.module), source.entry, source.arg);
+      for (const type of read?.types ?? []) events.add(type);
+    }
+    items[family.name] = { exports, ports: [...new Set(ports)].sort(), events: [...events].sort() };
+  }
+  return items;
+}

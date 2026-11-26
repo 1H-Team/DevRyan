@@ -13,8 +13,8 @@
 //   source in place of a module the request names (never writing a file);
 // - the clock (`Date.now`, `new Date()`, `Date()`, `performance.now`) and the
 //   random sources (`Math.random`, `crypto.randomUUID`,
-//   `crypto.getRandomValues`) answer from the step's recorded effects, in
-//   order; the four timer functions record `timer.set` and `timer.clear`
+//   `crypto.getRandomValues`) answer from the recorded answers of the
+//   step's group (protocol 5: one list per group), in order; the four timer functions record `timer.set` and `timer.clear`
 //   effects and never run a callback (no family this engine replays sets a
 //   timer); `fetch`, `WebSocket` and `EventSource` are ports with no recorded
 //   answer, so their use halts the case;
@@ -176,7 +176,8 @@ function workerThread() {
   // ------------------------------------------------------------- the env
   const describeItem = (item) => (item ? `${item.kind} ${item.kind === 'port' || item.kind === 'new' || item.kind === 'read' ? item.port : item.source}${item.kind === 'read' ? `.${String(item.key)}` : ''}` : 'nothing');
   function take(kind, name, key) {
-    const step = current;
+    // Protocol 5: a group's answers are one list in the order its effects were made, whichever step makes them.
+    const step = current.cg;
     const items = step.env;
     const matches = (item) => item.kind === kind && (kind === 'port' || kind === 'new' ? item.port === name : kind === 'read' ? item.port === name && item.key === key : item.source === name);
     const unordered = (kind === 'port' || kind === 'new') && unit.unordered.has(name);
@@ -194,6 +195,7 @@ function workerThread() {
     activity += 1;
     if (!current) { noteOutside(record.kind); return null; }
     current.effects.push(record);
+    current.cg.effects.push(record);
     return record;
   }
 
@@ -262,9 +264,9 @@ function workerThread() {
   // Whether the open step's env still holds a call of port `name` (a member the engine is about to call).
   const envHolds = (name) => {
     if (!current) return false;
-    for (let at = current.envNext; at < current.env.length; at += 1) {
-      if (current.used.has(at)) continue;
-      const item = current.env[at];
+    for (let at = current.cg.envNext; at < current.cg.env.length; at += 1) {
+      if (current.cg.used.has(at)) continue;
+      const item = current.cg.env[at];
       if ((item.kind === 'port' || item.kind === 'new') && item.port === name) return true;
     }
     return false;
@@ -470,7 +472,7 @@ function workerThread() {
     for (let index = 0; index < args.length; index += 1) list[index] = args[index];
     const kind = isNew ? 'new' : 'port';
     const record = effect({ kind, port: name, call: kase.portCalls, args: snap(list) });
-    bindSlot(`effects.${current.effects.length - 1}.args`, list);
+    bindSlot(`effects.${current.cg.effects.length - 1}.args`, list, current.cg.bind);
     const item = take(kind, name);
     // What the test did inside this call (a subscriber calling back into the store) is delivered before it answers.
     if (current.nested.length && item.call !== undefined) deliverNested(item.call);
@@ -546,10 +548,10 @@ function workerThread() {
         // What the runtime reads on its own (an await's thenable check, conversions) is no read of the module's.
         if (key === 'then') return undefined;
         if (!current || !kase) { noteOutside(`read ${name}.${key}`); return undefined; }
-        const items = current.env;
+        const items = current.cg.env;
         let found = null;
-        for (let at = current.envNext; at < items.length; at += 1) {
-          if (current.used.has(at)) continue;
+        for (let at = current.cg.envNext; at < items.length; at += 1) {
+          if (current.cg.used.has(at)) continue;
           const item = items[at];
           if ((item.kind === 'read' && item.port === name && item.key === key) || (item.kind === 'port' && item.port === `${name}.${key}`)) { found = item; break; }
         }
@@ -567,7 +569,7 @@ function workerThread() {
       set(object, key, value) {
         if (!current || !kase) { noteOutside(`write ${name}.${String(key)}`); return true; }
         effect({ kind: 'set', port: name, key: snap(key), value: snap(value) });
-        bindSlot(`effects.${current.effects.length - 1}.value`, value);
+        bindSlot(`effects.${current.cg.effects.length - 1}.value`, value, current.cg.bind);
         return true;
       },
     });
@@ -582,7 +584,7 @@ function workerThread() {
     const item = take('read', 'globalThis', name);
     const value = rebuild(item.value);
     effect({ kind: 'read', port: 'globalThis', key: snap(name), value: snap(value) });
-    bindSlot(`effects.${current.effects.length - 1}.value`, value);
+    bindSlot(`effects.${current.cg.effects.length - 1}.value`, value, current.cg.bind);
     return value;
   }
   function readClock(source) {
@@ -642,13 +644,13 @@ function workerThread() {
       if (!current || !kase) { noteOutside(repeat ? 'setInterval' : 'setTimeout'); return handle; }
       kase.timerCount += 1;
       const id = kase.timerCount;
-      const timer = { callback, args: rest, repeat, cleared: false, fired: 0, delay, step: current.n };
+      const timer = { callback, args: rest, repeat, cleared: false, fired: 0, delay, step: current.n, group: current.cg.number };
       kase.timers.set(id, timer);
       timerHandles.set(handle, { owner: kase, id });
-      // The step's j-th timer is the recording's timer the bind names: a `timer` input names it so.
-      const index = current.timerSets ?? 0;
-      current.timerSets = index + 1;
-      const named = current.bind.find((request) => request.timer !== undefined && request.index === index);
+      // The group's j-th timer is the recording's timer the bind names: a `timer` input names it so.
+      const index = current.cg.timerSets;
+      current.cg.timerSets = index + 1;
+      const named = current.cg.bind.find((request) => request.timer !== undefined && request.index === index);
       if (named && !kase.timerNames.has(named.timer)) kase.timerNames.set(named.timer, timer);
       effect({ kind: 'timer.set', id, delay: snap(delay), repeat });
       return handle;
@@ -848,9 +850,10 @@ function workerThread() {
         activity += 1;
         if (!current || !kase) { noteOutside('notify'); return; }
         current.effects.push({ kind: 'notify', state: snap(state), previous: snap(previous) });
+        current.cg.effects.push(current.effects[current.effects.length - 1]);
         // What the store notified with may be named again later (an object a later input holds): bound where it first shows.
-        bindSlot(`effects.${current.effects.length - 1}.state`, state);
-        bindSlot(`effects.${current.effects.length - 1}.previous`, previous);
+        bindSlot(`effects.${current.cg.effects.length - 1}.state`, state, current.cg.bind);
+        bindSlot(`effects.${current.cg.effects.length - 1}.previous`, previous, current.cg.bind);
       });
     }
     unit.open = true;
@@ -864,7 +867,7 @@ function workerThread() {
     if (kase) throw new Error('a case is open: end it first');
     unit.cases += 1;
     kase = { ordinal: unit.cases, codec: createCodecContext({ names: unit.names, unwrap: (item) => engineWrapped.get(item), unifyWrapped: true }), bound: new RealMap(), names: new RealMap(), symbols: new RealMap(), steps: [], portCalls: 0, halt: null, outside: [], bindFailures: [], strings: [], jobs: 0, ended: false,
-      nextN: 1, timers: new RealMap(), timerNames: new RealMap(), timerCount: 0, deferred: new RealMap(), immediates: new RealMap(), portStubs: new RealMap(), portFunctions: new RealMap(), group: [], slots: {} };
+      nextN: 1, timers: new RealMap(), timerNames: new RealMap(), timerCount: 0, deferred: new RealMap(), immediates: new RealMap(), portStubs: new RealMap(), portFunctions: new RealMap(), group: [], groups: [], slots: {} };
     return { between: takeBetween() };
   }
   /** Seeds the state the case starts from (engine.mjs `seed`): before its first step, and then takes the entry state. */
@@ -1075,10 +1078,27 @@ function workerThread() {
     // An immediate answer whose call is made in the group, and that did not arrive together with the member before it,
     // is delivered by its call (callPort), as many generations after the call as recorded.
     for (const member of group) if (member.given.kind === 'settle' && member.given.immediate !== undefined && !kase.deferred.has(member.given.call)) { member.immediateMember = true; kase.immediates.set(member.given.call, member); }
+    // The groups of protocol 5: a member delivered once the engine ran out (neither together with the one before it
+    // nor an immediate answer its call gives) starts one; the others join the group of the member before them.
+    group.forEach((member, index) => {
+      if (index === 0 || (member.given.together !== true && !member.immediateMember)) kase.groups.push({ number: kase.groups.length + 1, effects: [], env: [], envNext: 0, used: new RealSet(), bind: [], timerSets: 0 });
+      joinGroup(member, kase.groups[kase.groups.length - 1]);
+    });
     // The first member is delivered now; every later one once the member before it has opened: right after it when it
     // arrived together with it, else once the engine ran out (scheduleNext, from openMember).
     deliverMember(group[0]);
     return finishStep(record);
+  }
+  // A group's binds of effect slots and timers name positions in the group (protocol 5): pooled from every step of it.
+  const groupBind = (request) => request.timer !== undefined || (typeof request.slot === 'string' && request.slot.startsWith('effects.'));
+  function joinGroup(record, cg) {
+    record.cg = cg;
+    for (const item of record.env) cg.env.push(item);
+    const pool = (bind, nested) => {
+      for (const request of bind ?? []) if (groupBind(request)) cg.bind.push(request);
+      for (const inner of nested ?? []) pool(inner.step.bind, inner.step.during);
+    };
+    pool(record.bind, record.nested);
   }
   /** Delivers a member of a group (an immediate answer is its call's to deliver). */
   function deliverMember(member) {
@@ -1121,6 +1141,8 @@ function workerThread() {
   }
   /** A member of a group opens: the member opened before it in the group forwards to it, and it is where effects go. */
   function openMember(member) {
+    // Where the member opened in its group's effects (protocol 5 `openedAt`).
+    if (member.openedAt === undefined && member.cg) member.openedAt = member.cg.effects.length;
     const opened = member.group?.opened ?? null;
     if (opened && opened !== member && opened.groupIndex < member.groupIndex) opened.forward = member;
     if (!opened || opened.groupIndex <= member.groupIndex) { if (member.group) member.group.opened = member; current = member; }
@@ -1137,6 +1159,8 @@ function workerThread() {
       const record = makeRecord(group.step, outer.nextNested);
       outer.nextNested += 1 + (group.step.during ?? []).reduce(function count(sum, inner) { return sum + 1 + (inner.step.during ?? []).reduce(count, 0); }, 0);
       record.parent = outer;
+      record.cg = outer.cg;
+      record.openedAt = outer.cg.effects.length;
       current = record;
       // A callback the port invokes inside its own call (a subscription that answers at once, package C0f) is one too.
       try { if (record.given.kind === 'callback') deliverCallback(record); else deliverCall(record); } finally { current = outer; }
@@ -1165,7 +1189,7 @@ function workerThread() {
     let result;
     let threw = false;
     try { result = apply(target, undefined, args); } catch (error) { threw = true; result = error; }
-    record.returnedAt = record.effects.length;
+    record.returnedAt = record.cg.effects.length;
     if (beforeState) takeState(record, beforeState);
     if (threw) { record.slots.throws = snap(result); bindSlot('throws', result); } else { record.slots.returns = snap(result); bindSlot('returns', result); }
   }
@@ -1223,8 +1247,8 @@ function workerThread() {
     try {
       result = input.kind === 'new' ? construct(resolved.target, finalArgs) : apply(resolved.target, resolved.receiver, finalArgs);
     } catch (error) { threw = true; result = error; }
-    // The effects made before the entry returned or threw; the rest come from the jobs it started.
-    record.returnedAt = record.effects.length;
+    // The effects made before the entry returned or threw (the group's, protocol 5); the rest come from the jobs it started.
+    record.returnedAt = record.cg.effects.length;
     const list = [];
     for (let index = 0; index < args.length; index += 1) list[index] = args[index];
     if (threw) { record.slots.throws = snap(result); bindSlot('throws', result); } else { record.slots.returns = snap(result); bindSlot('returns', result); }
@@ -1243,8 +1267,8 @@ function workerThread() {
       // A nested input's own promise settles in the outer step once the nested call returned (recording 8, C0f).
       const target = () => (current && current === record ? record : current);
       apply(RealPromise.prototype.then, result, [
-        (value) => { activity += 1; const into = target(); if (into) { into.effects.push({ kind: 'settled', step: n, outcome: 'fulfilled', value: snap(value) }); bindSlot(`effects.${into.effects.length - 1}.value`, value, into.bind, into.n); } else noteOutside('settled'); },
-        (reason) => { activity += 1; const into = target(); if (into) { into.effects.push({ kind: 'settled', step: n, outcome: 'rejected', value: snap(reason) }); bindSlot(`effects.${into.effects.length - 1}.value`, reason, into.bind, into.n); } else noteOutside('settled'); },
+        (value) => { activity += 1; const into = target(); if (into) { into.effects.push({ kind: 'settled', step: n, outcome: 'fulfilled', value: snap(value) }); into.cg.effects.push(into.effects[into.effects.length - 1]); bindSlot(`effects.${into.cg.effects.length - 1}.value`, value, into.cg.bind, into.n); } else noteOutside('settled'); },
+        (reason) => { activity += 1; const into = target(); if (into) { into.effects.push({ kind: 'settled', step: n, outcome: 'rejected', value: snap(reason) }); into.cg.effects.push(into.effects[into.effects.length - 1]); bindSlot(`effects.${into.cg.effects.length - 1}.value`, reason, into.cg.bind, into.n); } else noteOutside('settled'); },
       ]);
     }
   }
@@ -1273,7 +1297,7 @@ function workerThread() {
     timer.fired += 1;
     const beforeState = stateful() ? statePaths() : null;
     try { apply(timer.callback, undefined, timer.args); } catch (error) { if (!(error instanceof ReplayHalt)) kase.outside.push({ what: `uncaught ${describeError(error)} (a timer callback)` }); }
-    record.returnedAt = record.effects.length;
+    record.returnedAt = record.cg.effects.length;
     if (beforeState) takeState(record, beforeState);
   }
   /**
@@ -1324,7 +1348,7 @@ function workerThread() {
     const out = [];
     for (const timer of kase.timers.values()) {
       if (timer.cleared || (!timer.repeat && timer.fired > 0)) continue;
-      out.push({ timer: names.get(timer) ?? null, delay: snap(timer.delay), repeat: timer.repeat, step: timer.step });
+      out.push({ timer: names.get(timer) ?? null, delay: snap(timer.delay), repeat: timer.repeat, group: timer.group });
     }
     return out;
   }
@@ -1338,44 +1362,49 @@ function workerThread() {
     }
     const slots = [];
     const put = (value) => { slots.push(value.taken); return slots.length - 1; };
-    // The case's value parts in the recorder's order: entry state, the steps, end state (one identity scope).
+    // The case's value parts: entry state, the steps' own parts, the groups' effects, end state (one identity scope).
     const entrySlot = kase.slots.entry !== undefined ? put(kase.slots.entry) : undefined;
     kase.steps.sort((left, right) => left.n - right.n);
     const shapes = kase.steps.map((record) => {
       const shape = { n: record.n, input: { ...record.input, args: record.slots.args === undefined ? undefined : put(record.slots.args), value: record.slots.value === undefined ? undefined : put(record.slots.value), target: record.slots.target === undefined ? undefined : put(record.slots.target) } };
-      shape.effects = record.effects.map((item) => {
-        const out = {};
-        for (const key of objectKeys(item)) out[key] = item[key] instanceof Taken ? { slot: put(item[key]) } : item[key];
-        return out;
-      });
+      // Protocol 5: a step names its group and where in the group's effects it opened and returned; the effects are the group's.
+      if (record.cg) shape.group = record.cg.number;
+      if (record.openedAt !== undefined) shape.openedAt = record.openedAt;
       if (record.returnedAt !== undefined) shape.returnedAt = record.returnedAt;
       for (const key of ['returns', 'throws', 'after', 'changes', 'state', 'stateChanges']) if (record.slots[key] !== undefined) shape[key] = put(record.slots[key]);
       return shape;
     });
+    const effectShape = (item) => {
+      const out = {};
+      for (const key of objectKeys(item)) out[key] = item[key] instanceof Taken ? { slot: put(item[key]) } : item[key];
+      return out;
+    };
+    const groupShapes = kase.groups.map((cg) => cg.effects.map(effectShape));
     const endSlot = kase.slots.end !== undefined ? put(kase.slots.end) : undefined;
     const pendingShapes = kase.pendingAtEnd.map((item) => ({ ...item, delay: put(item.delay) }));
     const trees = emitSlots(slots);
     const tree = (index) => (index === undefined ? undefined : trees[index]);
+    const effectOut = (item) => {
+      const out = {};
+      for (const key of objectKeys(item)) out[key] = item[key] !== null && typeof item[key] === 'object' && !isArray(item[key]) && objectKeys(item[key]).length === 1 && hasOwn(item[key], 'slot') ? tree(item[key].slot) : item[key];
+      return out;
+    };
     const steps = shapes.map((shape) => {
       const out = { n: shape.n, input: {} };
       for (const key of objectKeys(shape.input)) {
         if (key === 'args' || key === 'value' || key === 'target') { if (shape.input[key] !== undefined) out.input[key] = tree(shape.input[key]); } else if (shape.input[key] !== undefined) out.input[key] = shape.input[key];
       }
-      out.effects = shape.effects.map((item) => {
-        const effectOut = {};
-        for (const key of objectKeys(item)) effectOut[key] = item[key] !== null && typeof item[key] === 'object' && !isArray(item[key]) && objectKeys(item[key]).length === 1 && hasOwn(item[key], 'slot') ? tree(item[key].slot) : item[key];
-        return effectOut;
-      });
-      if (shape.returnedAt !== undefined) out.returnedAt = shape.returnedAt;
+      for (const key of ['group', 'openedAt', 'returnedAt']) if (shape[key] !== undefined) out[key] = shape[key];
       for (const key of ['returns', 'throws', 'after', 'changes', 'state', 'stateChanges']) if (shape[key] !== undefined) out[key] = tree(shape[key]);
       return out;
     });
+    const groups = groupShapes.map((effects) => ({ effects: effects.map(effectOut) }));
     // Long strings are sent once each (a streamed text grows step by step and every step's arguments and
     // results hold it): `{"$dr":"slice","s":k}` stands for strings[k] (engine.mjs).
     const strings = [];
     const states = { entry: entrySlot === undefined ? undefined : tree(entrySlot), end: endSlot === undefined ? undefined : tree(endSlot) };
     const pending = pendingShapes.map((item) => ({ ...item, delay: tree(item.delay) }));
-    const replayed = { steps: shareStrings(steps, strings), ...(states.entry !== undefined ? { entry: shareStrings(states.entry, strings) } : {}), ...(states.end !== undefined ? { end: shareStrings(states.end, strings) } : {}), pending, strings, halt: kase.halt, outside: kase.outside, bindFailures: kase.bindFailures, flags: [...kase.codec.flags] };
+    const replayed = { steps: shareStrings(steps, strings), groups: shareStrings(groups, strings), ...(states.entry !== undefined ? { entry: shareStrings(states.entry, strings) } : {}), ...(states.end !== undefined ? { end: shareStrings(states.end, strings) } : {}), pending, strings, halt: kase.halt, outside: kase.outside, bindFailures: kase.bindFailures, flags: [...kase.codec.flags] };
     kase.ended = true;
     kase = null;
     return { replayed };

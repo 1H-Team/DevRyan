@@ -23,6 +23,13 @@ const TOY_ENGINE = ['toy-clock.mjs', 'toy-flow.mjs', 'toy-gate.mjs', 'toy-guard.
 // What the toy recordings pass through (toy-host, toy-sched, toy-fixtures, the two no-frame calls): any change is a change of the caller rule.
 export const TOY_PASSED = Object.freeze({ calls: 14, nested: 1, noFrame: 2, ports: 2, portsNested: 1 });
 
+/** The exports the toy census judges per family (census.mjs censusItems, written into a recording's manifest): a change is a change of the census. */
+export const TOY_ITEM_EXPORTS = Object.freeze({
+  'toy-reducer': ['applyEvent', 'createState'], 'toy-timers': ['createDebouncer'], 'toy-transport': ['connect'], 'toy-flow': ['createFlow'], 'toy-guard': ['deferred', 'guard'],
+  'toy-gate': ['arm', 'ask', 'drainOpen', 'eager', 'eagerLater', 'frozenControls', 'items', 'meter', 'nested', 'poke', 'promiseLike', 'signal', 'signalResolvers', 'start', 'subscribe', 'wait', 'waitDeep', 'waitLong', 'waitOn', 'waitResolvers'],
+  'toy-clock': ['later', 'online', 'ping', 'readClock', 'roll'], 'toy-sched': ['after', 'later', 'seed', 'sinkLater', 'sinkTo', 'visit', 'whenSettled', 'withCallback'],
+});
+
 const clone = (recording) => ({ ...recording, incomplete: [...recording.incomplete], containers: recording.containers.map((container) => ({ ...container })) });
 
 /** A toy setup whose recordings are `recordings[run - 1]`, changed by `change(recording, run)`. */
@@ -156,10 +163,19 @@ export const FAMILY_CHECKS = Object.freeze([
     const listed = checkManifest(readManifestText(out), written);
     const [marked, ...kept] = readContainer(readFileSync(path.join(out, recordings[0].containers[0].name), 'utf8')).cases;
     const refused = await familyCommand([`--out=${path.join(REPOSITORY_ROOT, 'never-written')}`], toySetup(recordings), { log: () => {}, error: () => {} });
+    // The manifest says what the command exited with (manifest version 2, C0g review S3): a failed run's manifest too,
+    // and it carries the census items of every family it lists, as the toy map and census give them (pinned).
+    const failedOut = dir('out-failed');
+    const stale = censusWith(dir('out-stale'), 'stale', (value) => { value.exports.push({ family: 'toy-reducer', export: 'gone', reason: 'planted' }); });
+    const failedCode = await familyCommand([`--out=${failedOut}`], toySetup(recordings, { census: stale, reachableFixtures: true }), { log: () => {}, error: () => {} });
+    const failedManifest = JSON.parse(readFileSync(path.join(failedOut, MANIFEST_FILE), 'utf8'));
+    const items = listed.manifest.items ?? {};
+    const itemsPinned = Object.keys(listed.manifest.families).every((family) => items[family]) && JSON.stringify(Object.fromEntries(Object.entries(items).map(([family, entry]) => [family, entry.exports]))) === JSON.stringify(TOY_ITEM_EXPORTS);
     return code === EXIT.pass && names.length === recordings[0].containers.length && names.every((name) => name.endsWith('.ndjson')) && listed.problems.length === 0
       && Object.keys(listed.manifest.containers).length === names.length && listed.manifest.containers[recordings[0].containers[0].name].outcomes.unstable >= 1
       && marked.outcome === 'unstable' && marked.reason.includes('planted waiver')
-      && kept.every((record) => record.outcome !== 'unstable') && refused === EXIT.usage;
+      && kept.every((record) => record.outcome !== 'unstable') && refused === EXIT.usage
+      && listed.manifest.verdict?.code === code && failedCode === EXIT.fail && failedManifest.verdict?.code === failedCode && failedManifest.verdict.failures >= 1 && itemsPinned;
   }],
   ['family-usage', async ({ recordings, dir }) => {
     // A census file that cannot be read, an unknown family, one recording: usage errors (64), never Node's own exit code.
