@@ -17,6 +17,11 @@
 //                 what the server composes after the group answers it (the group host's tail stand-in:
 //                 a method no route of the group registers), which is an edge exchange too
 //   concurrent    2 or 3 exchanges sent at once (the reference also runs every order, §5.6)
+//   staged        2 to 4 exchanges on connections opened in member order, their bytes written by a
+//                 schedule (['send', member, 'head' | 'body' | 'all'], ['await', member]: its answer read
+//                 in full) with no clock: the order of writes the JavaScript gives such a timeline is
+//                 judged exactly, step by step as for exchanges (no admissible set; R against R' says
+//                 whether the reference's own order is stable)
 //   external      the harness changes the data root between exchanges (write, delete, rename, mkdir, symlink, chmod)
 //   restart       the arm stops and starts again on the tree it left
 //   kill-after    one exchange, the arm SIGKILLed after a named point, then started again
@@ -28,7 +33,9 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { SERVER_ROOT } from './edge.mjs';
 
-export const STEP_KINDS = Object.freeze(['exchange', 'concurrent', 'external', 'restart', 'kill-after', 'stream-open', 'stream-barrier', 'stream-close', 'quiesce', 'snapshot']);
+export const STEP_KINDS = Object.freeze(['exchange', 'concurrent', 'staged', 'external', 'restart', 'kill-after', 'stream-open', 'stream-barrier', 'stream-close', 'quiesce', 'snapshot']);
+/** What a staged step's schedule can do: write a part of a member's request, or read a member's answer to its end. */
+export const STAGED_PARTS = Object.freeze(['head', 'body', 'all']);
 /** Where a kill-after step kills: after the request is written, when the response head arrives, or once the response was read to its end. */
 export const KILL_POINTS = Object.freeze(['request-sent', 'response-head', 'response-end']);
 export const EXTERNAL_OPS = Object.freeze(['write', 'delete', 'rename', 'mkdir', 'symlink', 'chmod']);
@@ -54,6 +61,7 @@ const request = ({ method, target, headers = [], body = null, principal, edge = 
 export const step = Object.freeze({
   exchange: (id, spec) => ({ kind: 'exchange', id, request: request(spec) }),
   concurrent: (id, members) => ({ kind: 'concurrent', id, members: members.map(([member, spec]) => ({ member, request: request(spec) })) }),
+  staged: (id, members, schedule) => ({ kind: 'staged', id, members: members.map(([member, spec]) => ({ member, request: request(spec) })), schedule: schedule.map((action) => [...action]) }),
   external: (id, change) => ({ kind: 'external', id, change: { ...change } }),
   restart: (id) => ({ kind: 'restart', id }),
   killAfter: (id, point, spec) => ({ kind: 'kill-after', id, point, request: request(spec) }),
@@ -240,6 +248,28 @@ export function validateSteps(scenario, steps) {
         problems.push(...requestProblems(`${where} member ${member.member}`, member.request, scenario));
         if (member.request.edge) problems.push(`${where}: an edge exchange cannot be a concurrent member`);
       }
+    }
+    if (entry.kind === 'staged') {
+      if (!Array.isArray(entry.members) || entry.members.length < 2 || entry.members.length > 4) problems.push(`${where}: 2 to 4 members`);
+      const names = new Set();
+      for (const member of entry.members ?? []) {
+        if (!PLAIN_ID.test(member.member ?? '') || names.has(member.member)) problems.push(`${where}: member names must be plain and distinct`);
+        names.add(member.member);
+        problems.push(...requestProblems(`${where} member ${member.member}`, member.request, scenario));
+        if (member.request.edge) problems.push(`${where}: an edge exchange cannot be a staged member`);
+      }
+      const sent = new Map();
+      for (const action of entry.schedule ?? []) {
+        const [verb, name, part] = action;
+        if (!names.has(name)) { problems.push(`${where}: the schedule names no member ${JSON.stringify(name)}`); continue; }
+        if (verb === 'send') {
+          if (!STAGED_PARTS.includes(part)) problems.push(`${where}: a send writes ${STAGED_PARTS.join(', ')}`);
+          const before = sent.get(name) ?? [];
+          if (before.includes('all') || before.includes(part) || (part === 'body' && !before.includes('head')) || (part !== 'body' && before.length)) problems.push(`${where}: member ${name} is sent ${[...before, part].join(' then ')} (a request is sent all at once, or its head then its body)`);
+          sent.set(name, [...before, part]);
+        } else if (verb !== 'await' || action.length !== 2) problems.push(`${where}: a schedule action is ['send', member, part] or ['await', member]`);
+      }
+      for (const name of names) if (!(sent.get(name) ?? []).some((part) => part === 'all' || part === 'body')) problems.push(`${where}: member ${name} is never sent in full`);
     }
     if (entry.kind === 'external') {
       const change = entry.change ?? {};

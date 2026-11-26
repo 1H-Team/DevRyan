@@ -19,7 +19,11 @@ import { REPOSITORY_ROOT } from './edge.mjs';
 import { CANDIDATE_EFFECT_LIMIT } from './observe.mjs';
 import { judgeRun } from './outcomes.mjs';
 import { PRINCIPALS } from './scenario.mjs';
+import { rustCandidateCommand } from './rust-candidate.mjs';
 import { CENSUS_ERRORS as MAGIC_PROMPTS_ERRORS, CENSUS_WAIVERS as MAGIC_PROMPTS_CENSUS, SCENARIOS as MAGIC_PROMPTS } from './scenarios/magic-prompts.mjs';
+
+/** How each `--candidate` name of a group becomes a command (RunRefused when it cannot be run, with how to make it runnable). */
+export const CANDIDATE_COMMANDS = Object.freeze({ 'magic-prompts': Object.freeze({ rust: () => rustCandidateCommand() }) });
 
 /** The scenarios of each group the harness has scenarios for. */
 export const SCENARIOS_BY_GROUP = Object.freeze({ 'magic-prompts': MAGIC_PROMPTS });
@@ -79,7 +83,11 @@ export function censusInput({ name, group, recordings, rows, waivers = CENSUS_WA
  * --scenario id is a census gap. With every scenario run, the census judges
  * the group (`census.json` in the run): each gap and problem is a census gap.
  */
-export async function produceScenarioRows({ run, group, name, options = {}, log = () => {}, limits, scenarios = SCENARIOS_BY_GROUP[name] ?? [], censusWaivers = CENSUS_WAIVERS_BY_GROUP[name] ?? {}, censusErrors = CENSUS_ERRORS_BY_GROUP[name] ?? [], closure = runClosure }) {
+export async function produceScenarioRows({ run, group, name, options = {}, log = () => {}, limits, scenarios = SCENARIOS_BY_GROUP[name] ?? [], censusWaivers = CENSUS_WAIVERS_BY_GROUP[name] ?? {}, censusErrors = CENSUS_ERRORS_BY_GROUP[name] ?? [], closure = runClosure, candidates = CANDIDATE_COMMANDS }) {
+  // A named candidate is judged in place of J (J still runs: the closure check needs it).
+  const candidateCommand = options.candidate ? candidates[name]?.[options.candidate]?.() ?? null : null;
+  const candidateLabel = options.candidate ? `candidate-${options.candidate}` : 'candidate';
+  const judgedArm = options.candidate ? `the ${options.candidate} candidate (C)` : 'the JavaScript candidate adapter (J)';
   const asked = options.scenarios ?? [];
   const gaps = asked.filter((id) => !scenarios.some((scenario) => scenario.id === id)).map((id) => `--scenario=${id} names no scenario of group ${name}`);
   const chosen = asked.length ? scenarios.filter((scenario) => asked.includes(scenario.id)) : scenarios;
@@ -88,13 +96,13 @@ export async function produceScenarioRows({ run, group, name, options = {}, log 
   const references = [];
   let observedExchanges = 0;
   for (const scenario of chosen) {
-    const { rows: produced, recordings } = await closure({ run, scenario, name, group, limits });
+    const { rows: produced, recordings } = await closure({ run, scenario, name, group, limits, ...(candidateCommand ? { candidateCommand, candidateLabel } : {}) });
     references.push({ scenario: scenario.id, recording: recordings.reference });
     // The candidate arms' exchanges, each observed from outside under the named limit (observe.mjs).
     for (const key of ['js', 'candidate']) observedExchanges += recordings[key]?.observation?.exchanges ?? 0;
     const counts = {};
     for (const row of produced) counts[row.outcome] = (counts[row.outcome] ?? 0) + 1;
-    log(`compared ${scenario.id}: ${produced.length} rows (R, R' and J): ${Object.entries(counts).map(([outcome, count]) => `${count} ${outcome}`).join(', ')}`);
+    log(`compared ${scenario.id}: ${produced.length} rows (R, R' and J${candidateCommand ? ', judged on C' : ''}): ${Object.entries(counts).map(([outcome, count]) => `${count} ${outcome}`).join(', ')}`);
     // Rule W's Date lag, as measured on this scenario's references (driver.mjs groupCoverage): the bound a candidate's Date is held to.
     const lagOf = (recording) => `${dateLagOf(recording)} ms (heads ${recording?.dateLag?.heads ?? 0}, timer ${recording?.dateLag?.timer ?? 0})`;
     log(`date lag ${scenario.id}: R ${lagOf(recordings.reference)}, R' ${lagOf(recordings.second)}`);
@@ -107,8 +115,10 @@ export async function produceScenarioRows({ run, group, name, options = {}, log 
   else if (chosen.length) {
     const judgedRows = judgeRun({ rows, waivers }).rows;
     const census = judgeCensus(censusInput({ name, group, recordings: references, rows: judgedRows, waivers: censusWaivers, errors: censusErrors }));
-    run.writeFile('census.json', `${JSON.stringify(census, null, 1)}\n`);
+    run.writeFile('census.json', `${JSON.stringify({ judgedArm, ...census }, null, 1)}\n`);
     for (const line of censusLines(census)) log(line);
+    // An item counts as exercised only through a row that passed on the judged arm.
+    log(`census judged on ${judgedArm}: an exercised item's rows passed on it`);
     gaps.push(...census.gaps, ...census.problems.map((problem) => `${name}: census problem: ${problem}`));
   }
   return { rows, waivers, gaps, limits: runLimits, unjudged };

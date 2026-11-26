@@ -27,7 +27,7 @@ import { createBackendRun, sweepKilledRuns } from './run-scratch.mjs';
 import { HARNESS_HEADERS, PRINCIPALS, ScenarioError, createSuppliedValues, defineScenario, jsonBody, rawBody, step, validateSteps } from './scenario.mjs';
 import { groupAlive, groupGone, groupMembers, holdDescriptors, openFilesUnder, signalGroup, snapshotTree, treeChanges, treeFingerprint, walkTree, whileFrozen } from './tree.mjs';
 import { sigkillOnce } from './toy/sigkill-run.mjs';
-import { ALL_KINDS, CUT_CLIENT, CUT_SERVER, ENDLESS, EXTERNAL_MISSING, KILL_HANG, KILL_LOSES, PUT_GET, RESTART, SHORT_STREAM, TRAILING } from './toy/toy-scenarios.mjs';
+import { ALL_KINDS, CUT_CLIENT, CUT_SERVER, ENDLESS, EXTERNAL_MISSING, KILL_HANG, KILL_LOSES, PUT_GET, RESTART, SHORT_STREAM, STAGED, TRAILING } from './toy/toy-scenarios.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = path.resolve(HERE, '../..');
@@ -86,13 +86,30 @@ test('the scenario format refuses malformed scenarios and steps, naming each pro
     step.streamBarrier('h', 'nothing', 1),
     step.streamOpen('i', 's', { method: 'GET', target: '/s', ...as }),
     step.restart('j'),
+    step.staged('k', [['m', { method: 'GET', target: '/x', ...as }], ['n', { method: 'GET', target: '/y', ...as }]], [['send', 'm', 'body'], ['send', 'ghost', 'all'], ['await', 'm', 'x']]),
   ];
   let caught;
   try { validateSteps(scenario, bad); } catch (error) { caught = error; }
   assert.ok(caught instanceof ScenarioError);
-  for (const expected of [/target must start with \//, /method "G T" is not a token/, /without line breaks/, /id appears twice/, /harness headers are the driver's/, /must be marked edge/, /principal "managed-admin" is not one of/, /2 or 3 members/, /kill point/, /plain relative path/, /stream nothing is not open/, /a restart while a stream is open/, /stream s is never closed/, /waiver ghost names no step/]) {
+  for (const expected of [/target must start with \//, /method "G T" is not a token/, /without line breaks/, /id appears twice/, /harness headers are the driver's/, /must be marked edge/, /principal "managed-admin" is not one of/, /2 or 3 members/, /member m is sent body/, /names no member "ghost"/, /\['await', member\]/, /member n is never sent in full/, /kill point/, /plain relative path/, /stream nothing is not open/, /a restart while a stream is open/, /stream s is never closed/, /waiver ghost names no step/]) {
     assert.ok(caught.problems.some((entry) => expected.test(entry)), `${expected} in ${caught.problems.join('\n')}`);
   }
+});
+
+test('a staged step: connections in member order, the schedule\'s parts in order, every answer read', DEADLINE, async (t) => {
+  const { recording, calls: received, pass } = await onFake(t, STAGED);
+  assert.deepEqual(checksOf(recording), [], JSON.stringify(recording.steps.flatMap((result) => result.problems)));
+  const at = (id) => recording.trace.indexOf(`step:${id}`);
+  const timeline = recording.trace.slice(at('timeline') + 1, at('get')).filter((event) => /^(send|await):/.test(event));
+  assert.deepEqual(timeline, ['send:a:head', 'send:b:all', 'await:b', 'send:a:body', 'await:a']);
+  const [step0] = recording.steps;
+  assert.deepEqual(step0.exchanges.map((record) => [record.member, record.response.status]), [['a', 200], ['b', 200]]);
+  assert.ok(step0.s1 && step0.s2, 'a staged step has its snapshots');
+  // The fake saw a's head first, and read a's body whole although it came after b's request and answer.
+  const puts = received.filter((entry) => entry.server === 'listen' && entry.method === 'PUT');
+  assert.deepEqual(puts.map((entry) => entry.url), ['/f/s', '/f/t']);
+  assert.equal(step0.s2.entries.find((entry) => entry.path === 's')?.size, 4);
+  pass();
 });
 
 test('the supplied-value registry pairs by name and refuses ambiguity', DEADLINE, () => {
@@ -208,6 +225,7 @@ test('each misbehaviour of the arm is caught by its named check', DEADLINE, asyn
     { name: 'a descriptor kept after the claim', scenario: PUT_GET, misbehave: ['leak-descriptor'], expect: ['put:open-files', 'put:open-files', 'get:open-files', 'get:open-files'] },
     { name: 'a crash in the middle of a request', scenario: PUT_GET, misbehave: ['crash-on-put'], expect: ['put:response-incomplete', 'put:arm-died', 'get:arm-died'], outcomes: { put: 'failed', get: 'failed' } },
     { name: 'a write after the last step', scenario: PUT_GET, misbehave: ['write-at-exit'], expect: ['get:final-tree'] },
+    { name: 'bytes past the end of an answer', scenario: PUT_GET, misbehave: ['trailing-bytes'], expect: ['get:response-trailing'], outcomes: { get: 'failed' } },
     { name: 'a process that survives a restart', scenario: RESTART, misbehave: ['survive-restart'], expect: ['(start):late-effect', 'restart:group-survived', 'restart:group-survived', 'restart:late-effect'] },
     // (the survivor is also a child the candidate started: the process-group look sees it after the start and after the restart)
     { name: 'a stream with items after its barrier', scenario: TRAILING, misbehave: [], expect: ['close:stream-trailing'] },
@@ -219,7 +237,7 @@ test('each misbehaviour of the arm is caught by its named check', DEADLINE, asyn
     { name: 'a quiescence claim never answered', scenario: PUT_GET, misbehave: ['never-quiescent'], limits: { quiescentMs: 500 }, expect: ['put:deadline', 'put:deadline', 'get:deadline', 'get:deadline'], text: /the candidate's control answer to GET \/quiescent\?seq=1 within 500 ms/ },
   ];
   // The candidate's faults, stated here rather than read from the driver (a check taken out of the set must fail this test).
-  const FAULTS = ['arm-start', 'arm-died', 'response-incomplete', 'claim-seq', 'quiescence', 'late-effect', 'final-tree', 'open-files', 'stream-trailing', 'stream-truncated', 'stop-escalated', 'group-survived', 'group-escaped'];
+  const FAULTS = ['arm-start', 'arm-died', 'response-incomplete', 'response-trailing', 'claim-seq', 'quiescence', 'late-effect', 'final-tree', 'open-files', 'stream-trailing', 'stream-truncated', 'stop-escalated', 'group-survived', 'group-escaped'];
   assert.deepEqual([...CANDIDATE_FAULTS].sort(), [...FAULTS].sort());
   await Promise.all(cases.map(async (entry) => {
     const { recording, rows, calls: received, pass } = await onFake(t, entry.scenario, entry);

@@ -3,6 +3,21 @@
 version = 4
 
 [[package]]
+name = "alloc-no-stdlib"
+version = "2.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc7bb162ec39d46ab1ca8c77bf72e890535becd1751bb45f64c597edb4c8c6b3"
+
+[[package]]
+name = "brotli-decompressor"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "874bb8112abecc98cbd6d81ea4fa7e94fb9449648c93cc89aa40c81c24d7de03"
+dependencies = [
+ "alloc-no-stdlib",
+]
+
+[[package]]
 name = "devryan-config-text"
 version = "0.1.0"
 
@@ -10,6 +25,17 @@ version = "0.1.0"
 name = "devryan-front"
 version = "0.1.0"
 dependencies = [
+ "httparse",
+ "libc",
+ "serde_json",
+]
+
+[[package]]
+name = "devryan-route-magic-prompts"
+version = "0.1.0"
+dependencies = [
+ "brotli-decompressor",
+ "devryan-config-text",
  "httparse",
  "libc",
  "serde_json",

@@ -722,6 +722,7 @@ function momentsOf(step) {
   const add = (moment, tree) => { if (tree) out.push([moment, tree]); };
   if (step.kind === 'exchange') for (const [index, record] of (step.exchanges ?? []).entries()) { const tag = index ? `#${index}` : ''; add(`S1${tag}`, record.s1); add(`S2${tag}`, record.s2); }
   else if (step.kind === 'concurrent') { add('S1', step.s1); add('S2', step.s2); add('restored', step.restored); }
+  else if (step.kind === 'staged') { add('S1', step.s1); add('S2', step.s2); }
   else if (step.kind === 'kill-after') { add('S1', step.exchanges?.[0]?.s1); add('started', step.afterRestart); }
   else add(step.kind === 'restart' ? 'started' : 'tree', step.tree);
   add('late', step.lateTree);
@@ -882,6 +883,15 @@ function compareStep(ctx, referenceStep, otherStep) {
     }
   } else {
     compareExchanges(ctx, referenceStep, otherStep);
+    if (referenceStep.kind === 'staged') {
+      // Rule inode for the step as a whole (its members' writes are not told apart from outside).
+      for (const field of ['replaced', 'removed']) {
+        const strip = (keys) => (keys ?? []).map((item) => item.replace(/^0:/, '').replace(/^1:/, 'home:')).filter((name) => !isEdgePath(ctx, name, null)).sort();
+        const x = strip(referenceStep[field]);
+        const y = strip(otherStep[field]);
+        for (const name of new Set([...x, ...y])) if (x.includes(name) !== y.includes(name)) ctx.differ(`tree.${name}.${field}`, 'the staged step', 'inode', x.includes(name) ? field : 'rewritten in place or kept', y.includes(name) ? field : 'rewritten in place or kept');
+      }
+    }
     const left = new Map(momentsOf(referenceStep));
     const right = new Map(momentsOf(otherStep));
     // A step the candidate was not given has no snapshots on its side: nothing of it to compare.

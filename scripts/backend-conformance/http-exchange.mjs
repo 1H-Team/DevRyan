@@ -27,7 +27,7 @@ export function encodeRequest({ method, target, headers = [], body = null }, por
   if (body && !has(all, 'content-length') && !has(all, 'transfer-encoding')) all.push(['Content-Length', String(body.length)]);
   for (const [name, value] of all) lines.push(`${name}: ${value}`);
   const head = Buffer.from(`${lines.join('\r\n')}\r\n\r\n`, 'latin1');
-  return { bytes: body ? Buffer.concat([head, body]) : head, headers: all };
+  return { bytes: body ? Buffer.concat([head, body]) : head, headers: all, headLength: head.length };
 }
 
 /**
@@ -118,8 +118,15 @@ class ResponseReader {
  * response is complete and the connection closed, or the deadline passed
  * (`error` names it). Hooks: `onSent` after the request bytes are written,
  * `onHead(head)` when the status line and headers arrived, `onBody(bytes)`.
+ * `sendPart(part)` writes the head, the body or all of it (a staged step's
+ * schedule) and resolves once the bytes are handed to the socket; a part the
+ * arm no longer reads (it answered and closed first, as Node does for a body
+ * no parser reads) is not written, and is recorded in `skipped`. With
+ * `staged`, a socket error after the response was read in full (a write the
+ * arm refused after its answer) does not make the response incomplete; it is
+ * recorded as `lateError`.
  */
-export function openExchange(port, request, { deadlineMs = HTTP_LIMITS.exchangeMs, onSent = () => {}, onHead = () => {}, onBody = () => {} } = {}) {
+export function openExchange(port, request, { deadlineMs = HTTP_LIMITS.exchangeMs, onSent = () => {}, onHead = () => {}, onBody = () => {}, staged = false } = {}) {
   const encoded = encodeRequest(request, port);
   const socket = net.connect({ host: '127.0.0.1', port });
   const chunks = [];
@@ -129,6 +136,8 @@ export function openExchange(port, request, { deadlineMs = HTTP_LIMITS.exchangeM
   let localPort = null;
   let sentOrder = null;
   let firstByteOrder = null;
+  let lateError = null;
+  const skipped = [];
   const reader = new ResponseReader({ method: request.method, onHead: (head) => { onHead(head); }, onBody });
   let settleDone;
   const done = new Promise((resolve) => { settleDone = resolve; });
@@ -143,7 +152,7 @@ export function openExchange(port, request, { deadlineMs = HTTP_LIMITS.exchangeM
     chunks.push(chunk);
     try { reader.feed(chunk); } catch (failure) { error ??= failure; socket.destroy(); }
   });
-  socket.on('error', (failure) => { error ??= failure; });
+  socket.on('error', (failure) => { if (staged && reader.complete) lateError ??= String(failure.message ?? failure); else error ??= failure; });
   socket.once('close', () => {
     clearTimeout(timer);
     reader.ended();
@@ -155,6 +164,7 @@ export function openExchange(port, request, { deadlineMs = HTTP_LIMITS.exchangeM
       status: head?.status ?? null, reason: head?.reason ?? null, httpVersion: head?.httpVersion ?? null, headers: head?.headers ?? null, head: head?.raw ?? null,
       interim: reader.interim, trailers: reader.trailers, body: Buffer.concat(reader.body), complete: reader.complete && !error,
       bytesAfterResponse: reader.state === 'done' ? reader.buffer.length : 0, wire: Buffer.concat(chunks).length,
+      ...(staged ? { skipped, lateError } : {}),
     });
   });
   return {
@@ -164,6 +174,14 @@ export function openExchange(port, request, { deadlineMs = HTTP_LIMITS.exchangeM
       t0 = Date.now();
       sentOrder = ++wireEvents;
       socket.write(encoded.bytes, () => { onSent(); });
+    },
+    /** Writes `part` ('head', 'body' or 'all') and resolves once it is handed to the socket. */
+    sendPart(part) {
+      const bytes = part === 'head' ? encoded.bytes.subarray(0, encoded.headLength) : part === 'body' ? encoded.bytes.subarray(encoded.headLength) : encoded.bytes;
+      if (part !== 'body') { t0 ??= Date.now(); sentOrder ??= ++wireEvents; }
+      if (socket.destroyed || socket.writableEnded || reader.complete) { skipped.push(part); return Promise.resolve(false); }
+      if (bytes.length === 0) return Promise.resolve(true);
+      return new Promise((resolve) => { socket.write(bytes, (failure) => { if (part !== 'head') onSent(); resolve(!failure); }); });
     },
     done,
     /** Ends the exchange from the client side (a stream closed by the scenario, a teardown). */

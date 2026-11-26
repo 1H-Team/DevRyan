@@ -24,15 +24,20 @@ export function interruptGate(log) {
   };
 }
 
-export const USAGE = 'usage: --group=<name> [--scenario=<id>,...] [--allow-inconclusive=<row>,...] [--keep-artifacts]';
+export const USAGE = 'usage: --group=<name> [--candidate=<name>] [--scenario=<id>,...] [--allow-inconclusive=<row>,...] [--keep-artifacts]';
+/** The candidates `--candidate` can name, by group: a candidate is judged instead of J (which still runs, for the closure check). */
+export const CANDIDATES = Object.freeze({ 'magic-prompts': Object.freeze(['rust']) });
 
-export function parseArguments(argv, groups = GROUPS) {
-  const options = { allowInconclusive: [], keepArtifacts: false, group: null, scenarios: [] };
+export function parseArguments(argv, groups = GROUPS, candidates = CANDIDATES) {
+  const options = { allowInconclusive: [], keepArtifacts: false, group: null, scenarios: [], candidate: null };
   for (const argument of argv) {
     if (argument === '--keep-artifacts') { options.keepArtifacts = true; continue; }
-    const match = /^--(group|allow-inconclusive|scenario)=(.+)$/.exec(argument);
+    const match = /^--(group|allow-inconclusive|scenario|candidate)=(.+)$/.exec(argument);
     if (!match) return { error: `unknown option ${argument}` };
-    if (match[1] === 'group') {
+    if (match[1] === 'candidate') {
+      if (options.candidate) return { error: '--candidate given twice' };
+      options.candidate = match[2];
+    } else if (match[1] === 'group') {
       if (options.group) return { error: '--group given twice' };
       options.group = match[2];
     } else if (match[1] === 'scenario') options.scenarios.push(...match[2].split(',').filter(Boolean));
@@ -40,6 +45,8 @@ export function parseArguments(argv, groups = GROUPS) {
   }
   if (!options.group) return { error: '--group is required' };
   if (!Object.hasOwn(groups, options.group)) return { error: `unknown group ${options.group} (known: ${Object.keys(groups).join(', ')})` };
+  const known = candidates[options.group] ?? [];
+  if (options.candidate && !known.includes(options.candidate)) return { error: `unknown candidate ${options.candidate} for group ${options.group} (known: ${known.join(', ') || 'none'})` };
   return { options };
 }
 

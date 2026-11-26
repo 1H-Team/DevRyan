@@ -188,7 +188,7 @@ test('a run exits by its rows, judges nothing on composition drift, removes its 
   assert.doesNotMatch(drifted.stdout, /^ROWS$/m);
   assert.ok(!fs.existsSync(runDirOf(drifted.stdout)));
   for (const argv of [['--group=nope'], ['--group=magic-prompts', '--frobnicate'], [], ['--group=magic-prompts', '--group=magic-prompts']]) assert.ok(parseArguments(argv).error, String(argv));
-  assert.deepEqual(parseArguments(['--group=magic-prompts', '--allow-inconclusive=a,b']).options, { allowInconclusive: ['a', 'b'], keepArtifacts: false, group: 'magic-prompts', scenarios: [] });
+  assert.deepEqual(parseArguments(['--group=magic-prompts', '--allow-inconclusive=a,b']).options, { allowInconclusive: ['a', 'b'], keepArtifacts: false, group: 'magic-prompts', scenarios: [], candidate: null });
   assert.deepEqual(parseArguments(['--group=magic-prompts', '--scenario=s.a,s.b', '--scenario=s.c']).options.scenarios, ['s.a', 's.b', 's.c']);
 });
 

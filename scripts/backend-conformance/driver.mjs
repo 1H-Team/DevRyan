@@ -61,6 +61,7 @@ export const CHECKS = Object.freeze({
   'stream-truncated': 'the arm ended a stream before the scenario did (before a barrier was reached, or before the client closed it)',
   'arm-died': 'the arm\'s process exited when the driver had not stopped it',
   'response-incomplete': 'the response was not read to its end',
+  'response-trailing': 'bytes arrived after the end of the response (a body after a HEAD, 304 or 204 answer, or past its Content-Length): on a kept-alive connection a client would read them as the next answer',
   correlation: 'the reference\'s tap has no record of the exchange the driver made',
   'claim-seq': 'the quiescence answer names another exchange',
   quiescence: 'the arm did not claim quiescence',
@@ -83,7 +84,7 @@ export const CHECKS = Object.freeze({
   'principal-unavailable': 'the arm cannot be given the step\'s principal',
 });
 /** Checks that, on a candidate arm, are the candidate's fault (its row fails); the rest leave the row inconclusive. */
-export const CANDIDATE_FAULTS = Object.freeze(new Set(['arm-start', 'arm-died', 'response-incomplete', 'claim-seq', 'quiescence', 'late-effect', 'final-tree', 'open-files', 'stream-trailing', 'stream-truncated', 'stop-escalated', 'group-survived', 'group-escaped']));
+export const CANDIDATE_FAULTS = Object.freeze(new Set(['arm-start', 'arm-died', 'response-incomplete', 'response-trailing', 'claim-seq', 'quiescence', 'late-effect', 'final-tree', 'open-files', 'stream-trailing', 'stream-truncated', 'stop-escalated', 'group-survived', 'group-escaped']));
 /** Checks that make a reference row unrecordable rather than inconclusive. */
 export const UNRECORDABLE = Object.freeze(new Set(['body-has-stack', 'not-linearisable']));
 export const AWAITING = 'comparison';
@@ -361,6 +362,7 @@ function responseChecks(result, response, what) {
   if (response.deadline) problem(result, 'deadline', `${what}: ${response.error}`);
   else if (response.error) problem(result, 'response-incomplete', `${what}: ${response.error}`);
   else if (!response.complete) problem(result, 'response-incomplete', `${what}: the connection closed before the response was complete`);
+  else if (response.bytesAfterResponse > 0) problem(result, 'response-trailing', `${what}: ${response.bytesAfterResponse} bytes after the end of the response`);
 }
 
 /** The arm's claim on one exchange, checked: it must name the exchange and say quiescent. */
@@ -601,6 +603,68 @@ async function concurrentStep(ctx, result, entry) {
     result.removed = released.removed;
   }
   if (admissible && result.s2) await admissibleSet(ctx, result, entry, members, before);
+}
+
+/**
+ * A staged step: every member's connection opened in member order, then the schedule's writes and reads in
+ * order (writes in a row made back to back), then every answer read to its end. The
+ * snapshots, claims and tap checks are a concurrent step's; there is no admissible set: the comparer judges
+ * the step exactly, as it judges exchanges.
+ */
+async function stagedStep(ctx, result, entry) {
+  const members = entry.members.filter((member) => !notSent(ctx, member.request));
+  for (const member of entry.members) { const skip = notSent(ctx, member.request); if (skip) { result.exchanges.push({ member: member.member, notSent: skip.text }); if (skip.check) problem(result, skip.check, skip.text); } }
+  if (members.length < entry.members.length) { for (const member of members) result.exchanges.push({ member: member.member, notSent: `the other members of staged step ${entry.id} cannot be sent to this arm, so this one is not sent alone` }); return; }
+  trace(ctx, 'hold');
+  const held = hold(ctx);
+  const launched = [];
+  try {
+    // Connections in member order, each one up before the next is opened.
+    for (const member of members) {
+      const item = { member, ...launch(ctx, member.request, { staged: true }) };
+      launched.push(item);
+      await item.open.connected.catch(() => {});
+    }
+    const byName = new Map(launched.map((item) => [item.member.member, item]));
+    // Writes that follow one another are made back to back (one turn of this process's loop, so they reach the
+    // arm together, in order); an `await` first waits until they were handed to their sockets.
+    let writing = [];
+    for (const [verb, name, part] of entry.schedule) {
+      const item = byName.get(name);
+      trace(ctx, `${verb}:${name}${part ? `:${part}` : ''}`);
+      if (verb === 'send') { writing.push(item.open.sendPart(part)); continue; }
+      await Promise.all(writing);
+      writing = [];
+      await item.open.done;
+    }
+    await Promise.all(writing);
+    const responses = await Promise.all(launched.map(({ open }) => open.done));
+    trace(ctx, 'response');
+    const records = launched.map(({ member, seq, envelope, uses, process: processAt, principal }, index) => ({ member: member.member, seq, envelope, uses, process: processAt, principal, response: responseRecord(responses[index]), skipped: responses[index].skipped, lateError: responses[index].lateError }));
+    result.exchanges.push(...records);
+    responses.forEach((response, index) => responseChecks(result, response, `member ${launched[index].member.member}`));
+    if (armGone(ctx)) { noteDeath(ctx, result, 'the arm exited during a staged step'); return; }
+    result.s1 = await frozenSnapshot(ctx, result, 'S1');
+    for (const [index, record] of records.entries()) {
+      record.armSeq = ctx.arm.seqFor(responses[index], record.seq);
+      if (record.armSeq === null) problem(result, 'correlation', `no tap record names member ${record.member}'s connection`);
+      else ctx.processSeqs.push(record.armSeq);
+    }
+    for (const record of records) record.claim = await claim(ctx, result, record.armSeq, `member ${record.member}`);
+    result.s2 = await frozenSnapshot(ctx, result, 'S2');
+    if (result.s2?.openByArm.length) problem(result, 'open-files', `after its quiescence claims the arm holds ${result.s2.openByArm.map((item) => item.file).join(', ')}`);
+    const recordsNow = ctx.arm.records();
+    records.forEach((record, index) => { record.tap = tapChecks(ctx, result, record.armSeq, members[index].request, recordsNow); });
+    const effects = observedEffects(ctx, [result.s1, result.s2]);
+    if (effects) records.forEach((record, index) => { record.effects = index === 0 ? effects : { ...effects, outbound: [], children: [] }; record.effectsOfStep = index === 0; });
+    if (result.s2) ctx.last = { result, snapshot: result.s2, armSeq: records.at(-1).armSeq };
+  } finally {
+    for (const { open } of launched) open.close();
+    trace(ctx, 'release');
+    const released = held.release();
+    result.replaced = released.replaced;
+    result.removed = released.removed;
+  }
 }
 
 /** §5.6: the reference once per order of the members, each from the tree before the step; its own result must be one of them. */
@@ -858,6 +922,7 @@ async function afterDeath(ctx, result) {
 async function runStep(ctx, result, entry) {
   if (entry.kind === 'exchange') await singleExchange(ctx, result, entry.request);
   else if (entry.kind === 'concurrent') await concurrentStep(ctx, result, entry);
+  else if (entry.kind === 'staged') await stagedStep(ctx, result, entry);
   else if (entry.kind === 'kill-after') await killAfterStep(ctx, result, entry);
   else if (entry.kind === 'restart') {
     await stopArm(ctx, result, { kill: ctx.dead });

@@ -19,6 +19,7 @@ import { GENERATOR as jsoncEditVectors } from '../packages/native/crates/config-
 import { GENERATOR as yamlParseVectors } from '../packages/native/crates/config-text/tests/generate-config-yaml-parse.mjs';
 import { GENERATOR as yamlStringifyVectors } from '../packages/native/crates/config-text/tests/generate-config-yaml-stringify.mjs';
 import { GENERATOR as frontMatterVectors } from '../packages/native/crates/config-text/tests/generate-config-front-matter.mjs';
+import { vectorProblems as routeVectorProblems } from '../packages/native/crates/route-magic-prompts/tests/generate-vectors.mjs';
 
 const read = file => readFileSync(path.join(repositoryRoot, NATIVE_DIR, file), 'utf8');
 const tracked = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '--', NATIVE_DIR], { cwd: repositoryRoot, encoding: 'utf8' }).split('\n').filter(Boolean);
@@ -190,6 +191,13 @@ describe('packages/native Cargo workspace', () => {
       const current = stripVersion(read(file)) === stripVersion(renderVectors(generator));
       assert.ok(current, `${file} is not what jsonc-parser ${PACKAGE_VERSIONS.jsonc} and yaml ${PACKAGE_VERSIONS.yaml} give; if the change is intended, regenerate it with:\n  node ${NATIVE_DIR}/crates/config-text/tests/${generator.script}\nand make the crate match (cargo test -p devryan-config-text).`);
     }
+  });
+
+  test('the route-magic-prompts vectors are what the JavaScript they port gives', async () => {
+    // tests/vectors.rs holds the crate to these files; each stored row's output is recomputed from its stored input
+    // by the group's runtime module, the product's request decoding under Express, and Express's ETag and fresh.
+    for (const file of ['runtime.tsv', 'bodies.tsv', 'answers.tsv']) assert.ok(tracked.includes(`${NATIVE_DIR}/crates/route-magic-prompts/tests/${file}`), `${file} is tracked`);
+    assert.deepEqual(await routeVectorProblems(), [], `if the change is intended, regenerate with:\n  node ${NATIVE_DIR}/crates/route-magic-prompts/tests/generate-vectors.mjs\nand make the crate match (cargo test -p devryan-route-magic-prompts)`);
   });
 
   test('every planted config-text bug still has its one planting site', () => {

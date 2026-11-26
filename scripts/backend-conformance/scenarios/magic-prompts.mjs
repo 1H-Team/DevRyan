@@ -333,7 +333,84 @@ export const FILE_STATES = defineScenario({
   },
 });
 
-export const SCENARIOS = Object.freeze([READS_AND_WRITES, WRITE_LOCK, RESTARTS, REQUEST_FORMS, ROUTES_AND_FORMS, FILE_STATES]);
+/**
+ * The order of writes as the JavaScript gives it to timelines of bytes (fix round 1 of BH6): a request's handler
+ * runs, and a write takes its place in the promise chain, when its head has arrived if no parser reads its body
+ * (no type the parsers take, or a path spelling with no JSON parser), when its body has arrived if a parser reads
+ * it plainly, and when zlib's last thread-pool call reports back if it is compressed; requests that become
+ * readable in one turn of the loop go in the order they became readable (the probe member's answer makes sure
+ * both connections were accepted first). A read never waits for a write. Each staged step is judged exactly
+ * against the reference's own result, then a GET shows the state each order leaves.
+ */
+export const WRITE_ORDER = defineScenario({
+  id: 'magic-prompts.write-order', group: 'magic-prompts',
+  description: 'writes whose bodies no parser reads, a compressed write and a plain one, two requests readable together, and a read during a slow write: the order of writes judged exactly',
+  principals,
+  fixture: (root, v) => { fs.writeFileSync(path.join(root, 'magic-prompts.json'), promptFile({ 'git.pr.generate.visible': v.text('text.seeded', 'seeded') })); },
+  steps: (v) => {
+    const id = v.id('id.visible', 'git.pr.generate.visible');
+    const other = v.id('id.instructions', 'git.pr.generate.instructions');
+    const slow = (spec, type, bytes) => ({ ...spec, headers: [['Content-Type', type]], body: rawBody(bytes) });
+    const headFirst = (late, early) => [['send', late, 'head'], ['send', early, 'all'], ['await', early], ['send', late, 'body'], ['await', late]];
+    // Padding the parser inflates (40 MiB of spaces, a few kilobytes compressed) and nobody echoes.
+    const padded = zlib.gzipSync(Buffer.from(`{"text":"${v.text('text.gzip', 'inflated last')}","pad":"${' '.repeat(40 * 1024 * 1024)}"}`), { level: 9 });
+    // A data file large enough that a write reads, parses and writes it for a while, and that Node's readFile still
+    // reads in one piece (under 512 KiB: a file read in pieces leaves the reference's quiescence waiting on its
+    // requests until a garbage collection, up to the claim's deadline).
+    const large = promptFile({ [id]: v.text('text.large', `${'l'.repeat(400_000)}`) });
+    return [
+      step.staged('unread-body-delete-all', [['delete-all', slow(del(null), 'text/plain', 'abcde')], ['put', put(id, jsonBody({ text: v.text('text.put-1', 'written while the delete-all body waits') }))]], headFirst('delete-all', 'put')),
+      step.exchange('get-after-unread-delete-all', get()),
+      step.staged('unparsed-spelling-delete', [['delete', { ...slow(del(id), 'application/json', '{}'), target: `/api/Magic-Prompts/${id}` }], ['put', put(id, jsonBody({ text: v.text('text.put-2', 'written while the unparsed delete body waits') }))]], headFirst('delete', 'put')),
+      step.exchange('get-after-unparsed-delete', get()),
+      step.staged('unread-body-get', [['get', slow(get(), 'text/plain', 'abc')], ['put', put(id, jsonBody({ text: v.text('text.put-3', 'written while the get body waits') }))]], headFirst('get', 'put')),
+      step.exchange('get-after-unread-get', get()),
+      step.staged('compressed-and-plain', [['gzip', put(id, rawBody(padded), 'local-admin', [['Content-Type', 'application/json'], ['Content-Encoding', 'gzip']])], ['plain', put(id, jsonBody({ text: v.text('text.plain-second', 'plain, sent second') }))]], [['send', 'gzip', 'all'], ['send', 'plain', 'all'], ['await', 'plain'], ['await', 'gzip']]),
+      step.exchange('get-after-compressed', get()),
+      step.staged('readable-together', [['probe', get()], ['first', put(id, jsonBody({ text: v.text('text.connected-first', 'connected first, written second') }))], ['second', put(id, jsonBody({ text: v.text('text.connected-second', 'connected second, written first') }))]],
+        [['send', 'probe', 'all'], ['await', 'probe'], ['send', 'second', 'all'], ['send', 'first', 'all'], ['await', 'first'], ['await', 'second']]),
+      step.exchange('get-after-together', get()),
+      step.external('file-large', { op: 'write', path: 'magic-prompts.json', data: Buffer.from(large) }),
+      step.staged('read-during-write', [['put', put(other, jsonBody({ text: v.text('text.during', 'written while a read runs') }))], ['get', get()]], [['send', 'put', 'all'], ['send', 'get', 'all'], ['await', 'get'], ['await', 'put']]),
+      step.exchange('get-after-read-during-write', get()),
+      step.exchange('delete-all-after', del(null)),
+    ];
+  },
+});
+
+/**
+ * Texts, ids, data files and a body form the other scenarios leave out (the review's plants that escaped, S7):
+ * a DELETE whose id carries spaces (trimmed), visible text of Unicode spaces only (JavaScript's trim), a text at
+ * the limit in UTF-16 units that is twice as long in UTF-8, data files holding a `__proto__` key and a byte-order
+ * mark, and a gzip body of two members.
+ */
+export const TEXTS_AND_FILES = defineScenario({
+  id: 'magic-prompts.texts-and-files', group: 'magic-prompts',
+  description: 'a DELETE of a padded id, visible text of Unicode spaces, a text at the limit in UTF-16 units, data files with a __proto__ key and a byte-order mark, and a gzip body of two members',
+  principals,
+  fixture: () => {},
+  steps: (v) => {
+    const visible = v.id('id.visible', 'git.pr.generate.visible');
+    const instructions = v.id('id.instructions', 'git.pr.generate.instructions');
+    const gzipTwo = Buffer.concat([zlib.gzipSync(Buffer.from(`{"text":"${v.text('text.member-1', 'from the first member')}`)), zlib.gzipSync(Buffer.from(` ${v.text('text.member-2', 'and the second')}"}`))]);
+    return [
+      step.exchange('put-visible', put(visible, jsonBody({ text: v.text('text.visible', 'visible text') }))),
+      step.exchange('delete-id-space', del(`%20${visible}%20`)),
+      step.exchange('get-after-padded-delete', get()),
+      step.exchange('put-visible-unicode-spaces', put(visible, jsonBody({ text: v.text('text.unicode-spaces', '\u00a0\u3000\ufeff\u2028') }))),
+      step.exchange('put-text-emoji-200000', put(instructions, jsonBody({ text: v.text('text.emoji-200000', '\u{1f600}'.repeat(100_000)) }))),
+      step.exchange('put-text-emoji-200002', put(instructions, jsonBody({ text: v.text('text.emoji-200002', '\u{1f601}'.repeat(100_001)) }))),
+      step.external('file-proto', { op: 'write', path: 'magic-prompts.json', data: Buffer.from(`{"version":1,"overrides":{"__proto__":"${v.text('text.proto', 'a prototype key')}","${visible}":"${v.text('text.beside-proto', 'kept beside it')}"}}`) }),
+      step.exchange('get-proto-file', get()),
+      step.external('file-bom', { op: 'write', path: 'magic-prompts.json', data: Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(promptFile({ [visible]: v.text('text.after-bom', 'after a byte-order mark') }))]) }),
+      step.exchange('get-bom-file', get()),
+      step.exchange('put-gzip-two-members', { method: 'PUT', target: `${BASE}/${instructions}`, headers: [['Content-Type', 'application/json'], ['Content-Encoding', 'gzip']], body: rawBody(gzipTwo), principal: 'local-admin' }),
+      step.exchange('get-after', get()),
+    ];
+  },
+});
+
+export const SCENARIOS = Object.freeze([READS_AND_WRITES, WRITE_LOCK, RESTARTS, REQUEST_FORMS, ROUTES_AND_FORMS, FILE_STATES, WRITE_ORDER, TEXTS_AND_FILES]);
 
 const GET_HANDLER = 'routes.js:registerMagicPromptRoutes>GET /api/magic-prompts handler';
 const PUT_HANDLER = 'routes.js:registerMagicPromptRoutes>PUT /api/magic-prompts/:id handler';

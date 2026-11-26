@@ -24,6 +24,7 @@
 //                                      ignore-stop      /stop and SIGTERM are ignored
 //                                      crash-on-put     a PUT ends the process before it answers
 //                                      write-at-exit    /stop writes a file, then exits
+//                                      trailing-bytes   a GET of a file sends bytes past its Content-Length
 // Routes: GET/PUT/DELETE /f/<name> (a file of the data root), GET /sse?n=<k>[&end=1][&extra=<j>][&cut=1]
 // (k items, j more right after, then the end when asked, or the connection destroyed without the
 // terminating chunk), GET /hang (never answered).
@@ -55,7 +56,13 @@ const listen = http.createServer(async (req, res) => {
   runDeferred('request');
   const url = new URL(req.url, 'http://127.0.0.1');
   const file = url.pathname.startsWith('/f/') ? fileOf(url.pathname.slice(3)) : null;
-  if (file && req.method === 'GET') { try { answer(res, 200, fs.readFileSync(file), 'application/octet-stream'); } catch { answer(res, 404, '{"error":"missing"}'); } return; }
+  if (file && req.method === 'GET') {
+    let bytes;
+    try { bytes = fs.readFileSync(file); } catch { answer(res, 404, '{"error":"missing"}'); return; }
+    if (misbehave.has('trailing-bytes')) { res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': bytes.length }); res.end(Buffer.concat([bytes, Buffer.from('trailing')])); return; }
+    answer(res, 200, bytes, 'application/octet-stream');
+    return;
+  }
   if (file && req.method === 'PUT') {
     const body = await readBody(req);
     if (misbehave.has('crash-on-put')) process.exit(3);

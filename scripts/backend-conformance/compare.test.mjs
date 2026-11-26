@@ -433,6 +433,26 @@ describe('the comparer', () => {
     assert.ok(inconclusive(compare(reference, candidate)).some((item) => item.component === 'concurrency'));
   });
 
+  test('a staged step is judged exactly: the other order of writes is a difference, though it would be admissible', () => {
+    const state = (text) => (arm, t) => [file('p.json', text, { ino: 1, mtimeMs: t + 3 })];
+    const member = (name, body) => ({ member: name, method: 'PUT', target: `/api/x/${name}`, body });
+    const stagedStep = (side, armName, members, final) => {
+      const arm = ARMS[armName];
+      const records = members.map((spec, index) => exchange(side, arm, spec, arm.t + index));
+      return { id: 'timeline', kind: 'staged', problems: [], exchanges: records, s1: tree(arm.t + 10, final(arm, arm.t)), s2: tree(arm.t + 20, final(arm, arm.t)), replaced: [], removed: [] };
+    };
+    const build = (candidateMembers, candidateFinal) => [
+      { scenario: 'toy.compare', values: { scenario: [], arm: armValues(ARMS.R) }, steps: [stagedStep('reference', 'R', [member('a', '{"a":"1"}'), member('b', '{"a":"1","b":"2"}')], state('{"a":"1","b":"2"}'))], blobs: blobsOf(state('{"a":"1","b":"2"}')(ARMS.R, 0)), edgeFiles: [] },
+      { scenario: 'toy.compare', values: { scenario: [], arm: armValues(ARMS.C) }, steps: [stagedStep('candidate', 'C', candidateMembers, candidateFinal)], blobs: blobsOf(candidateFinal(ARMS.C, 0)), edgeFiles: [] },
+    ];
+    assertEqual(compare(...build([member('a', '{"a":"1"}'), member('b', '{"a":"1","b":"2"}')], state('{"a":"1","b":"2"}'))));
+    // b then a: each answer is what that order gives, and the final tree is the same, but the answers are not the reference's.
+    const found = differences(compare(...build([member('a', '{"b":"2","a":"1"}'), member('b', '{"b":"2"}')], state('{"b":"2","a":"1"}'))));
+    assert.ok(found.some((difference) => difference.component === 'body' && difference.rule === 'bytes'), JSON.stringify(found));
+    assert.ok(found.some((difference) => difference.component.startsWith('tree.p.json') && difference.rule === 'bytes'), JSON.stringify(found));
+    assert.ok(!found.some((difference) => difference.rule === 'concurrency'), 'no admissible set is consulted');
+  });
+
   // ---------------------------------------------------------------- streams and effects
   test('streams item by item, by count and by their end; effects in order', () => {
     const streamStep = (items, extra = {}) => ({ kind: 'stream-barrier', items, exchanges: [], ...extra });

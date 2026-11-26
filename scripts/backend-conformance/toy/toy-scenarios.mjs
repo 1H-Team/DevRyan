@@ -29,6 +29,17 @@ export const ALL_KINDS = defineScenario({
   },
 });
 
+/** A staged step: member a's head, then all of b, b's answer, a's body and a's answer, in that order. */
+export const STAGED = defineScenario({
+  id: 'fake.staged', group: 'fake', principals,
+  fixture: () => {},
+  steps: () => [
+    step.staged('timeline', [['a', { method: 'PUT', target: '/f/s', headers: [['Content-Type', 'text/plain']], body: rawBody('AAAA'), ...as() }], ['b', { method: 'PUT', target: '/f/t', body: rawBody('B'), ...as() }]],
+      [['send', 'a', 'head'], ['send', 'b', 'all'], ['await', 'b'], ['send', 'a', 'body'], ['await', 'a']]),
+    step.exchange('get', { method: 'GET', target: '/f/s', ...as() }),
+  ],
+});
+
 /** One PUT then one GET: the smallest scenario a misbehaviour shows in. */
 export const PUT_GET = defineScenario({
   id: 'fake.put-get', group: 'fake', principals,
