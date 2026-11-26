@@ -12,10 +12,16 @@ import { spawnSync } from 'node:child_process';
 
 import { hashOf, runGit } from './odb-repos.mjs';
 
+/** No probe call of the oracle needs minutes; a stuck one is killed and named. */
+const PROBE_DEADLINE_MS = 300_000;
+
 /** Runs the probe; stdout as a Buffer. */
 export function runProbe(probe, args, { input, env = process.env } = {}) {
-  const result = spawnSync(probe, args, { input, env, maxBuffer: 1 << 30 });
-  if (result.error) throw result.error;
+  const result = spawnSync(probe, args, { input, env, maxBuffer: 1 << 30, timeout: PROBE_DEADLINE_MS, killSignal: 'SIGKILL' });
+  if (result.error) {
+    if (result.error.code === 'ETIMEDOUT') throw new Error(`odb-probe ${args.join(' ')} did not finish within ${PROBE_DEADLINE_MS} ms and was killed`);
+    throw result.error;
+  }
   return { status: result.status, stdout: result.stdout, stderr: result.stderr.toString() };
 }
 
