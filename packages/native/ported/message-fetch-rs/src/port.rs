@@ -30,6 +30,16 @@ fn number(value: Option<&Value>) -> Option<f64> {
     value.filter(|v| v.is_number() || v.get("$num").is_some()).and_then(js::as_number)
 }
 
+/// The value of `digits` in `radix`, as JS reads `0x`/`0o`/`0b` literals (no sign, any length).
+fn radix_value(digits: &str, radix: u32) -> f64 {
+    let mut n = 0.0;
+    for c in digits.chars() {
+        let Some(d) = c.to_digit(radix) else { return f64::NAN };
+        n = n * f64::from(radix) + f64::from(d);
+    }
+    if digits.is_empty() { f64::NAN } else { n }
+}
+
 /// JS `ToNumber` of a string.
 fn string_number(text: &str) -> f64 {
     let t = text.trim_matches(|c: char| (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}');
@@ -38,7 +48,7 @@ fn string_number(text: &str) -> f64 {
     }
     for (prefix, radix) in [("0x", 16), ("0X", 16), ("0o", 8), ("0O", 8), ("0b", 2), ("0B", 2)] {
         if let Some(digits) = t.strip_prefix(prefix) {
-            return u64::from_str_radix(digits, radix).map_or(f64::NAN, |n| n as f64);
+            return radix_value(digits, radix);
         }
     }
     match t.trim_start_matches(['+', '-']) {

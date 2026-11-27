@@ -64,14 +64,29 @@ fn text(value: Option<&Value>) -> String {
     }
 }
 
+/// The value of `digits` in `radix`, as JS reads `0x`/`0o`/`0b` literals (no sign, any length).
+fn radix_value(digits: &str, radix: u32) -> f64 {
+    let mut n = 0.0;
+    for c in digits.chars() {
+        let Some(d) = c.to_digit(radix) else { return f64::NAN };
+        n = n * f64::from(radix) + f64::from(d);
+    }
+    if digits.is_empty() { f64::NAN } else { n }
+}
+
 /// `parseSessionDiffCount`.
 fn diff_count(value: Option<&Value>) -> f64 {
     let parsed = match value {
         Some(Value::String(s)) => {
             let t = s.trim_matches(|c: char| (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}');
             let body = t.trim_start_matches(['+', '-']);
+            let prefixed = [("0x", 16), ("0X", 16), ("0o", 8), ("0O", 8), ("0b", 2), ("0B", 2)]
+                .into_iter()
+                .find_map(|(p, r)| t.strip_prefix(p).map(|d| radix_value(d, r)));
             if t.is_empty() {
                 0.0
+            } else if let Some(n) = prefixed {
+                n
             } else if body.is_empty() || body.contains(|c: char| !(c.is_ascii_digit() || matches!(c, '.' | 'e' | 'E' | '+' | '-'))) {
                 f64::NAN
             } else {

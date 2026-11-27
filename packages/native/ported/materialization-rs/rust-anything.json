@@ -1,0 +1,72 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "materialization.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "materialization-rs",
+  "exports": [
+    {
+      "name": "materializeSessionSnapshots",
+      "file": "materialization.ts",
+      "line": 205,
+      "params": [
+        {
+          "name": "state",
+          "ts_type": "({\n  session?: Session[]\n  revert_transaction?: Record<string, {\n  messageID: string\n  hiddenMessageIDs?: ReadonlySet<string>\n  version: number\n  status: (\"pending\" | \"confirmed\" | \"failed\")\n  startedAt: number\n  serverAcknowledged?: boolean\n} | undefined>\n  message: Record<string, Message[]>\n  part: Record<string, Part[]>\n})",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "sessionID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "records",
+          "ts_type": "({\n  info: Message\n  parts?: Part[] | null\n})[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "options",
+          "ts_type": "({\n  skipPartTypes?: ReadonlySet<string>\n  mode?: \"merge\" | \"prepend\"\n  revertMessageID?: string\n})",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "{\n  session?: Session[]\n  message: Record<string, Message[]>\n  part: Record<string, Part[]>\n  messages: Message[]\n  sessionsChanged: boolean\n  messagesChanged: boolean\n  partsChanged: boolean\n}",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getSessionMaterializationStatus",
+      "file": "materialization.ts",
+      "line": 298,
+      "params": [
+        {
+          "name": "state",
+          "ts_type": "({\n  session?: Session[]\n  revert_transaction?: Record<string, {\n  messageID: string\n  hiddenMessageIDs?: ReadonlySet<string>\n  version: number\n  status: (\"pending\" | \"confirmed\" | \"failed\")\n  startedAt: number\n  serverAcknowledged?: boolean\n} | undefined>\n  message: Record<string, Message[]>\n  part: Record<string, Part[]>\n})",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "sessionID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{\n  hasMessages: boolean\n  renderable: boolean\n  missingPartMessageIDs: string[]\n}",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

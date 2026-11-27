@@ -1,0 +1,19 @@
+{
+  "unit": "sdk-result.ts",
+  "files": 1,
+  "fingerprint": "5a7c243feed35a4c",
+  "cases": 332,
+  "cases_hash": "52f0e9779d6c844a",
+  "coverage": {
+    "lines": 22,
+    "reached": 22,
+    "files": [
+      {
+        "file": "sdk-result.ts",
+        "lines": 22,
+        "reached": 22,
+        "missed": ""
+      }
+    ]
+  }
+}

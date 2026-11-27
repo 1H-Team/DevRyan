@@ -1,0 +1,54 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/native/ported/session-cache-rs/mutation-ts",
+  "unit": "session-cache-mutation.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "session-cache-mutation-rs",
+  "exports": [
+    {
+      "name": "dropSessionCachesReturningStore",
+      "file": "session-cache-mutation.ts",
+      "line": 17,
+      "params": [
+        {
+          "name": "store",
+          "ts_type": "({\n  session_status: Record<string, SessionStatus | undefined>\n  session_diff: Record<string, FileDiff[] | undefined>\n  todo: Record<string, Todo[] | undefined>\n  message: Record<string, Message[] | undefined>\n  part: Record<string, Part[] | undefined>\n  permission: Record<string, PermissionRequest[] | undefined>\n  question: Record<string, QuestionRequest[] | undefined>\n})",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "sessionIDs",
+          "ts_type": "string[]",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "({\n  session_status: Record<string, SessionStatus | undefined>\n  session_diff: Record<string, FileDiff[] | undefined>\n  todo: Record<string, Todo[] | undefined>\n  message: Record<string, Message[] | undefined>\n  part: Record<string, Part[] | undefined>\n  permission: Record<string, PermissionRequest[] | undefined>\n  question: Record<string, QuestionRequest[] | undefined>\n})",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "pickSessionCacheEvictionsReturningSeen",
+      "file": "session-cache-mutation.ts",
+      "line": 22,
+      "params": [
+        {
+          "name": "input",
+          "ts_type": "{ seen: string[]; keep: string; limit: number; preserve?: string[] }",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{ result: string[]; seen: string[] }",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

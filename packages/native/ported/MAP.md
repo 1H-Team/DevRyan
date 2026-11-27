@@ -10,7 +10,12 @@ Node), generated bindings. "Recorded" is `diff` (generated cases, plus `--inputs
 deduplicates, so the count differs from 5000; `0/0` means the tool has no generator for the
 parameter types). Lines are `wc -l` of the `.ts` file and of `port.rs`.
 
-26 units done, 9 skipped, 1 open (of 88).
+35 units done (some partly, as noted), 8 skipped, 0 open (of 88); the rest not attempted, listed below.
+
+A `mutation/` crate inside a unit's folder proves exports that only mutate their arguments: a
+test-only wrapper module (`mutation-ts/`, never part of the product) imports the original by
+relative path, calls the export and returns what it mutated with the result; it is bridged with
+`--kind napi` (the bridge otherwise picks wasm) and checked like any unit.
 
 | Unit | State | Recorded | Fuzz | TS | Rust | Notes |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
@@ -34,7 +39,7 @@ parameter types). Lines are `wc -l` of the `.ts` file and of `port.rs`.
 | `debug.ts` | skipped: environment | - | - | 99 | - | Only export the bridge offers is `isSyncDebugEnabled`, a cached read of browser storage; `syncDebug` is an object of logging callbacks. Nothing pure to port. |
 | `binary.ts` | skipped: not bridgeable | - | - | 46 | - | Exports a `namespace` with callback (`compare`) functions; `bridge` refuses ("exports no functions"). |
 | `content-cache.ts` | skipped: split state | - | - | 80 | - | Module-level LRU shared with `evictContentLru`, which takes a callback and stays in TS; porting the rest would split the state. |
-| `optimistic.ts` | done | 213/213 | 4988/4988 | 108 | 198 | Logic after `client-engine/families/optimistic.rs`. `applyOptimisticAdd`/`applyOptimisticRemove` kept in TS: they only mutate their draft and `record` keeps return values only, so a port could not be proven (a no-op would pass). `{...page}` of an array or string spreads its indexes. |
+| `optimistic.ts` | done | 213/213 + 250/250 | 4988/4988 + 1/1 | 108 | 198 + 387 | Logic after `client-engine/families/optimistic.rs`. `applyOptimisticAdd`/`applyOptimisticRemove` only mutate their draft: proven through the wrapper `mutation-ts/` (returns the draft), crate `mutation/`, 85 hand cases; fuzz has almost no generator for the SDK `Message` (1 fresh case). `{...page}` of an array or string spreads its indexes. |
 | `revert-transactions.ts` | done | 1731/1731 | 34423/34423 | 113 | 242 | Logic after `client-engine/families/revert_transactions.rs`. The committed-resend `Set` is module state, kept per thread in Rust; recorded and fuzzed call sequences (state included) all match. `ReadonlySet` crosses as `{"$set": [...]}`; anything else non-nullish throws `...?.has is not a function`. |
 | `part-delta.ts` | done | 4404/4404 | 27727/27727 | 331 | 432 | All in UTF-16 code units (slices may split surrogate pairs; results cross as lone-surrogate strings). Its four regexes matched by hand. 3 test files captured. `syncDebug` logging has no port (no return value). |
 | `message-fetch.ts` | done | 875/875 | 9875/9875 | 101 | 133 | `normalizeFetchedMessageRecords` and `unwrapMessageRecordsResult` kept in TS (they call part-delta; duplicating it breaks the size bound). `returnedCount < limit` uses full JS `ToNumber` (`[true]` is NaN, `" 0x1f "` is 31). |
@@ -43,16 +48,43 @@ parameter types). Lines are `wc -l` of the `.ts` file and of `port.rs`.
 | `subtaskParentMaterialization.ts` | done | 235/235 | 4984/4984 | 34 | 60 | |
 | `display-session.ts` | done | 549/549 | 9970/9970 | 142 | 237 | 68 hand cases. "Same reference back" is not observable over JSON; fork identity holds only for absent/`null` forks. |
 | `part-change-hints.ts` | skipped: identity | - | - | 21 | - | `WeakMap`/`WeakRef` keyed by object identity of the part maps; identity does not cross the JSON bridge. |
-| `directory-disposal.ts` | skipped: mutation, callbacks | - | - | 107 | - | Mutates its `Map`/`Set` arguments in place (not recorded), clears timers, and `createRestartSafeOwnershipCleanup` takes and returns callbacks. |
-| `live-aggregate.ts` | done | 868/868 | 19495/19495 | 229 | 377 | Logic after `client-engine/families/live_aggregate.rs` + `getSessionSummaryDiffTotals` of `@/lib/sessionDiffStats`. Result record orders integer-like keys first (JS object order). Fuzz found one gap the recorded cases missed (`key in array`), fixed. No mismatch in the earlier port's logic. |
-| `session-cache.ts` | done | 204/204 | 4991/4991 | 106 | 89 | Only `getProtectedSessionCacheIds`; `dropSessionCaches` and `pickSessionCacheEvictions` kept in TS (they mutate their arguments). Result `Set` crosses as `{"$set": [...]}`. |
-| `plan-idle-settlement.ts` | skipped: size bound | - | - | 42 | - | 35 lines over `session-working` + `revert-transactions` logic; a standalone crate needs ~150 lines of it, over the gate's 3x size bound. |
+| `directory-disposal.ts` | done (3 of 4 exports) | 949/949 | 19908/19908 | 107 | 376 | The three collection-mutating exports through the wrapper `directory-disposal-rs/mutation-ts/` (builds the `Map`s/`Set`s from entries, returns their entries with the result); crate `mutation/` only, as nothing else is pure. `clearTimeout` of a received `retryTimer` has no effect to port. `createRestartSafeOwnershipCleanup` (callbacks, `queueMicrotask`) stays in TS. |
+| `live-aggregate.ts` | done | 1830/1830 | 19490/19490 | 229 | 377 | Logic after `client-engine/families/live_aggregate.rs` + `getSessionSummaryDiffTotals` of `@/lib/sessionDiffStats`. Result record orders integer-like keys first (JS object order). Fuzz found one gap the recorded cases missed (`key in array`), fixed. No mismatch in the earlier port's logic. Fixed 2026-11-27 (found by the `ui/src/lib` port): `parseSessionDiffCount` ignored JS `Number()` radix prefixes (`"0x10"` read 0, JS 16); 78 hand cases pin `0x`/`0o`/`0b`, signs after the prefix and >64-bit hex. |
+| `session-cache.ts` | done | 204/204 + 433/433 | 4991/4991 + 9980/9980 | 106 | 89 + 360 | `getProtectedSessionCacheIds` in the main crate (result `Set` crosses as `{"$set": [...]}`). `dropSessionCaches` and `pickSessionCacheEvictions` mutate their arguments: proven through the wrapper `mutation-ts/` (returns the store / the `seen` set's members), crate `mutation/`, 33 hand cases. |
+| `plan-idle-settlement.ts` | done | 341/341 | 4941/4941 | 42 | 422 | 123 hand cases (the generator's 200 all throw); `--from-tests`: 12 calls. The gate's size bound counts the imported TS lines too (311 here), so inlining `session-working` + `revert-transactions` passes. |
 | `plan-implementation-detection.ts` | skipped: dependency | - | - | 74 | - | Imports the 720-line `@/lib/messages/actionablePlan` (parsers); out of reasonable scope and size bound. |
-| `materialization.ts` | open | - | - | 324 | - | Not attempted: change flags rest on reference identity (`messages !== rawCurrentMessages`, `kept !== next`) across seven imported modules incl. `@/lib/sessionDiffStats`; needs identity tracking in the port, est. 800+ lines. |
+| `materialization.ts` | done | 548/548 | 9984/9984 | 324 | 897 | Logic after `client-engine/families/materialization.rs` with seven imports inlined. Reference-identity change flags (`kept !== next`) are tracked by helpers saying which value they returned. 32 calls captured from tests. |
+| `session-user-activity.ts` | done | 328/328 + 440/440 | 4965/4965 + 4821/4821 | 95 | 344 + 482 | The four pure exports, 96 hand cases (arrow exports: tests not capturable). The two `update*` exports mutate their draft: proven through the test wrapper `mutation-ts/` (returns `{ result, draft }`), bridged as its own crate `mutation/` (`--kind napi`, else it picks wasm); 144 hand cases. |
+| `session-recency.ts` | done | 2880/2880 | 2/2 | 140 | 383 | `display-session` lifecycle helpers inlined; 2200 hand cases (arrow exports). Fuzz finds almost nothing new: the generator has little for the SDK `Session` type and dedups against the recording. `areSessionRecordsEqual` is `Object.is` at leaves; a `Set` equals `{}` (no own keys). |
+| `sdk-result.ts` | done | 332/332 | 4964/4964 | 25 | 111 | Bridged with `--as-json T`; `getSdkErrorMessage` (`@/lib/opencode/sdk-error`) inlined. The thrown `Error`'s `status` property does not cross (message only). A message with a lone surrogate breaks `record` itself (`unexpected end of hex escape`), so those inputs are left out. |
+| `session-draft-storage.ts` | done (4 of 11 exports) | 892/892 | 3172/3172 | 231 | 24 | Only the four storage-key builders. Kept in TS: the five functions over browser `Storage`, `subscribePersistedSessionInputRemoval` (callbacks), `createDraftId` (clock and `Math.random`). |
+| `pending-part-deltas.ts` | done | 1019/1019 + 2178/2178 | 14995/14995 + 39533/39533 | 401 | 773 + 700 | `part-delta` logic inlined. Pure exports: 290 hand cases + `--from-tests`. The seven store-mutating exports (and `hasPendingPartDeltasForMessages`) through the wrapper `mutation-ts/`: it builds the `Map` from entries and returns them, since the generator passes arrays where a `Map` is typed; explicit `now`. Overflow prune sorts as V8 (`js::sort`); 354 hand cases incl. 500+ entry stores. |
+| `reconnect-recovery.ts` | done (12 of 17 exports) | 3190/3190 | 48948/48948 | 529 | 614 | `isCompactionSummaryInfo` inlined; 1060 hand cases + 57 test calls. Kept in TS: `getReconnectCandidateSessionIds` (materialization, not in this batch), `mergeAuthoritative`/`mergeRecoveredSessionStatuses` (abort guard module state), `shouldRecoverStaleActiveSession` (`Date.now()`), `captureSessionStatusBaseline`: it returns a `Map` under a type alias, the bridge sends it untyped and its binary wire returns a `{"$map"}` marker as a literal object (`{"$object": ...}`), so a returned `Map` cannot be proven. |
+| `event-reducer.ts` | skipped: not loadable under Node | - | - | 1031 | - | A wrapper for `applyDirectoryEvent` (draft returned; the event types without session/message/part bookkeeping) was written and ported, but `record` cannot load the unit: it imports `binary.ts`, a TS `namespace`, which Node's strip-only type mode refuses (`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`), and the installed Node has no `--experimental-transform-types`. Unproven draft kept outside the repo (`~/.claude/plans/prancy-nibbling-octopus-research/rust-anything/event-reducer-unproven/`). |
+| `event-batch.ts` | skipped: not loadable under Node | - | - | 117 | - | `canBatchStreamingDelta` was ported, but `record` cannot load the unit: the `StreamingEventBatch` class uses a constructor parameter property, which Node's strip-only type mode refuses. `createEventDraft` also rests on reference identity and the `WeakMap` part-change hints. |
 
-Not attempted (stateful stores, async or callback shells; the analyzer's `ready` does not see that
-their exports share module state with exports that must stay in TS): session-load-performance,
-session-worktree-store, session-prefetch-cache, viewport-store, composer-attachment-storage,
-session-presentation, abort-retry-guard, message-pagination-store, session-creation,
-selection-store, and waves 3 to 7 beyond the units above.
+Shared fix 2026-11-27: the JS `ToNumber` of `0x`/`0o`/`0b` strings in `message-fetch`, `message-order`,
+`session-assistant-activity`, `materialization` and `plan-idle-settlement` used `u64::from_str_radix`, which
+accepts a sign after the prefix (`"0x+1"` read 1, JS NaN) and fails above 64 bits; all now read digits as JS
+does. Each crate: diff, fuzz 5000 and gate rerun and pass; `plan-idle-settlement` pins it with hand cases.
+
+Not attempted, with the reason (2026-11-27):
+- Stores on zustand (a UI state library): global-sync-store, streaming, notification-store,
+  child-store, selection-store, input-store, session-ui-store, viewport-store,
+  session-worktree-store, message-pagination-store, session-prefetch-cache.
+- Callback-taking or closure-returning: session-plan-selection (returns a selector closure),
+  turn-completion-detection, plan-completion-detection and plan-proposed-detection (callback in
+  the argument object, plus the 720-line `@/lib/messages/actionablePlan`), session-record-
+  subscription, user-message-history, sync-refs (store references).
+- Async work, timers, clock: provider-catalog-recovery, claude-catalog-recovery,
+  long-running-tool-recovery, provider-stall-recovery, transient-retry, retry, abort-retry-guard,
+  directory-bootstrap-request, bootstrap, session-children, session-history(+memory-probe),
+  session-message-loader, session-creation, session-actions, event-pipeline,
+  composer-attachment-storage, session-presentation, session-load-performance (`performance`
+  marks), history-cache-budget (class over stores).
+- Browser APIs: persist-cache (storage), integration-ui-events (window events), send-config
+  (reads three stores), use-sync and sync-context.tsx (React).
+- plan-implementation-detection: pure, but needs `resolveMessagePlanCard` and
+  `parsePlanImplementationRequestPart` of the 720-line `actionablePlan`; not in this batch.
+- types.ts, session-materializer.ts: constants and re-exports only.
 

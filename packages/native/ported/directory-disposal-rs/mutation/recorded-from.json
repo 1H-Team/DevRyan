@@ -1,0 +1,25 @@
+{
+  "unit": "directory-disposal-mutation.ts",
+  "files": 1,
+  "fingerprint": "2beac141172ebd89",
+  "cases": 949,
+  "cases_hash": "ac76cf2b07196471",
+  "coverage": {
+    "lines": 141,
+    "reached": 120,
+    "files": [
+      {
+        "file": "directory-disposal-mutation.ts",
+        "lines": 46,
+        "reached": 46,
+        "missed": ""
+      },
+      {
+        "file": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync/directory-disposal.ts",
+        "lines": 95,
+        "reached": 74,
+        "missed": "6-7, 10-28"
+      }
+    ]
+  }
+}

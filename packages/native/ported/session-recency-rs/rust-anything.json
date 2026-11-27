@@ -1,0 +1,222 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "session-recency.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "session-recency-rs",
+  "exports": [
+    {
+      "name": "getSessionRecency",
+      "file": "session-recency.ts",
+      "line": 14,
+      "params": [
+        {
+          "name": "session",
+          "ts_type": "Session",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "number | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "compareSessionRecency",
+      "file": "session-recency.ts",
+      "line": 19,
+      "params": [
+        {
+          "name": "incoming",
+          "ts_type": "Session",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "current",
+          "ts_type": "Session",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "-1 | 0 | 1",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isStrictlyOlderSession",
+      "file": "session-recency.ts",
+      "line": 26,
+      "params": [
+        {
+          "name": "incoming",
+          "ts_type": "Session",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "current",
+          "ts_type": "Session",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "resolveSessionLifecycle",
+      "file": "session-recency.ts",
+      "line": 46,
+      "params": [
+        {
+          "name": "current",
+          "ts_type": "Session & {\n  time: {\n    busy?: number\n    idle?: number\n    viewed?: number\n  }\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n}",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "incoming",
+          "ts_type": "Session & {\n  time: {\n    busy?: number\n    idle?: number\n    viewed?: number\n  }\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{\n  busy?: number\n  idle?: number\n  viewed?: number\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n}",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "mergeSessionLifecycle",
+      "file": "session-recency.ts",
+      "line": 74,
+      "params": [
+        {
+          "name": "current",
+          "ts_type": "Session & {\n  time: {\n    busy?: number\n    idle?: number\n    viewed?: number\n  }\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n} | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "incoming",
+          "ts_type": "Session & {\n  time: {\n    busy?: number\n    idle?: number\n    viewed?: number\n  }\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "Session & {\n  time: {\n    busy?: number\n    idle?: number\n    viewed?: number\n  }\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n}",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "retainSessionLifecycle",
+      "file": "session-recency.ts",
+      "line": 86,
+      "params": [
+        {
+          "name": "retained",
+          "ts_type": "Session & {\n  time: {\n    busy?: number\n    idle?: number\n    viewed?: number\n  }\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n}",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "rejected",
+          "ts_type": "Session & {\n  time: {\n    busy?: number\n    idle?: number\n    viewed?: number\n  }\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "Session & {\n  time: {\n    busy?: number\n    idle?: number\n    viewed?: number\n  }\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n}",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "hasNewerSessionLifecycle",
+      "file": "session-recency.ts",
+      "line": 92,
+      "params": [
+        {
+          "name": "current",
+          "ts_type": "Session & {\n  time: {\n    busy?: number\n    idle?: number\n    viewed?: number\n  }\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n}",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "incoming",
+          "ts_type": "Session & {\n  time: {\n    busy?: number\n    idle?: number\n    viewed?: number\n  }\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "mergeSessionListLifecycle",
+      "file": "session-recency.ts",
+      "line": 102,
+      "params": [
+        {
+          "name": "current",
+          "ts_type": "readonly Session & {\n  time: {\n    busy?: number\n    idle?: number\n    viewed?: number\n  }\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n}[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "next",
+          "ts_type": "Session & {\n  time: {\n    busy?: number\n    idle?: number\n    viewed?: number\n  }\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n}[]",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "Session & {\n  time: {\n    busy?: number\n    idle?: number\n    viewed?: number\n  }\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n}[]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "areSessionRecordsEqual",
+      "file": "session-recency.ts",
+      "line": 138,
+      "params": [
+        {
+          "name": "left",
+          "ts_type": "Session",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "right",
+          "ts_type": "Session",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

@@ -1,0 +1,31 @@
+{
+  "unit": "optimistic-mutation.ts",
+  "files": 1,
+  "fingerprint": "77829cc4787bb23e",
+  "cases": 250,
+  "cases_hash": "38eb7b214fba1ae6",
+  "coverage": {
+    "lines": 170,
+    "reached": 118,
+    "files": [
+      {
+        "file": "optimistic-mutation.ts",
+        "lines": 17,
+        "reached": 17,
+        "missed": ""
+      },
+      {
+        "file": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync/message-order.ts",
+        "lines": 60,
+        "reached": 46,
+        "missed": "25-26, 54-59, 64-69"
+      },
+      {
+        "file": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync/optimistic.ts",
+        "lines": 93,
+        "reached": 55,
+        "missed": "40-52, 55, 57-59, 61-65, 67-71, 73-83"
+      }
+    ]
+  }
+}

@@ -1,0 +1,127 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "session-draft-storage.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "session-draft-storage-rs",
+  "exports": [
+    {
+      "name": "getDraftInputStorageKey",
+      "file": "session-draft-storage.ts",
+      "line": 44,
+      "params": [
+        {
+          "name": "draftId",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getDraftConfirmedMentionsStorageKey",
+      "file": "session-draft-storage.ts",
+      "line": 47,
+      "params": [
+        {
+          "name": "draftId",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getSessionInputStorageKey",
+      "file": "session-draft-storage.ts",
+      "line": 50,
+      "params": [
+        {
+          "name": "sessionId",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getSessionConfirmedMentionsStorageKey",
+      "file": "session-draft-storage.ts",
+      "line": 53,
+      "params": [
+        {
+          "name": "sessionId",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "subscribePersistedSessionInputRemoval",
+      "file": "session-draft-storage.ts",
+      "line": 60,
+      "reason": "takes and returns callbacks"
+    },
+    {
+      "name": "removePersistedSessionInput",
+      "file": "session-draft-storage.ts",
+      "line": 69,
+      "reason": "browser storage (Storage parameter), kept in TS"
+    },
+    {
+      "name": "clearLegacyNewDraftInput",
+      "file": "session-draft-storage.ts",
+      "line": 96,
+      "reason": "browser storage (Storage parameter), kept in TS"
+    },
+    {
+      "name": "removePersistedDraftInput",
+      "file": "session-draft-storage.ts",
+      "line": 104,
+      "reason": "browser storage (Storage parameter), kept in TS"
+    },
+    {
+      "name": "createDraftId",
+      "file": "session-draft-storage.ts",
+      "line": 113,
+      "reason": "clock and Math.random"
+    },
+    {
+      "name": "persistDrafts",
+      "file": "session-draft-storage.ts",
+      "line": 174,
+      "reason": "browser storage (Storage parameter), kept in TS"
+    },
+    {
+      "name": "readPersistedDrafts",
+      "file": "session-draft-storage.ts",
+      "line": 198,
+      "reason": "browser storage (Storage parameter), kept in TS"
+    }
+  ]
+}

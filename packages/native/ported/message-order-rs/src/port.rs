@@ -55,11 +55,21 @@ fn primitive(value: Option<&Value>) -> Prim {
     }
 }
 
+/// The value of `digits` in `radix`, as JS reads `0x`/`0o`/`0b` literals (no sign, any length).
+fn radix_value(digits: &str, radix: u32) -> f64 {
+    let mut n = 0.0;
+    for c in digits.chars() {
+        let Some(d) = c.to_digit(radix) else { return f64::NAN };
+        n = n * f64::from(radix) + f64::from(d);
+    }
+    if digits.is_empty() { f64::NAN } else { n }
+}
+
 /// JS `ToNumber` of a string.
 fn to_number(units: &[u16]) -> f64 {
     let text = String::from_utf16_lossy(units);
     let t = text.trim_matches(|c: char| (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}');
-    let radix = |p: &str, r| t.strip_prefix(p).map(|d| u64::from_str_radix(d, r).map_or(f64::NAN, |n| n as f64));
+    let radix = |p: &str, r| t.strip_prefix(p).map(|d| radix_value(d, r));
     if t.is_empty() {
         return 0.0;
     }
