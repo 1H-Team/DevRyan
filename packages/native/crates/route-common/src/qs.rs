@@ -379,7 +379,7 @@ pub fn parse(text: &[u16], latin1: bool, array_limit: usize) -> Result<Q, DepthE
 /// body-parser's parameter count: one more than the `&` in the text, or None past the limit (it answers 413).
 pub fn parameter_count(text: &[u16]) -> Option<usize> {
     let count = text.iter().filter(|unit| **unit == u16::from(b'&')).count() + 1;
-    (count <= PARAMETER_LIMIT).then_some(count)
+    (count <= PARAMETER_LIMIT + usize::from(crate::plant::named("rv-param-limit-1001"))).then_some(count)
 }
 
 /// `req.body?.text` when it is a string.

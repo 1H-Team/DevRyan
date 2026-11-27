@@ -1,0 +1,9 @@
+{
+  "about": "What a session-folders arm answers under a process file-size limit and to a client that leaves mid-response (BH7 fix round 1, B1). Read by tests/process_limits.rs (the Rust binary) and scripts/backend-conformance/process-limits.test.mjs (the JavaScript candidate adapter): one expectation for both arms. The limit is `ulimit -f` blocks (512 or 1024 bytes each by the shell: either way between the small save and the large one). Node ignores SIGXFSZ, so the large save's write fails with EFBIG (libuv's text on macOS and Linux alike, errno 27 on both), the temporary file is removed and the next save works.",
+  "ulimitBlocks": 1024,
+  "smallPad": 1000,
+  "largePad": 3145728,
+  "disconnectPad": 8388608,
+  "saved": "{\"success\":true}",
+  "tooLarge": "{\"error\":\"EFBIG: file too large, write\"}"
+}

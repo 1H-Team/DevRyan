@@ -410,7 +410,53 @@ export const TEXTS_AND_FILES = defineScenario({
   },
 });
 
-export const SCENARIOS = Object.freeze([READS_AND_WRITES, WRITE_LOCK, RESTARTS, REQUEST_FORMS, ROUTES_AND_FORMS, FILE_STATES, WRITE_ORDER, TEXTS_AND_FILES]);
+/**
+ * Writes that truly overlap (BH7 fix round 1, S1): the data file holds 1 500 prompts (about 1.5 MB), so every write
+ * reads, parses and writes all of it, while each request is a few bytes that reach the arm in one read; two writes
+ * of different prompts sent back to back reach it together, in order. One write at a time, the second reads the
+ * file the first wrote, and both prompts are kept; without the lock the second reads the file before (or while)
+ * the first writes it, and one write drops the other's prompt. Repeated; judged exactly, each followed by a GET.
+ */
+export const OVERLAPPING_WRITES = defineScenario({
+  id: 'magic-prompts.overlapping-writes', group: 'magic-prompts',
+  description: 'two writes of different prompts sent together over a large data file: one at a time, both kept',
+  principals,
+  fixture: (root, v) => {
+    const bulk = Object.fromEntries(Array.from({ length: 1500 }, (_, index) => [`bulk.${String(index).padStart(4, '0')}.visible`, v.text(`text.bulk-${index}`, `bulk prompt ${index} `.padEnd(1000, '.'))]));
+    fs.writeFileSync(path.join(root, 'magic-prompts.json'), promptFile(bulk));
+  },
+  steps: (v) => {
+    const first = v.id('id.first', 'git.pr.generate.visible');
+    const other = v.id('id.other', 'git.commit.generate.visible');
+    return [1, 2, 3, 4].flatMap((round) => [
+      step.staged(`overlapping-puts-${round}`, [['first', put(first, jsonBody({ text: v.text(`text.first-${round}`, `first ${round}`) }))], ['other', put(other, jsonBody({ text: v.text(`text.other-${round}`, `other ${round}`) }))]],
+        [['send', 'first', 'all'], ['send', 'other', 'all'], ['await', 'first'], ['await', 'other']]),
+      step.exchange(`get-after-overlap-${round}`, get()),
+    ]);
+  },
+});
+
+/**
+ * The data file's mode under an umask other than the harness's 022 (BH7 fix round 1, S4): writeFile creates it
+ * 0666 before the umask, so under 027 it is 0640, and a port that sets 0644 itself (equal under 022) differs.
+ */
+export const UMASK = defineScenario({
+  id: 'magic-prompts.umask', group: 'magic-prompts',
+  description: 'the data file created and rewritten with the arms\' umask at 027: its mode is 0666 masked',
+  principals,
+  umask: 0o027,
+  fixture: () => {},
+  steps: (v) => {
+    const id = v.id('id.visible', 'git.pr.generate.visible');
+    return [
+      step.exchange('put-new', put(id, jsonBody({ text: v.text('text.umask-first', 'created under 027') }))),
+      step.exchange('put-again', put(id, jsonBody({ text: v.text('text.umask-again', 'rewritten under 027') }))),
+      step.exchange('get-after', get()),
+    ];
+  },
+});
+
+export const SCENARIOS = Object.freeze([READS_AND_WRITES, WRITE_LOCK, RESTARTS, REQUEST_FORMS, ROUTES_AND_FORMS, FILE_STATES, WRITE_ORDER, TEXTS_AND_FILES, OVERLAPPING_WRITES, UMASK]);
 
 const GET_HANDLER = 'routes.js:registerMagicPromptRoutes>GET /api/magic-prompts handler';
 const PUT_HANDLER = 'routes.js:registerMagicPromptRoutes>PUT /api/magic-prompts/:id handler';

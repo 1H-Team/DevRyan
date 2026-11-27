@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { describe, test } from 'node:test';
 import {
-  RULES, allOf, compareRecordings, createPairing, createSubstitution, dateInWindow, dateLagOf, deepDifference, labelTimes, weakEtagOf, writersOf,
+  RULES, allOf, compareRecordings, createPairing, createSubstitution, createTemporaryNames, dateInWindow, dateLagOf, deepDifference, dechunk, labelTimes, weakEtagOf, writersOf,
 } from './compare.mjs';
 
 // ------------------------------------------------------------------ builders
@@ -300,6 +300,41 @@ describe('the comparer', () => {
     for (const other of ['{"overrides":{},"version":1}', '{"version": 1,"overrides":{}}', '{"version":"1","overrides":{}}']) assertOnly(compare(...pair([['a', { body: '{"version":1,"overrides":{}}' }]], [['a', { body: other }]])), 'body', 'bytes');
     // Error text exactly.
     assertOnly(compare(...pair([['a', { status: 500, body: '{"error":"ENOENT: no such file or directory"}' }]], [['a', { status: 500, body: '{"error":"No such file or directory (os error 2)"}' }]])), 'body', 'bytes');
+  });
+
+  test('rule T: a declared temporary name is labelled per arm by its pid and the rank of its random part; anything else is compared as it is', () => {
+    const declarations = { temporaryNames: [{ file: 'doc.json' }] };
+    const PIDS = { R: 4100, C: 5200 };
+    const uuid = (n) => `0000000${n}-1111-4222-a333-44444444444${n}`;
+    const tmp = (pid, n) => `doc.json.tmp-${pid}-${uuid(n)}`;
+    const error = (pid, n) => (arm) => JSON.stringify({ error: `EISDIR: illegal operation on a directory, rename '${arm.root}/${tmp(pid, n)}' -> '${arm.root}/doc.json'` });
+    const withPids = (record, pid) => Object.assign(record, { processes: [{ pid }] });
+    const weak = (body) => (arm) => [...GROUP_JSON, ['ETag', weakEtagOf(Buffer.from(body(arm)))]];
+    const run = (bodiesR, bodiesC) => compare(withPids(recording('reference', 'R', bodiesR.map((body, index) => [`s${index}`, { status: 500, body, group: weak(body) }])), PIDS.R), withPids(recording('candidate', 'C', bodiesC.map((body, index) => [`s${index}`, { status: 500, body, group: weak(body) }])), PIDS.C), { declarations });
+    // Each arm's own pid and its own random parts, first seen in the same order: equal (the ETag as the weak ETag of each side's body).
+    assertEqual(run([error(PIDS.R, 1), error(PIDS.R, 2)], [error(PIDS.C, 7), error(PIDS.C, 8)]));
+    // The same random part twice where the reference had two, a pid that is not the arm's, a part that is not a v4 UUID: differences.
+    assertOnly(run([error(PIDS.R, 1), error(PIDS.R, 2)], [error(PIDS.C, 7), error(PIDS.C, 7)]), 'body', 'bytes');
+    assertOnly(run([error(PIDS.R, 1)], [error(1, 7)]), 'body', 'bytes');
+    assertOnly(run([error(PIDS.R, 1)], [(arm) => JSON.stringify({ error: `EISDIR: illegal operation on a directory, rename '${arm.root}/doc.json.tmp-${PIDS.C}-00000007-1111-1222-a333-444444444447' -> '${arm.root}/doc.json'` })]), 'body', 'bytes');
+    // Without the declaration nothing is labelled.
+    assert.ok(differences(compare(withPids(recording('reference', 'R', [['s', { status: 500, body: error(PIDS.R, 1) }]]), PIDS.R), withPids(recording('candidate', 'C', [['s', { status: 500, body: error(PIDS.C, 7) }]]), PIDS.C))).length > 0);
+    // In the tree: a leftover temporary file is compared by its label.
+    const left = (pid, n) => (arm, t) => [file(tmp(pid, n), 'partial', { mtimeMs: t + 3 })];
+    const tree = (pid, n, other = pid) => [['put', { s1: left(pid, n), s2: left(other, n) }]];
+    assertEqual(compare(withPids(recording('reference', 'R', tree(PIDS.R, 1)), PIDS.R), withPids(recording('candidate', 'C', tree(PIDS.C, 9)), PIDS.C), { declarations }));
+    assert.ok(differences(compare(withPids(recording('reference', 'R', tree(PIDS.R, 1)), PIDS.R), withPids(recording('candidate', 'C', tree(3, 9)), PIDS.C), { declarations })).some((item) => item.component.startsWith('tree.doc.json.tmp-')));
+    const labels = createTemporaryNames({ names: declarations.temporaryNames, recording: { processes: [{ pid: 9 }], steps: [] } });
+    assert.equal(labels.applyText(`x ${tmp(9, 3)} y ${tmp(8, 4)}`), 'x doc.json.tmp-{pid}-{tmp ?} y doc.json.tmp-8-{tmp ?}');
+    assert.match(RULES.temporary, /^T: /);
+  });
+
+  test('files nobody may read: their bytes are not compared, and readable on one arm only is a difference', () => {
+    const locked = (unreadable, size = 5) => (arm, t) => [{ entry: { path: 'p.json', type: 'file', mode: unreadable ? 0 : 0o644, size, ino: 1, mtimeMs: t + 3, ...(unreadable ? { unreadable: true } : { sha256: sha('abcde') }) }, ...(unreadable ? {} : { text: 'abcde' }) }];
+    const steps = (unreadable, size) => [['get', { s1: locked(unreadable, size), s2: locked(unreadable, size) }]];
+    assertEqual(compare(...pair(steps(true), steps(true))));
+    assertOnly(compare(...pair(steps(true), steps(true, 6))), 'tree.p.json.size', 'inode');
+    assert.ok(differences(compare(...pair(steps(true), steps(false)))).some((item) => item.component === 'tree.p.json.bytes' && /readable on one arm only/.test(item.location)));
   });
 
   test('null, undefined and absent are kept apart, and so are 3 and "3"', () => {
@@ -666,5 +701,15 @@ describe('the comparer', () => {
     const declarations = { effects: ['events'] };
     const hub = { kind: 'hub', channel: 'plans', payload: {} };
     assertOnly(compare(recording('reference', 'R', [['a', { effects: [hub] }]]), recording('candidate', 'C', [['a', { candidateEffects: { events: [hub, hub], outbound: [], children: [] } }]]), { declarations }), 'events(count)', 'effects');
+  });
+});
+
+describe('a chunked request is compared by its message body', () => {
+  test('sizes, extensions and the trailer go; incomplete framing is no body', () => {
+    assert.equal(dechunk(Buffer.from('3;a=b\r\nabc\r\n2\r\nde\r\n0;last\r\nX-T: 1\r\n\r\n'))?.toString(), 'abcde');
+    assert.equal(dechunk(Buffer.from('0\r\n\r\n'))?.toString(), '');
+    assert.equal(dechunk(Buffer.from('3\r\nabcd\r\n0\r\n\r\n')), null);
+    assert.equal(dechunk(Buffer.from('3\r\nab')), null);
+    assert.equal(dechunk(Buffer.from('zz\r\n')), null);
   });
 });

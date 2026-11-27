@@ -14,6 +14,8 @@ use crate::http::{Headers, Response};
 use crate::order::Ticket;
 use crate::plant::{self, Plant};
 use crate::runtime::Runtime;
+pub use devryan_route_common::answer::page;
+pub use devryan_route_common::http::pathname;
 
 /// Which route answers, with the raw `:id` segment.
 #[derive(Debug, PartialEq, Eq)]
@@ -30,12 +32,6 @@ fn starts_with_ignoring_case(text: &str, prefix: &str) -> bool {
         return text.starts_with(prefix);
     }
     text.len() >= prefix.len() && text.as_bytes()[..prefix.len()].eq_ignore_ascii_case(prefix.as_bytes())
-}
-
-/// The path part of the request target, as parseurl reads it (up to `?` or `#`).
-pub fn pathname(target: &str) -> &str {
-    let end = target.find(['?', '#']).unwrap_or(target.len());
-    &target[..end]
 }
 
 /// `^\/api\/magic-prompts(?:\/$)?$` and `^\/api\/magic-prompts\/([^\/]+)(?:\/$)?$`, case-insensitively.
@@ -55,32 +51,6 @@ pub fn route(path: &str) -> Route<'_> {
     Route::Item(segment)
 }
 
-/// Express's final handler page (finalhandler 2.1.1), for what the group does not answer (no body for HEAD,
-/// as Node's server writes none).
-pub fn page(method: &str, status: u16, message: &str) -> Response {
-    let escaped = message
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;");
-    let body = format!(
-        "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>{escaped}</pre>\n</body>\n</html>\n"
-    )
-    .into_bytes();
-    Response {
-        status,
-        headers: vec![
-            ("Content-Security-Policy".to_owned(), "default-src 'none'".to_owned()),
-            ("X-Content-Type-Options".to_owned(), "nosniff".to_owned()),
-            ("Content-Type".to_owned(), "text/html; charset=utf-8".to_owned()),
-            ("Content-Length".to_owned(), body.len().to_string()),
-        ],
-        body,
-        head_only: method == "HEAD",
-    }
-}
-
 fn status_of(validation: u16) -> u16 {
     if plant::on(Plant::Status422) && validation == 400 { 422 } else { validation }
 }
@@ -94,12 +64,7 @@ fn latin1_units(text: &str) -> Vec<u16> {
     text.bytes().map(u16::from).collect()
 }
 
-/// What a request is, as the group's composition sees it once the harness's headers are gone.
-pub struct Exchange<'a> {
-    pub method: &'a str,
-    pub target: &'a str,
-    pub headers: &'a Headers,
-}
+pub use devryan_route_common::server::Exchange;
 
 /// Answers one request the way the candidate's composition does: the product's request decoding (`body`: what
 /// the parsers left in `req.body`, or the edge's refusal), the principal envelope's check (made by the protocol

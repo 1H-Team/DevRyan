@@ -138,6 +138,33 @@ test('the drift detector names every planted change of the server\'s own composi
   }
 });
 
+test('the second group\'s feature-routes table, derived from the same statements, names its own planted changes, in memory', DEADLINE, (t) => {
+  const FEATURE = path.join(SERVER_ROOT, GROUP_TABLES['session-folders'].file);
+  const feature = fs.readFileSync(FEATURE, 'utf8');
+  const drift = (featureText) => compositionTextDrift({ group: 'session-folders', readFile: (file) => (file === FEATURE ? featureText : fs.readFileSync(file, 'utf8')) });
+  const baseline = drift(feature);
+  if (baseline.length) t.diagnostic(`the server's composition drifted from the table:\n${baseline.join('\n')}`);
+  const call = feature.indexOf('registerSessionFoldersRoutes(app');
+  const lineStart = feature.lastIndexOf('\n', call) + 1;
+  const callEnd = feature.indexOf(';\n', call) + 2;
+  const before = (line) => `${feature.slice(0, lineStart)}${line}\n${feature.slice(lineStart)}`;
+  const after = (line) => `${feature.slice(0, callEnd)}${line}\n${feature.slice(callEnd)}`;
+  const pilotCall = feature.slice(feature.lastIndexOf('\n', feature.indexOf('registerMagicPromptRoutes(app')) + 1, feature.indexOf(';\n', feature.indexOf('registerMagicPromptRoutes(app')) + 2);
+  const plants = [
+    ['a middleware right before the group\'s call', before('    app.use(extraLayer);'), /app\.use\(extraLayer\)/],
+    ['the app wrapped for the group', feature.replace('registerSessionFoldersRoutes(app', 'registerSessionFoldersRoutes(withAudit(app)'), /withAudit\(app\)/],
+    ['json spaces after the group\'s call', after("    app.set('json spaces', 2);"), /app\.set\('json spaces', 2\); — after the group's call/],
+    ['the group\'s dependencies changed', feature.replace('registerSessionFoldersRoutes(app, {', 'registerSessionFoldersRoutes(app, { now: Date.now,'), /changed: .*registerSessionFoldersRoutes|unclassified: .*registerSessionFoldersRoutes/],
+    ['the first group\'s registrar moved after the second\'s', after(pilotCall.trimEnd()).replace(pilotCall, ''), /moved: |changed: /],
+    ['an unrelated const (not drift)', before("    const folderNote = 'session folders';"), null],
+  ];
+  for (const [name, featureText, named] of plants) {
+    const added = newProblems(drift(featureText), baseline);
+    if (named === null) assert.deepEqual(added, [], name);
+    else assert.ok(added.some((problem) => named.test(problem)), `${name}: ${named} in ${JSON.stringify(added)}`);
+  }
+});
+
 test('the explicit drift command passes or names the drift of a copy, and names each of three planted changes', DEADLINE, async (t) => {
   const { run, pass } = runFor(t);
   const copy = (name, transform = (text) => text) => {

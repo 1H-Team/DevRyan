@@ -23,13 +23,15 @@ const pause = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 // ------------------------------------------------------------------ the walk
 const TYPE = (stat) => (stat.isSymbolicLink() ? 'symlink' : stat.isDirectory() ? 'dir' : stat.isFile() ? 'file' : 'other');
 const digestFile = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+/** A file this user may not read (its mode): its digest is unknown, which the walk says instead of failing. */
+const unreadable = (error) => error?.code === 'EACCES';
 
 /**
  * One walk of `root`: the root's own permission bits (`rootMode`), and
  * every entry below it with its relative path, type, permission bits, size, content digest (files), link
  * target (links), inode and mtime (recorded, never compared as values), and
  * each directory's names in the order the OS listed them. Links are never
- * followed.
+ * followed. A file whose mode forbids reading it is `unreadable: true`, with no digest.
  */
 export function walkTree(root, { digests = true } = {}) {
   const entries = [];
@@ -44,7 +46,9 @@ export function walkTree(root, { digests = true } = {}) {
       const stat = fs.lstatSync(file);
       const type = TYPE(stat);
       const entry = { path: child, type, mode: stat.mode & 0o7777, size: type === 'dir' ? null : stat.size, ino: stat.ino, mtimeMs: stat.mtimeMs };
-      if (type === 'file' && digests) entry.sha256 = digestFile(file);
+      if (type === 'file' && digests) {
+        try { entry.sha256 = digestFile(file); } catch (error) { if (!unreadable(error)) throw error; entry.unreadable = true; }
+      }
       if (type === 'symlink') entry.target = fs.readlinkSync(file);
       entries.push(entry);
       if (type === 'dir') visit(child);
@@ -127,7 +131,14 @@ export function holdDescriptors(roots) {
     for (const entry of walkTree(root, { digests: false }).entries) {
       if (entry.type !== 'file') continue;
       const file = path.join(root, ...entry.path.split('/'));
-      const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+      let fd;
+      try { fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW); } catch (error) {
+        // A file nobody may read cannot be held: its inode is taken by lstat, so a replacement is seen unless the
+        // file system gives the new file the old one's number (no descriptor keeps that number taken).
+        if (!unreadable(error)) throw error;
+        held.set(`${index}:${entry.path}`, { fd: null, file, ino: entry.ino });
+        continue;
+      }
       held.set(`${index}:${entry.path}`, { fd, file, ino: fs.fstatSync(fd).ino });
     }
   });
@@ -141,10 +152,10 @@ export function holdDescriptors(roots) {
       for (const [key, { fd, file, ino }] of held) {
         try {
           const now = fs.lstatSync(file);
-          if (now.ino !== ino || fs.fstatSync(fd).ino !== ino) replaced.push(key);
+          if (now.ino !== ino || (fd !== null && fs.fstatSync(fd).ino !== ino)) replaced.push(key);
         } catch (error) { if (error.code === 'ENOENT') removed.push(key); else throw error; }
       }
-      for (const { fd } of held.values()) { try { fs.closeSync(fd); } catch { /* already closed */ } }
+      for (const { fd } of held.values()) { if (fd !== null) try { fs.closeSync(fd); } catch { /* already closed */ } }
       held.clear();
       heldSets.delete(held);
       released = { replaced: replaced.sort(), removed: removed.sort() };
@@ -153,7 +164,7 @@ export function holdDescriptors(roots) {
   };
 }
 /** Closes every held descriptor (teardown). */
-export function releaseAllHeld() { for (const held of [...heldSets]) { for (const { fd } of held.values()) { try { fs.closeSync(fd); } catch { /* closed */ } } held.clear(); heldSets.delete(held); } }
+export function releaseAllHeld() { for (const held of [...heldSets]) { for (const { fd } of held.values()) { if (fd !== null) try { fs.closeSync(fd); } catch { /* closed */ } } held.clear(); heldSets.delete(held); } }
 
 // ------------------------------------------------------------------ process groups
 /** The members of process group `pgid`: `[{ pid, state }]` (the kernel's state letters, `T` for stopped). */

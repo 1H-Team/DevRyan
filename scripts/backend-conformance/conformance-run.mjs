@@ -26,7 +26,7 @@ export function interruptGate(log) {
 
 export const USAGE = 'usage: --group=<name> [--candidate=<name>] [--scenario=<id>,...] [--allow-inconclusive=<row>,...] [--keep-artifacts]';
 /** The candidates `--candidate` can name, by group: a candidate is judged instead of J (which still runs, for the closure check). */
-export const CANDIDATES = Object.freeze({ 'magic-prompts': Object.freeze(['rust']) });
+export const CANDIDATES = Object.freeze(Object.fromEntries(Object.keys(GROUPS).filter((name) => GROUPS[name].rust).map((name) => [name, Object.freeze(['rust'])])));
 
 export function parseArguments(argv, groups = GROUPS, candidates = CANDIDATES) {
   const options = { allowInconclusive: [], keepArtifacts: false, group: null, scenarios: [], candidate: null };

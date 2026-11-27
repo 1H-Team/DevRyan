@@ -37,6 +37,14 @@ export const DECLARATIONS = Object.freeze({
     timeKeys: Object.freeze([]), // it writes no time
     effects: Object.freeze([]), // its dependencies are fsPromises, path and the data root: no hub, no outbound call, no child
   }),
+  'session-folders': Object.freeze({
+    identifierKeys: Object.freeze([]), // it chooses no identifier a body carries
+    // Each save writes `<file>.tmp-${process.pid}-${crypto.randomUUID()}` and renames it over the file (rule T): the name
+    // appears in a failed save's error text, and in the tree only if a process dies between the write and the rename.
+    temporaryNames: Object.freeze([Object.freeze({ file: 'sessions-directories.json' })]),
+    timeKeys: Object.freeze([]), // it writes no time of its own (updatedAt is the client's)
+    effects: Object.freeze([]), // its dependencies are fsPromises, path and the data root: no hub, no outbound call, no child
+  }),
 });
 export const declarationsFor = (name) => ({ ...(DECLARATIONS[name] ?? {}), edgeFiles: [...REFERENCE_EDGE_FILES], startupFiles: [...REFERENCE_EDGE_STARTUP_FILES] });
 

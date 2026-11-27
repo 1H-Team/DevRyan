@@ -167,7 +167,7 @@ async function startArm(ctx, result) {
   trace(ctx, 'start');
   ctx.starts += 1;
   let proc;
-  try { proc = await ctx.arm.start({ dataRoot: ctx.dataRoot, home: ctx.home, stubs: ctx.stubUrls, environment: ctx.observation?.environment() ?? {} }); } catch (error) {
+  try { proc = await ctx.arm.start({ dataRoot: ctx.dataRoot, home: ctx.home, stubs: ctx.stubUrls, environment: ctx.observation?.environment() ?? {}, ...(ctx.scenario.umask === undefined ? {} : { umask: ctx.scenario.umask }) }); } catch (error) {
     problem(result, 'arm-start', errorText(error));
     ctx.dead = true;
     return false;
@@ -311,9 +311,10 @@ const effectNames = (effects) => [...effects.outbound.map((effect) => `${effect.
  * digest, for the comparer (supplied values inside a file are substituted, so
  * a digest alone cannot be compared). Read while the walk's conditions hold
  * (the arm frozen or gone); bytes whose digest is not the walk's are not kept
- * (the comparer then says the file's bytes are unknown).
+ * (the comparer then says the file's bytes are unknown). The limit is above the largest file a group writes
+ * (session-folders refuses a document over 4 MiB, so one at its limit is kept).
  */
-export const BLOB_LIMIT = 1024 * 1024;
+export const BLOB_LIMIT = 5 * 1024 * 1024;
 function keepBlobs(ctx, root, entries) {
   for (const entry of entries) {
     if (entry.type !== 'file' || !entry.sha256 || entry.size > BLOB_LIMIT || ctx.blobs.has(entry.sha256)) continue;

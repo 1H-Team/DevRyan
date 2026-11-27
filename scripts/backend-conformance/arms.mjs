@@ -10,9 +10,9 @@
 //                         group's exchange from inside), admissible (the driver may run every order of a
 //                         concurrent step on it), envelope (it takes the principal as an envelope header),
 //                         edgeFiles (data-root files its edge writes, not the group) }
-//   start({ dataRoot, home, stubs, environment }) -> { pid, pgid, listen }   on the same roots after a
+//   start({ dataRoot, home, stubs, environment, umask }) -> { pid, pgid, listen }   on the same roots after a
 //                         restart; `environment` is the observation's (observe.mjs: the stubs' addresses and,
-//                         for a candidate, the PATH shim), added to the arm's own
+//                         for a candidate, the PATH shim), added to the arm's own; `umask` the scenario's
 //   prepare(request, { seq, envelope }) -> request      what goes on the wire (a candidate gets the
 //                         envelope and sequence headers; the reference gets the request as the client sent it)
 //   seqFor(result)        the arm's sequence number of an exchange the driver made (the reference:
@@ -26,7 +26,8 @@
 //
 // Both arms get the same environment (design §7): the guard's, plus a time
 // zone, a locale and a HOME (with the XDG folders under it) the driver gives
-// them, and umask 022. The HOME is a directory of the run, tracked like the
+// them, and umask 022 (or the scenario's own, `umask`: then 0666 masked and a
+// fixed 0644 come apart). The HOME is a directory of the run, tracked like the
 // data root (held, frozen, walked).
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -45,7 +46,7 @@ export const ARM_UMASK = 0o022;
 /** HOME and the XDG folders under `home` (the folders themselves are not created). */
 export const homeVariables = (home) => ({ HOME: home, XDG_CONFIG_HOME: path.join(home, '.config'), XDG_DATA_HOME: path.join(home, '.local', 'share'), XDG_STATE_HOME: path.join(home, '.local', 'state'), XDG_CACHE_HOME: path.join(home, '.cache') });
 /** Runs `action` (a spawn) with the arms' umask, so the child starts with it; the harness's own is restored at once. */
-export const withArmUmask = (action) => { const previous = process.umask(ARM_UMASK); try { return action(); } finally { process.umask(previous); } };
+export const withArmUmask = (action, umask = ARM_UMASK) => { const previous = process.umask(umask); try { return action(); } finally { process.umask(previous); } };
 
 /** Reads a tap record file, leaving out a last line still being written. */
 export function readRecords(file) {
@@ -90,10 +91,10 @@ export function referenceArm({ run, name, group, table = null, label, env = proc
   return {
     role: 'reference', label,
     capabilities: { principals: new Set(['local-admin', 'remote-unauthenticated']), tap: true, admissible: true, envelope: false, edgeFiles: REFERENCE_EDGE_FILES },
-    async start({ dataRoot, home, stubs = {}, environment = {} }) {
+    async start({ dataRoot, home, stubs = {}, environment = {}, umask = ARM_UMASK }) {
       starts += 1;
       // The host checks the guard's isolation with the guard's HOME, then takes the run's (--home): group-host.mjs.
-      host = await withArmUmask(() => startGroupHost({ run, name, group, label: `${label}/process-${starts}`, table, env: { ...env, ...ARM_ENVIRONMENT, ...environment }, dataRoot, home, stubs, processGroup: true, coverage, limits: { readyMs: limits.readyMs, controlMs: limits.controlMs, stopMs: limits.stopMs } }));
+      host = await withArmUmask(() => startGroupHost({ run, name, group, label: `${label}/process-${starts}`, table, env: { ...env, ...ARM_ENVIRONMENT, ...environment }, dataRoot, home, stubs, processGroup: true, coverage, limits: { readyMs: limits.readyMs, controlMs: limits.controlMs, stopMs: limits.stopMs } }), umask);
       tapFiles.push(host.tapFile);
       return { pid: host.child.pid, pgid: host.child.pid, listen: host.ready.listen, control: host.ready.control };
     },
@@ -158,10 +159,10 @@ export function candidateArm({ command, label, env = process.env, principals = [
   return {
     role: 'candidate', label,
     capabilities: { principals: new Set(principals), tap: false, admissible: false, envelope: true, edgeFiles: [], observedFromOutside: true },
-    async start({ dataRoot, home, stubs = {}, environment = {} }) {
+    async start({ dataRoot, home, stubs = {}, environment = {}, umask = ARM_UMASK }) {
       const [file, ...args] = command;
       child = withArmUmask(() => spawn(file, [...args, '--listen', '127.0.0.1:0', '--control', '127.0.0.1:0', '--data-root', dataRoot, '--home', home, ...Object.entries(stubs).flatMap(([name, url]) => ['--stub', `${name}=${url}`])],
-        { cwd: REPOSITORY_ROOT, env: { ...env, ...ARM_ENVIRONMENT, ...homeVariables(home), ...environment }, stdio: ['pipe', 'pipe', 'pipe'], detached: true }));
+        { cwd: REPOSITORY_ROOT, env: { ...env, ...ARM_ENVIRONMENT, ...homeVariables(home), ...environment }, stdio: ['pipe', 'pipe', 'pipe'], detached: true }), umask);
       child.stdin.on('error', () => {});
       let stderr = '';
       child.stderr.setEncoding('utf8');

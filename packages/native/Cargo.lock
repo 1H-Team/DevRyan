@@ -42,13 +42,30 @@ dependencies = [
 ]
 
 [[package]]
-name = "devryan-route-magic-prompts"
+name = "devryan-route-common"
 version = "0.1.0"
 dependencies = [
  "brotli-decompressor",
  "devryan-config-text",
  "httparse",
  "libc",
+ "serde_json",
+]
+
+[[package]]
+name = "devryan-route-magic-prompts"
+version = "0.1.0"
+dependencies = [
+ "devryan-config-text",
+ "devryan-route-common",
+ "serde_json",
+]
+
+[[package]]
+name = "devryan-route-session-folders"
+version = "0.1.0"
+dependencies = [
+ "devryan-route-common",
  "serde_json",
 ]
 

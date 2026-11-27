@@ -17,14 +17,14 @@ path = "src/lib.rs"
 [features]
 # Test-only: `--plant <id>` switches on one planted behaviour change (src/plant.rs), so the
 # harness can be shown to catch it. A build without the feature has no such option.
-plants = []
+plants = ["devryan-route-common/plants"]
 
 [dependencies]
-brotli-decompressor.workspace = true
 devryan-config-text.workspace = true
-libc.workspace = true
+devryan-route-common.workspace = true
+
+[dev-dependencies]
 serde_json.workspace = true
-httparse.workspace = true
 
 [lints]
 workspace = true

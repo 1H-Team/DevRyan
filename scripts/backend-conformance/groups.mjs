@@ -23,6 +23,21 @@ export const GROUPS = Object.freeze({
     handlerFactories: Object.freeze([]),
     // Work the group starts on purpose and does not wait for, each with why (none for this group).
     declaredBackground: Object.freeze([]),
+    // Its Rust candidate (rust-candidate.mjs): the crate under packages/native/crates/ and its binary.
+    rust: Object.freeze({ crate: 'devryan-route-magic-prompts', dir: 'route-magic-prompts' }),
+  }),
+  'session-folders': Object.freeze({
+    edge: 'web-api',
+    registrar: Object.freeze({ module: 'packages/web/server/lib/session-folders/routes.js', export: 'registerSessionFoldersRoutes' }),
+    // The handlers and their save queue live in the registrar file. The stale temporary-file cleanup it calls is
+    // harness-runtime's (an import by package name, outside the group's files): its rule is judged by the rows of
+    // the temporary-files scenario, not by census code items.
+    files: Object.freeze(['packages/web/server/lib/session-folders/routes.js']),
+    dependencies: ({ dataRoot }) => ({ fsPromises: fs.promises, path, devryanDataDir: dataRoot }),
+    parameterValues: Object.freeze({}),
+    handlerFactories: Object.freeze([]),
+    declaredBackground: Object.freeze([]),
+    rust: Object.freeze({ crate: 'devryan-route-session-folders', dir: 'route-session-folders' }),
   }),
 });
 

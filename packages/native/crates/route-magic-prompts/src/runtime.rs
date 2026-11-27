@@ -271,6 +271,10 @@ impl Runtime {
             .mode(mode)
             .open(&self.file_path)
             .map_err(|error| fs_message(&error, "open", Some(&self.file_path)))?;
+        if plant::on(Plant::ModeFixed644) {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = file.set_permissions(std::fs::Permissions::from_mode(0o644));
+        }
         file.write_all(&bytes).map_err(|error| fs_message(&error, "write", None))?;
         Ok(())
     }
@@ -278,7 +282,7 @@ impl Runtime {
     /// `persist(mutator)`: in `ticket`'s turn, read, mutate and write under the write lock; answers the next state.
     /// The turn ends when the write has ended, failed or not.
     fn persist(&self, ticket: &Ticket, mutate: impl FnOnce(State) -> State) -> Result<State, Thrown> {
-        let _held = if plant::on(Plant::NoWriteLock) {
+        let _held = if plant::on(Plant::NoWriteLock) || plant::on(Plant::NoWriteLockPlain) {
             None
         } else {
             ticket.wait();

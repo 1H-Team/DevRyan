@@ -8,6 +8,7 @@
 //     fixture(root, values),                      builds the starting data root (no files from git)
 //     steps(values) -> [step, ...],               the ordered steps; every value an arm will echo
 //                                                 or store comes from `values` (the registry)
+//     umask (optional): the arms' umask for this scenario instead of 022 (arms.mjs)
 //     waivers: { <step id>: { outcome, reason, checks } } rows the scenario knows cannot be recorded on an
 //                                                 arm; `checks` names the problems the waiver covers, and a
 //                                                 row with any other problem is not waived }
@@ -22,7 +23,8 @@
 //                 in full) with no clock: the order of writes the JavaScript gives such a timeline is
 //                 judged exactly, step by step as for exchanges (no admissible set; R against R' says
 //                 whether the reference's own order is stable)
-//   external      the harness changes the data root between exchanges (write, delete, rename, mkdir, symlink, chmod)
+//   external      the harness changes the data root between exchanges (write, delete, rename, mkdir, symlink, chmod;
+//                 a chmod of '.' changes the data root's own mode)
 //   restart       the arm stops and starts again on the tree it left
 //   kill-after    one exchange, the arm SIGKILLed after a named point, then started again
 //   stream-open, stream-barrier <n items>, stream-close (by the client or the server's end)
@@ -199,6 +201,7 @@ export function defineScenario(scenario) {
   if (typeof scenario?.id !== 'string' || !PLAIN_ID.test(scenario.id)) problems.push('id must be a plain identifier');
   if (typeof scenario?.group !== 'string' || !scenario.id?.startsWith(`${scenario.group}.`)) problems.push('id must start with the group name and a dot');
   if (typeof scenario?.fixture !== 'function') problems.push('fixture must be a function of the data root');
+  if (scenario?.umask !== undefined && !(Number.isInteger(scenario.umask) && scenario.umask >= 0 && scenario.umask <= 0o777)) problems.push('umask must be permission bits');
   if (typeof scenario?.steps !== 'function') problems.push('steps must be a function of the supplied values');
   if (!scenario?.principals || typeof scenario.principals !== 'object') problems.push('principals must name the envelopes the scenario uses');
   else for (const [name, principal] of Object.entries(scenario.principals)) if (PRINCIPALS[name] !== principal) problems.push(`principal ${name} is not a PRINCIPALS entry`);
@@ -276,6 +279,8 @@ export function validateSteps(scenario, steps) {
       if (!EXTERNAL_OPS.includes(change.op)) problems.push(`${where}: op must be one of ${EXTERNAL_OPS.join(', ')}`);
       for (const key of ['path', ...(change.op === 'rename' ? ['to'] : [])]) {
         const value = change[key];
+        // A chmod may name the data root itself ('.'): a root the arm may not write (a save's temporary file is refused).
+        if (key === 'path' && change.op === 'chmod' && value === '.') continue;
         if (typeof value !== 'string' || value === '' || path.isAbsolute(value) || value.split('/').some((part) => part === '' || part === '.' || part === '..')) problems.push(`${where}: ${key} must be a plain relative path`);
       }
       if (change.op === 'write' && !Buffer.isBuffer(change.data)) problems.push(`${where}: a write needs data bytes`);

@@ -390,8 +390,8 @@ impl Parser<'_> {
                 return Err(Thrown);
             }
         }
-        let text: String = self.text[start..self.at].iter().map(|unit| char::from(*unit as u8)).collect();
-        text.parse::<f64>().map_err(|_| Thrown)
+        let text: Vec<u8> = self.text[start..self.at].iter().map(|unit| *unit as u8).collect();
+        devryan_config_text::js::decimal_to_f64(&text).ok_or(Thrown)
     }
 }
 

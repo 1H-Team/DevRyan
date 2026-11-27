@@ -19,18 +19,19 @@ import { REPOSITORY_ROOT } from './edge.mjs';
 import { CANDIDATE_EFFECT_LIMIT } from './observe.mjs';
 import { judgeRun } from './outcomes.mjs';
 import { PRINCIPALS } from './scenario.mjs';
-import { rustCandidateCommand } from './rust-candidate.mjs';
+import { RUST_GROUPS, rustCandidateCommand } from './rust-candidate.mjs';
 import { CENSUS_ERRORS as MAGIC_PROMPTS_ERRORS, CENSUS_WAIVERS as MAGIC_PROMPTS_CENSUS, SCENARIOS as MAGIC_PROMPTS } from './scenarios/magic-prompts.mjs';
+import { CENSUS_ERRORS as SESSION_FOLDERS_ERRORS, CENSUS_WAIVERS as SESSION_FOLDERS_CENSUS, SCENARIOS as SESSION_FOLDERS } from './scenarios/session-folders.mjs';
 
 /** How each `--candidate` name of a group becomes a command (RunRefused when it cannot be run, with how to make it runnable). */
-export const CANDIDATE_COMMANDS = Object.freeze({ 'magic-prompts': Object.freeze({ rust: () => rustCandidateCommand() }) });
+export const CANDIDATE_COMMANDS = Object.freeze(Object.fromEntries(RUST_GROUPS.map((group) => [group, Object.freeze({ rust: () => rustCandidateCommand({ group }) })])));
 
 /** The scenarios of each group the harness has scenarios for. */
-export const SCENARIOS_BY_GROUP = Object.freeze({ 'magic-prompts': MAGIC_PROMPTS });
+export const SCENARIOS_BY_GROUP = Object.freeze({ 'magic-prompts': MAGIC_PROMPTS, 'session-folders': SESSION_FOLDERS });
 /** Each group's census waivers: items no scenario can exercise, each with why. */
-export const CENSUS_WAIVERS_BY_GROUP = Object.freeze({ 'magic-prompts': MAGIC_PROMPTS_CENSUS });
+export const CENSUS_WAIVERS_BY_GROUP = Object.freeze({ 'magic-prompts': MAGIC_PROMPTS_CENSUS, 'session-folders': SESSION_FOLDERS_CENSUS });
 /** Each group's declared write errors: the errors a write call can meet in a data-root state (census `error` items). */
-export const CENSUS_ERRORS_BY_GROUP = Object.freeze({ 'magic-prompts': MAGIC_PROMPTS_ERRORS });
+export const CENSUS_ERRORS_BY_GROUP = Object.freeze({ 'magic-prompts': MAGIC_PROMPTS_ERRORS, 'session-folders': SESSION_FOLDERS_ERRORS });
 
 /** The limit printed when --scenario chose some of the group's scenarios: the census needs all of them. */
 export const CENSUS_PARTIAL_LIMIT = Object.freeze({

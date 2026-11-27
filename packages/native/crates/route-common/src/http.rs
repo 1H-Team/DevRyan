@@ -324,7 +324,7 @@ impl BodyDecoder {
                         };
                     } else if digits == 0 {
                         return Err(ReadError::Malformed);
-                    } else if byte == b';' {
+                    } else if byte == b';' && !crate::plant::named("rv-chunk-ext-refused") {
                         self.state = BodyState::Extension { size };
                     } else if byte == b'\r' {
                         self.state = BodyState::SizeLf { size };
@@ -494,6 +494,12 @@ pub fn write_response(stream: &mut impl Write, response: &Response, extra: &[(St
     }
     stream.write_all(&bytes)?;
     stream.flush()
+}
+
+/// The path part of the request target, as parseurl reads it (up to `?` or `#`).
+pub fn pathname(target: &str) -> &str {
+    let end = target.find(['?', '#']).unwrap_or(target.len());
+    &target[..end]
 }
 
 #[cfg(test)]

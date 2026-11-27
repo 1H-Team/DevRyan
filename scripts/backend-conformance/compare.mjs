@@ -26,6 +26,7 @@ import { isDeepStrictEqual } from 'node:util';
 export const RULES = Object.freeze({
   supplied: 'S: a supplied value (a root: the data root, HOME; a listen or stub port) is replaced by the other arm\'s value of the same name, in each spelling (as given, canonical, the firmlink alias /var for /private/var, URL-encoded), only where it stands as a whole path (or a whole port after a colon); a value that merely contains a root as text, or a path outside every supplied root, is compared as it is',
   paired: 'P: an identifier at a place the group declares is paired with the value the other arm put at the same place (same JSON path), one to one; a conflict is a difference; a value only one side has is never paired; a pair seen only once is reported',
+  temporary: 'T: a temporary file name the group declares (<file>.tmp-<pid>-<UUID v4>, the form of a per-save temporary file) is written, in each arm, as its file, {pid} when the number is the pid of one of that arm\'s processes (otherwise the number stays), and its random part\'s rank among that arm\'s own, in the order they first appear (steps in order: each step\'s answers, then its trees\' paths); wherever it stands (bodies, file bytes, paths); a name not of that form is compared as it is',
   'time-window': 'W: a time at a key the group declares, a file\'s mtime and the Date header must fall in the window the harness observed (the exchange\'s, or between two snapshots); times are compared as their window and rank (order and equality within one record); a time outside every window is compared as it is',
   etag: 'ETag is compared exactly (a contract: clients send it back); over a body holding a supplied value (its bytes differ by arm) it must be, on each side, Express\'s weak ETag of that side\'s own body, which the reference\'s value is checked to be (otherwise inconclusive)',
   inode: 'a file is compared as replaced or rewritten in place (descriptors the driver held across the exchange), with its type, mode, bytes and link target; inode numbers and timestamps are never compared as values',
@@ -230,6 +231,45 @@ export function createPairing({ keys = [] } = {}) {
   return { learn, align, apply, conflicts, pairs: () => [...forward], uses, get size() { return forward.size; } };
 }
 
+// ------------------------------------------------------------------ rule T: temporary names
+const UUID_V4 = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const latin1Of = (base64) => (typeof base64 === 'string' ? Buffer.from(base64, 'base64').toString('latin1') : '');
+/**
+ * Rule T for one recording. `names`: the temporary names the group declares (`{ file }`: a save writes
+ * `<file>.tmp-<pid>-<UUID v4>` and renames it over `<file>`). Each random part gets its rank in the order it
+ * first appears in the recording (the start tree, then each step: its answers' bodies, then its trees' paths;
+ * then the exit tree); `apply(buffer)` and `applyText(text)` write every such name as
+ * `<file>.tmp-{pid}-{tmp <rank>}`, the pid kept as a number when it is no process of this recording's.
+ */
+export function createTemporaryNames({ names = [], recording = null } = {}) {
+  const none = { apply: (buffer) => buffer, applyText: (text) => text, changes: () => false, size: 0 };
+  if (!names.length) return none;
+  const pids = new Set((recording?.processes ?? []).map((entry) => String(entry.pid)));
+  const pattern = new RegExp(`(${names.map((entry) => escapeRegExp(entry.file)).join('|')})\\.tmp-([0-9]+)-(${UUID_V4})`, 'g');
+  const ranks = new Map();
+  const see = (text) => { if (!text) return; for (const match of text.matchAll(pattern)) if (!ranks.has(match[3])) ranks.set(match[3], ranks.size + 1); };
+  const seeTree = (tree) => { for (const name of flatTree(tree).entries.keys()) see(name); };
+  if (recording) {
+    seeTree(recording.start);
+    for (const step of recording.steps ?? []) {
+      for (const record of step.exchanges ?? []) { see(latin1Of(record.response?.body)); see(latin1Of(record.tap?.response?.body)); }
+      for (const [, tree] of momentsOf(step)) seeTree(tree);
+    }
+    seeTree(recording.exitTree);
+  }
+  const label = (text) => text.replace(pattern, (_whole, file, pid, random) => `${file}.tmp-${pids.has(pid) ? '{pid}' : pid}-{tmp ${ranks.get(random) ?? '?'}}`);
+  const applyText = (text) => (typeof text === 'string' && text.length ? label(text) : text);
+  const apply = (buffer) => {
+    if (!buffer?.length) return buffer;
+    const text = buffer.toString('latin1');
+    const labelled = label(text);
+    return labelled === text ? buffer : Buffer.from(labelled, 'latin1');
+  };
+  const changes = (buffer) => Boolean(buffer?.length) && label(buffer.toString('latin1')) !== buffer.toString('latin1');
+  return { apply, applyText, changes, get size() { return ranks.size; } };
+}
+
 // ------------------------------------------------------------------ rule W: times by window
 /** The windows of one recording: each exchange's [t0, t1], in order, named by step and member. */
 export function windowsOf(recording) {
@@ -306,6 +346,8 @@ function createContext({ reference, other, mode, declarations, dateLagMs }) {
     substitution: null,
     local: null,
     pairing: createPairing({ keys: declarations.identifierKeys ?? [] }),
+    // Rule T: each arm's temporary names, labelled by that arm's own processes and order.
+    temporary: { reference: createTemporaryNames({ names: declarations.temporaryNames ?? [], recording: reference }), other: createTemporaryNames({ names: declarations.temporaryNames ?? [], recording: other }) },
     windows: { reference: windowsOf(reference), other: windowsOf(other) },
     // Each side's Date lag: a tapped reference its own measurement; a candidate (no tap) the lag measured on the run's reference.
     dateLag: { reference: dateLagOf(reference), other: mode === 'stability' ? dateLagOf(other) : (Number.isFinite(dateLagMs) ? dateLagMs : dateLagOf(reference)), candidate: Number.isFinite(dateLagMs) ? dateLagMs : dateLagOf(reference) },
@@ -345,10 +387,11 @@ function withExchangePorts(ctx, a, b, action) {
   ctx.local = left !== null && right !== null && left !== right ? createSubstitution([{ name: 'listen', kind: 'port', value: left }], [{ name: 'listen', kind: 'port', value: right }]) : null;
   try { return action(); } finally { ctx.local = before; }
 }
-/** The reference's bytes as the other arm must have written them: rule S, then rule P; then rule W on both. */
+/** The reference's bytes as the other arm must have written them: rule T on both, rule S, then rule P; then rule W on both. */
 function rewrite(ctx, buffer, side) {
   if (!buffer) return buffer;
-  let bytes = side === 'reference' ? ctx.pairing.apply(ctx.substitution.apply(buffer)) : buffer;
+  let bytes = ctx.temporary[side === 'reference' ? 'reference' : 'other'].apply(buffer);
+  bytes = side === 'reference' ? ctx.pairing.apply(ctx.substitution.apply(bytes)) : bytes;
   bytes = labelTimes(bytes, { keys: ctx.declarations.timeKeys ?? [], windows: ctx.windows[side] }).buffer;
   return bytes;
 }
@@ -427,6 +470,9 @@ function contentLengthCheck(ctx, side, headers, body) {
   if (!line) return;
   if (line.values.length !== 1 || Number(line.values[0]) !== body.length) ctx.differ('headers.content-length', `${side}: the body has ${body.length} bytes`, 'headers', side === 'reference' ? line.values.join(',') : body.length, side === 'reference' ? body.length : line.values.join(','));
 }
+/** Whether a body's bytes differ by arm by rule: it holds a supplied value (rule S), or a temporary name on either side (rule T). */
+const bodyVaries = (ctx, referenceBody, otherBody) => Buffer.compare(ctx.substitution.apply(referenceBody), referenceBody) !== 0
+  || ctx.temporary.reference.changes(referenceBody) || ctx.temporary.other.changes(otherBody);
 /** Express's default weak ETag of a body (the etag package: the length in hex, then 27 characters of the SHA-1 in base64). */
 export const weakEtagOf = (body) => `W/"${body.length.toString(16)}-${crypto.createHash('sha1').update(body).digest('base64').slice(0, 27)}"`;
 /** Header sets by name: the reference's (group or whole) against the other's; `bodies` are each side's own body bytes. */
@@ -478,6 +524,27 @@ function seenAsPrefix(tap, sent) {
   return null;
 }
 
+/**
+ * The message body of chunked bytes as Node's parser hands it on (chunk sizes and extensions and the trailer
+ * dropped), or null when the framing is not complete chunked coding.
+ */
+export function dechunk(bytes) {
+  const pieces = [];
+  let at = 0;
+  for (;;) {
+    const line = bytes.indexOf('\r\n', at);
+    if (line < 0) return null;
+    const size = /^([0-9a-fA-F]+)(?:;.*)?$/s.exec(bytes.subarray(at, line).toString('latin1'));
+    if (!size) return null;
+    const length = Number.parseInt(size[1], 16);
+    at = line + 2;
+    if (length === 0) return Buffer.concat(pieces);
+    if (at + length + 2 > bytes.length || bytes[at + length] !== 0x0d || bytes[at + length + 1] !== 0x0a) return null;
+    pieces.push(bytes.subarray(at, at + length));
+    at += length + 2;
+  }
+}
+
 /** The request the candidate was given against the one the reference's group received (rule request). */
 function compareRequest(ctx, referenceRecord, otherRecord, referenceStep) {
   const tap = referenceRecord.tap;
@@ -485,7 +552,11 @@ function compareRequest(ctx, referenceRecord, otherRecord, referenceStep) {
   if (!sent) { ctx.unsure('request', 'the candidate\'s request was not recorded'); return; }
   const bytes = b64(sent.bytes);
   const split = bytes.indexOf('\r\n\r\n');
-  const body = split >= 0 ? bytes.subarray(split + 4) : Buffer.alloc(0);
+  const framed = split >= 0 ? bytes.subarray(split + 4) : Buffer.alloc(0);
+  // A chunked request is compared by its message body: the tap sees what Node's parser hands on, not the framing.
+  const chunked = (sent.headers ?? []).some(([name, value]) => name.toLowerCase() === 'transfer-encoding' && /\bchunked\b/i.test(value));
+  const body = chunked ? dechunk(framed) : framed;
+  if (body === null) { ctx.unsure('request.body', 'the candidate\'s chunked request body is not complete chunked coding'); return; }
   if (tap.entry?.method !== sent.method) ctx.differ('request.method', 'method', 'request', tap.entry?.method, sent.method);
   if (ctx.substitution.applyText(tap.entry?.url ?? '') !== sent.target) ctx.differ('request.url', 'the URL the group saw', 'request', tap.entry?.url, sent.target);
   const theirs = (sent.headers ?? []).filter(([name]) => !HARNESS_REQUEST_HEADERS.has(name.toLowerCase())).map(([name, value]) => [name.toLowerCase(), value]);
@@ -575,7 +646,7 @@ function compareGroupExchange(ctx, referenceRecord, otherRecord, referenceStep) 
   if (left.status !== right.status) ctx.differ('status', 'status', 'bytes', left.status, right.status);
   if (!right.complete) ctx.differ('body', 'the candidate\'s response was not complete', 'bytes', 'complete', right.error ?? 'incomplete');
   learnPairs(ctx, left.body, right.body);
-  const substitutedBody = Buffer.compare(ctx.substitution.apply(left.body), left.body) !== 0;
+  const substitutedBody = bodyVaries(ctx, left.body, right.body);
   compareHeaderSets(ctx, left.headers, right.headers, { substitutedBody, bodies: [left.body, right.body] });
   if (referenceRecord.tap?.entry?.method === 'HEAD') {
     // A HEAD answer has no body: its Content-Length is the GET body's length, compared as a value (both must have it).
@@ -604,7 +675,7 @@ function compareReferenceExchange(ctx, a, b) {
   transportChecks(ctx, 'reference', left);
   transportChecks(ctx, 'other', right);
   learnPairs(ctx, left.body, right.body);
-  const substitutedBody = Buffer.compare(ctx.substitution.apply(left.body), left.body) !== 0;
+  const substitutedBody = bodyVaries(ctx, left.body, right.body);
   const wireHeaders = (view) => new Map([...view.headers, ...[...view.transport].filter(([key]) => key !== 'date')]);
   compareHeaderSets(ctx, wireHeaders(left), wireHeaders(right), { substitutedBody, bodies: [left.body, right.body] });
   if (left.transport.has('date') !== right.transport.has('date')) ctx.differ('headers.date', 'presence', 'headers', left.transport.has('date'), right.transport.has('date'));
@@ -653,16 +724,16 @@ function compareReferenceBodies(ctx, a, b) {
 }
 
 // ------------------------------------------------------------------ trees
-/** Entries of a snapshot by root-prefixed path ('' data root, 'home:' HOME), the order lists alike. */
-function flatTree(tree) {
+/** Entries of a snapshot by root-prefixed path ('' data root, 'home:' HOME), the order lists alike; `name` rewrites each path and listed name (rule T). */
+function flatTree(tree, name = (text) => text) {
   const entries = new Map();
   const order = new Map();
   if (!tree) return { entries, order };
-  for (const entry of tree.entries ?? []) entries.set(entry.path, entry);
-  for (const [dir, names] of Object.entries(tree.order ?? {})) order.set(dir, names);
-  for (const [name, root] of Object.entries(tree.roots ?? {})) {
-    for (const entry of root.entries ?? []) entries.set(`${name}:${entry.path}`, { ...entry, path: `${name}:${entry.path}` });
-    for (const [dir, names] of Object.entries(root.order ?? {})) order.set(`${name}:${dir}`, names);
+  for (const entry of tree.entries ?? []) entries.set(name(entry.path), entry);
+  for (const [dir, names] of Object.entries(tree.order ?? {})) order.set(name(dir), names.map(name));
+  for (const [root, part] of Object.entries(tree.roots ?? {})) {
+    for (const entry of part.entries ?? []) entries.set(name(`${root}:${entry.path}`), { ...entry, path: `${root}:${entry.path}` });
+    for (const [dir, names] of Object.entries(part.order ?? {})) order.set(name(`${root}:${dir}`), names.map(name));
   }
   return { entries, order };
 }
@@ -679,8 +750,8 @@ function compareTrees(ctx, moment, referenceTree, otherTree) {
     if (a === undefined && b === undefined) continue;
     if (a !== b) ctx.differ(`tree.${prefix}(root).mode`, moment, 'inode', a === undefined ? 'not recorded' : a.toString(8), b === undefined ? 'not recorded' : b.toString(8));
   }
-  const left = flatTree(referenceTree);
-  const right = flatTree(otherTree);
+  const left = flatTree(referenceTree, ctx.temporary.reference.applyText);
+  const right = flatTree(otherTree, ctx.temporary.other.applyText);
   for (const pathName of new Set([...left.entries.keys(), ...right.entries.keys()])) {
     const a = left.entries.get(pathName);
     const b = right.entries.get(pathName);
@@ -696,6 +767,13 @@ function compareTrees(ctx, moment, referenceTree, otherTree) {
     if (a.type !== b.type) { ctx.differ(`${component}.type`, moment, 'inode', a.type, b.type); continue; }
     if (a.mode !== b.mode) ctx.differ(`${component}.mode`, moment, 'inode', a.mode.toString(8), b.mode.toString(8));
     if (a.type === 'symlink' && ctx.substitution.applyText(a.target) !== b.target) ctx.differ(`${component}.link`, moment, 'inode', a.target, b.target);
+    if (a.type === 'file' && (a.unreadable || b.unreadable)) {
+      // A file whose mode forbids reading it (walkTree): its bytes are nobody's to compare; type, mode, size and last writer are.
+      if (a.unreadable !== b.unreadable) ctx.differ(`${component}.bytes`, `${moment}: readable on one arm only`, 'inode', a.unreadable ? 'unreadable' : 'readable', b.unreadable ? 'unreadable' : 'readable');
+      else if (a.size !== b.size) ctx.differ(`${component}.size`, `${moment}: unreadable on both arms`, 'inode', a.size, b.size);
+      else ctx.note(`${component}: unreadable on both arms (mode ${a.mode.toString(8)}): its bytes are not compared`);
+      continue;
+    }
     if (a.type === 'file') {
       const bytesA = ctx.reference.blobs?.[a.sha256];
       const bytesB = ctx.other.blobs?.[b.sha256];
@@ -905,7 +983,7 @@ function compareStep(ctx, referenceStep, otherStep) {
  * Compares `other` against `reference`, two recordings of one scenario.
  * `mode`: 'stability' (other is a second reference) or 'candidate'.
  * `declarations`: what the group declares (all optional): `identifierKeys`
- * (rule P), `timeKeys` (rule W), `effects` (the effect kinds it can cause),
+ * (rule P), `temporaryNames` (rule T), `timeKeys` (rule W), `effects` (the effect kinds it can cause),
  * `edgeFiles` and `startupFiles` (rule edge-files). Returns `{ steps: Map(step
  * id -> { differences, inconclusive, notes, edge }), differences,
  * inconclusive, notes }` (recording-level entries apart).
@@ -942,8 +1020,8 @@ export function compareRecordings({ reference, other, mode, declarations = {}, d
     const unsent = (item) => (item.exchanges ?? []).length > 0 && item.exchanges.every((record) => record.notSent !== undefined);
     if (unsent(step) || unsent(partner)) continue;
     ctx.step = step.id;
-    const a = writers.reference.touched.get(step.id) ?? new Set();
-    const b = writers.other.touched.get(step.id) ?? new Set();
+    const a = new Set([...(writers.reference.touched.get(step.id) ?? [])].map(ctx.temporary.reference.applyText));
+    const b = new Set([...(writers.other.touched.get(step.id) ?? [])].map(ctx.temporary.other.applyText));
     for (const name of new Set([...a, ...b])) if (a.has(name) !== b.has(name)) ctx.differ(`tree.${name}.lastWriter`, 'changed by this step', 'last-writer', a.has(name) ? 'changed' : 'not changed', b.has(name) ? 'changed' : 'not changed');
   }
   ctx.step = '(recording)';

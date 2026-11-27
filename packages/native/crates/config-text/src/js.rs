@@ -30,50 +30,70 @@ pub fn lossy(text: &[u16]) -> String {
     String::from_utf8(to_utf8(text)).unwrap_or_default()
 }
 
-/// `String(x)` for a JavaScript number (ECMA-262 `Number::toString`).
+/// The ledger core's `Number::toString` (`packages/harness-runtime/native/ledger-core`, its `js` module), compiled
+/// into this crate from its own source file, as `devryan-client-engine` compiles it: one number layout for both
+/// Rust workspaces (packages/native/DOCUMENTATION.md, "One JavaScript implementation"). That file is proven against
+/// V8 by the ledger core's vectors (exact ties to the even digit, as V8 writes them), which
+/// `tests/ledger_numbers.rs` also runs here. It is a source file, not a dependency on the ledger core's crate.
+/// Formatting is the ledger core's.
+#[rustfmt::skip]
+#[path = "../../../../harness-runtime/native/ledger-core/src/js/number.rs"]
+mod ledger_number;
+
+/// The largest integer every smaller one of which a double holds exactly (2^53).
+const SAFE: f64 = 9_007_199_254_740_992.0;
+
+/// `String(x)` for a JavaScript number (ECMA-262 `Number::toString`): the ledger core's layout. An integer of
+/// magnitude up to 2^53 is written as its decimal digits directly, which is that layout's answer (no shorter
+/// decimal is within half a unit of it; `tests/ledger_numbers.rs` checks the two agree), so the common case
+/// costs no formatting.
 pub fn number_to_string(x: f64) -> String {
-    if x.is_nan() {
-        return "NaN".to_owned();
-    }
-    if x == 0.0 {
-        return "0".to_owned();
-    }
-    if x.is_infinite() {
-        return if x < 0.0 { "-Infinity" } else { "Infinity" }.to_owned();
-    }
-    let mut out = String::new();
-    if x < 0.0 {
-        out.push('-');
-    }
-    // Rust's `{:e}` prints the shortest digits that round-trip.
-    let text = format!("{:e}", x.abs());
-    let (mantissa, exponent) = text.split_once('e').unwrap_or((&text, "0"));
-    let digits: String = mantissa.chars().filter(char::is_ascii_digit).collect();
-    let exponent: i32 = exponent.parse().unwrap_or(0);
-    let k = digits.len() as i32;
-    let n = exponent + 1;
-    if k <= n && n <= 21 {
-        out.push_str(&digits);
-        out.extend(std::iter::repeat_n('0', (n - k) as usize));
-    } else if 0 < n && n <= 21 {
-        out.push_str(&digits[..n as usize]);
-        out.push('.');
-        out.push_str(&digits[n as usize..]);
-    } else if -6 < n && n <= 0 {
-        out.push_str("0.");
-        out.extend(std::iter::repeat_n('0', (-n) as usize));
-        out.push_str(&digits);
-    } else {
-        out.push_str(&digits[..1]);
-        if k > 1 {
-            out.push('.');
-            out.push_str(&digits[1..]);
+    let mut out = Vec::new();
+    push_number_utf8(&mut out, x);
+    String::from_utf8(out).unwrap_or_default()
+}
+
+/// Appends `String(x)` to `out` as UTF-8 (ASCII) bytes.
+pub fn push_number_utf8(out: &mut Vec<u8>, x: f64) {
+    if x.abs() <= SAFE && x.fract() == 0.0 {
+        let integer = x as i64;
+        if integer < 0 {
+            out.push(b'-');
         }
-        out.push('e');
-        out.push(if n - 1 < 0 { '-' } else { '+' });
-        out.push_str(&(n - 1).unsigned_abs().to_string());
+        let mut digits = [0u8; 20];
+        let mut at = digits.len();
+        let mut rest = integer.unsigned_abs();
+        loop {
+            at -= 1;
+            digits[at] = b'0' + (rest % 10) as u8;
+            rest /= 10;
+            if rest == 0 {
+                break;
+            }
+        }
+        out.extend_from_slice(&digits[at..]);
+        return;
     }
-    out
+    out.extend_from_slice(ledger_number::number_to_string(x).as_bytes());
+}
+
+/// The ledger core's layout alone, with no integer shortcut (the test that the shortcut agrees with it).
+pub fn ledger_number_to_string(x: f64) -> String {
+    ledger_number::number_to_string(x)
+}
+
+/// The double nearest a decimal numeral already known to be of the form `-?digits[.digits][(e|E)[+-]digits]`
+/// (ASCII, at least one digit before any dot): JSON's NumericLiteral, and what [`parse_decimal`] normalises to.
+/// Rounded to nearest, ties to even, as V8's `StringToDouble` (JSON.parse, `Number`) rounds; Rust's `f64` parser
+/// is correctly rounded. A plain integer of up to 15 digits is exact in a double and converted directly. Every
+/// numeral of this crate and of `devryan-route-common` is converted here (`None` only for text not of the form).
+pub fn decimal_to_f64(text: &[u8]) -> Option<f64> {
+    let digits = text.strip_prefix(b"-").unwrap_or(text);
+    if !digits.is_empty() && digits.len() <= 15 && digits.iter().all(u8::is_ascii_digit) {
+        let value = digits.iter().fold(0u64, |sum, digit| sum * 10 + u64::from(digit - b'0')) as f64;
+        return Some(if digits.len() == text.len() { value } else { -value });
+    }
+    std::str::from_utf8(text).ok()?.parse::<f64>().ok()
 }
 
 /// Appends `JSON.stringify(text)` (well-formed: lone surrogates as `\udxxx`).
@@ -261,7 +281,7 @@ pub fn parse_decimal(text: &str) -> Option<f64> {
         };
         normal = format!("{head}.{tail}");
     }
-    normal.parse::<f64>().ok()
+    decimal_to_f64(normal.as_bytes())
 }
 
 /// `parseInt(digits, radix)` for a non-empty run of digits valid in a radix

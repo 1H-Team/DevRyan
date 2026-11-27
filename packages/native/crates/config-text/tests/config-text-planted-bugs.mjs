@@ -46,7 +46,9 @@ export const PLANTED_BUGS = Object.freeze([
   ['yaml-escape-fold-point', 'yaml/stringify.rs', 'let j = if i > esc_end + 1 { i - 2 } else { esc_start - 1 };', 'let j = if i > esc_end { i - 2 } else { esc_start - 1 };', 'a double-quoted line folded inside the unit after an escape'],
   ['yaml-single-break-blank', 'yaml/stringify.rs', '.any(|pair| (is_ws(pair[0]) && pair[1] == 0x0a) || (pair[0] == 0x0a && is_ws(pair[1])));', '.any(|pair| is_ws(pair[0]) && pair[1] == 0x0a);', 'single quotes kept for a line break followed by a blank'],
   ['yaml-anchor-names', 'yaml/stringify.rs', 'format!("a{}", self.next_anchor)', 'format!("b{}", self.next_anchor)', 'anchors named b1, b2'],
-  ['js-exponent-layout', 'js.rs', 'if k <= n && n <= 21 {', 'if k <= n && n <= 20 {', '1e20 written in exponent form'],
+  // The number layout itself is the ledger core's (js.rs compiles its number.rs in by path; its own vectors and
+  // tests/ledger_numbers.rs hold it): the site planted here is this crate's numeral conversion.
+  ['js-numeral-sign', 'js.rs', 'Some(if digits.len() == text.len() { value } else { -value })', 'Some(value)', 'a short negative integer read as positive'],
   ['js-trim-bom', 'js.rs', '0x3000 | 0xfeff', '0x3000', 'trim keeps a byte-order mark'],
   ['front-crlf-opening', 'front_matter.rs', '(Some(0x0d), Some(0x0a)) => Some(5),', '(Some(0x0d), Some(0x0a)) => None,', 'a CRLF opening line no longer matches'],
 ]);
@@ -73,9 +75,14 @@ function main() {
   const run = createRunRoot({ parent: scratchParent('qa'), prefix: 'config-text-planted-', owner: 'config-text-planted-bugs' });
   let status = 'failed';
   try {
-    const workspace = path.join(run.dir, 'native');
+    // The copy keeps the repository's layout under the scratch folder: js.rs compiles the ledger core's number
+    // layout in by a relative path, which the copy of that one file beside it resolves.
+    const workspace = path.join(run.dir, 'packages', 'native');
     mkdirSync(path.join(workspace, 'crates'), { recursive: true });
     const native = path.join(REPOSITORY_ROOT, 'packages', 'native');
+    const ledgerNumber = path.join('packages', 'harness-runtime', 'native', 'ledger-core', 'src', 'js', 'number.rs');
+    mkdirSync(path.dirname(path.join(run.dir, ledgerNumber)), { recursive: true });
+    cpSync(path.join(REPOSITORY_ROOT, ledgerNumber), path.join(run.dir, ledgerNumber));
     for (const file of ['Cargo.lock', 'rust-toolchain.toml']) cpSync(path.join(native, file), path.join(workspace, file));
     const manifest = readFileSync(path.join(native, 'Cargo.toml'), 'utf8').replace(/^members = \[[^\]]*\]/m, 'members = ["crates/config-text"]');
     writeFileSync(path.join(workspace, 'Cargo.toml'), manifest);

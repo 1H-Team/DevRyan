@@ -5,22 +5,16 @@
 //! ships it**: the forwarding seam that could send it traffic does not exist.
 //!
 //! It reproduces today's JavaScript at the group's boundary, quirks included:
-//! what Express and the product's request decoding hand the group (`body`,
-//! `qs`, `inflate`, `json`, `group`), the group's runtime and data file
-//! (`runtime`), Express's answer (`answer`), Node's file-system error texts
-//! (`uv`), and the harness's candidate protocol (`candidate`).
+//! the group's routes (`group`), its runtime and data file (`runtime`) and its
+//! planted changes (`plant`), on the request path every Rust group shares
+//! (devryan-route-common, re-exported here under the module names it had:
+//! `answer`, `body`, `http`, `inflate`, `json`, `order`, `props`, `qs`,
+//! `text`, `uv`), served by the shared candidate protocol (`candidate`).
 
-pub mod answer;
+pub use devryan_route_common::{answer, http, inflate, json, order, props, qs, text, uv};
+
 pub mod body;
 pub mod candidate;
 pub mod group;
-pub mod http;
-pub mod inflate;
-pub mod json;
-pub mod order;
 pub mod plant;
-pub mod props;
-pub mod qs;
 pub mod runtime;
-pub mod text;
-pub mod uv;

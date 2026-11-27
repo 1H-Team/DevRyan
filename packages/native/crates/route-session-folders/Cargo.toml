@@ -1,0 +1,29 @@
+[package]
+name = "devryan-route-session-folders"
+version = "0.1.0"
+description = "The session-folders route group as a standalone candidate for the backend conformance harness (tests only; nothing calls it)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "devryan-route-session-folders"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# Test-only: `--plant <id>` switches on one planted behaviour change (src/plant.rs and the shared crate's), so the
+# harness can be shown to catch it. A build without the feature has no such option.
+plants = ["devryan-route-common/plants"]
+
+[dependencies]
+devryan-route-common.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

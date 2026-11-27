@@ -286,6 +286,32 @@ pub fn error_body(message: &str) -> Vec<u8> {
     devryan_config_text::js::to_utf8(&out)
 }
 
+/// Express's final handler page (finalhandler 2.1.1), for what the group does not answer (no body for HEAD,
+/// as Node's server writes none).
+pub fn page(method: &str, status: u16, message: &str) -> Response {
+    let escaped = message
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;");
+    let body = format!(
+        "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>{escaped}</pre>\n</body>\n</html>\n"
+    )
+    .into_bytes();
+    Response {
+        status,
+        headers: vec![
+            ("Content-Security-Policy".to_owned(), "default-src 'none'".to_owned()),
+            ("X-Content-Type-Options".to_owned(), "nosniff".to_owned()),
+            ("Content-Type".to_owned(), "text/html; charset=utf-8".to_owned()),
+            ("Content-Length".to_owned(), body.len().to_string()),
+        ],
+        body,
+        head_only: method == "HEAD",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

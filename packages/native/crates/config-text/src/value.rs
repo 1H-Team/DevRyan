@@ -434,7 +434,7 @@ impl Reader<'_> {
                     "Infinity" => f64::INFINITY,
                     "-Infinity" => f64::NEG_INFINITY,
                     "-0" => -0.0,
-                    other => other.parse::<f64>().map_err(|_| format!("bad number {other}"))?,
+                    other => js::decimal_to_f64(other.as_bytes()).ok_or_else(|| format!("bad number {other}"))?,
                 })
             }
             0x22 => {

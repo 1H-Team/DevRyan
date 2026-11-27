@@ -165,54 +165,94 @@ export const APPLICATION_TABLE = Object.freeze({
   }),
 });
 
-/** feature-routes-runtime.js up to each group's own call, per group. */
-export const GROUP_TABLES = Object.freeze({
-  'magic-prompts': Object.freeze({
-    file: 'lib/opencode/feature-routes-runtime.js',
-    spec: Object.freeze({ functionNamed: 'registerRoutes', endCall: 'registerMagicPromptRoutes' }),
-    roots: 'first-parameter',
-    entries: Object.freeze([
-      entry("composed", "group", "9b2798acd017f291", "const { crypto, fs, os, path, fsPromises, spawn, resolveGitBinaryForSpawn, createFsSearchR…", ["routeDependencies"], "the dependencies the group's call reads"),
-      entry("not-applicable", null, "2a12ac760744fb44", "registerSettingsUtilityRoutes(app, { readCustomThemesFromDisk, });", ["registerSettingsUtilityRoutes"], "registers the settings utility routes only; the reach check proves none of its layers applies to the group's paths"),
-      entry("not-applicable", null, "63e9d91868057add", "registerConfigApplyRoutes(app, { coordinator: configApplyCoordinator, markConfigChange, ca…", ["registerConfigApplyRoutes"], "registers the config apply routes only; the reach check proves none of its layers applies to the group's paths"),
-      entry("not-applicable", null, "3565cf7c6cca8688", "registerOpenCodeRoutes(app, { openCodeClient, recordDiagnostic: routeDependencies.recordDi…", ["registerOpenCodeRoutes"], "registers the OpenCode routes only; the reach check proves none of its layers applies to the group's paths"),
-      entry("not-applicable", null, "13944067baab9018", "registerProjectIconRoutes(app, { fsPromises, path, crypto, devryanDataDir, projectIconStor…", ["registerProjectIconRoutes"], "registers the project icon routes only; the reach check proves none of its layers applies to the group's paths"),
-      entry("not-applicable", null, "e50ddb0673378db9", "registerScheduledTaskRoutes(app, { readSettingsFromDiskMigrated, sanitizeProjects, project…", ["registerScheduledTaskRoutes"], "registers the scheduled task routes only; the reach check proves none of its layers applies to the group's paths"),
-      entry("not-applicable", null, "423ee6dbb68f1b7f", "registerReadonlyPluginRoutes(app, { resolveOptionalProjectDirectory, listPlugins: pluginRe…", ["registerReadonlyPluginRoutes"], "registers the read-only plugin routes only; the reach check proves none of its layers applies to the group's paths"),
-      entry("not-applicable", null, "1aa62910ee82ecf1", "registerConfigEntityRoutes(app, { readAgentModelCatalog: directory => openCodeClient.catal…", ["registerConfigEntityRoutes"], "registers the config entity routes only; the reach check proves none of its layers applies to the group's paths"),
-      entry("not-applicable", null, "dc421942d49f8241", "registerSkillRoutes(app, { openCodeClient, fs, path, os, resolveProjectDirectory, resolveO…", ["registerSkillRoutes"], "registers the skill routes only; the reach check proves none of its layers applies to the group's paths"),
-      entry("not-applicable", null, "bd33e1f3827e9632", "registerQuotaRoutes(app, { recordDiagnostic: routeDependencies.recordDiagnostic, getNative…", ["registerQuotaRoutes"], "registers the quota routes only; the reach check proves none of its layers applies to the group's paths"),
-      entry("not-applicable", null, "2366bd5207e03324", "registerGitHubRoutes(app);", ["registerGitHubRoutes"], "registers the GitHub routes only; the reach check proves none of its layers applies to the group's paths"),
-      entry("not-applicable", null, "227f1dde2639c163", "registerProcessesRoutes(app, { runtime: processesRuntime });", ["registerProcessesRoutes"], "registers the processes routes only; the reach check proves none of its layers applies to the group's paths"),
-      entry("not-applicable", null, "d30020001a02f13b", "registerGitRoutes(app, { openCodeClient, generateHelperText, resolveHelperSelection, curso…", ["registerGitRoutes"], "registers the git routes only; the reach check proves none of its layers applies to the group's paths"),
-      entry("composed", "group-call", "da21242b613e57e7", "registerMagicPromptRoutes(app, { fsPromises, path, devryanDataDir, });", ["registerMagicPromptRoutes","fsPromises","path","devryanDataDir"], "the group's own call, composed by the group table"),
-      entry("not-applicable", null, "d9f166918827ed58", "registerSessionFoldersRoutes(app, { fsPromises, path, devryanDataDir, });", ["registerSessionFoldersRoutes"], "registered after the group's call: Express runs it for the group's paths only when the group passes a request on, which the group host answers with its tail stand-in (599, kind tail)"),
-      entry("not-applicable", null, "63ad587c7369a090", "registerSessionPlanRoutes(app, { dataDirectory: devryanDataDir, fsPromises, path, ownsSess…", ["registerSessionPlanRoutes"], "registered after the group's call: Express runs it for the group's paths only when the group passes a request on, which the group host answers with its tail stand-in (599, kind tail)"),
-      entry("no-request", null, "faea4d13595beabc", "const imageAssetsRuntime = createImageAssetsRuntime({ openCodeClient, fsPromises, path, os…", ["createImageAssetsRuntime"], "creates the image assets runtime; its routes are registered after the group by a not-applicable statement below"),
-      entry("not-applicable", null, "8d5d6b01f6ca7848", "imageAssetsRuntime.registerRoutes(app);", ["imageAssetsRuntime"], "registered after the group's call: Express runs it for the group's paths only when the group passes a request on, which the group host answers with its tail stand-in (599, kind tail)"),
-      entry("not-applicable", null, "7d78e1dc6fb88bcc", "registerFsRoutes(app, { os, path, fsPromises, spawn, crypto, normalizeDirectoryPath, resol…", ["registerFsRoutes"], "registered after the group's call: Express runs it for the group's paths only when the group passes a request on, which the group host answers with its tail stand-in (599, kind tail)"),
-    ]),
-    definitions: Object.freeze({
-      registerMagicPromptRoutes: def(["a3047d3c7290e132"], [], "imported from the registrar the group table names", "import { registerMagicPromptRoutes } from '../magic-prompts/routes.js'"),
-      routeDependencies: def(["66648dcc399c6914"], [], "the parameter the server's call fills", "routeDependencies"),
-      createImageAssetsRuntime: def(["ab0c53379ffcf6da"], [], "the registrar's module, pinned: the reach check reads the census, which imports its own copy of it", "import { createImageAssetsRuntime } from '../image-assets/runtime.js';"),
-      registerConfigApplyRoutes: def(["4d72f502bbed2f99"], [], "the registrar's module, pinned: the reach check reads the census, which imports its own copy of it", "import { registerConfigApplyRoutes } from './config-apply-runtime.js';"),
-      registerConfigEntityRoutes: def(["9071d283143201c1"], [], "the registrar's module, pinned: the reach check reads the census, which imports its own copy of it", "import { registerConfigEntityRoutes } from './config-entity-routes.js'"),
-      registerFsRoutes: def(["7120b61a0676e254"], [], "the registrar's module, pinned: the reach check reads the census, which imports its own copy of it", "import { registerFsRoutes } from '../fs/routes.js';"),
-      registerGitHubRoutes: def(["9cf76418e9b2951d"], [], "the registrar's module, pinned: the reach check reads the census, which imports its own copy of it", "import { registerGitHubRoutes } from '../github/routes.js';"),
-      registerGitRoutes: def(["9ff1af7009b6a596"], [], "the registrar's module, pinned: the reach check reads the census, which imports its own copy of it", "import { registerGitRoutes } from '../git/routes.js';"),
-      registerOpenCodeRoutes: def(["d91ec94ac32364c8"], [], "the registrar's module, pinned: the reach check reads the census, which imports its own copy of it", "import { registerOpenCodeRoutes } from './routes.js';"),
-      registerProcessesRoutes: def(["b407af537289a714"], [], "the registrar's module, pinned: the reach check reads the census, which imports its own copy of it", "import { registerProcessesRoutes } from '../processes/routes.js';"),
-      registerProjectIconRoutes: def(["b5f2c0d3d1830efe"], [], "the registrar's module, pinned: the reach check reads the census, which imports its own copy of it", "import { registerProjectIconRoutes } from './project-icon-routes.js';"),
-      registerQuotaRoutes: def(["4e032753e7854a7d"], [], "the registrar's module, pinned: the reach check reads the census, which imports its own copy of it", "import { registerQuotaRoutes } from '../quota/routes.js';"),
-      registerReadonlyPluginRoutes: def(["925a677222456b41"], [], "the registrar's module, pinned: the reach check reads the census, which imports its own copy of it", "import { createPluginReadModel, registerReadonlyPluginRoutes } from '."),
-      registerScheduledTaskRoutes: def(["dda8ea11ff1679bf"], [], "the registrar's module, pinned: the reach check reads the census, which imports its own copy of it", "import { registerScheduledTaskRoutes } from '../scheduled-tasks/routes"),
-      registerSessionFoldersRoutes: def(["43cddbd6656da7d5"], [], "the registrar's module, pinned: the reach check reads the census, which imports its own copy of it", "import { registerSessionFoldersRoutes } from '../session-folders/route"),
-      registerSessionPlanRoutes: def(["2365845dc276b991"], [], "the registrar's module, pinned: the reach check reads the census, which imports its own copy of it", "import { registerSessionPlanRoutes } from '../plans/routes.js';"),
-      registerSettingsUtilityRoutes: def(["5f9023eea8a76969"], [], "the registrar's module, pinned: the reach check reads the census, which imports its own copy of it", "import { registerSettingsUtilityRoutes } from './core-routes.js';"),
-      registerSkillRoutes: def(["24dff5c71e62496e"], [], "the registrar's module, pinned: the reach check reads the census, which imports its own copy of it", "import { registerSkillRoutes } from './skill-routes.js';"),
-    }),
+// feature-routes-runtime.js: one list of its statements for every group. Each registrar call is the group's
+// own call (composed) in the table of the group it registers, and not applicable in every other group's table:
+// before that group's call, the reach check proves none of its layers applies to the group's paths; after it,
+// Express runs it for the group's paths only when the group passes a request on (the tail stand-in).
+const registrarDefinition = (digest, text) => Object.freeze({ digest, text });
+const FEATURE_ROUTES = Object.freeze({
+  file: 'lib/opencode/feature-routes-runtime.js',
+  statements: Object.freeze([
+    { class: 'composed', step: 'group', digest: '9b2798acd017f291', text: 'const { crypto, fs, os, path, fsPromises, spawn, resolveGitBinaryForSpawn, createFsSearchR…', reads: ['routeDependencies'], reason: 'the dependencies the group\'s call reads' },
+    { registrar: 'registerSettingsUtilityRoutes', routes: 'the settings utility routes', digest: '2a12ac760744fb44', text: 'registerSettingsUtilityRoutes(app, { readCustomThemesFromDisk, });' },
+    { registrar: 'registerConfigApplyRoutes', routes: 'the config apply routes', digest: '63e9d91868057add', text: 'registerConfigApplyRoutes(app, { coordinator: configApplyCoordinator, markConfigChange, ca…' },
+    { registrar: 'registerOpenCodeRoutes', routes: 'the OpenCode routes', digest: '3565cf7c6cca8688', text: 'registerOpenCodeRoutes(app, { openCodeClient, recordDiagnostic: routeDependencies.recordDi…' },
+    { registrar: 'registerProjectIconRoutes', routes: 'the project icon routes', digest: '13944067baab9018', text: 'registerProjectIconRoutes(app, { fsPromises, path, crypto, devryanDataDir, projectIconStor…' },
+    { registrar: 'registerScheduledTaskRoutes', routes: 'the scheduled task routes', digest: 'e50ddb0673378db9', text: 'registerScheduledTaskRoutes(app, { readSettingsFromDiskMigrated, sanitizeProjects, project…' },
+    { registrar: 'registerReadonlyPluginRoutes', routes: 'the read-only plugin routes', digest: '423ee6dbb68f1b7f', text: 'registerReadonlyPluginRoutes(app, { resolveOptionalProjectDirectory, listPlugins: pluginRe…' },
+    { registrar: 'registerConfigEntityRoutes', routes: 'the config entity routes', digest: '1aa62910ee82ecf1', text: 'registerConfigEntityRoutes(app, { readAgentModelCatalog: directory => openCodeClient.catal…' },
+    { registrar: 'registerSkillRoutes', routes: 'the skill routes', digest: 'dc421942d49f8241', text: 'registerSkillRoutes(app, { openCodeClient, fs, path, os, resolveProjectDirectory, resolveO…' },
+    { registrar: 'registerQuotaRoutes', routes: 'the quota routes', digest: 'bd33e1f3827e9632', text: 'registerQuotaRoutes(app, { recordDiagnostic: routeDependencies.recordDiagnostic, getNative…' },
+    { registrar: 'registerGitHubRoutes', routes: 'the GitHub routes', digest: '2366bd5207e03324', text: 'registerGitHubRoutes(app);' },
+    { registrar: 'registerProcessesRoutes', routes: 'the processes routes', digest: '227f1dde2639c163', text: 'registerProcessesRoutes(app, { runtime: processesRuntime });' },
+    { registrar: 'registerGitRoutes', routes: 'the git routes', digest: 'd30020001a02f13b', text: 'registerGitRoutes(app, { openCodeClient, generateHelperText, resolveHelperSelection, curso…' },
+    { registrar: 'registerMagicPromptRoutes', routes: 'the magic prompt routes', digest: 'da21242b613e57e7', text: 'registerMagicPromptRoutes(app, { fsPromises, path, devryanDataDir, });', groupReads: ['fsPromises', 'path', 'devryanDataDir'] },
+    { registrar: 'registerSessionFoldersRoutes', routes: 'the session folder routes', digest: 'd9f166918827ed58', text: 'registerSessionFoldersRoutes(app, { fsPromises, path, devryanDataDir, });', groupReads: ['fsPromises', 'path', 'devryanDataDir'] },
+    { registrar: 'registerSessionPlanRoutes', routes: 'the session plan routes', digest: '63ad587c7369a090', text: 'registerSessionPlanRoutes(app, { dataDirectory: devryanDataDir, fsPromises, path, ownsSess…' },
+    { class: 'no-request', digest: 'faea4d13595beabc', text: 'const imageAssetsRuntime = createImageAssetsRuntime({ openCodeClient, fsPromises, path, os…', reads: ['createImageAssetsRuntime'], reason: (after) => `creates the image assets runtime; its routes are registered ${after ? 'after' : 'before'} the group by a not-applicable statement below` },
+    { through: 'imageAssetsRuntime', routes: 'the image assets routes', digest: '8d5d6b01f6ca7848', text: 'imageAssetsRuntime.registerRoutes(app);' },
+    { registrar: 'registerFsRoutes', routes: 'the fs routes', digest: '7d78e1dc6fb88bcc', text: 'registerFsRoutes(app, { os, path, fsPromises, spawn, crypto, normalizeDirectoryPath, resol…' },
+  ]),
+  // Each registrar's import (a not-applicable call's definition decides which module the reach check reads).
+  registrars: Object.freeze({
+    createImageAssetsRuntime: registrarDefinition('ab0c53379ffcf6da', "import { createImageAssetsRuntime } from '../image-assets/runtime.js';"),
+    registerConfigApplyRoutes: registrarDefinition('4d72f502bbed2f99', "import { registerConfigApplyRoutes } from './config-apply-runtime.js';"),
+    registerConfigEntityRoutes: registrarDefinition('9071d283143201c1', "import { registerConfigEntityRoutes } from './config-entity-routes.js'"),
+    registerFsRoutes: registrarDefinition('7120b61a0676e254', "import { registerFsRoutes } from '../fs/routes.js';"),
+    registerGitHubRoutes: registrarDefinition('9cf76418e9b2951d', "import { registerGitHubRoutes } from '../github/routes.js';"),
+    registerGitRoutes: registrarDefinition('9ff1af7009b6a596', "import { registerGitRoutes } from '../git/routes.js';"),
+    registerMagicPromptRoutes: registrarDefinition('a3047d3c7290e132', "import { registerMagicPromptRoutes } from '../magic-prompts/routes.js'"),
+    registerOpenCodeRoutes: registrarDefinition('d91ec94ac32364c8', "import { registerOpenCodeRoutes } from './routes.js';"),
+    registerProcessesRoutes: registrarDefinition('b407af537289a714', "import { registerProcessesRoutes } from '../processes/routes.js';"),
+    registerProjectIconRoutes: registrarDefinition('b5f2c0d3d1830efe', "import { registerProjectIconRoutes } from './project-icon-routes.js';"),
+    registerQuotaRoutes: registrarDefinition('4e032753e7854a7d', "import { registerQuotaRoutes } from '../quota/routes.js';"),
+    registerReadonlyPluginRoutes: registrarDefinition('925a677222456b41', "import { createPluginReadModel, registerReadonlyPluginRoutes } from '."),
+    registerScheduledTaskRoutes: registrarDefinition('dda8ea11ff1679bf', "import { registerScheduledTaskRoutes } from '../scheduled-tasks/routes"),
+    registerSessionFoldersRoutes: registrarDefinition('43cddbd6656da7d5', "import { registerSessionFoldersRoutes } from '../session-folders/route"),
+    registerSessionPlanRoutes: registrarDefinition('2365845dc276b991', "import { registerSessionPlanRoutes } from '../plans/routes.js';"),
+    registerSettingsUtilityRoutes: registrarDefinition('5f9023eea8a76969', "import { registerSettingsUtilityRoutes } from './core-routes.js';"),
+    registerSkillRoutes: registrarDefinition('24dff5c71e62496e', "import { registerSkillRoutes } from './skill-routes.js';"),
   }),
+  definitions: Object.freeze({
+    routeDependencies: def(['66648dcc399c6914'], [], 'the parameter the server\'s call fills', 'routeDependencies'),
+  }),
+});
+const BEFORE_GROUP = (routes) => `registers ${routes} only; the reach check proves none of its layers applies to the group's paths`;
+const AFTER_GROUP = 'registered after the group\'s call: Express runs it for the group\'s paths only when the group passes a request on, which the group host answers with its tail stand-in (599, kind tail)';
+
+/**
+ * The table of feature-routes-runtime.js for the group whose registrar is `call`: that call composed (the
+ * group's own, `group-call`), every other call not applicable by its place before or after it.
+ */
+export function featureRoutesTable(call) {
+  const at = FEATURE_ROUTES.statements.findIndex((statement) => statement.registrar === call);
+  if (at < 0) throw new Error(`composition: no registrar call ${call} in the feature routes table`);
+  const entries = FEATURE_ROUTES.statements.map((statement, index) => {
+    if (!statement.registrar && !statement.through) return entry(statement.class, statement.step ?? null, statement.digest, statement.text, statement.reads, typeof statement.reason === 'function' ? statement.reason(index > at) : statement.reason);
+    if (index === at) return entry('composed', 'group-call', statement.digest, statement.text, [statement.registrar, ...(statement.groupReads ?? [])], 'the group\'s own call, composed by the group table');
+    return entry('not-applicable', null, statement.digest, statement.text, [statement.registrar ?? statement.through], index < at ? BEFORE_GROUP(statement.routes) : AFTER_GROUP);
+  });
+  // The definitions in one fixed order, the pilot's literal table's: the group's own registrar, the parameter, then
+  // every other registrar by name. composition.mjs reports pinned definitions no statement reads in this order, so
+  // a table's problem lines come out in the same order on every run and for every group.
+  const own = FEATURE_ROUTES.registrars[call];
+  const definitions = { [call]: def([own.digest], [], 'imported from the registrar the group table names', own.text), ...FEATURE_ROUTES.definitions };
+  for (const [name, { digest, text }] of Object.entries(FEATURE_ROUTES.registrars).filter(([name]) => name !== call).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    definitions[name] = def([digest], [], 'the registrar\'s module, pinned: the reach check reads the census, which imports its own copy of it', text);
+  }
+  return Object.freeze({
+    file: FEATURE_ROUTES.file,
+    spec: Object.freeze({ functionNamed: 'registerRoutes', endCall: call }),
+    roots: 'first-parameter',
+    entries: Object.freeze(entries),
+    definitions: Object.freeze(definitions),
+  });
+}
+
+/** feature-routes-runtime.js up to each group's own call, per group (groups.mjs names each group's registrar). */
+export const GROUP_TABLES = Object.freeze({
+  'magic-prompts': featureRoutesTable('registerMagicPromptRoutes'),
+  'session-folders': featureRoutesTable('registerSessionFoldersRoutes'),
 });
 
 /** The composed steps of a table, in order, each once. */

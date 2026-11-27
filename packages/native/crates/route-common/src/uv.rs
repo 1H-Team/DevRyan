@@ -83,6 +83,11 @@ pub fn name_of(errno: i32) -> Option<&'static str> {
     common.iter().chain(platform).find(|(number, _)| *number == errno).map(|(_, name)| *name)
 }
 
+/// The error number of a name (the reverse of [`name_of`]).
+pub fn errno_of(name: &str) -> Option<i32> {
+    (1..512).find(|errno| name_of(*errno) == Some(name))
+}
+
 /// libuv's message for a name of the table.
 pub fn message_of(name: &str) -> Option<&'static str> {
     TABLE
