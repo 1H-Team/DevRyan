@@ -243,7 +243,11 @@ function same({ js, rust }, label, { unordered = false, handedBack } = {}) {
   // reads its input (the shim logs when each process runs: arrival's).
   const ordered = (commands) => commands.filter((command) => !/ hash-object /.test(command));
   if (!unordered) assert.deepEqual(ordered(rust.census.commands), ordered(js.census.commands), `${where()} ${label}: the Git commands' order differs`);
-  if (handedBack !== undefined) assert.equal(rust.census.handedBack.length, handedBack, `${where()} ${label}: the Rust asked Git ${rust.census.handedBack.length} times (${rust.census.handedBack.join('; ')})`);
+  // `handedBack: 'js'`: the readers' Git processes are the JavaScript's (a
+  // repository whose every name goes to Git): the same processes, one per
+  // reader (two readers' processes start in arrival order: as a multiset).
+  if (handedBack === 'js') assert.deepEqual(sorted(rust.census.handedBack), sorted(js.census.handedBack), `${where()} ${label}: the readers' Git processes differ\n  JavaScript: ${raw(js.census.handedBack)}\n  Rust:       ${raw(rust.census.handedBack)}`);
+  else if (handedBack !== undefined) assert.equal(rust.census.handedBack.length, handedBack, `${where()} ${label}: the Rust asked Git ${rust.census.handedBack.length} times (${rust.census.handedBack.join('; ')})`);
 }
 
 /** Makes the same directory on both arms: `build(dir)` once in a template, copied. */
@@ -911,7 +915,8 @@ describe('the reader: its deadline, environment, packs and listings (L3b fix rou
     prepare('batches', (dir) => ledger(dir, 'sha1', { records }));
     await clearSwitches(); await env({ GIT_REPLACE_REF_BASE: 'refs/other-replace/' });
     try {
-      same(await both({ op: 'store', id: 'batches', steps: [{ s: 'open', as: 'a', cwd: '<root>/batches', gitDir: '<root>/batches/git' }, { s: 'entries', st: 'a', prefix: 'big', take: 1 }] }), 'one batch of values', { handedBack: 256 });
+      // Every value is handed back, to the reader's one Git (fix round 2): what the JavaScript starts.
+      same(await both({ op: 'store', id: 'batches', steps: [{ s: 'open', as: 'a', cwd: '<root>/batches', gitDir: '<root>/batches/git' }, { s: 'entries', st: 'a', prefix: 'big', take: 1 }] }), 'one batch of values', { handedBack: 'js' });
     } finally { await env({ GIT_REPLACE_REF_BASE: null }); }
   });
 
@@ -926,6 +931,174 @@ describe('the reader: its deadline, environment, packs and listings (L3b fix rou
     assert.deepEqual(settled, baseline, `${where()} the census after the readers' idle close: ${raw({ baseline, settled })}`);
     // Everything of the block (the hang's killed hand-back, the FIFOs' Gits, every reader) is gone.
     assert.deepEqual({ readers: settled.readers, children: settled.children, threads: settled.threads, timeout: settled.timeout }, { readers: 0, children: 0, threads: 0, timeout: undefined }, `${where()} ${raw(settled)}`);
+  });
+});
+
+// --- Fix round 2: the reader's own Git, what it loads once, its bounds ------
+
+/** A fake Git directory with one `git` script (`<scratch>/fake/<name>/git`). */
+function fakeGit(name, body) {
+  fs.mkdirSync(fakeDir(name), { recursive: true });
+  fs.writeFileSync(path.join(fakeDir(name), 'git'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  return fakeDir(name);
+}
+
+describe('the reader\'s Git: one long-lived cat-file, what it loads once, its bounds (L3b fix round 2)', () => {
+  // Each case: a repository, the reads of a first request, a change made to
+  // both arms' copies while the readers live, the reads of a second request.
+  // Every answer and every Git start is the JavaScript's; where every name
+  // goes to Git, the readers' Git processes are the JavaScript's too.
+  const objectsOf = (arm, name, sub = 'git') => path.join(arm.root, name, sub, 'objects');
+  const alternates = (arm, name) => path.join(objectsOf(arm, name), 'info', 'alternates');
+  const pointAlternates = (name) => { for (const arm of arms) fs.writeFileSync(alternates(arm, name), `${objectsOf(arm, name, 'b')}\n`); };
+  const bare = (dir, sub) => { const gitDir = path.join(dir, sub); gitSync(['init', '--bare', '--quiet', gitDir]); return gitDir; };
+  const CASES = [
+    { name: 'a loose object deleted after it was read reads null', build: (dir) => ({ x: blobOf(bare(dir, 'git'), 'X1') }),
+      first: ({ x }) => [x], change: ({ x }, name) => { for (const arm of arms) fs.rmSync(loosePath(arm, name, x)); }, second: ({ x }) => [x], expect: [null] },
+    { name: 'a loose object packed and pruned after it was read is still found', build: (dir) => { const g = bare(dir, 'git'); const x = blobOf(g, 'X7'); gitSync(['--git-dir', g, 'update-ref', 'refs/k', x]); return { x }; },
+      first: ({ x }) => [x], change: (_, name) => { for (const arm of arms) { const g = path.join(arm.root, name, 'git'); gitSync(['--git-dir', g, 'repack', '-a', '-d', '-q']); gitSync(['--git-dir', g, 'prune-packed']); } }, second: ({ x }) => [x], expect: ['X7'] },
+    { name: 'a replace ref made after the first read is not used', build: (dir) => { const g = bare(dir, 'git'); return { x: blobOf(g, 'X2'), y: blobOf(g, 'Y2'), r: blobOf(g, 'R2') }; },
+      first: ({ y }) => [y], change: ({ x, r }, name) => { for (const arm of arms) gitSync(['--git-dir', path.join(arm.root, name, 'git'), 'update-ref', `refs/replace/${x}`, r]); }, second: ({ x }) => [x], expect: ['X2'] },
+    { name: 'a replace ref made after a first read of an absent id is not used', build: (dir) => { const g = bare(dir, 'git'); return { x: blobOf(g, 'X8'), r: blobOf(g, 'R8') }; },
+      first: () => ['e'.repeat(40), `${'e'.repeat(40)}:a`], change: ({ x, r }, name) => { for (const arm of arms) gitSync(['--git-dir', path.join(arm.root, name, 'git'), 'update-ref', `refs/replace/${x}`, r]); }, second: ({ x }) => [x], expect: ['X8'] },
+    { name: 'a replace ref removed after the first read is still used', build: (dir) => { const g = bare(dir, 'git'); const ids = { x: blobOf(g, 'X3'), y: blobOf(g, 'Y3'), r: blobOf(g, 'R3') }; gitSync(['--git-dir', g, 'update-ref', `refs/replace/${ids.x}`, ids.r]); return ids; },
+      first: ({ x }) => [x], change: ({ x }, name) => { for (const arm of arms) gitSync(['--git-dir', path.join(arm.root, name, 'git'), 'update-ref', '-d', `refs/replace/${x}`]); }, second: ({ x, y }) => [x, y], everyName: true, expect: ['R3', 'Y3'] },
+    { name: 'an alternates file written after the first read is not read', build: (dir) => ({ y: blobOf(bare(dir, 'git'), 'Y4'), z: blobOf(bare(dir, 'b'), 'Z4') }),
+      first: ({ y }) => [y], change: (_, name) => pointAlternates(name), second: ({ z }) => [z], expect: [null] },
+    { name: 'alternates present at the first read are kept after the file is removed', build: (dir) => { const b = bare(dir, 'b'); return { y: blobOf(bare(dir, 'git'), 'Y5'), z: blobOf(b, 'Z5'), z2: blobOf(b, 'Z5b') }; },
+      before: (name) => pointAlternates(name), first: ({ z }) => [z], change: (_, name) => { for (const arm of arms) fs.rmSync(alternates(arm, name)); }, second: ({ z2, y, z }) => [z2, y, z], everyName: true, expect: ['Z5b', 'Y5', 'Z5'] },
+    { name: 'alternates present at a first read that hit a local object are kept after the file is removed', build: (dir) => ({ y: blobOf(bare(dir, 'git'), 'Y6'), z: blobOf(bare(dir, 'b'), 'Z6') }),
+      before: (name) => pointAlternates(name), first: ({ y }) => [y], change: (_, name) => { for (const arm of arms) fs.rmSync(alternates(arm, name)); }, second: ({ z }) => [z], everyName: true, expect: ['Z6'] },
+    // SF2 of review 2: every name goes to Git (an unrelated replace ref); a pack the reader's Git read from is deleted.
+    { name: 'a pack a repack deleted is read by the reader\'s Git while it lives', build: (dir) => {
+      const g = ledger(dir, 'sha1', { records: { 'a/x.json': '{"x":1}', 'a/y.json': '{"y":2}' }, packed: true });
+      gitSync(['--git-dir', g, 'update-ref', `refs/replace/${blobOf(g, 'unrelated a')}`, blobOf(g, 'unrelated b')]);
+      return { tree: gitText(['--git-dir', g, 'rev-parse', 'refs/devryan/state']) };
+    }, first: ({ tree }) => [`${tree}:a/x.json`], change: (_, name) => { for (const arm of arms) { const g = path.join(arm.root, name, 'git'); gitSync(['--git-dir', g, 'update-ref', 'refs/devryan/state', gitText(['--git-dir', g, 'mktree'], { input: '' })]); gitSync(['--git-dir', g, 'repack', '-a', '-d', '-q']); gitSync(['--git-dir', g, 'prune-packed']); } },
+    second: ({ tree }) => [`${tree}:a/y.json`, tree], everyName: true, expect: ['{"y":2}', undefined] },
+  ];
+  CASES.forEach((entry, index) => {
+    test(`${entry.name}, as the JavaScript's long-lived reader answers`, async () => {
+      const name = `state-${index}`;
+      let ids;
+      prepare(name, (dir) => { ids = entry.build(dir); });
+      entry.before?.(name);
+      const gitDir = `<root>/${name}/git`;
+      // Both readers (`--batch`, `--batch-check`) open in the first request and live through the change.
+      const reads = (names) => names.flatMap((item) => [{ name: item }, { name: item, check: true }]);
+      const options = entry.everyName ? { handedBack: 'js' } : {};
+      same(await both(call('read', ['--git-dir', gitDir], { reads: reads(entry.first(ids)) })), `${entry.name}: the first reads`, options);
+      entry.change(ids, name);
+      const second = await both(call('read', ['--git-dir', gitDir], { reads: reads(entry.second(ids)) }));
+      same(second, `${entry.name}: the reads after the change`, options);
+      // What the JavaScript's reader answered (the experiment this case pins; undefined: not pinned).
+      const texts = second.js.answer.ok.filter((_, at) => at % 2 === 0).map((outcome) => (outcome.ok?.data ? Buffer.from(outcome.ok.data.$bytes, 'base64').toString() : 'ok' in outcome ? outcome.ok : outcome.error));
+      entry.expect.forEach((expected, at) => { if (expected !== undefined) assert.deepEqual(texts[at], expected, `${where()} ${entry.name}: the JavaScript's answer ${at}: ${raw(second.js.answer)}`); });
+    });
+  });
+
+  test('N10: the reader\'s Git starts with the environment of the reader\'s open, whenever its first hand-back comes', async () => {
+    prepare('open-env', (dir) => ledger(dir, 'sha1', { records: { 'a/x.json': '1' } }));
+    const tree = gitText(['--git-dir', path.join(arms[0].root, 'open-env', 'git'), 'rev-parse', 'refs/devryan/state']);
+    // A Git that answers `<tree>:<path>` with $MARKER and every other name missing.
+    const fake = fakeGit('marker', `while IFS= read -r name; do case "$name" in *:*) printf '%s blob %s\\n%s\\n' "${'ab'.repeat(20)}" "\${#MARKER}" "$MARKER" ;; *) printf '%s missing\\n' "$name" ;; esac; done`);
+    await env({ PATH: `${fake}:/usr/bin:/bin`, MARKER: 'at-open' });
+    try {
+      const gitDir = ['--git-dir', '<root>/open-env/git'];
+      // Answered in-process by the Rust, by the fake by the JavaScript: null on both.
+      same(await both(call('read', gitDir, { reads: [{ name: 'e'.repeat(40) }] })), 'a read before the change');
+      await env({ MARKER: 'changed' });
+      const handed = await both(call('read', gitDir, { reads: [{ name: `${tree}:./a` }] }));
+      same(handed, 'a hand-back after the change');
+      assert.equal(Buffer.from(handed.js.answer.ok[0].ok.data.$bytes, 'base64').toString(), 'at-open', `${where()} ${raw(handed.js.answer)}`);
+    } finally { await env({ PATH: basePath, MARKER: null }); }
+  });
+
+  test('N11: the reader\'s Git has its stderr ignored: 256 KiB of it per name blocks nothing', async () => {
+    prepare('stderr-flood', (dir) => ledger(dir, 'sha1', { records: { 'a/x.json': '1' } }));
+    const tree = gitText(['--git-dir', path.join(arms[0].root, 'stderr-flood', 'git'), 'rev-parse', 'refs/devryan/state']);
+    // Built-ins only: no process of its own.
+    const fake = fakeGit('stderr-flood', 's=x; i=0; while [ $i -lt 18 ]; do s="$s$s"; i=$((i+1)); done\nwhile IFS= read -r name; do printf \'%s\' "$s" >&2; printf \'%s missing\\n\' "$name"; done');
+    await env({ PATH: `${fake}:/usr/bin:/bin` });
+    try {
+      const started = Date.now();
+      const result = await both(call('read', ['--git-dir', '<root>/stderr-flood/git'], { reads: [{ name: `${tree}:./a` }, { name: `${tree}:./a`, check: true }, { name: `${tree}:./b` }] }));
+      same(result, 'hand-backs of a Git flooding its stderr');
+      assert.deepEqual(result.js.answer, { ok: [{ ok: null }, { ok: null }, { ok: null }] }, `${where()} ${raw(result.js.answer)}`);
+      // A bound, not a time: an unread stderr would hold the reads to the 30 s deadline.
+      assert.ok(Date.now() - started < 20_000, `the reads took ${Date.now() - started} ms`);
+    } finally { await env({ PATH: basePath }); }
+  });
+
+  for (const [label, target] of [['the pack index', 'idx'], ['config', 'config']]) {
+    test(`N17: a FIFO at ${label}: the read fails at the deadline on both arms and no thread is left blocked (census at baseline)`, async () => {
+      const name = `fifo-${target}`;
+      prepare(name, (dir) => ledger(dir, 'sha1', { records: { 'a/x.json': '{"x":1}' }, packed: true }));
+      const [x] = blobIds(name, ['a/x.json']);
+      const fifoOf = (arm) => {
+        const gitDir = path.join(arm.root, name, 'git');
+        if (target === 'config') return path.join(gitDir, 'config');
+        const pack = fs.readdirSync(path.join(gitDir, 'objects', 'pack')).find((file) => file.endsWith('.idx'));
+        return path.join(gitDir, 'objects', 'pack', pack);
+      };
+      const baseline = await arms[1].server.request({ op: 'census', settle: true });
+      const fifos = arms.map(fifoOf);
+      for (const fifo of fifos) { fs.rmSync(fifo); assert.equal(spawnSync('mkfifo', [fifo]).status, 0, 'mkfifo'); }
+      try {
+        const result = await both({ op: 'store', id: name, steps: [
+          { s: 'concurrent', steps: [{ s: 'read', cwd: `<root>/${name}`, args: ['--git-dir', `<root>/${name}/git`], name: x }, { s: 'skew', ms: 31_000, after: 1_500 }] },
+          { s: 'skew', ms: 0 },
+        ] });
+        same(result, `a FIFO at ${label}`, { unordered: true });
+        assert.equal(result.js.answer.ok[0].ok[0].error?.$error?.code, 'capture_timeout', `${where()} ${raw(result.js.answer)}`);
+        const settled = await arms[1].server.request({ op: 'census', settle: true });
+        assert.deepEqual(settled, baseline, `${where()} a FIFO at ${label}: the census after the reader's close: ${raw({ baseline, settled })}`);
+      } finally { for (const fifo of fifos) fs.rmSync(fifo, { force: true }); }
+    });
+  }
+
+  test('N23: a 256-value batch handed back has one cat-file alive at a time, the reader\'s one (the PATH shim counts the live ones at each start)', async () => {
+    const records = Object.fromEntries(Array.from({ length: 300 }, (_, index) => [`big/k${String(index).padStart(3, '0')}.json`, String(index)]));
+    prepare('alive', (dir) => ledger(dir, 'sha1', { records }));
+    // At each `cat-file` start: how many cat-files it logged before are still alive (`kill -0`), then the real Git.
+    const fake = fakeGit('alive', `case "$*" in *cat-file*) alive=0; if [ -f "$ALIVE_LOG" ]; then while read -r word pid rest; do if [ "$word" = start ] && kill -0 "$pid" 2>/dev/null; then alive=$((alive+1)); fi; done < "$ALIVE_LOG"; fi; printf 'start %s alive=%s %s\\n' "$$" "$alive" "$*" >> "$ALIVE_LOG" ;; esac\nexec '${realGit}' "$@"`);
+    const logs = arms.map((arm) => path.join(arm.root, 'alive.log'));
+    await clearSwitches(); await env({ GIT_REPLACE_REF_BASE: 'refs/other-replace/', PATH: `${fake}:/usr/bin:/bin`, ALIVE_LOG: '<root>/alive.log' });
+    try {
+      const result = await both({ op: 'store', id: 'alive', steps: [{ s: 'open', as: 'a', cwd: '<root>/alive', gitDir: '<root>/alive/git' }, { s: 'entries', st: 'a', prefix: 'big', take: 1 }] });
+      same(result, 'one batch of values through the alive shim');
+      const [js, rust] = logs.map((log) => fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((line) => { const [, pid, alive, ...rest] = line.split(' '); return { pid, alive: Number(alive.slice(6)), args: rooted(rest.join(' '), arms[logs.indexOf(log)]) }; }));
+      const readers = (starts) => starts.filter((start) => / cat-file --batch(-check)?$/.test(start.args));
+      assert.deepEqual(readers(rust).map((start) => start.args), readers(js).map((start) => start.args), `${where()} the readers' Git processes differ\n  JavaScript: ${raw(js)}\n  Rust:       ${raw(rust)}`);
+      assert.ok(readers(rust).length >= 1, `${where()} the values were not handed back: ${raw(rust)}`);
+      const most = Math.max(...rust.map((start) => start.alive + 1));
+      assert.ok(most <= 1, `${where()} ${most} cat-files alive at once in the Rust: ${raw(rust)}`);
+    } finally { await env({ GIT_REPLACE_REF_BASE: null, PATH: basePath, ALIVE_LOG: null }); for (const log of logs) fs.rmSync(log, { force: true }); }
+  });
+
+  test('N24, N25: what the reader\'s spawn refuses (a NUL in the directory, in a 2,000- and a 10,056-character argument) is thrown at once on both arms', async () => {
+    // No arm's own directory in the refused strings: Node's message shows them. The message shows 128
+    // characters of `inspect`, which cuts at 10,000 first and quotes the cut string: a `'` at 1,500 makes it
+    // double-quoted (N25: a cut at 1,000 would leave it single-quoted).
+    const long = `/nonexistent-dir/${'d'.repeat(5)}\u0000${'d'.repeat(1_500)}'${'d'.repeat(8_550)}`;
+    // And one of 2,000 characters: under inspect's cut, over 1,000.
+    const middle = `/nonexistent-dir/${'d'.repeat(5)}\u0000${'d'.repeat(1_980)}`;
+    for (const [label, cwd, args] of [['a NUL in the directory', '/nonexistent-dir/a\u0000b', ['--git-dir', '/nonexistent-dir/x']], ['a NUL in a long argument', '/nonexistent-dir', ['--git-dir', long]],
+      ['a NUL in a 2,000-character argument', '/nonexistent-dir', ['--git-dir', middle]]]) {
+      const result = await both(call('read', args, { cwd, reads: [{ name: 'ab'.repeat(20) }, { name: '' }] }));
+      same(result, label, { handedBack: 0 });
+      assert.equal(result.js.answer.ok[0].ok?.thrown?.$error?.code, 'ERR_INVALID_ARG_VALUE', `${where()} ${label}: ${raw(result.js.answer)}`);
+      if (label.includes('long')) assert.match(result.js.answer.ok[0].ok.thrown.$error.message, /Received "\/nonexistent-dir\//, `${where()} ${label}: ${raw(result.js.answer)}`);
+    }
+  });
+
+  test('the descriptor limit at the first hand-back (the Rust alone: the JavaScript\'s reader dies of it at its open, a defect not reproduced): every read fails capture_git_failed, the census comes back', async () => {
+    prepare('fd-limit', (dir) => ledger(dir, 'sha1', { records: { 'a/x.json': '1' } }));
+    const baseline = await arms[1].server.request({ op: 'census', settle: true });
+    const answer = await arms[1].server.request(placed(call('read', ['--git-dir', '<root>/fd-limit/git'], { reads: [{ name: 'ab'.repeat(20) }, { name: 'cd'.repeat(20), check: true }], atDescriptorLimit: 0 }), arms[1]));
+    for (const outcome of answer.ok ?? [answer]) assert.equal(outcome.error?.$error?.code, 'capture_git_failed', `${where()} ${raw(answer)}`);
+    const settled = await arms[1].server.request({ op: 'census', settle: true });
+    assert.deepEqual(settled, baseline, `${where()} the census after the descriptor limit: ${raw({ baseline, settled })}`);
   });
 });
 

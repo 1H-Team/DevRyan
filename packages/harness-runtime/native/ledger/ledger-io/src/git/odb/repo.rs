@@ -174,15 +174,22 @@ impl Repository {
     /// Why an object found nowhere may still exist: alternates (checked on
     /// every miss, as they may appear later) or a promisor remote.
     pub(crate) fn miss_reason(&self) -> Option<AskGit> {
+        self.alternates_reason().or_else(|| self.promisor_reason())
+    }
+
+    /// `objects/info/alternates` exists (or cannot be checked).
+    pub(crate) fn alternates_reason(&self) -> Option<AskGit> {
         match std::fs::symlink_metadata(format!("{}/objects/info/alternates", self.git_dir)) {
-            Ok(_) => return Some(AskGit::new(Reason::Alternates, "objects/info/alternates")),
-            Err(error) if not_found(&error) => {}
-            Err(error) => return Some(io_ask(&error, "alternates")),
+            Ok(_) => Some(AskGit::new(Reason::Alternates, "objects/info/alternates")),
+            Err(error) if not_found(&error) => None,
+            Err(error) => Some(io_ask(&error, "alternates")),
         }
-        if self.promisor {
-            return Some(AskGit::new(Reason::Promisor, "a promisor remote"));
-        }
-        None
+    }
+
+    /// A promisor remote is configured.
+    pub(crate) fn promisor_reason(&self) -> Option<AskGit> {
+        self.promisor
+            .then(|| AskGit::new(Reason::Promisor, "a promisor remote"))
     }
 
     /// Asks Git while replace refs exist (Git would answer with the

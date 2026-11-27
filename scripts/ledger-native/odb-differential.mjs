@@ -24,7 +24,7 @@
 // this run's scratch, removed on success, failure and interruption.
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { after, before, describe, test } from 'node:test';
@@ -670,6 +670,50 @@ describe('e. reads while repack and prune run on the same repository', () => {
       assert.ok(counts.found > 0 && counts.rounds >= 1);
     });
   }
+});
+
+// A probe call past its deadline (the hang of L3b's extended run, never
+// reproduced): the probe reports what it was doing before it is killed, and
+// the repository is kept for that one failure.
+describe('the probe\'s deadline report (L3b fix round 2)', () => {
+  test('a probe past ODB_PROBE_DEADLINE_MS writes the request it was in and, on macOS, the top of sample\'s call graph, and exits 124', () => {
+    const root = directory('deadline');
+    const gitDir = init(path.join(root, 'repo'));
+    // Its stdin a FIFO this process holds open for writing: the probe waits on it, before any request.
+    const fifo = path.join(root, 'stdin');
+    assert.equal(spawnSync('mkfifo', [fifo]).status, 0, 'mkfifo');
+    const held = openSync(fifo, 'r+');
+    try {
+      const result = spawnSync(probe, ['batch-check', gitDir], { stdio: [held, 'pipe', 'pipe'], env: probeEnv({ ODB_PROBE_DEADLINE_MS: '200', ODB_PROBE_PROGRESS: '1' }), timeout: 120_000, killSignal: 'SIGKILL' });
+      const stderr = result.stderr.toString();
+      const where = `[${process.platform} ${process.arch}, ${gitVersion(env)}]`;
+      assert.equal(result.status, 124, `${where} the probe ended ${result.status ?? result.signal}: ${stderr}`);
+      assert.match(stderr, /^deadline: odb-probe batch-check \S+ still running after 200 ms; answering request \(none begun\)$/m, `${where} ${stderr}`);
+      if (existsSync('/usr/bin/sample')) assert.match(stderr, /sample \(top frames\):\nCall graph:/, `${where} ${stderr}`);
+      else assert.match(stderr, /no sample tool here/, `${where} ${stderr}`);
+    } finally { closeSync(held); }
+  });
+
+  test('runProbe names a deadline\'s last request, the repository\'s counts and where it is kept (moved out of the scratch)', () => {
+    const root = directory('deadline-runner');
+    const gitDir = init(path.join(root, 'repo'));
+    runGit(env, gitDir, ['hash-object', '-w', '--stdin'], { input: 'one' });
+    // A stand-in probe: two requests begun, then its report and status 124.
+    const fake = path.join(root, 'fake-probe');
+    writeFileSync(fake, '#!/bin/sh\nprintf \'progress 0 aaa\\nprogress 1 bbb\\ndeadline: the report\\n\' >&2\nexit 124\n', { mode: 0o755 });
+    let message = '';
+    try { runProbe(fake, ['batch-check', gitDir], { input: 'aaa\nbbb\nccc\n', env: probeEnv() }); } catch (error) { message = error.message; }
+    const kept = /kept at (\S+)\n/.exec(message)?.[1];
+    try {
+      assert.match(message, /passed its 300000 ms deadline .*held 3 requests; the last begun: 1 bbb; the repository's 0 packs and 1 loose objects, kept at /, message);
+      assert.match(message, /\ndeadline: the report$/, message);
+      assert.ok(kept && existsSync(path.join(kept, 'objects')) && !existsSync(gitDir), `the repository was not moved: ${message}`);
+      assert.ok(kept.startsWith(`${scratchParent('ledger-native')}${path.sep}odb-probe-deadline-`), kept);
+    } finally {
+      // This run's own copy: the directory the message named (the test passed, so nothing is kept).
+      if (kept && /odb-probe-deadline-[^/]+\/git$/.test(kept)) rmSync(path.dirname(kept), { recursive: true, force: true });
+    }
+  });
 });
 
 // The gate runs half the rounds; the extended run (EXTENDED_VARIABLE set) all

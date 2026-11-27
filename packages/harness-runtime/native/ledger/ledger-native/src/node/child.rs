@@ -313,7 +313,7 @@ pub fn spawn(options: Spawn) -> Result<ChildProcess, W> {
 /// `TypeError`. The texts are UTF-8 here, so a lone surrogate the caller's
 /// string held shows as U+FFFD in the message where Node shows `\ud800`
 /// (no Git output reaches it: Git's output is decoded as UTF-8 first).
-fn refused_arguments(options: &Spawn) -> Option<W> {
+pub(crate) fn refused_arguments(options: &Spawn) -> Option<W> {
     use super::fs::{inspect_string, invalid_arg_value};
     const NO_NUL: &str = "must be a string without null bytes";
     let nul = |name: &str, value: &str, reason: &str| {

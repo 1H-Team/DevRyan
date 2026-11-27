@@ -11,7 +11,9 @@
 //!   with: the repository's database, opened on the reader's own thread
 //!   and kept for the reader's life (the JavaScript's `cat-file` process:
 //!   one per reader, names answered in order, its packs kept open as Git
-//!   keeps them), each name as [`Lookup`]: the object, "missing", Git's
+//!   keeps them, replace refs and alternates read once at its first lookup
+//!   as Git loads them, `OdbOptions::snapshot`), each name as [`Lookup`]:
+//!   the object, "missing", Git's
 //!   `<id> submodule`, or "ask Git" with the reason. A read that blocks in a
 //!   system call blocks that reader's thread only, never the I/O pool, as a
 //!   stuck `cat-file` blocks only its process; the reader's deadline then
@@ -105,6 +107,7 @@ impl ObjectReader {
                     &git_dir,
                     OdbOptions {
                         ask_gitlinks: true,
+                        snapshot: true,
                         ..OdbOptions::default()
                     },
                 )

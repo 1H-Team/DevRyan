@@ -1391,3 +1391,103 @@ fn the_database_is_shared_between_threads() {
     shareable::<Odb>();
     shareable::<Repository>();
 }
+
+/// Fix round 2 of L3b: with `OdbOptions::snapshot` the database reads as one
+/// long-lived `cat-file` does. Replace refs and an alternates file are read
+/// at the first lookup (the first name that is an id): present then, every
+/// later read asks Git, after they are gone too; absent then, ones made
+/// later are not read. A name that is no id asks Git before that lookup.
+#[test]
+fn a_snapshot_reads_replace_refs_and_alternates_once_at_the_first_lookup() {
+    let format = ObjectFormat::Sha1;
+    let snapshot = |repo: &Scratch| {
+        Odb::open(
+            &repo.0,
+            OdbOptions {
+                snapshot: true,
+                ..OdbOptions::default()
+            },
+        )
+        .expect("opens")
+    };
+    let found = |answer: Answer<NameLookup>| matches!(answer, Ok(NameLookup::Found(_)));
+    let replace = |repo: &Scratch, oid: &Oid| {
+        std::fs::create_dir_all(format!("{}/refs/replace", repo.0)).expect("refs/replace");
+        std::fs::write(format!("{}/refs/replace/{oid}", repo.0), format!("{oid}\n")).expect("ref");
+    };
+    let alternates = |repo: &Scratch| format!("{}/objects/info/alternates", repo.0);
+
+    // Absent at the first lookup: a replace ref and an alternates file made later are not read.
+    let repo = Scratch::repo("snapshot-absent", format);
+    let x = loose_object(&repo, format, Kind::Blob, b"x");
+    let odb = snapshot(&repo);
+    assert!(found(odb.read_name(x.hex().as_bytes(), false)));
+    replace(&repo, &x);
+    std::fs::write(alternates(&repo), "/nonexistent/objects\n").expect("alternates");
+    assert!(found(odb.read_name(x.hex().as_bytes(), false)));
+    assert_eq!(
+        odb.read_name("e".repeat(40).as_bytes(), true),
+        Ok(NameLookup::Missing)
+    );
+    // Without the snapshot the same repository asks Git (replace refs on every read).
+    assert_eq!(
+        reason(open(&repo).read_name(x.hex().as_bytes(), false)),
+        Reason::ReplaceRefs
+    );
+
+    // Present at the first lookup: every read asks Git, after they are gone too.
+    for (name, make, gone, why) in [
+        ("snapshot-replace", true, "refs", Reason::ReplaceRefs),
+        (
+            "snapshot-alternates",
+            false,
+            "alternates",
+            Reason::Alternates,
+        ),
+    ] {
+        let repo = Scratch::repo(name, format);
+        let x = loose_object(&repo, format, Kind::Blob, b"x");
+        if make {
+            replace(&repo, &x);
+        } else {
+            std::fs::write(alternates(&repo), "/nonexistent/objects\n").expect("alternates");
+        }
+        let odb = snapshot(&repo);
+        // A name that is no id asks Git without being the first lookup.
+        assert_eq!(reason(odb.read_name(b"HEAD", false)), Reason::NameSyntax);
+        assert_eq!(
+            reason(odb.read_name(x.hex().as_bytes(), false)),
+            why,
+            "{gone}"
+        );
+        if make {
+            std::fs::remove_dir_all(format!("{}/refs/replace", repo.0)).expect("gone");
+        } else {
+            std::fs::remove_file(alternates(&repo)).expect("gone");
+        }
+        assert_eq!(
+            reason(odb.read_name(x.hex().as_bytes(), true)),
+            why,
+            "{gone} removed"
+        );
+        assert!(
+            found(open(&repo).read_name(x.hex().as_bytes(), false)),
+            "a fresh reader"
+        );
+    }
+
+    // The first lookup is the first id: a replace ref made after a name that
+    // is no id, before the first id, is read.
+    let repo = Scratch::repo("snapshot-late", format);
+    let x = loose_object(&repo, format, Kind::Blob, b"x");
+    let odb = snapshot(&repo);
+    assert_eq!(
+        reason(odb.read_name(b"not-an-id", false)),
+        Reason::NameSyntax
+    );
+    replace(&repo, &x);
+    assert_eq!(
+        reason(odb.read_name(x.hex().as_bytes(), false)),
+        Reason::ReplaceRefs
+    );
+}

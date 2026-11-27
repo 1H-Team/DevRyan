@@ -9,20 +9,63 @@
 // Where the probe answers "ask Git" the case must be one the test expected
 // (`expectAsk`, with its reason); anywhere else its answer must be Git's.
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 
+import { scratchParent } from '../qa/run-root.mjs';
 import { hashOf, runGit } from './odb-repos.mjs';
 
-/** No probe call of the oracle needs minutes; a stuck one is killed and named. */
+/** No probe call of the oracle needs minutes; a stuck one reports what it was doing, then is named. */
 const PROBE_DEADLINE_MS = 300_000;
+/** The probe's own deadline report (`sample` included) has this long before the call is killed unexamined. */
+const REPORT_GRACE_MS = 90_000;
+/** The probe's exit status after its deadline report. */
+const DEADLINE_EXIT = 124;
 
-/** Runs the probe; stdout as a Buffer. */
+/** `{ packs, loose }` of a repository's object directory (counted after a failure). */
+function objectCounts(gitDir) {
+  const objects = path.join(gitDir, 'objects');
+  const count = (dir, keep) => { try { return fs.readdirSync(dir).filter(keep).length; } catch { return 0; } };
+  const fanout = count(objects, () => true) ? fs.readdirSync(objects).filter((name) => /^[0-9a-f]{2}$/.test(name)) : [];
+  return { packs: count(path.join(objects, 'pack'), (name) => name.endsWith('.pack')), loose: fanout.reduce((sum, dir) => sum + count(path.join(objects, dir), () => true), 0) };
+}
+
+/**
+ * A probe call past its deadline: the repository (`args[1]`) moved out of the
+ * run's scratch, so it outlives the cleanup as with --keep-artifacts, for
+ * this one failure; its new path, its pack and loose counts, the probe's
+ * report and its last request in the message.
+ */
+function deadlineFailure(args, input, stderr, how) {
+  const lines = stderr.split('\n');
+  const last = lines.filter((line) => line.startsWith('progress ')).at(-1) ?? '(no request begun)';
+  const report = lines.filter((line) => !line.startsWith('progress ')).join('\n').trim().slice(-12_000);
+  const gitDir = args[1];
+  let kept = '(no repository argument)', counts = {};
+  if (gitDir && fs.existsSync(path.join(gitDir, 'objects'))) {
+    counts = objectCounts(gitDir);
+    const parent = scratchParent('ledger-native');
+    fs.mkdirSync(parent, { recursive: true, mode: 0o700 });
+    kept = fs.mkdtempSync(path.join(parent, 'odb-probe-deadline-'));
+    try { fs.renameSync(gitDir, path.join(kept, 'git')); } catch { fs.cpSync(gitDir, path.join(kept, 'git'), { recursive: true }); }
+    kept = path.join(kept, 'git');
+  }
+  const names = input === undefined ? 0 : String(input).split('\n').filter(Boolean).length;
+  return new Error(`odb-probe ${args.join(' ')} ${how} (${process.platform} ${process.arch}); its input held ${names} requests; the last begun: ${last.replace(/^progress /, '')}; `
+    + `the repository's ${counts.packs ?? '?'} packs and ${counts.loose ?? '?'} loose objects, kept at ${kept}\n${report || '(the probe reported nothing)'}`);
+}
+
+/** Runs the probe; stdout as a Buffer, stderr without its progress lines. */
 export function runProbe(probe, args, { input, env = process.env } = {}) {
-  const result = spawnSync(probe, args, { input, env, maxBuffer: 1 << 30, timeout: PROBE_DEADLINE_MS, killSignal: 'SIGKILL' });
+  const result = spawnSync(probe, args, { input, env: { ...env, ODB_PROBE_PROGRESS: '1', ODB_PROBE_DEADLINE_MS: String(PROBE_DEADLINE_MS) },
+    maxBuffer: 1 << 30, timeout: PROBE_DEADLINE_MS + REPORT_GRACE_MS, killSignal: 'SIGKILL' });
+  const stderr = result.stderr?.toString() ?? '';
   if (result.error) {
-    if (result.error.code === 'ETIMEDOUT') throw new Error(`odb-probe ${args.join(' ')} did not finish within ${PROBE_DEADLINE_MS} ms and was killed`);
+    if (result.error.code === 'ETIMEDOUT') throw deadlineFailure(args, input, stderr, `did not finish within ${PROBE_DEADLINE_MS + REPORT_GRACE_MS} ms nor report its own deadline, and was killed`);
     throw result.error;
   }
-  return { status: result.status, stdout: result.stdout, stderr: result.stderr.toString() };
+  if (result.status === DEADLINE_EXIT) throw deadlineFailure(args, input, stderr, `passed its ${PROBE_DEADLINE_MS} ms deadline`);
+  return { status: result.status, stdout: result.stdout, stderr: stderr.split('\n').filter((line) => !line.startsWith('progress ')).join('\n') };
 }
 
 /** The probe's output, which must be a success. */

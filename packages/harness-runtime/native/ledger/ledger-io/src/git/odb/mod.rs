@@ -429,6 +429,14 @@ pub struct OdbOptions {
     /// submodule` since 2.51, `<name> missing` before), so a reader that
     /// must give what the installed Git gives leaves it to Git.
     pub ask_gitlinks: bool,
+    /// Read as one long-lived Git process reads (a persistent `cat-file`):
+    /// what Git loads once per process, at its first object lookup, is read
+    /// once here too, at the first name that reaches the database, and kept.
+    /// Replace refs then present, or `objects/info/alternates`, make every
+    /// later read ask Git, even after they are gone; absent then, refs and an
+    /// alternates file made later are not read (Git loads the replace map
+    /// once, and reads the alternates file once per process).
+    pub snapshot: bool,
 }
 
 impl Default for OdbOptions {
@@ -441,6 +449,7 @@ impl Default for OdbOptions {
             max_tree_depth: 4096,
             max_listing_rows: 10_000_000,
             ask_gitlinks: false,
+            snapshot: false,
         }
     }
 }
@@ -493,6 +502,9 @@ pub struct Odb {
     repo: Repository,
     options: OdbOptions,
     packs: Mutex<PackSet>,
+    /// With `OdbOptions::snapshot`: what the first lookup found (`None`
+    /// before it; then why every read asks Git, or nothing).
+    snapshot: Mutex<Option<Option<AskGit>>>,
 }
 
 /// How many times a miss lists `objects/pack` again while packs vanish under it.
@@ -506,7 +518,45 @@ impl Odb {
             repo: Repository::open(git_dir)?,
             options,
             packs: Mutex::new(PackSet::default()),
+            snapshot: Mutex::new(None),
         })
+    }
+
+    /// Asks Git where Git would read through replace refs or, with
+    /// `OdbOptions::snapshot`, through what the first lookup found (replace
+    /// refs or an alternates file then present ask Git for every read).
+    fn check_process(&self) -> Answer<()> {
+        if !self.options.snapshot {
+            return self.repo.check_replace_refs();
+        }
+        let mut taken = self
+            .snapshot
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let found = match &*taken {
+            Some(found) => found.clone(),
+            None => {
+                let found = self
+                    .repo
+                    .check_replace_refs()
+                    .err()
+                    .or_else(|| self.repo.alternates_reason());
+                *taken = Some(found.clone());
+                found
+            }
+        };
+        found.map_or(Ok(()), Err)
+    }
+
+    /// Why an object found nowhere may still exist (`Repository::miss_reason`);
+    /// with `OdbOptions::snapshot` the alternates file was read at the first
+    /// lookup (`check_process`), so only a promisor counts here.
+    fn miss_reason(&self) -> Option<AskGit> {
+        if self.options.snapshot {
+            self.repo.promisor_reason()
+        } else {
+            self.repo.miss_reason()
+        }
     }
 
     pub fn repository(&self) -> &Repository {
@@ -533,7 +583,7 @@ impl Odb {
     /// delta's own header and its chain's entry headers).
     pub fn info(&self, oid: &Oid) -> Answer<Option<ObjectInfo>> {
         self.check_id(oid)?;
-        self.repo.check_replace_refs()?;
+        self.check_process()?;
         if self.options.verify_ids {
             return Ok(self.read_object(oid, true)?.map(|object| ObjectInfo {
                 kind: object.kind,
@@ -555,14 +605,14 @@ impl Odb {
     /// content is hashed and compared with `oid`.
     pub fn read(&self, oid: &Oid) -> Answer<Option<Object>> {
         self.check_id(oid)?;
-        self.repo.check_replace_refs()?;
+        self.check_process()?;
         self.read_object(oid, self.options.verify_ids)
     }
 
     /// As `read`, always checking the id.
     pub fn read_verified(&self, oid: &Oid) -> Answer<Option<Object>> {
         self.check_id(oid)?;
-        self.repo.check_replace_refs()?;
+        self.check_process()?;
         self.read_object(oid, true)
     }
 
@@ -580,19 +630,32 @@ impl Odb {
 
     /// One `cat-file --batch` (or, with `check`, `--batch-check`) name: a full
     /// lowercase id or `<tree id>:<path>`. Git's other spellings ask Git.
+    ///
+    /// With `OdbOptions::snapshot` the first name that is an id of the
+    /// repository's format (alone or before `:`) is the first lookup: a name
+    /// Git would not look up an object for asks Git before it.
     pub fn read_name(&self, name: &[u8], check: bool) -> Answer<NameLookup> {
-        self.repo.check_replace_refs()?;
+        if !self.options.snapshot {
+            self.check_process()?;
+        }
         let (oid, gitlink) = match name.iter().position(|byte| *byte == b':') {
-            None => (
-                Oid::from_hex_bytes(name)
-                    .ok_or_else(|| AskGit::new(Reason::NameSyntax, "not a full lowercase id"))?,
-                false,
-            ),
+            None => {
+                let oid = Oid::from_hex_bytes(name)
+                    .ok_or_else(|| AskGit::new(Reason::NameSyntax, "not a full lowercase id"))?;
+                if self.options.snapshot {
+                    self.check_id(&oid)?;
+                    self.check_process()?;
+                }
+                (oid, false)
+            }
             Some(colon) => {
                 let tree = Oid::from_hex_bytes(&name[..colon]).ok_or_else(|| {
                     AskGit::new(Reason::NameSyntax, "not a full lowercase id before ':'")
                 })?;
                 self.check_id(&tree)?;
+                if self.options.snapshot {
+                    self.check_process()?;
+                }
                 match walk::resolve_path(self, &tree, &name[colon + 1..])? {
                     None => return Ok(NameLookup::Missing),
                     Some((_, mode)) if mode == b"160000" && self.options.ask_gitlinks => {
@@ -633,7 +696,7 @@ impl Odb {
     /// otherwise (empty, relative, empty components).
     pub fn resolve_path(&self, tree: &Oid, path: &[u8]) -> Answer<Option<(Oid, Vec<u8>)>> {
         self.check_id(tree)?;
-        self.repo.check_replace_refs()?;
+        self.check_process()?;
         walk::resolve_path(self, tree, path)
     }
 
@@ -642,7 +705,7 @@ impl Odb {
     /// order (see `walk`).
     pub fn list_tree(&self, tree: &Oid, prefix: Option<&str>) -> Answer<Vec<TreeRow>> {
         self.check_id(tree)?;
-        self.repo.check_replace_refs()?;
+        self.check_process()?;
         walk::list_tree(self, tree, prefix)
     }
 
@@ -650,12 +713,12 @@ impl Odb {
     /// `cat-file --batch-all-objects` visits them: loose objects with a
     /// well-formed name and every object of every pack index.
     pub fn all_object_ids(&self) -> Answer<Vec<Oid>> {
-        self.repo.check_replace_refs()?;
+        self.check_process()?;
         let (packs, unknown) = self.rescan()?;
         if let Some(unknown) = unknown {
             return Err(unknown);
         }
-        if let Some(reason) = self.repo.miss_reason() {
+        if let Some(reason) = self.miss_reason() {
             return Err(reason);
         }
         let mut ids: Vec<Oid> = loose::list(self.repo.git_dir(), self.format())?;
@@ -772,7 +835,7 @@ impl Odb {
         if let Some(unknown) = unknown {
             return Err(unknown);
         }
-        if let Some(reason) = self.repo.miss_reason() {
+        if let Some(reason) = self.miss_reason() {
             return Err(reason);
         }
         Ok(None)

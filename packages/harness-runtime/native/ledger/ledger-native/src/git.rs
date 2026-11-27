@@ -22,17 +22,24 @@
 //!   reader (a gitlink's `<id> submodule`, the defect of
 //!   `session-changes-git.js:221-226`; a malformed header; a `cat-file`
 //!   that died) rejects every request still pending on that reader. A name
-//!   the database cannot answer exactly ("ask Git") is handed to a Git
-//!   process for that one name (`cat-file --batch[-check]`, stderr ignored,
-//!   as the reader's), parsed as the reader parses.
+//!   the database cannot answer exactly ("ask Git") is handed back to the
+//!   reader's own Git: the JavaScript reader's long-lived `cat-file
+//!   --batch[-check]` (same arguments, the environment of the reader's
+//!   open, stderr ignored), started at the reader's first hand-back and
+//!   kept for the reader's life, names written to it in order and its
+//!   output parsed as the reader parses it. One process per reader, so a
+//!   reader whose every name goes to Git starts what the JavaScript's
+//!   starts, and what Git loads once per process (the packs it mapped, a
+//!   deleted one included, the replace map) is that one process's.
 //! - [`create_owned_git_runner`], [`persistent_git_readers`],
 //!   [`change_error`], [`git_failure`].
 //!
 //! The reader keeps the JavaScript reader's life: its 15 s idle close, its
 //! watchdog (each second, the oldest pending read older than 30 s by
-//! `Date.now()` closes it with `capture_timeout` 503, killing its hand-backs
-//! and failing every pending read), and its other closes; its database
-//! (packs kept open as Git keeps them) lives exactly as long.
+//! `Date.now()` closes it with `capture_timeout` 503, killing its Git and
+//! failing every pending read), and its other closes; its database (packs
+//! kept open as Git keeps them, replace refs and alternates read once, at
+//! its first lookup, as Git reads them) and its Git live exactly as long.
 //!
 //! Not ported: `gitToFile` (a descriptor as stdout; only
 //! `session-changes.js` calls it, outside the worker) and the reader's
@@ -904,8 +911,27 @@ enum Answered {
     Close(Option<W>),
 }
 
-/// A name waiting for its hand-back, and where its answer goes.
-type Queued = (Vec<u8>, Resolvers<Answered, W>);
+/// The reader's Git for its hand-backs.
+enum Process {
+    /// No name was handed back yet.
+    NotStarted,
+    Running(Rc<HandBack>),
+    /// Its spawn threw: every hand-back is answered so.
+    Failed(Answered),
+}
+
+/// The reader's long-lived `cat-file`: the names written to it and not yet
+/// answered, in order, and its output not yet parsed.
+struct HandBack {
+    child: ChildProcess,
+    waiting: RefCell<VecDeque<Resolvers<Answered, W>>>,
+    buffer: RefCell<Vec<u8>>,
+    /// It died or was killed: nothing more is written to it.
+    dead: Cell<bool>,
+    /// The loop's sources its spawn opened (its exit waiter, its stdout's
+    /// reader), open for its life (tests: [`reader_process_sources`]).
+    sources: usize,
+}
 
 struct Request {
     /// `Date.now()` when it was queued (the watchdog's clock).
@@ -916,26 +942,24 @@ struct Request {
 
 /// One persistent reader: the JavaScript's `cat-file` process and its
 /// bookkeeping, with the process's part done by [`odb::ObjectReader`] (the
-/// database on a thread of its own, for the reader's life) and, for a name
-/// the database leaves to Git, a `cat-file` of that one name.
+/// database on a thread of its own, for the reader's life) and, for the
+/// names the database leaves to Git, the reader's own `cat-file`.
 struct Reader {
     key: String,
     cwd: String,
     args: Vec<String>,
     check: bool,
     /// The environment the JavaScript's reader process gets at its start
-    /// (`gitEnvironment(process.env)`): every hand-back starts with it.
+    /// (`gitEnvironment(process.env)` at the reader's open): its Git starts
+    /// with it, whenever the first hand-back comes.
     env: Vec<(String, String)>,
     database: Option<odb::ObjectReader>,
     closed: Cell<bool>,
     pending: RefCell<VecDeque<Rc<Request>>>,
     idle: RefCell<Option<host::Timeout>>,
     watchdog: RefCell<Option<host::Timeout>>,
-    /// The hand-back running: the reader's process, killed at its close.
-    children: RefCell<Vec<ChildProcess>>,
-    /// Names waiting for their hand-back: one process at a time, in request
-    /// order, as the JavaScript's one `cat-file` reads its names.
-    queued: RefCell<VecDeque<Queued>>,
+    /// Its Git: one `cat-file` for the reader's life, killed at its close.
+    process: RefCell<Process>,
 }
 
 thread_local! {
@@ -959,16 +983,42 @@ fn reader_key(cwd: &str, args: &[String], check: bool) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// The spawn of the reader's Git (`spawn('git', [...args, 'cat-file',
+/// check ? '--batch-check' : '--batch'], { cwd, env, stdio: ['pipe',
+/// 'pipe', 'ignore'] })`).
+fn reader_spawn(cwd: &str, args: &[String], check: bool, env: &[(String, String)]) -> Spawn {
+    let mut argv = args.to_vec();
+    argv.push(String::from("cat-file"));
+    argv.push(String::from(if check {
+        "--batch-check"
+    } else {
+        "--batch"
+    }));
+    Spawn {
+        file: String::from("git"),
+        args: argv,
+        cwd: Some(cwd.to_owned()),
+        env: env.to_vec(),
+        stdio: [Stdio::Pipe, Stdio::Pipe, Stdio::Ignore],
+    }
+}
+
 /// `openReader(cwd, args, check)`: the live reader of the key, or a new one
-/// with its watchdog (`setInterval(…, 1000)`, unreferenced).
-fn open_reader(cwd: &str, args: &[String], check: bool) -> Rc<Reader> {
+/// with its watchdog (`setInterval(…, 1000)`, unreferenced). What the
+/// JavaScript's `spawn` throws there (`ERR_INVALID_ARG_VALUE` for a NUL in
+/// the arguments or the directory) is thrown here too, before any reader
+/// exists, although the Git itself starts only at the first hand-back.
+fn open_reader(cwd: &str, args: &[String], check: bool) -> Result<Rc<Reader>, W> {
     let key = reader_key(cwd, args, check);
     if let Some(existing) = READERS.with(|readers| readers.borrow().get(&key).cloned())
         && !existing.closed.get()
     {
-        return existing;
+        return Ok(existing);
     }
     let env = git_environment(&process_env(), &[]);
+    if let Some(refused) = child::refused_arguments(&reader_spawn(cwd, args, check, &env)) {
+        return Err(refused);
+    }
     // Git looks objects up through another replace namespace: every name
     // goes to Git (the in-process database knows `refs/replace/` only).
     let ask_all = env.iter().any(|(name, _)| name == "GIT_REPLACE_REF_BASE");
@@ -981,7 +1031,7 @@ fn open_reader(cwd: &str, args: &[String], check: bool) -> Rc<Reader> {
         }
         _ => None,
     };
-    made_reader(key, cwd, args, check, env, database)
+    Ok(made_reader(key, cwd, args, check, env, database))
 }
 
 /// A new reader in the map, its watchdog started.
@@ -1004,8 +1054,7 @@ fn made_reader(
         pending: RefCell::new(VecDeque::new()),
         idle: RefCell::new(None),
         watchdog: RefCell::new(None),
-        children: RefCell::new(Vec::new()),
-        queued: RefCell::new(VecDeque::new()),
+        process: RefCell::new(Process::NotStarted),
     });
     READERS.with(|readers| readers.borrow_mut().insert(key, reader.clone()));
     let watched = Rc::downgrade(&reader);
@@ -1030,9 +1079,9 @@ fn made_reader(
 }
 
 /// The reader's `close(error)`: out of the map, its timers cleared, its
-/// processes killed (`child.kill('SIGKILL')`; here every hand-back running,
-/// and the database's thread let go), every pending request rejected with
-/// the one error (or `capture_git_failed`).
+/// process killed (`child.kill('SIGKILL')`: its Git, if one started, and
+/// the database's thread let go), every pending request rejected with the
+/// one error (or `capture_git_failed`).
 fn close_reader(reader: &Rc<Reader>, error: Option<W>) {
     if reader.closed.replace(true) {
         return;
@@ -1048,10 +1097,11 @@ fn close_reader(reader: &Rc<Reader>, error: Option<W>) {
     });
     host::clear_optional(&reader.idle.borrow());
     host::clear_optional(&reader.watchdog.borrow());
-    reader.queued.borrow_mut().clear();
-    let children: Vec<ChildProcess> = reader.children.borrow_mut().drain(..).collect();
-    for child in children {
-        let _ = child.kill(Signal::Kill);
+    let process = std::mem::replace(&mut *reader.process.borrow_mut(), Process::NotStarted);
+    if let Process::Running(process) = process {
+        process.dead.set(true);
+        process.waiting.borrow_mut().clear();
+        let _ = process.child.kill(Signal::Kill);
     }
     if let Some(database) = &reader.database {
         database.close();
@@ -1102,19 +1152,13 @@ fn found_object(oid: &str, kind: &str, size: f64, data: Option<Rc<Vec<u8>>>) -> 
     W::object(fields)
 }
 
-/// One answer of the reader's parser (`settle`) over a `cat-file` output.
-fn parse_answer(buffer: &[u8], check: bool, closed: bool) -> Answered {
-    let Some(end) = buffer.iter().position(|byte| *byte == 10) else {
-        // No header before the process closed: `close()`.
-        return Answered::Close(if closed {
-            None
-        } else {
-            Some(change_error("invalid_change_record", 503.0))
-        });
-    };
+/// The next answer of the reader's parser (`settle`) in a `cat-file`
+/// output, and how many bytes it took; `None` until it is all there.
+fn parse_next(buffer: &[u8], check: bool) -> Option<(Answered, usize)> {
+    let end = buffer.iter().position(|byte| *byte == 10)?;
     let header = JsStr::from_utf8_lossy(&buffer[..end]).to_string_lossy();
     if header.ends_with(" missing") || header.ends_with(" ambiguous") {
-        return Answered::Null;
+        return Some((Answered::Null, end + 1));
     }
     let parts: Vec<&str> = header.split(' ').collect();
     let (oid, kind) = (
@@ -1125,130 +1169,191 @@ fn parse_answer(buffer: &[u8], check: bool, closed: bool) -> Answered {
         string_to_number(&JsStr::from(*text).into_units())
     });
     if oid.is_empty() || kind.is_empty() || !is_safe_integer(&W::Number(size)) || size < 0.0 {
-        return Answered::Close(Some(change_error("invalid_change_record", 503.0)));
+        return Some((
+            Answered::Close(Some(change_error("invalid_change_record", 503.0))),
+            buffer.len(),
+        ));
     }
     if check {
-        return Answered::Object(found_object(oid, kind, size, None));
+        return Some((
+            Answered::Object(found_object(oid, kind, size, None)),
+            end + 1,
+        ));
     }
     if (buffer.len() as f64) < (end + 1) as f64 + size + 1.0 {
-        return Answered::Close(None);
+        return None;
     }
     let data = buffer[end + 1..end + 1 + size as usize].to_vec();
-    Answered::Object(found_object(oid, kind, size, Some(Rc::new(data))))
+    Some((
+        Answered::Object(found_object(oid, kind, size, Some(Rc::new(data)))),
+        end + 1 + size as usize + 1,
+    ))
 }
 
-/// "Ask Git": the one name read by a `cat-file` process of the reader's
-/// kind (`stdio: ['pipe', 'pipe', 'ignore']`, the reader's environment),
-/// parsed as the reader parses its output; the process dying first is the
-/// reader's `close()`. The process is the reader's: one at a time, in
-/// request order; its close kills it, and the watchdog's deadline covers it.
+/// "Ask Git": the name written to the reader's `cat-file` (started now if
+/// this is the reader's first hand-back), answered as the reader parses that
+/// process's output, in the order the names were written. The process dying
+/// first is the reader's `close()`; the reader's close kills it, and the
+/// watchdog's deadline covers it.
 fn ask_git(reader: &Rc<Reader>, name: &[u8]) -> Promise<Answered, W> {
     let (promise, resolvers) = Promise::with_resolvers();
     if reader.closed.get() {
         return promise;
     }
-    reader
-        .queued
-        .borrow_mut()
-        .push_back((name.to_vec(), resolvers));
-    if reader.children.borrow().is_empty() {
-        hand_back_next(reader);
+    let process = match reader_process(reader) {
+        Ok(process) => process,
+        Err(answered) => {
+            resolvers.fulfill(answered);
+            return promise;
+        }
+    };
+    if process.dead.get() {
+        resolvers.fulfill(Answered::Close(None));
+        return promise;
+    }
+    process.waiting.borrow_mut().push_back(resolvers);
+    if let Some(stdin) = process.child.stdin() {
+        let mut line = name.to_vec();
+        line.push(b'\n');
+        stdin.write(&line, None);
     }
     promise
 }
 
-/// Starts the next queued hand-back, if any and none is running.
-fn hand_back_next(reader: &Rc<Reader>) {
-    if reader.closed.get() || !reader.children.borrow().is_empty() {
-        return;
+/// The reader's Git, started at its first hand-back; `Err` with the answer
+/// every hand-back gets when its spawn threw.
+fn reader_process(reader: &Rc<Reader>) -> Result<Rc<HandBack>, Answered> {
+    match &*reader.process.borrow() {
+        Process::Running(process) => return Ok(process.clone()),
+        Process::Failed(answered) => return Err(answered.clone()),
+        Process::NotStarted => {}
     }
-    let Some((name, resolvers)) = reader.queued.borrow_mut().pop_front() else {
-        return;
-    };
-    let name = name.as_slice();
-    let mut args = reader.args.clone();
-    args.push(String::from("cat-file"));
-    args.push(String::from(if reader.check {
-        "--batch-check"
-    } else {
-        "--batch"
-    }));
-    let spawned = child::spawn(Spawn {
-        file: String::from("git"),
-        args,
-        cwd: Some(reader.cwd.clone()),
-        env: reader.env.clone(),
-        stdio: [Stdio::Pipe, Stdio::Pipe, Stdio::Ignore],
-    });
-    let child = match spawned {
+    let before = host::current().sources_open();
+    let child = match child::spawn(reader_spawn(
+        &reader.cwd,
+        &reader.args,
+        reader.check,
+        &reader.env,
+    )) {
         Ok(child) => child,
-        Err(_) => {
-            resolvers.fulfill(Answered::Close(None));
-            return;
+        Err(error) => {
+            // What the JavaScript's `spawn` throws at its open (the
+            // arguments are checked there already, so another error).
+            let answered = Answered::Close(Some(error));
+            *reader.process.borrow_mut() = Process::Failed(answered.clone());
+            return Err(answered);
         }
     };
-    reader.children.borrow_mut().push(child.clone());
-    let buffer = Rc::new(RefCell::new(Vec::new()));
-    let failed = Rc::new(Cell::new(false));
+    let process = Rc::new(HandBack {
+        child: child.clone(),
+        waiting: RefCell::new(VecDeque::new()),
+        buffer: RefCell::new(Vec::new()),
+        dead: Cell::new(false),
+        sources: host::current().sources_open().saturating_sub(before),
+    });
+    *reader.process.borrow_mut() = Process::Running(process.clone());
+    let owner = Rc::downgrade(reader);
+    let watched = Rc::downgrade(&process);
+    // `child.stdout.on('data', …)`: answers parsed as they arrive.
     if let Some(stdout) = child.stdout() {
-        let buffer = buffer.clone();
+        let (owner, watched) = (owner.clone(), watched.clone());
         stdout.on(
             "data",
             &Listener::new(move |chunk: &W| {
-                if let W::Bytes(bytes) = chunk {
-                    buffer.borrow_mut().extend_from_slice(bytes);
-                }
-                Ok(())
-            }),
-        );
-    }
-    {
-        let failed = failed.clone();
-        child.on(
-            "error",
-            &Listener::new(move |_| {
-                failed.set(true);
-                Ok(())
-            }),
-        );
-    }
-    {
-        let (buffer, failed, check) = (buffer.clone(), failed.clone(), reader.check);
-        let resolvers = resolvers.clone();
-        let owner = Rc::downgrade(reader);
-        // The child is kept until its close, as Node's handle keeps it (the
-        // layer lets its listeners go after `close`).
-        let kept = RefCell::new(Some(child.clone()));
-        child.on(
-            "close",
-            &Listener::new(move |_| {
-                if let Some(child) = kept.borrow_mut().take()
-                    && let Some(reader) = owner.upgrade()
+                if let (Some(reader), Some(process), W::Bytes(bytes)) =
+                    (owner.upgrade(), watched.upgrade(), chunk)
                 {
-                    reader
-                        .children
-                        .borrow_mut()
-                        .retain(|known| !known.same(&child));
+                    process.buffer.borrow_mut().extend_from_slice(bytes);
+                    parse_hand_backs(&reader, &process);
                 }
-                let answer = if failed.get() {
-                    Answered::Close(None)
-                } else {
-                    parse_answer(&buffer.borrow(), check, true)
-                };
-                resolvers.fulfill(answer);
-                if let Some(reader) = owner.upgrade() {
-                    hand_back_next(&reader);
-                }
+                Ok(())
+            }),
+        );
+    }
+    // `child.on('error' | 'close')`, `child.stdin.on('error')`: `close()`.
+    let died = {
+        let (owner, watched) = (owner.clone(), watched.clone());
+        move || {
+            if let (Some(reader), Some(process)) = (owner.upgrade(), watched.upgrade()) {
+                hand_back_died(&reader, &process);
+            }
+        }
+    };
+    for event in ["error", "close"] {
+        let died = died.clone();
+        child.on(
+            event,
+            &Listener::new(move |_| {
+                died();
                 Ok(())
             }),
         );
     }
     if let Some(stdin) = child.stdin() {
-        stdin.on("error", &Listener::new(|_| Ok(())));
-        let mut line = name.to_vec();
-        line.push(b'\n');
-        stdin.write(&line, None);
-        stdin.end();
+        let died = died.clone();
+        stdin.on(
+            "error",
+            &Listener::new(move |_| {
+                died();
+                Ok(())
+            }),
+        );
+    }
+    Ok(process)
+}
+
+/// The reader's `settle()` over its Git's output: each complete answer to
+/// the oldest name waiting; output with no name waiting closes the reader
+/// (`invalid_change_record`), as a malformed header does.
+fn parse_hand_backs(reader: &Rc<Reader>, process: &Rc<HandBack>) {
+    loop {
+        if process.dead.get() {
+            return;
+        }
+        if process.waiting.borrow().is_empty() {
+            if !process.buffer.borrow().is_empty() {
+                hand_back_failed(process);
+                close_reader(reader, Some(change_error("invalid_change_record", 503.0)));
+            }
+            return;
+        }
+        let Some((answered, taken)) = parse_next(&process.buffer.borrow(), reader.check) else {
+            return;
+        };
+        process.buffer.borrow_mut().drain(..taken);
+        let closes = matches!(answered, Answered::Close(_));
+        let head = process.waiting.borrow_mut().pop_front();
+        if closes {
+            hand_back_failed(process);
+        }
+        if let Some(head) = head {
+            head.fulfill(answered);
+        }
+    }
+}
+
+/// The process is done with: killed, every name still waiting answered
+/// with the reader's `close()` (`capture_git_failed`), in order.
+fn hand_back_failed(process: &Rc<HandBack>) {
+    process.dead.set(true);
+    let _ = process.child.kill(Signal::Kill);
+    let waiting: Vec<Resolvers<Answered, W>> = process.waiting.borrow_mut().drain(..).collect();
+    for resolvers in waiting {
+        resolvers.fulfill(Answered::Close(None));
+    }
+}
+
+/// The reader's Git exited, failed or refused its input: the names waiting
+/// fail in their order; with none waiting the reader closes at once, as the
+/// JavaScript's does when its process goes.
+fn hand_back_died(reader: &Rc<Reader>, process: &Rc<HandBack>) {
+    if process.dead.get() {
+        return;
+    }
+    let none_waiting = process.waiting.borrow().is_empty();
+    hand_back_failed(process);
+    if none_waiting {
+        close_reader(reader, None);
     }
 }
 
@@ -1291,7 +1396,7 @@ pub fn read_git_object_with(
             409.0,
         ))));
     }
-    let reader = open_reader(cwd, args, check);
+    let reader = open_reader(cwd, args, check)?;
     host::clear_optional(&reader.idle.borrow());
     let (promise, resolvers) = Promise::with_resolvers();
     let request = Rc::new(Request {
@@ -1362,6 +1467,22 @@ pub fn read_git_object_with(
 /// The readers alive (tests).
 pub fn live_readers() -> usize {
     READERS.with(|readers| readers.borrow().len())
+}
+
+/// The loop's sources the live readers' Git processes hold (tests: a
+/// request is over once nothing else is open, as the JavaScript's reader
+/// process is unreferenced while no read is pending).
+pub fn reader_process_sources() -> usize {
+    READERS.with(|readers| {
+        readers
+            .borrow()
+            .values()
+            .map(|reader| match &*reader.process.borrow() {
+                Process::Running(process) if !process.dead.get() => process.sources,
+                _ => 0,
+            })
+            .sum()
+    })
 }
 
 #[cfg(test)]
@@ -1580,6 +1701,157 @@ mod tests {
         wait_for("the database thread to end", &|| {
             std::sync::Arc::strong_count(&held) == 1
         });
+    }
+
+    /// A reader whose database blocks every lookup until `gate` opens; the
+    /// returned `held` is dropped by the reader's thread when it ends.
+    fn blocked_reader() -> (
+        std::sync::Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
+        std::sync::Arc<()>,
+    ) {
+        let held = std::sync::Arc::new(());
+        let gate = std::sync::Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+        {
+            let (gate, held) = (gate.clone(), held.clone());
+            reader_with(Box::new(move |_, _| {
+                let _ = &held;
+                let (open, changed) = &*gate;
+                let mut open = open.lock().expect("gate");
+                while !*open {
+                    open = changed.wait(open).expect("gate");
+                }
+                odb::Looked::Missing
+            }));
+        }
+        (gate, held)
+    }
+
+    fn release(
+        event_loop: &crate::host::EventLoop,
+        gate: &std::sync::Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
+        held: &std::sync::Arc<()>,
+    ) {
+        let (open, changed) = &**gate;
+        *open.lock().expect("gate") = true;
+        changed.notify_all();
+        wait_for("the blocked thread to end", &|| {
+            std::sync::Arc::strong_count(held) == 1
+        });
+        drive(event_loop, &|| true);
+    }
+
+    /// Fix round 2 (N01): the deadline is `Date.now() - started > 30 000`,
+    /// checked each second from the reader's start: a read started with the
+    /// reader is 30 000 ms old at the 30th tick (not over) and fails at the
+    /// 31st, never a tick earlier or later.
+    #[test]
+    fn the_watchdog_fails_a_read_at_the_first_tick_past_thirty_seconds_exactly() {
+        let (event_loop, time) = test_loop();
+        let start = time.get();
+        let (gate, held) = blocked_reader();
+        let outcomes: Rc<RefCell<Vec<String>>> = Rc::default();
+        read_into(&outcomes);
+        crate::host::testing::run_until(&event_loop, &time, start + 30_999);
+        event_loop.checkpoint();
+        assert!(
+            outcomes.borrow().is_empty(),
+            "failed at or before 30 000 ms: {:?}",
+            outcomes.borrow()
+        );
+        assert_eq!(live_readers(), 1);
+        crate::host::testing::run_until(&event_loop, &time, start + 31_000);
+        event_loop.checkpoint();
+        assert_eq!(*outcomes.borrow(), vec!["capture_timeout:503"]);
+        assert_eq!(time.get(), start + 31_000);
+        assert_eq!(live_readers(), 0);
+        release(&event_loop, &gate, &held);
+    }
+
+    /// Fix round 2 (N04): with reads of different ages pending, the watchdog
+    /// measures from the oldest (`pending[0].started`): a read 11 s old does
+    /// not keep a 31 s old one alive, and both fail together.
+    #[test]
+    fn the_watchdog_measures_from_the_oldest_pending_read() {
+        let (event_loop, time) = test_loop();
+        let start = time.get();
+        let (gate, held) = blocked_reader();
+        let outcomes: Rc<RefCell<Vec<String>>> = Rc::default();
+        read_into(&outcomes);
+        crate::host::testing::run_until(&event_loop, &time, start + 20_000);
+        assert_eq!(time.get(), start + 20_000);
+        read_into(&outcomes);
+        crate::host::testing::run_until(&event_loop, &time, start + 30_999);
+        event_loop.checkpoint();
+        assert!(outcomes.borrow().is_empty(), "{:?}", outcomes.borrow());
+        crate::host::testing::run_until(&event_loop, &time, start + 31_000);
+        event_loop.checkpoint();
+        assert_eq!(*outcomes.borrow(), vec!["capture_timeout:503"; 2]);
+        release(&event_loop, &gate, &held);
+    }
+
+    /// Fix round 2 (N24): a hand-back whose spawn throws (a NUL in the
+    /// arguments, which `openReader` refuses before a reader exists, so here
+    /// through a reader made directly) fails the read with the spawn's error,
+    /// never reads as absent, and starts nothing.
+    #[test]
+    fn a_hand_back_whose_spawn_throws_fails_with_the_spawns_error() {
+        let (event_loop, _time) = test_loop();
+        let args = [String::from("--git-dir"), String::from("/x\0y")];
+        let _ = made_reader(
+            reader_key("/", &args, false),
+            "/",
+            &args,
+            false,
+            Vec::new(),
+            Some(odb::ObjectReader::with_work(Box::new(|_, _| {
+                odb::Looked::Ask("name_syntax")
+            }))),
+        );
+        let outcomes: Rc<RefCell<Vec<String>>> = Rc::default();
+        let read = read_git_object(&None, "/", &args, &W::string(&"ab".repeat(20)), false)
+            .expect("the reader exists: nothing thrown");
+        let into = outcomes.clone();
+        let _ = Promise::resolve(read).then(
+            {
+                let into = into.clone();
+                move |value| {
+                    into.borrow_mut()
+                        .push(format!("ok:{}", crate::value::truthy(&value)));
+                    Ok(Resolution::Value(W::Undefined))
+                }
+            },
+            move |error| {
+                into.borrow_mut().push(crate::node::code_of(&error));
+                Ok(Resolution::Value(W::Undefined))
+            },
+        );
+        let children = child::live_children();
+        let watched = outcomes.clone();
+        drive(&event_loop, &|| !watched.borrow().is_empty());
+        assert_eq!(*outcomes.borrow(), vec!["ERR_INVALID_ARG_VALUE"]);
+        assert_eq!(child::live_children(), children);
+        assert_eq!(live_readers(), 0);
+    }
+
+    /// Fix round 2: `openReader`'s `spawn` throws for a NUL in the directory
+    /// or the arguments before the reader exists, so `readGitObject` throws
+    /// at once and leaves no reader (the name is checked first).
+    #[test]
+    fn a_reader_the_spawn_would_refuse_throws_at_once_and_is_never_made() {
+        let (_event_loop, _time) = test_loop();
+        let name = W::string(&"ab".repeat(20));
+        for (cwd, dir) in [("/a\0b", "/x"), ("/", "/x\0y")] {
+            let args = [String::from("--git-dir"), String::from(dir)];
+            let thrown = read_git_object(&None, cwd, &args, &name, false)
+                .err()
+                .expect("thrown");
+            assert_eq!(crate::node::code_of(&thrown), "ERR_INVALID_ARG_VALUE");
+            assert_eq!(live_readers(), 0);
+        }
+        let args = [String::from("--git-dir"), String::from("/x\0y")];
+        let refused =
+            read_git_object(&None, "/", &args, &W::string(""), false).expect("a rejection");
+        assert!(matches!(refused, Resolution::Promise(_)));
     }
 
     #[test]

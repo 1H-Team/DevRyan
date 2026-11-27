@@ -46,6 +46,116 @@ use ledger_io::path;
 
 const ASK_GIT: u8 = 3;
 
+/// The exit status of a run that passed `ODB_PROBE_DEADLINE_MS`.
+const DEADLINE_EXIT: i32 = 124;
+
+/// The request being answered (`<index> <request>`), for the deadline's report.
+static PROGRESS: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+/// One request begun: kept for the deadline's report and, with
+/// `ODB_PROBE_PROGRESS=1`, written to stderr as `progress <index> <request>`
+/// (the last such line names the request a killed run was answering).
+fn progress(index: usize, request: &[u8]) {
+    let text = format!(
+        "{index} {}",
+        String::from_utf8_lossy(&request[..request.len().min(200)])
+    );
+    if std::env::var_os("ODB_PROBE_PROGRESS").is_some_and(|value| value == "1") {
+        let _ = writeln!(std::io::stderr(), "progress {text}");
+    }
+    *PROGRESS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = text;
+}
+
+/// With `ODB_PROBE_DEADLINE_MS`: a thread that, once the run has lasted that
+/// long, writes to stderr what it was doing (the request it was answering and,
+/// on macOS, the top of `sample`'s call graph of this process) and ends the
+/// run with status 124, before the caller's own timeout kills it unexamined.
+fn watch_deadline(args: &[String]) {
+    let Some(ms) = std::env::var("ODB_PROBE_DEADLINE_MS")
+        .ok()
+        .and_then(|text| text.parse::<u64>().ok())
+    else {
+        return;
+    };
+    let mode = args.get(1..).map(|rest| rest.join(" ")).unwrap_or_default();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+        let request = PROGRESS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        let mut report = format!(
+            "deadline: odb-probe {mode} still running after {ms} ms; answering request {}\n",
+            if request.is_empty() {
+                "(none begun)"
+            } else {
+                &request
+            }
+        );
+        report.push_str(&sampled());
+        let _ = std::io::stderr().write_all(report.as_bytes());
+        std::process::exit(DEADLINE_EXIT);
+    });
+}
+
+/// The top of macOS `sample`'s call graph of this process (one second), or
+/// why there is none; `sample` writes to a file of the OS temp dir, removed.
+fn sampled() -> String {
+    let tool = "/usr/bin/sample";
+    if !std::path::Path::new(tool).exists() {
+        return String::from("no sample tool here: the request above is all there is\n");
+    }
+    let file = std::env::temp_dir().join(format!(
+        "odb-probe-deadline-{}.sample.txt",
+        std::process::id()
+    ));
+    let started = std::process::Command::new(tool)
+        .arg(std::process::id().to_string())
+        .arg("1")
+        .arg("-file")
+        .arg(&file)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+    let mut child = match started {
+        Ok(child) => child,
+        Err(error) => return format!("sample could not start: {error}\n"),
+    };
+    // `sample` takes its second and symbolicates: waited for at most 60 s.
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    let finished = loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break true,
+            Ok(None) if std::time::Instant::now() < until => {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break false;
+            }
+        }
+    };
+    let text = std::fs::read_to_string(&file).unwrap_or_default();
+    let _ = std::fs::remove_file(&file);
+    if !finished {
+        return String::from("sample did not finish within 60 s\n");
+    }
+    let graph: Vec<&str> = text
+        .lines()
+        .skip_while(|line| !line.starts_with("Call graph:"))
+        .take_while(|line| !line.starts_with("Total number in stack"))
+        .take(60)
+        .collect();
+    if graph.is_empty() {
+        return String::from("sample printed no call graph\n");
+    }
+    format!("sample (top frames):\n{}\n", graph.join("\n"))
+}
+
 fn ask_exit(refused: &AskGit) -> ExitCode {
     eprintln!("ask-git {} {}", refused.reason.code(), refused.detail);
     ExitCode::from(ASK_GIT)
@@ -202,7 +312,8 @@ fn ls_tree_many(args: &[String]) -> ExitCode {
         Err(refused) => return ask_exit(&refused),
     };
     let mut out = Vec::new();
-    for line in stdin_lines() {
+    for (index, line) in stdin_lines().into_iter().enumerate() {
+        progress(index, &line);
         let line = String::from_utf8(line).expect("listing request");
         let (tree, prefix) = match line.split_once(' ') {
             Some((tree, prefix)) => (tree, Some(prefix)),
@@ -233,7 +344,8 @@ fn read_ref_many(args: &[String]) -> ExitCode {
         Err(refused) => return ask_exit(&refused),
     };
     let mut out = String::new();
-    for line in stdin_lines() {
+    for (index, line) in stdin_lines().into_iter().enumerate() {
+        progress(index, &line);
         match repo.read_ref(&String::from_utf8_lossy(&line)) {
             Ok(Some(oid)) => out.push_str(&format!("{oid}\n")),
             Ok(None) => out.push_str("absent\n"),
@@ -890,6 +1002,7 @@ fn fuzz(args: &[String]) -> ExitCode {
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
+    watch_deadline(&args);
     match arg(&args, 1) {
         "open" => match open(arg(&args, 2)) {
             Ok(odb) => {
@@ -906,7 +1019,8 @@ fn main() -> ExitCode {
                 Err(refused) => return ask_exit(&refused),
             };
             let mut out = Vec::new();
-            for line in stdin_lines() {
+            for (index, line) in stdin_lines().into_iter().enumerate() {
+                progress(index, &line);
                 batch_line(&mut out, &odb, &line, mode == "batch-check");
             }
             write_out(&out);

@@ -168,6 +168,8 @@ function step(scenario, controller, spec) {
   }
   if (spec.s === 'syncLog') return syncShim ? [...syncShim.log] : null;
   if (spec.s === 'skew') return new Promise((resolve) => setTimeout(() => { skew = spec.ms; resolve(undefined); }, spec.after ?? 0));
+  // `readGitObject` as a step (with `skew` beside it in a `concurrent` step).
+  if (spec.s === 'read') return readGitObject(spec.cwd, spec.args, spec.name, { check: Boolean(spec.check) });
   if (spec.s === 'abort') { controller.abort(errorWith('call_aborted', 'aborted by the scenario')); return undefined; }
   if (spec.s === 'markPending') { markObjectDirectoryPending(spec.directory); return undefined; }
   if (spec.s === 'concurrent') {

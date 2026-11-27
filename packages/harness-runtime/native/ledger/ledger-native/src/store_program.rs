@@ -289,6 +289,25 @@ fn drain(source: AsyncGen<W, W>, take: Option<usize>) -> WPromise {
     })
 }
 
+/// Takes descriptors until `EMFILE`, then gives `free` of them back: the
+/// rest, held until dropped.
+// port: sync call (the descriptors a test holds)
+fn hold_descriptors(free: usize) -> Vec<std::fs::File> {
+    let mut held = Vec::new();
+    loop {
+        // port: sync call (the descriptors a test holds)
+        match std::fs::File::open("/dev/null") {
+            Ok(file) => held.push(file),
+            Err(error) if error.raw_os_error() == Some(24) => break,
+            Err(error) => panic!("taking descriptors: {error}"),
+        }
+    }
+    for _ in 0..free {
+        held.pop();
+    }
+    held
+}
+
 /// One runner request, in the execution context `ctx`.
 fn runner(ctx: crate::ctx::Ctx, request: W) -> WPromise {
     let cwd = text(&request.get("cwd"));
@@ -311,6 +330,10 @@ fn runner(ctx: crate::ctx::Ctx, request: W) -> WPromise {
         }
         "read" => {
             // `Promise.allSettled(reads.map((r) => readGitObject(…)))`, a sync throw shown as such.
+            // `atDescriptorLimit` (the Rust arm only): every descriptor taken
+            // but that many while the reads run, given back when they settle.
+            let held = defined(&request.get("atDescriptorLimit"))
+                .map(|free| hold_descriptors(to_number(&free) as usize));
             let mut items = Vec::new();
             for read in list(&request.get("reads")) {
                 let idle =
@@ -329,7 +352,8 @@ fn runner(ctx: crate::ctx::Ctx, request: W) -> WPromise {
                 items.push(Resolution::Promise(promise));
             }
             let settled = Promise::all_settled(items);
-            settled.then_ok(|outcomes| {
+            settled.then_ok(move |outcomes| {
+                drop(held);
                 Ok(Resolution::Value(W::Array(
                     outcomes.into_iter().map(outcome).collect(),
                 )))
@@ -473,6 +497,17 @@ fn step(scenario: Rc<Scenario>, ctx: crate::ctx::Ctx, controller: Controller, st
             });
             Ok(())
         })));
+    }
+    if kind == "read" {
+        // `readGitObject(cwd, args, name, { check })` as a step (with `skew`
+        // beside it in a `concurrent` step).
+        return git::read_git_object(
+            &ctx,
+            &text(&step.get("cwd")),
+            &strings(&step.get("args")),
+            &step.get("name"),
+            truthy(&step.get("check")),
+        );
     }
     if kind == "abort" {
         controller.abort(error_with("call_aborted", "aborted by the scenario"));
@@ -856,7 +891,10 @@ pub fn serve(
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
         loop {
             event_loop.checkpoint();
-            if answer.borrow().is_some() && event_loop.blocking_pending() == 0 {
+            // The live readers' Git processes stay (unreferenced in Node).
+            if answer.borrow().is_some()
+                && event_loop.blocking_pending() == git::reader_process_sources()
+            {
                 break;
             }
             if std::time::Instant::now() > deadline {

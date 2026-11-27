@@ -1628,7 +1628,10 @@ keep spawning Git (research file 28, section 5).
   configuration it cannot parse), `extension` (any `extensions.*` but
   `objectFormat` sha1 or sha256 in version 1: reftable, partial clone, a
   compatibility format, anything in version 0), `alternates`, `promisor`,
-  `replace_refs` (checked on every read), `multi_pack_index`,
+  `replace_refs` (checked on every read; with `OdbOptions::snapshot`, the
+  persistent reader's, replace refs and the alternates file are read once,
+  at the first name that is an id, as one long-lived Git reads them),
+  `multi_pack_index`,
   `unindexed_pack`, `unstable_packs`, `pack_version`, `index_version`
   (version 1 included), `corrupt_index`, `corrupt_pack`, `corrupt_object`,
   `too_large`, `delta_depth`, `delta_cycle`, `delta_budget`, `id_mismatch`
@@ -1650,8 +1653,8 @@ keep spawning Git (research file 28, section 5).
 - **Errors.** The reader returns `odb::AskGit` with its `Reason`, and the
   writer returns the system error with its Node errno code (`ENOENT`,
   `EACCES`, …), as `writeLooseObject` throws it. The Git runner (below, "The
-  Git runner and the store") turns every "ask Git" into a Git process for that
-  one name, so the ledger's codes are Git's own answers, classified as the
+  Git runner and the store") hands every "ask Git" name to the reader's own
+  `cat-file`, so the ledger's codes are Git's own answers, classified as the
   JavaScript's reader classifies them.
 - **Writes.** `write_loose_object` is `writeLooseObject` call for call:
   freshen with `utimes`, else up to five attempts of recursive `mkdir`,
@@ -2576,14 +2579,36 @@ them, and the product is unchanged.
   has opened, a pack a repack deleted included, as Git keeps them, last until
   it closes; it closes 15 s after its last read settles, and its watchdog
   (each second, `Date.now()`) fails it with `capture_timeout` (503) once its
-  oldest pending read is older than 30 s, killing its `cat-file` and failing
-  every pending read. A name the database cannot answer exactly ("ask Git")
-  is read by a `cat-file` process for that one name, one at a time per
-  reader in request order, with the environment the reader started with
-  (stderr ignored), parsed as the reader parses; every gitlink is asked
-  (Git's answer there is its version's), and every name when
-  `GIT_REPLACE_REF_BASE` is set; files that are not regular (a FIFO at an
-  object's path) are opened without blocking and asked of Git, which then
+  oldest pending read is older than 30 s, killing its Git and failing every
+  pending read. What Git loads once per process is read once, at the first
+  name that is an id: replace refs or `objects/info/alternates` present then
+  send every later name to Git, after they are gone too; absent then, ones
+  made later are not read (the installed Git reads its alternates file once
+  per process; a Git that read it again on a miss would find what such a
+  reader answers missing). A name the database cannot answer exactly ("ask
+  Git") is handed back to the reader's own Git: one long-lived `cat-file
+  --batch` or `--batch-check`, the JavaScript reader's process (its
+  arguments, the environment of the reader's open, stderr ignored), started
+  at the reader's first hand-back and killed at its close, its names written
+  in order and its output parsed as the reader parses it. So a reader whose
+  every name goes to Git (replace refs, alternates, `GIT_REPLACE_REF_BASE`,
+  a repository it cannot open) starts what the JavaScript's starts and gets
+  that process's answers for its whole life, a pack a repack deleted
+  included. Every gitlink is asked (Git's answer there is its version's).
+  What differs: a reader that answered in-process before its first hand-back
+  (a gitlink, a corrupt or unusual object) starts its Git then, so where the
+  repository changed in between in what Git loads once (a replace ref or the
+  alternates file made or removed, its configuration, a pack the
+  JavaScript's process had mapped and a repack deleted), that hand-back's
+  answer is a fresh Git's; the JavaScript's spawn errors at a reader's open
+  (`ENOENT` without Git, `EMFILE` at the descriptor limit, which ends the
+  JavaScript's worker: its `stdout` is `null` and the spawn's `error` has no
+  listener yet) come at the first hand-back instead, and fail the reads
+  pending then with `capture_git_failed`; a NUL in the arguments or the
+  directory is thrown at once, before a reader exists, as the JavaScript's
+  `spawn` throws it. Files that are not regular (a FIFO at an object's path,
+  a pack index or `config`) are opened without blocking and asked of Git,
+  which then
   blocks as it would. Not ported: `ref`/`unref` (the native process does not
   exit when its loop is idle). `DEVRYAN_LEDGER_PERSISTENT_READER=0`, read
   when a store opens, gives the reader-less paths (`cat-file --batch` per
@@ -2613,17 +2638,20 @@ them, and the product is unchanged.
   the JavaScript calls `localeCompare` (D25; the host refuses the native
   ledger where they disagree, "The locale check"); a `JSON.parse` failure is
   a `SyntaxError` with a message of its own; a record nested deeper than
-  512 levels (the line codec's fail-closed bound, L1a) is refused with that
-  `SyntaxError` where the JavaScript reads it (no ledger record is deeper
-  than a few levels); a custom `gitRunner` is not taken (only an inline
+  512 levels (the line codec's fail-closed bound, L1a) is refused with
+  `ledger_record_too_deep` (503) where the JavaScript reads it (no ledger
+  record is deeper than a few levels); a custom `gitRunner` is not taken (only an inline
   JavaScript ledger has one).
-- **What a run spawns.** The JavaScript's persistent readers aside (one
-  `cat-file --batch` and one `--batch-check` per repository, which the
-  Rust reads in-process), and the Rust's ask-Git hand-backs aside, the Git
-  commands are the JavaScript's, argument for argument and in order (the
-  differential compares them as a multiset and in order, `hash-object`
-  and concurrent steps aside, in every repository it builds, ones the
-  database leaves to Git included).
+- **What a run spawns.** The Git commands are the JavaScript's, argument
+  for argument and in order (the differential compares them as a multiset
+  and in order, `hash-object` and concurrent steps aside, in every
+  repository it builds, ones the database leaves to Git included), the
+  persistent readers' processes aside: the JavaScript starts one `cat-file
+  --batch` or `--batch-check` per reader at its open, the Rust one per reader
+  at its first hand-back, none for a reader it answers in-process. Where
+  every name goes to Git the readers' processes are the JavaScript's too (the
+  differential compares them, as a multiset where two readers start
+  together), never more than one per reader alive at a time.
 - **Tests.** `scripts/ledger-native/store-differential.mjs` (in the verify;
   [testing](../../docs/TESTING.md#native-ledger-module-tests)) runs every
   request on the product's modules under Electron's Node and on the Rust
@@ -2633,7 +2661,12 @@ them, and the product is unchanged.
   `git fsck --strict --full` on both arms, every file outside `objects/`, and
   each arm's ledger read back by the other; the reader's deadline (a clock
   run ahead on both arms), its life and census, deleted packs, the
-  environment it honours, a fake Git printing random bytes, and the object
+  environment it honours, a fake Git printing random bytes, what its one Git
+  loads once (deleted loose objects and packs, replace refs and alternates
+  made or removed while it lives), the environment of its open, an ignored
+  stderr, FIFOs at a pack index and `config`, one `cat-file` alive at a
+  time (a `PATH` shim counts them), the spawn's refusals and the descriptor
+  limit, and the object
   directory's sync (a counting shim with injected faults on both arms, and
   on macOS the interposed system calls per installed object and per
   commit). Eight named programs of `child-differential.mjs` call the
@@ -2641,15 +2674,16 @@ them, and the product is unchanged.
   `git()`, `gitTokens()` and `commitTreeChanges` against their port, beside
   chains of every length). `cargo test` adds the runner's own: progress
   recorded on success only, the failure classes, the command name, blocked
-  reads failing at the reader's deadline without the I/O pool, the idle
-  close. `scripts/ledger-native/store-planted.mjs` (by hand) plants 131 bugs
+  reads failing at the reader's deadline without the I/O pool, the
+  deadline's exact tick and its oldest read, a hand-back whose spawn throws,
+  the refusals at the open, the idle close; and the database's snapshot
+  (`git::odb::tests`). `scripts/ledger-native/store-planted.mjs` (by hand) plants 131 bugs
   (the builder's, the review's and one undoing each fix of its first round)
   and reports the named test that catches each.
 - **Not done.** No method calls the runner or the store (L3e onwards); the
-  native process does not start; nothing is packaged. Linux was linted
-  (clippy for `x86_64-unknown-linux-gnu`), not run; every failing
-  comparison of the store differential prints the platform, the installed
-  Git and both arms' raw values.
+  native process does not start; nothing is packaged. CI runs the verify on
+  Linux and on macOS; every failing comparison of the store differential
+  prints the platform, the installed Git and both arms' raw values.
 
 ## Registered host-dependent operations
 
