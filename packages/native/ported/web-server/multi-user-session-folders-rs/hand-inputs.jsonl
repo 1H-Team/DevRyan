@@ -1,0 +1,43 @@
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"proj": [{"id": "f1", "name": "Folder", "sessionIds": ["s1", "s2"], "createdAt": 5}]}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"proj": [{"id": "f1", "name": "Folder", "sessionIds": ["s1", "s2"], "createdAt": 5, "parentId": "p"}, {"id": "f1", "name": "Folder", "sessionIds": ["s1", "s2"], "createdAt": 5, "parentId": null}, {"id": "f1", "name": "Folder", "sessionIds": ["s1", "s2"], "createdAt": 5, "parentId": ""}]}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"proj": [{"id": "f1", "name": "Folder", "sessionIds": ["s1", "s2"], "createdAt": null}]}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"proj": [{"id": "f1", "name": "Folder", "sessionIds": ["s1", "s2"], "createdAt": ""}]}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"proj": [{"id": "f1", "name": "Folder", "sessionIds": ["s1", "s2"], "createdAt": "7"}]}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"proj": [{"id": "f1", "name": "Folder", "sessionIds": ["s1", "s2"], "createdAt": -1}]}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"proj": [{"id": "f1", "name": "Folder", "sessionIds": ["s1", "s2"], "createdAt": "x"}]}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"proj": [{"name": "n", "sessionIds": [], "createdAt": 1}]}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"proj": [{"id": "  ", "name": "Folder", "sessionIds": ["s1", "s2"], "createdAt": 5}]}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"proj": [{"id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "name": "Folder", "sessionIds": ["s1", "s2"], "createdAt": 5}]}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"proj": [{"id": "f1", "name": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀", "sessionIds": ["s1", "s2"], "createdAt": 5}]}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"proj": [{"id": "f1", "name": "Folder", "sessionIds": ["ok", ""], "createdAt": 5}]}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"proj": [{"id": "f1", "name": "Folder", "sessionIds": "s", "createdAt": 5}]}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"proj": "x"}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"  ": []}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"": []}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"proj": [null]}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"proj": [[1]]}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {}, "collapsedFolderIds": ["a", "b", "a"], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {}, "collapsedFolderIds": ["a", ""], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {}, "collapsedFolderIds": "x", "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {}, "collapsedFolderIds": [], "updatedAt": -1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {}, "collapsedFolderIds": [], "updatedAt": "3"}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {}, "collapsedFolderIds": [], "updatedAt": null}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {}, "collapsedFolderIds": [], "updatedAt": {"$undefined": true}}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": [], "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": null, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 2, "foldersMap": {}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": "1", "foldersMap": {}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": []}
+{"fn": "normalizeSessionFoldersPayload", "args": [[]]}
+{"fn": "normalizeSessionFoldersPayload", "args": ["s"]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"$map": []}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"proj": [{"id": "f1", "name": "Folder", "sessionIds": ["s1", "s2"], "createdAt": [2]}]}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"proj": [{"id": "f1", "name": "Folder", "sessionIds": ["s1", "s2"], "createdAt": true}]}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"b": [{"id": "f1", "name": "Folder", "sessionIds": ["s1", "s2"], "createdAt": 5}], "2": [{"id": "f1", "name": "Folder", "sessionIds": ["s1", "s2"], "createdAt": 5}], "a": []}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"proj": [{"id": "f1", "name": "Folder", "sessionIds": ["s1", "s2"], "createdAt": 5}, {"id": "f2", "name": "Folder", "sessionIds": ["s1", "s2"], "createdAt": 5, "parentId": 5}]}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"proj": [{"id": "f1", "name": "Folder", "sessionIds": ["s1", "s2"], "createdAt": {"$num": "Infinity"}}]}, "collapsedFolderIds": [], "updatedAt": 1}]}
+{"fn": "emptySessionFolders", "args": []}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": {"/projects/project-1/developer": [{"id": "folder-1", "name": "Current work", "sessionIds": ["session-1"], "createdAt": 123, "parentId": null, "ignored": "not persisted"}]}, "collapsedFolderIds": ["folder-1", "folder-1"], "updatedAt": 456, "ignored": true}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 1, "foldersMap": [], "collapsedFolderIds": [], "updatedAt": 0}]}
+{"fn": "normalizeSessionFoldersPayload", "args": [{"version": 2, "foldersMap": {}, "collapsedFolderIds": [], "updatedAt": 0}]}

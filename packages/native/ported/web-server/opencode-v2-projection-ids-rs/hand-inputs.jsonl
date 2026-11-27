@@ -1,0 +1,407 @@
+{"fn": "assistantTextPartId", "args": ["msg_01", 2]}
+{"fn": "assistantReasoningPartId", "args": ["msg_01", 0]}
+{"fn": "assistantToolPartId", "args": ["msg_01", "call_9"]}
+{"fn": "stepStartPartId", "args": ["msg_01"]}
+{"fn": "stepFinishPartId", "args": ["msg_01"]}
+{"fn": "toolAttachmentPartId", "args": ["msg_01", "call_9", 1]}
+{"fn": "compactionSummaryMessageId", "args": ["msg_01"]}
+{"fn": "userTextPartId", "args": ["msg_01", 0]}
+{"fn": "userFilePartId", "args": ["msg_01", 1]}
+{"fn": "userAgentPartId", "args": ["msg_01", 2]}
+{"fn": "assistantTextPartId", "args": [null, null]}
+{"fn": "userFilePartId", "args": [null, null]}
+{"fn": "toolAttachmentPartId", "args": ["msg_01", null, null]}
+{"fn": "stepStartPartId", "args": [null]}
+{"fn": "assistantTextPartId", "args": [5, 5]}
+{"fn": "userFilePartId", "args": [5, 5]}
+{"fn": "toolAttachmentPartId", "args": ["msg_01", 5, 5]}
+{"fn": "stepStartPartId", "args": [5]}
+{"fn": "assistantTextPartId", "args": [{"$num": "-0"}, {"$num": "-0"}]}
+{"fn": "userFilePartId", "args": [{"$num": "-0"}, {"$num": "-0"}]}
+{"fn": "toolAttachmentPartId", "args": ["msg_01", {"$num": "-0"}, {"$num": "-0"}]}
+{"fn": "stepStartPartId", "args": [{"$num": "-0"}]}
+{"fn": "assistantTextPartId", "args": [{"$num": "NaN"}, {"$num": "NaN"}]}
+{"fn": "userFilePartId", "args": [{"$num": "NaN"}, {"$num": "NaN"}]}
+{"fn": "toolAttachmentPartId", "args": ["msg_01", {"$num": "NaN"}, {"$num": "NaN"}]}
+{"fn": "stepStartPartId", "args": [{"$num": "NaN"}]}
+{"fn": "assistantTextPartId", "args": [["a", null, ["b"]], ["a", null, ["b"]]]}
+{"fn": "userFilePartId", "args": [["a", null, ["b"]], ["a", null, ["b"]]]}
+{"fn": "toolAttachmentPartId", "args": ["msg_01", ["a", null, ["b"]], ["a", null, ["b"]]]}
+{"fn": "stepStartPartId", "args": [["a", null, ["b"]]]}
+{"fn": "assistantTextPartId", "args": [{"a": 1}, {"a": 1}]}
+{"fn": "userFilePartId", "args": [{"a": 1}, {"a": 1}]}
+{"fn": "toolAttachmentPartId", "args": ["msg_01", {"a": 1}, {"a": 1}]}
+{"fn": "stepStartPartId", "args": [{"a": 1}]}
+{"fn": "assistantTextPartId", "args": [true, true]}
+{"fn": "userFilePartId", "args": [true, true]}
+{"fn": "toolAttachmentPartId", "args": ["msg_01", true, true]}
+{"fn": "stepStartPartId", "args": [true]}
+{"fn": "assistantTextPartId", "args": [{"$utf16": [55296]}, {"$utf16": [55296]}]}
+{"fn": "userFilePartId", "args": [{"$utf16": [55296]}, {"$utf16": [55296]}]}
+{"fn": "toolAttachmentPartId", "args": ["msg_01", {"$utf16": [55296]}, {"$utf16": [55296]}]}
+{"fn": "stepStartPartId", "args": [{"$utf16": [55296]}]}
+{"fn": "assistantTextPartId", "args": ["é😀", "é😀"]}
+{"fn": "userFilePartId", "args": ["é😀", "é😀"]}
+{"fn": "toolAttachmentPartId", "args": ["msg_01", "é😀", "é😀"]}
+{"fn": "stepStartPartId", "args": ["é😀"]}
+{"fn": "assistantTextPartId", "args": [{"$map": []}, {"$map": []}]}
+{"fn": "userFilePartId", "args": [{"$map": []}, {"$map": []}]}
+{"fn": "toolAttachmentPartId", "args": ["msg_01", {"$map": []}, {"$map": []}]}
+{"fn": "stepStartPartId", "args": [{"$map": []}]}
+{"fn": "assistantTextPartId", "args": [{"$undefined": true}, {"$undefined": true}]}
+{"fn": "userFilePartId", "args": [{"$undefined": true}, {"$undefined": true}]}
+{"fn": "toolAttachmentPartId", "args": ["msg_01", {"$undefined": true}, {"$undefined": true}]}
+{"fn": "stepStartPartId", "args": [{"$undefined": true}]}
+{"fn": "assistantTextPartId", "args": [1e+21, 1e+21]}
+{"fn": "userFilePartId", "args": [1e+21, 1e+21]}
+{"fn": "toolAttachmentPartId", "args": ["msg_01", 1e+21, 1e+21]}
+{"fn": "stepStartPartId", "args": [1e+21]}
+{"fn": "assistantTextPartId", "args": [0.1, 0.1]}
+{"fn": "userFilePartId", "args": [0.1, 0.1]}
+{"fn": "toolAttachmentPartId", "args": ["msg_01", 0.1, 0.1]}
+{"fn": "stepStartPartId", "args": [0.1]}
+{"fn": "assistantContentPartIds", "args": ["msg_01", [{"type": "reasoning"}, {"type": "text"}, {"type": "tool", "id": "c1"}, {"type": "text"}, {"type": "reasoning"}, {"type": "tool"}, {"type": "mystery"}, null, "text", {"type": "tool", "id": ""}]]}
+{"fn": "assistantContentPartIds", "args": ["msg_01", [{"type": "text", "state": {"devryan": {"cursor": {"partID": "cp1"}}}}, {"type": "tool", "id": "t", "providerState": {"devryan": {"cursor": {"partID": "cp2"}}}}, {"type": "reasoning", "native": {"devryan": {"cursor": {"partID": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}}, {"type": "text", "native": null, "state": {"devryan": {"cursor": {"partID": ""}}}}, {"type": "tool", "id": "t2", "native": {"devryan": {"cursor": {"partID": "n1"}}}}], {"devryan": {"cursor": {"source": "cursor-acp"}}}]}
+{"fn": "assistantContentPartIds", "args": ["msg_01", [{"type": "text", "state": {"devryan": {"cursor": {"partID": "cp1"}}}}, {"type": "tool", "id": "t", "providerState": {"devryan": {"cursor": {"partID": "cp2"}}}}, {"type": "reasoning", "native": {"devryan": {"cursor": {"partID": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}}, {"type": "text", "native": null, "state": {"devryan": {"cursor": {"partID": ""}}}}, {"type": "tool", "id": "t2", "native": {"devryan": {"cursor": {"partID": "n1"}}}}], {"devryan": {"cursor": {"source": "other"}}}]}
+{"fn": "assistantContentPartIds", "args": ["msg_01", [{"type": "text", "state": {"devryan": {"cursor": {"partID": "cp1"}}}}, {"type": "tool", "id": "t", "providerState": {"devryan": {"cursor": {"partID": "cp2"}}}}, {"type": "reasoning", "native": {"devryan": {"cursor": {"partID": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}}, {"type": "text", "native": null, "state": {"devryan": {"cursor": {"partID": ""}}}}, {"type": "tool", "id": "t2", "native": {"devryan": {"cursor": {"partID": "n1"}}}}]]}
+{"fn": "assistantContentPartIds", "args": ["msg_01", null]}
+{"fn": "assistantContentPartIds", "args": ["msg_01", "str"]}
+{"fn": "assistantContentPartIds", "args": ["msg_01", [], {"devryan": {"cursor": {"source": "cursor-acp"}}}]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "reasoning"}, 0]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "reasoning"}, 7]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "text"}, 0]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "text"}, 7]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "tool", "id": "c1"}, 0]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "tool", "id": "c1"}, 7]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "text"}, 0]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "text"}, 7]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "reasoning"}, 0]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "reasoning"}, 7]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "tool"}, 0]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "tool"}, 7]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "mystery"}, 0]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "mystery"}, 7]}
+{"fn": "assistantContentPartId", "args": ["msg_01", null, 0]}
+{"fn": "assistantContentPartId", "args": ["msg_01", null, 7]}
+{"fn": "assistantContentPartId", "args": ["msg_01", "text", 0]}
+{"fn": "assistantContentPartId", "args": ["msg_01", "text", 7]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "tool", "id": ""}, 0]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "tool", "id": ""}, 7]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "text", "state": {"devryan": {"cursor": {"partID": "cp1"}}}}, 0]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "text", "state": {"devryan": {"cursor": {"partID": "cp1"}}}}, 7]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "tool", "id": "t", "providerState": {"devryan": {"cursor": {"partID": "cp2"}}}}, 0]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "tool", "id": "t", "providerState": {"devryan": {"cursor": {"partID": "cp2"}}}}, 7]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "reasoning", "native": {"devryan": {"cursor": {"partID": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}}, 0]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "reasoning", "native": {"devryan": {"cursor": {"partID": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}}, 7]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "text", "native": null, "state": {"devryan": {"cursor": {"partID": ""}}}}, 0]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "text", "native": null, "state": {"devryan": {"cursor": {"partID": ""}}}}, 7]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "tool", "id": "t2", "native": {"devryan": {"cursor": {"partID": "n1"}}}}, 0]}
+{"fn": "assistantContentPartId", "args": ["msg_01", {"type": "tool", "id": "t2", "native": {"devryan": {"cursor": {"partID": "n1"}}}}, 7]}
+{"fn": "readDevryanPartDescriptors", "args": [{"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2, "id": "prt_a"}, {"kind": "synthetic", "length": 3}, {"kind": "attachment", "length": 0}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hello", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2, "id": "prt_a"}, {"kind": "synthetic", "length": 3}, {"kind": "attachment", "length": 0}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hi", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2, "id": "prt_a"}, {"kind": "synthetic", "length": 3}, {"kind": "attachment", "length": 0}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2, "id": "prt_a"}, {"kind": "synthetic", "length": 3}, {"kind": "attachment", "length": 0}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", null, {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2, "id": "prt_a"}, {"kind": "synthetic", "length": 3}, {"kind": "attachment", "length": 0}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "😀abc", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2, "id": "prt_a"}, {"kind": "synthetic", "length": 3}, {"kind": "attachment", "length": 0}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", 5, {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2, "id": "prt_a"}, {"kind": "synthetic", "length": 3}, {"kind": "attachment", "length": 0}]}}]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2, "id": "prt_a"}, {"kind": "synthetic", "length": 3}, {"kind": "attachment", "length": 0}]}}, 0]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2, "id": "prt_a"}, {"kind": "synthetic", "length": 3}, {"kind": "attachment", "length": 0}]}}, 1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2, "id": "prt_a"}, {"kind": "synthetic", "length": 3}, {"kind": "attachment", "length": 0}]}}, 2]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2, "id": "prt_a"}, {"kind": "synthetic", "length": 3}, {"kind": "attachment", "length": 0}]}}, "0"]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2, "id": "prt_a"}, {"kind": "synthetic", "length": 3}, {"kind": "attachment", "length": 0}]}}, 1.5]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2, "id": "prt_a"}, {"kind": "synthetic", "length": 3}, {"kind": "attachment", "length": 0}]}}, -1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2, "id": "prt_a"}, {"kind": "synthetic", "length": 3}, {"kind": "attachment", "length": 0}]}}, null]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2, "id": "prt_a"}, {"kind": "synthetic", "length": 3}, {"kind": "attachment", "length": 0}]}}, "length"]}
+{"fn": "readDevryanPartDescriptors", "args": [{"devryan": {"v": 1, "parts": [{"kind": "text", "length": 4, "id": "p"}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hello", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 4, "id": "p"}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hi", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 4, "id": "p"}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 4, "id": "p"}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", null, {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 4, "id": "p"}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "😀abc", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 4, "id": "p"}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", 5, {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 4, "id": "p"}]}}]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 4, "id": "p"}]}}, 0]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 4, "id": "p"}]}}, 1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 4, "id": "p"}]}}, 2]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 4, "id": "p"}]}}, "0"]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 4, "id": "p"}]}}, 1.5]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 4, "id": "p"}]}}, -1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 4, "id": "p"}]}}, null]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 4, "id": "p"}]}}, "length"]}
+{"fn": "readDevryanPartDescriptors", "args": [{"devryan": {"v": 2, "parts": [{"kind": "text", "length": 5}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hello", {"devryan": {"v": 2, "parts": [{"kind": "text", "length": 5}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hi", {"devryan": {"v": 2, "parts": [{"kind": "text", "length": 5}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "", {"devryan": {"v": 2, "parts": [{"kind": "text", "length": 5}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", null, {"devryan": {"v": 2, "parts": [{"kind": "text", "length": 5}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "😀abc", {"devryan": {"v": 2, "parts": [{"kind": "text", "length": 5}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", 5, {"devryan": {"v": 2, "parts": [{"kind": "text", "length": 5}]}}]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 2, "parts": [{"kind": "text", "length": 5}]}}, 0]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 2, "parts": [{"kind": "text", "length": 5}]}}, 1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 2, "parts": [{"kind": "text", "length": 5}]}}, 2]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 2, "parts": [{"kind": "text", "length": 5}]}}, "0"]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 2, "parts": [{"kind": "text", "length": 5}]}}, 1.5]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 2, "parts": [{"kind": "text", "length": 5}]}}, -1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 2, "parts": [{"kind": "text", "length": 5}]}}, null]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 2, "parts": [{"kind": "text", "length": 5}]}}, "length"]}
+{"fn": "readDevryanPartDescriptors", "args": [{"devryan": {"v": 1, "parts": []}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hello", {"devryan": {"v": 1, "parts": []}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hi", {"devryan": {"v": 1, "parts": []}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "", {"devryan": {"v": 1, "parts": []}}]}
+{"fn": "userTextSegments", "args": ["msg_01", null, {"devryan": {"v": 1, "parts": []}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "😀abc", {"devryan": {"v": 1, "parts": []}}]}
+{"fn": "userTextSegments", "args": ["msg_01", 5, {"devryan": {"v": 1, "parts": []}}]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": []}}, 0]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": []}}, 1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": []}}, 2]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": []}}, "0"]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": []}}, 1.5]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": []}}, -1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": []}}, null]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": []}}, "length"]}
+{"fn": "readDevryanPartDescriptors", "args": [{"devryan": {"v": 1, "parts": [{"kind": "image", "length": 1}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hello", {"devryan": {"v": 1, "parts": [{"kind": "image", "length": 1}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hi", {"devryan": {"v": 1, "parts": [{"kind": "image", "length": 1}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "", {"devryan": {"v": 1, "parts": [{"kind": "image", "length": 1}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", null, {"devryan": {"v": 1, "parts": [{"kind": "image", "length": 1}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "😀abc", {"devryan": {"v": 1, "parts": [{"kind": "image", "length": 1}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", 5, {"devryan": {"v": 1, "parts": [{"kind": "image", "length": 1}]}}]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "image", "length": 1}]}}, 0]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "image", "length": 1}]}}, 1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "image", "length": 1}]}}, 2]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "image", "length": 1}]}}, "0"]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "image", "length": 1}]}}, 1.5]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "image", "length": 1}]}}, -1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "image", "length": 1}]}}, null]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "image", "length": 1}]}}, "length"]}
+{"fn": "readDevryanPartDescriptors", "args": [{"devryan": {"v": 1, "parts": [{"kind": "text", "length": -1}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hello", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": -1}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hi", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": -1}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": -1}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", null, {"devryan": {"v": 1, "parts": [{"kind": "text", "length": -1}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "😀abc", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": -1}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", 5, {"devryan": {"v": 1, "parts": [{"kind": "text", "length": -1}]}}]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": -1}]}}, 0]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": -1}]}}, 1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": -1}]}}, 2]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": -1}]}}, "0"]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": -1}]}}, 1.5]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": -1}]}}, -1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": -1}]}}, null]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": -1}]}}, "length"]}
+{"fn": "readDevryanPartDescriptors", "args": [{"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1.5}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hello", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1.5}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hi", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1.5}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1.5}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", null, {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1.5}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "😀abc", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1.5}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", 5, {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1.5}]}}]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1.5}]}}, 0]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1.5}]}}, 1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1.5}]}}, 2]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1.5}]}}, "0"]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1.5}]}}, 1.5]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1.5}]}}, -1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1.5}]}}, null]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1.5}]}}, "length"]}
+{"fn": "readDevryanPartDescriptors", "args": [{"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": ""}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hello", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": ""}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hi", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": ""}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": ""}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", null, {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": ""}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "😀abc", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": ""}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", 5, {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": ""}]}}]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": ""}]}}, 0]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": ""}]}}, 1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": ""}]}}, 2]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": ""}]}}, "0"]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": ""}]}}, 1.5]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": ""}]}}, -1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": ""}]}}, null]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": ""}]}}, "length"]}
+{"fn": "readDevryanPartDescriptors", "args": [{"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": "d"}, {"kind": "text", "length": 1, "id": "d"}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hello", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": "d"}, {"kind": "text", "length": 1, "id": "d"}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hi", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": "d"}, {"kind": "text", "length": 1, "id": "d"}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": "d"}, {"kind": "text", "length": 1, "id": "d"}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", null, {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": "d"}, {"kind": "text", "length": 1, "id": "d"}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "😀abc", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": "d"}, {"kind": "text", "length": 1, "id": "d"}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", 5, {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": "d"}, {"kind": "text", "length": 1, "id": "d"}]}}]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": "d"}, {"kind": "text", "length": 1, "id": "d"}]}}, 0]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": "d"}, {"kind": "text", "length": 1, "id": "d"}]}}, 1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": "d"}, {"kind": "text", "length": 1, "id": "d"}]}}, 2]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": "d"}, {"kind": "text", "length": 1, "id": "d"}]}}, "0"]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": "d"}, {"kind": "text", "length": 1, "id": "d"}]}}, 1.5]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": "d"}, {"kind": "text", "length": 1, "id": "d"}]}}, -1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": "d"}, {"kind": "text", "length": 1, "id": "d"}]}}, null]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 1, "id": "d"}, {"kind": "text", "length": 1, "id": "d"}]}}, "length"]}
+{"fn": "readDevryanPartDescriptors", "args": [{"devryan": {"v": 1, "parts": "nope"}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hello", {"devryan": {"v": 1, "parts": "nope"}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hi", {"devryan": {"v": 1, "parts": "nope"}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "", {"devryan": {"v": 1, "parts": "nope"}}]}
+{"fn": "userTextSegments", "args": ["msg_01", null, {"devryan": {"v": 1, "parts": "nope"}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "😀abc", {"devryan": {"v": 1, "parts": "nope"}}]}
+{"fn": "userTextSegments", "args": ["msg_01", 5, {"devryan": {"v": 1, "parts": "nope"}}]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": "nope"}}, 0]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": "nope"}}, 1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": "nope"}}, 2]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": "nope"}}, "0"]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": "nope"}}, 1.5]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": "nope"}}, -1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": "nope"}}, null]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": "nope"}}, "length"]}
+{"fn": "readDevryanPartDescriptors", "args": [{"devryan": []}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hello", {"devryan": []}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hi", {"devryan": []}]}
+{"fn": "userTextSegments", "args": ["msg_01", "", {"devryan": []}]}
+{"fn": "userTextSegments", "args": ["msg_01", null, {"devryan": []}]}
+{"fn": "userTextSegments", "args": ["msg_01", "😀abc", {"devryan": []}]}
+{"fn": "userTextSegments", "args": ["msg_01", 5, {"devryan": []}]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": []}, 0]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": []}, 1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": []}, 2]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": []}, "0"]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": []}, 1.5]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": []}, -1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": []}, null]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": []}, "length"]}
+{"fn": "readDevryanPartDescriptors", "args": [{"devryan": {"v": 1, "parts": [{"kind": "text", "length": 3, "id": "p", "extra": true}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hello", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 3, "id": "p", "extra": true}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hi", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 3, "id": "p", "extra": true}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 3, "id": "p", "extra": true}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", null, {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 3, "id": "p", "extra": true}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "😀abc", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 3, "id": "p", "extra": true}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", 5, {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 3, "id": "p", "extra": true}]}}]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 3, "id": "p", "extra": true}]}}, 0]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 3, "id": "p", "extra": true}]}}, 1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 3, "id": "p", "extra": true}]}}, 2]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 3, "id": "p", "extra": true}]}}, "0"]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 3, "id": "p", "extra": true}]}}, 1.5]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 3, "id": "p", "extra": true}]}}, -1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 3, "id": "p", "extra": true}]}}, null]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 3, "id": "p", "extra": true}]}}, "length"]}
+{"fn": "readDevryanPartDescriptors", "args": [{"devryan": {"v": 1, "parts": [{"kind": "text", "length": {"$num": "-0"}}, {"kind": "text", "length": 5}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hello", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": {"$num": "-0"}}, {"kind": "text", "length": 5}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hi", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": {"$num": "-0"}}, {"kind": "text", "length": 5}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": {"$num": "-0"}}, {"kind": "text", "length": 5}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", null, {"devryan": {"v": 1, "parts": [{"kind": "text", "length": {"$num": "-0"}}, {"kind": "text", "length": 5}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "😀abc", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": {"$num": "-0"}}, {"kind": "text", "length": 5}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", 5, {"devryan": {"v": 1, "parts": [{"kind": "text", "length": {"$num": "-0"}}, {"kind": "text", "length": 5}]}}]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": {"$num": "-0"}}, {"kind": "text", "length": 5}]}}, 0]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": {"$num": "-0"}}, {"kind": "text", "length": 5}]}}, 1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": {"$num": "-0"}}, {"kind": "text", "length": 5}]}}, 2]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": {"$num": "-0"}}, {"kind": "text", "length": 5}]}}, "0"]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": {"$num": "-0"}}, {"kind": "text", "length": 5}]}}, 1.5]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": {"$num": "-0"}}, {"kind": "text", "length": 5}]}}, -1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": {"$num": "-0"}}, {"kind": "text", "length": 5}]}}, null]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": {"$num": "-0"}}, {"kind": "text", "length": 5}]}}, "length"]}
+{"fn": "readDevryanPartDescriptors", "args": [{"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2}, {"kind": "text", "length": 3, "id": {"$utf16": [55296]}}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hello", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2}, {"kind": "text", "length": 3, "id": {"$utf16": [55296]}}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hi", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2}, {"kind": "text", "length": 3, "id": {"$utf16": [55296]}}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2}, {"kind": "text", "length": 3, "id": {"$utf16": [55296]}}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", null, {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2}, {"kind": "text", "length": 3, "id": {"$utf16": [55296]}}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "😀abc", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2}, {"kind": "text", "length": 3, "id": {"$utf16": [55296]}}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", 5, {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2}, {"kind": "text", "length": 3, "id": {"$utf16": [55296]}}]}}]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2}, {"kind": "text", "length": 3, "id": {"$utf16": [55296]}}]}}, 0]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2}, {"kind": "text", "length": 3, "id": {"$utf16": [55296]}}]}}, 1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2}, {"kind": "text", "length": 3, "id": {"$utf16": [55296]}}]}}, 2]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2}, {"kind": "text", "length": 3, "id": {"$utf16": [55296]}}]}}, "0"]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2}, {"kind": "text", "length": 3, "id": {"$utf16": [55296]}}]}}, 1.5]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2}, {"kind": "text", "length": 3, "id": {"$utf16": [55296]}}]}}, -1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2}, {"kind": "text", "length": 3, "id": {"$utf16": [55296]}}]}}, null]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2}, {"kind": "text", "length": 3, "id": {"$utf16": [55296]}}]}}, "length"]}
+{"fn": "readDevryanPartDescriptors", "args": []}
+{"fn": "userTextSegments", "args": ["msg_01", "hello", null]}
+{"fn": "userTextSegments", "args": ["msg_01", "hi", null]}
+{"fn": "userTextSegments", "args": ["msg_01", "", null]}
+{"fn": "userTextSegments", "args": ["msg_01", null, null]}
+{"fn": "userTextSegments", "args": ["msg_01", "😀abc", null]}
+{"fn": "userTextSegments", "args": ["msg_01", 5, null]}
+{"fn": "userSegmentPartId", "args": ["msg_01", null, 0]}
+{"fn": "userSegmentPartId", "args": ["msg_01", null, 1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", null, 2]}
+{"fn": "userSegmentPartId", "args": ["msg_01", null, "0"]}
+{"fn": "userSegmentPartId", "args": ["msg_01", null, 1.5]}
+{"fn": "userSegmentPartId", "args": ["msg_01", null, -1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", null, null]}
+{"fn": "userSegmentPartId", "args": ["msg_01", null, "length"]}
+{"fn": "readDevryanPartDescriptors", "args": [{}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hello", {}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hi", {}]}
+{"fn": "userTextSegments", "args": ["msg_01", "", {}]}
+{"fn": "userTextSegments", "args": ["msg_01", null, {}]}
+{"fn": "userTextSegments", "args": ["msg_01", "😀abc", {}]}
+{"fn": "userTextSegments", "args": ["msg_01", 5, {}]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {}, 0]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {}, 1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {}, 2]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {}, "0"]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {}, 1.5]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {}, -1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {}, null]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {}, "length"]}
+{"fn": "readDevryanPartDescriptors", "args": [{"devryan": {"v": 1, "parts": [{"kind": "text", "length": 9007199254740992}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hello", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 9007199254740992}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hi", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 9007199254740992}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 9007199254740992}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", null, {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 9007199254740992}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "😀abc", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 9007199254740992}]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", 5, {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 9007199254740992}]}}]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 9007199254740992}]}}, 0]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 9007199254740992}]}}, 1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 9007199254740992}]}}, 2]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 9007199254740992}]}}, "0"]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 9007199254740992}]}}, 1.5]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 9007199254740992}]}}, -1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 9007199254740992}]}}, null]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 9007199254740992}]}}, "length"]}
+{"fn": "readDevryanPartDescriptors", "args": [{"devryan": {"v": "1", "parts": []}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hello", {"devryan": {"v": "1", "parts": []}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hi", {"devryan": {"v": "1", "parts": []}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "", {"devryan": {"v": "1", "parts": []}}]}
+{"fn": "userTextSegments", "args": ["msg_01", null, {"devryan": {"v": "1", "parts": []}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "😀abc", {"devryan": {"v": "1", "parts": []}}]}
+{"fn": "userTextSegments", "args": ["msg_01", 5, {"devryan": {"v": "1", "parts": []}}]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": "1", "parts": []}}, 0]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": "1", "parts": []}}, 1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": "1", "parts": []}}, 2]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": "1", "parts": []}}, "0"]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": "1", "parts": []}}, 1.5]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": "1", "parts": []}}, -1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": "1", "parts": []}}, null]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": "1", "parts": []}}, "length"]}
+{"fn": "readDevryanPartDescriptors", "args": [{"devryan": {"v": 1, "parts": [null]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hello", {"devryan": {"v": 1, "parts": [null]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "hi", {"devryan": {"v": 1, "parts": [null]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "", {"devryan": {"v": 1, "parts": [null]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", null, {"devryan": {"v": 1, "parts": [null]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", "😀abc", {"devryan": {"v": 1, "parts": [null]}}]}
+{"fn": "userTextSegments", "args": ["msg_01", 5, {"devryan": {"v": 1, "parts": [null]}}]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [null]}}, 0]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [null]}}, 1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [null]}}, 2]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [null]}}, "0"]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [null]}}, 1.5]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [null]}}, -1]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [null]}}, null]}
+{"fn": "userSegmentPartId", "args": ["msg_01", {"devryan": {"v": 1, "parts": [null]}}, "length"]}
+{"fn": "clampIncreasingTime", "args": [10, {"$undefined": true}]}
+{"fn": "clampIncreasingTime", "args": [11, 10]}
+{"fn": "clampIncreasingTime", "args": [10, 10]}
+{"fn": "clampIncreasingTime", "args": [5, 10]}
+{"fn": "clampIncreasingTime", "args": [{"$undefined": true}, 10]}
+{"fn": "clampIncreasingTime", "args": ["10", 10]}
+{"fn": "clampIncreasingTime", "args": [{"$undefined": true}, {"$undefined": true}]}
+{"fn": "clampIncreasingTime", "args": [{"$num": "NaN"}, {"$undefined": true}]}
+{"fn": "clampIncreasingTime", "args": [{"$num": "Infinity"}, 10]}
+{"fn": "clampIncreasingTime", "args": [-0.5, {"$num": "-0"}]}
+{"fn": "clampIncreasingTime", "args": [null, 5]}
+{"fn": "clampIncreasingTimes", "args": [[100, 100, 90, 200, {"$undefined": true}]]}
+{"fn": "clampIncreasingTimes", "args": [[100, 150], 120]}
+{"fn": "clampIncreasingTimes", "args": [[{"$undefined": true}, 5]]}
+{"fn": "clampIncreasingTimes", "args": [null]}
+{"fn": "clampIncreasingTimes", "args": ["str"]}
+{"fn": "clampIncreasingTimes", "args": [[null, "x", 3], 1]}
+{"fn": "isCursorAssistant", "args": [{"model": {"providerID": "cursor-acp"}, "metadata": {"devryan": {"cursor": {"source": "cursor-acp"}}}}]}
+{"fn": "isCursorAssistant", "args": [{"model": {"providerID": "x"}, "metadata": {"devryan": {"cursor": {"source": "cursor-acp"}}}}]}
+{"fn": "isCursorAssistant", "args": [{"model": {"providerID": "cursor-acp"}, "metadata": {"devryan": {"cursor": {"source": "y"}}}}]}
+{"fn": "isCursorAssistant", "args": [null]}
+{"fn": "isCursorAssistant", "args": ["s"]}
+{"fn": "isCursorAssistant", "args": [{"model": "m", "metadata": {"devryan": {"cursor": {"source": "cursor-acp"}}}}]}

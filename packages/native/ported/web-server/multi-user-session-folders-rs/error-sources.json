@@ -1,0 +1,65 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [
+    {
+      "site": "packages/web/server/lib/multi-user/session-folders.js:18",
+      "text": "throw invalidPayload(`${label} must be a non-empty string no longer than ${maxLength} characters`);"
+    },
+    {
+      "site": "packages/web/server/lib/multi-user/session-folders.js:25",
+      "text": "throw invalidPayload('Session folders payload must be an object');"
+    },
+    {
+      "site": "packages/web/server/lib/multi-user/session-folders.js:30",
+      "text": "throw Object.assign(new Error('Session folders payload is too large'), { statusCode: 413 });"
+    },
+    {
+      "site": "packages/web/server/lib/multi-user/session-folders.js:32",
+      "text": "if (value.version !== 1) throw invalidPayload('Unsupported session folders version');"
+    },
+    {
+      "site": "packages/web/server/lib/multi-user/session-folders.js:34",
+      "text": "throw invalidPayload('foldersMap must be an object');"
+    },
+    {
+      "site": "packages/web/server/lib/multi-user/session-folders.js:37",
+      "text": "throw invalidPayload('collapsedFolderIds must be an array');"
+    },
+    {
+      "site": "packages/web/server/lib/multi-user/session-folders.js:41",
+      "text": "if (scopeEntries.length > MAX_SCOPES) throw invalidPayload('Too many session folder scopes');"
+    },
+    {
+      "site": "packages/web/server/lib/multi-user/session-folders.js:46",
+      "text": "throw invalidPayload('Each session folder scope must contain a bounded folder array');"
+    },
+    {
+      "site": "packages/web/server/lib/multi-user/session-folders.js:50",
+      "text": "throw invalidPayload('Each session folder must be an object');"
+    },
+    {
+      "site": "packages/web/server/lib/multi-user/session-folders.js:53",
+      "text": "throw invalidPayload('Each session folder must contain a bounded sessionIds array');"
+    },
+    {
+      "site": "packages/web/server/lib/multi-user/session-folders.js:57",
+      "text": "throw invalidPayload('Session folder createdAt must be a non-negative number');"
+    },
+    {
+      "site": "packages/web/server/lib/multi-user/session-folders.js:75",
+      "text": "throw invalidPayload('Too many collapsed session folders');"
+    },
+    {
+      "site": "packages/web/server/lib/multi-user/session-folders.js:79",
+      "text": "throw invalidPayload('Session folders updatedAt must be a non-negative number');"
+    }
+  ],
+  "product": [
+    {
+      "site": "packages/web/server/lib/multi-user/session-folders.js:14",
+      "class": "Error",
+      "sample": "Unsupported session folders version"
+    }
+  ],
+  "engine": []
+}

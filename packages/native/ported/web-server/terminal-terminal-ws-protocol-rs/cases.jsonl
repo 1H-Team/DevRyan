@@ -375,3 +375,8 @@
 {"fn":"isRebindRateLimited","args":[5,null],"ok":false}
 {"fn":"isRebindRateLimited","args":[5,{"$num":"NaN"}],"ok":false}
 {"fn":"isRebindRateLimited","args":[5,[1]],"ok":false}
+{"fn":"pruneRebindTimestamps","args":[[100,200,950,999],1000,100],"ok":[950,999]}
+{"fn":"pruneRebindTimestamps","args":[[920,950,999],1000,100],"ok":[920,950,999]}
+{"fn":"isRebindRateLimited","args":[[1,2,3],4],"ok":false}
+{"fn":"isRebindRateLimited","args":[[],1],"ok":false}
+{"fn":"isRebindRateLimited","args":[[1,2,3,4],4],"ok":true}

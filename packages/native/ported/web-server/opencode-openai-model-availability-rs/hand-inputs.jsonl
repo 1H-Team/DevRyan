@@ -31,3 +31,4 @@
 {"fn": "annotateOpenAIModelAvailability", "args": [{"providers": "x"}, {"type": "oauth"}]}
 {"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": [{"a": 1}]}]}, {"type": "oauth"}]}
 {"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": null}]}, {"type": "oauth"}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"model": {"id": "model"}}}]}, {"type": "oauth", "methodID": "chatgpt-siwc", "access": "fixture-access", "metadata": {"accountID": "workspace-a", "scopes": ["chatgpt.tokens.use.direct"]}}]}

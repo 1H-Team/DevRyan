@@ -19,3 +19,12 @@
 {"fn":"resolveManagedTaskTurnBudget","args":["designer"],"ok":null}
 {"fn":"resolveManagedTaskTurnBudget","args":[{"agent":"DESIGNER﻿"}],"ok":260}
 {"fn":"resolveManagedTaskTurnBudget","args":[{"agent":"fixer"}],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":"designer"}],"ok":260}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":"fixer"}],"ok":150}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":" Designer "}],"ok":260}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":"explorer"}],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":"librarian"}],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":"oracle"}],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":"builder"}],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":{"$undefined":true}}],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[null],"ok":null}

@@ -142,3 +142,6 @@
 {"fn":"getPublicRuntimePort","args":[0,"s"],"ok":0}
 {"fn":"getPublicRuntimePort","args":[0,[1]],"ok":0}
 {"fn":"getPublicRuntimePort","args":[0,{"startupSkipped":{"$undefined":true}}],"ok":0}
+{"fn":"getPublicRuntimePort","args":[4096],"ok":4096}
+{"fn":"getPublicRuntimePort","args":[4096,{"startupSkipped":true}],"ok":null}
+{"fn":"getPublicRuntimePort","args":[4096,{"externallyManaged":true}],"ok":null}

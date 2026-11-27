@@ -7,3 +7,12 @@
 {"fn": "resolveManagedTaskTurnBudget", "args": ["designer"]}
 {"fn": "resolveManagedTaskTurnBudget", "args": [{"agent": "DESIGNER﻿"}]}
 {"fn": "resolveManagedTaskTurnBudget", "args": [{"agent": "fixer"}]}
+{"fn": "resolveManagedTaskTurnBudget", "args": [{"agent": "designer"}]}
+{"fn": "resolveManagedTaskTurnBudget", "args": [{"agent": "fixer"}]}
+{"fn": "resolveManagedTaskTurnBudget", "args": [{"agent": " Designer "}]}
+{"fn": "resolveManagedTaskTurnBudget", "args": [{"agent": "explorer"}]}
+{"fn": "resolveManagedTaskTurnBudget", "args": [{"agent": "librarian"}]}
+{"fn": "resolveManagedTaskTurnBudget", "args": [{"agent": "oracle"}]}
+{"fn": "resolveManagedTaskTurnBudget", "args": [{"agent": "builder"}]}
+{"fn": "resolveManagedTaskTurnBudget", "args": [{"agent": {"$undefined": true}}]}
+{"fn": "resolveManagedTaskTurnBudget", "args": [null]}

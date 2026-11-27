@@ -29,3 +29,6 @@
 {"fn":"normalizeSessionPageLimit","args":["0x10"],"ok":16}
 {"fn":"normalizeSessionPageLimit","args":[[]],"ok":1}
 {"fn":"normalizeSessionPageLimit","args":[null],"ok":1}
+{"fn":"normalizeSessionPageLimit","args":[{"$undefined":true}],"ok":100}
+{"fn":"normalizeSessionPageLimit","args":[0],"ok":1}
+{"fn":"normalizeSessionPageLimit","args":[50000],"ok":1000}

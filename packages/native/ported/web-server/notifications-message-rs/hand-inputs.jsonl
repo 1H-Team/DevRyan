@@ -58,3 +58,4 @@
 {"fn": "truncateNotificationText", "args": [5, "5"]}
 {"fn": "truncateNotificationText", "args": [5, 300]}
 {"fn": "truncateNotificationText", "args": [5, 1]}
+{"fn": "truncateNotificationText", "args": ["abcdef", 3]}

@@ -2,8 +2,8 @@
   "unit": "required-check-command.js",
   "files": 1,
   "fingerprint": "752875f56c5d1ec4",
-  "cases": 60,
-  "cases_hash": "170f85868dcd606d",
+  "cases": 107,
+  "cases_hash": "4c99cae0c6eae11a",
   "coverage": {
     "lines": 50,
     "reached": 50,

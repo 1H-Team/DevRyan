@@ -2,8 +2,8 @@
   "unit": "generation-diagnostics.js",
   "files": 1,
   "fingerprint": "bb4d807d6fe35ea3",
-  "cases": 102,
-  "cases_hash": "c5043ec853a7c77d",
+  "cases": 108,
+  "cases_hash": "2947b4abc19394bd",
   "coverage": {
     "lines": 31,
     "reached": 31,

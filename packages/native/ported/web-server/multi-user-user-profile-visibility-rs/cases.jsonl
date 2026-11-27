@@ -16,3 +16,5 @@
 {"fn":"buildUserManagementProfileQuery","args":["Admin"],"ok":{"order":"created_at.asc","account_kind":"eq.human","role":"neq.admin"}}
 {"fn":"buildUserManagementProfileQuery","args":[5],"ok":{"order":"created_at.asc","account_kind":"eq.human","role":"neq.admin"}}
 {"fn":"buildUserManagementProfileQuery","args":[[]],"ok":{"order":"created_at.asc","account_kind":"eq.human","role":"neq.admin"}}
+{"fn":"buildUserManagementProfileQuery","args":["admin"],"ok":{"order":"created_at.asc","account_kind":"eq.human"}}
+{"fn":"buildUserManagementProfileQuery","args":["senior_developer"],"ok":{"order":"created_at.asc","account_kind":"eq.human","role":"neq.admin"}}

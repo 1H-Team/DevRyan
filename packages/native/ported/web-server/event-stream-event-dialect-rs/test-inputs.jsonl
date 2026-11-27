@@ -1,0 +1,9 @@
+{"fn":"applyEventDialect","args":["{\"type\":\"openchamber:managed-task\",\"properties\":{\"note\":\"openchamber:kept\"}}",null]}
+{"fn":"applyEventDialect","args":["{\"type\":\"openchamber:managed-task\",\"properties\":{\"note\":\"openchamber:kept\"}}","devryan"]}
+{"fn":"applyEventDialect","args":["{\"type\":\"devryan:managed-task\",\"properties\":{\"note\":\"openchamber:kept\"}}",null]}
+{"fn":"applyEventDialect","args":["{\"type\":\"devryan:managed-task\",\"properties\":{\"note\":\"openchamber:kept\"}}","devryan"]}
+{"fn":"applyEventDialect","args":["{\"type\":\"session.status\"}","devryan"]}
+{"fn":"applyEventDialect","args":["{\"properties\":{},\"type\":\"openchamber:x\"}","devryan"]}
+{"fn":"applyEventDialect","args":["{\"type\":\"openchamber:heartbeat\",\"timestamp\":1}",null]}
+{"fn":"applyEventDialect","args":["{\"type\":\"openchamber:heartbeat\",\"timestamp\":1}","devryan"]}
+{"fn":"applyEventDialect","args":["{\"type\":\"devryan:heartbeat\",\"timestamp\":1}",null]}

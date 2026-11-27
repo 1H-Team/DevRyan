@@ -2,8 +2,8 @@
   "unit": "managed-task-turn-budget.js",
   "files": 1,
   "fingerprint": "2a02d691986dfafc",
-  "cases": 21,
-  "cases_hash": "7479ce31e9068746",
+  "cases": 30,
+  "cases_hash": "9433b346feffd954",
   "coverage": {
     "lines": 10,
     "reached": 10,

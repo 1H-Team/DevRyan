@@ -1,0 +1,19 @@
+{
+  "unit": "session-folders.js",
+  "files": 1,
+  "fingerprint": "f838e6417801fc8f",
+  "cases": 56,
+  "cases_hash": "1d22c49a765d14de",
+  "coverage": {
+    "lines": 82,
+    "reached": 78,
+    "files": [
+      {
+        "file": "session-folders.js",
+        "lines": 82,
+        "reached": 78,
+        "missed": "30-31, 75-76"
+      }
+    ]
+  }
+}

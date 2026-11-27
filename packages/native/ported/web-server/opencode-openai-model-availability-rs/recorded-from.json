@@ -2,8 +2,8 @@
   "unit": "openai-model-availability.js",
   "files": 1,
   "fingerprint": "eb0b63bfb38d497b",
-  "cases": 241,
-  "cases_hash": "a8d767280bcdaacb",
+  "cases": 242,
+  "cases_hash": "b277d2e3b8a9dafd",
   "coverage": {
     "lines": 167,
     "reached": 53,

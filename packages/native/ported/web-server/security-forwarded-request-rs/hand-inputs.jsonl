@@ -15,3 +15,201 @@
 {"fn": "hasForwardingHeaders", "args": [5]}
 {"fn": "hasForwardingHeaders", "args": [{"headers": {"İforwarded": 1}}]}
 {"fn": "hasForwardingHeaders", "args": [{"headers": {"FORWARDED": 1}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-Forwarded-For": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-Forwarded-For": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-Forwarded-For": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-Forwarded-For": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-Forwarded-For": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-Forwarded-For": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-for": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-for": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-for": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-for": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-for": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-for": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-FORWARDED-PROTO": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-FORWARDED-PROTO": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-FORWARDED-PROTO": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-FORWARDED-PROTO": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-FORWARDED-PROTO": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-FORWARDED-PROTO": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-host": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-host": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-host": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-host": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-host": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-host": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-port": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-port": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-port": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-port": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-port": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-port": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-Forwarded": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-Forwarded": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-Forwarded": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-Forwarded": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-Forwarded": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-Forwarded": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "xforwarded-for": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "xforwarded-for": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "xforwarded-for": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "xforwarded-for": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "xforwarded-for": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "xforwarded-for": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x_forwarded_for": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x_forwarded_for": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x_forwarded_for": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x_forwarded_for": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x_forwarded_for": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x_forwarded_for": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded_for": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded_for": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded_for": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded_for": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded_for": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded_for": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "Forwarded": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "Forwarded": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "Forwarded": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "Forwarded": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "Forwarded": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "Forwarded": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "FORWARDED": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "FORWARDED": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "FORWARDED": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "FORWARDED": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "FORWARDED": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "FORWARDED": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "forwarded ": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "forwarded ": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "forwarded ": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "forwarded ": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "forwarded ": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "forwarded ": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "forwarded-for": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "forwarded-for": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "forwarded-for": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "forwarded-for": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "forwarded-for": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "forwarded-for": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", " forwarded": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", " forwarded": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", " forwarded": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", " forwarded": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", " forwarded": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", " forwarded": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf-connecting-ip": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf-connecting-ip": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf-connecting-ip": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf-connecting-ip": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf-connecting-ip": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf-connecting-ip": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "CF-IPCountry": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "CF-IPCountry": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "CF-IPCountry": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "CF-IPCountry": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "CF-IPCountry": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "CF-IPCountry": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf-": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf-": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf-": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf-": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf-": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf-": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf_ray": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf_ray": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf_ray": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf_ray": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf_ray": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "cf_ray": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "true-client-ip": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "true-client-ip": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "true-client-ip": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "true-client-ip": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "true-client-ip": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "true-client-ip": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-real-ip": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-real-ip": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-real-ip": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-real-ip": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-real-ip": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-real-ip": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-client-ip": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-client-ip": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-client-ip": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-client-ip": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-client-ip": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-client-ip": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "via": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "via": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "via": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "via": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "via": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "via": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-original-forwarded-for": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-original-forwarded-for": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-original-forwarded-for": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-original-forwarded-for": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-original-forwarded-for": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-original-forwarded-for": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-for\u0000": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-for\u0000": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-for\u0000": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-for\u0000": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-for\u0000": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-for\u0000": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-Forwarded-For\r\n": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-Forwarded-For\r\n": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-Forwarded-For\r\n": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-Forwarded-For\r\n": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-Forwarded-For\r\n": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "X-Forwarded-For\r\n": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "K-forwarded-for": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "K-forwarded-for": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "K-forwarded-for": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "K-forwarded-for": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "K-forwarded-for": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "K-forwarded-for": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-ﬀorwarded-for": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-ﬀorwarded-for": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-ﬀorwarded-for": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-ﬀorwarded-for": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-ﬀorwarded-for": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-ﬀorwarded-for": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "İforwarded": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "İforwarded": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "İforwarded": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "İforwarded": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "İforwarded": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "İforwarded": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-fORWARDED-for": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-fORWARDED-for": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-fORWARDED-for": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-fORWARDED-for": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-fORWARDED-for": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-fORWARDED-for": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-for,x-forwarded-for": "1.2.3.4"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-for,x-forwarded-for": "1.2.3.4, 5.6.7.8"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-for,x-forwarded-for": ["1.2.3.4", "5.6.7.8"]}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-for,x-forwarded-for": ""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-for,x-forwarded-for": null}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "127.0.0.1:3001", "x-forwarded-for,x-forwarded-for": "for=\"[2001:db8::1]:4711\""}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "[::1]:3001", "origin": "http://[::1]:3001"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "localhost:65535"}, "socket": {"remoteAddress": "::ffff:127.0.0.1"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"rawHeaders": ["X-Forwarded-For", "1.2.3.4"], "headers": {}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"x-forwarded-for": "a", "X-Forwarded-For": "b"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": ["x-forwarded-for"]}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"0": "x-forwarded-for", "1": "cf-ray"}}]}

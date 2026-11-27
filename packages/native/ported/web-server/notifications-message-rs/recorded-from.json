@@ -2,8 +2,8 @@
   "unit": "message.js",
   "files": 1,
   "fingerprint": "5223bb2b2cc7b2de",
-  "cases": 164,
-  "cases_hash": "04905c2fd429e946",
+  "cases": 165,
+  "cases_hash": "8161e9e7d9157dbf",
   "coverage": {
     "lines": 64,
     "reached": 23,

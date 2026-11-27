@@ -38,3 +38,6 @@
 {"fn": "getPublicRuntimePort", "args": [0, "s"]}
 {"fn": "getPublicRuntimePort", "args": [0, [1]]}
 {"fn": "getPublicRuntimePort", "args": [0, {"startupSkipped": {"$undefined": true}}]}
+{"fn": "getPublicRuntimePort", "args": [4096]}
+{"fn": "getPublicRuntimePort", "args": [4096, {"startupSkipped": true}]}
+{"fn": "getPublicRuntimePort", "args": [4096, {"externallyManaged": true}]}

@@ -10,3 +10,35 @@
 {"fn": "requestUiSessionCookieName", "args": ["s"]}
 {"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": {"$num": "-0"}}}]}
 {"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": 1}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": 3001}, "headers": {"host": "localhost:9999", "x-forwarded-host": "localhost:9999", "cookie": "oc_ui_session=legacy; oc_ui_session_3001=one; oc_ui_session_3002=two"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": 3001}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": 3002}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": 3003}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": 0}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": -1}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": {"$num": "NaN"}}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": 65536}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": "3001"}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": 1}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": 65535}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": 1.0}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": 3001.5}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": {"$num": "Infinity"}}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": {"$num": "-Infinity"}}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": 1e+21}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": {"$num": "-0"}}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": true}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": [3001]}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": {"valueOf": 3001}}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": null}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": "0x0bb9"}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": " 3001"}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": 9007199254740992}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": -65535}, "headers": {"host": "[::1]:3001", "x-forwarded-port": "443", "forwarded": "for=1.2.3.4;host=evil:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"headers": {"host": "localhost:3001"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": null}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": "3001"}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"remotePort": 3001}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": 3001, "localAddress": "::ffff:127.0.0.1"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"connection": {"localPort": 3001}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"$map": [["localPort", 3001]]}}]}

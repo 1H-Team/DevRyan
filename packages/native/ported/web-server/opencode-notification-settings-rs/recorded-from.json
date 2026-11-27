@@ -1,0 +1,19 @@
+{
+  "unit": "notification-settings.js",
+  "files": 1,
+  "fingerprint": "e8af9cec35aebdf1",
+  "cases": 172,
+  "cases_hash": "f169399c4f3b2098",
+  "coverage": {
+    "lines": 55,
+    "reached": 55,
+    "files": [
+      {
+        "file": "notification-settings.js",
+        "lines": 55,
+        "reached": 55,
+        "missed": ""
+      }
+    ]
+  }
+}

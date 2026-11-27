@@ -227,3 +227,67 @@
 {"fn":"eventEntryBytes","args":[{"directory":5,"eventId":null}],"ok":96}
 {"fn":"eventEntryBytes","args":["str"],"ok":96}
 {"fn":"eventEntryBytes","args":[{"payload":{"$bigint":"1"}}],"error":"Do not know how to serialize a BigInt"}
+{"fn":"serializeEventPayload","args":[{"type":"message.part.updated","properties":{"part":{"id":"p","text":"héllo \"quoted\"   🚀","n":[1,null,true]}}}],"ok":"{\"type\":\"message.part.updated\",\"properties\":{\"part\":{\"id\":\"p\",\"text\":\"héllo \\\"quoted\\\"   🚀\",\"n\":[1,null,true]}}}"}
+{"fn":"serializeEventPayload","args":[{"type":"message.part.updated","properties":{"part":{"id":"p","text":"héllo \"quoted\"   🚀","n":[1,null,true]}}},"devryan"],"ok":"{\"type\":\"message.part.updated\",\"properties\":{\"part\":{\"id\":\"p\",\"text\":\"héllo \\\"quoted\\\"   🚀\",\"n\":[1,null,true]}}}"}
+{"fn":"eventPayloadBytes","args":[{"type":"message.part.updated","properties":{"part":{"id":"p","text":"héllo \"quoted\"   🚀","n":[1,null,true]}}}],"ok":116}
+{"fn":"eventEntryBytes","args":[{"payload":{"type":"message.part.updated","properties":{"part":{"id":"p","text":"héllo \"quoted\"   🚀","n":[1,null,true]}}}}],"ok":212}
+{"fn":"eventEntryBytes","args":[{"eventId":"evt-1","payload":{"type":"message.part.updated","properties":{"part":{"id":"p","text":"héllo \"quoted\"   🚀","n":[1,null,true]}}}}],"ok":217}
+{"fn":"eventEntryBytes","args":[{"directory":"/repo","payload":{"type":"message.part.updated","properties":{"part":{"id":"p","text":"héllo \"quoted\"   🚀","n":[1,null,true]}}}}],"ok":217}
+{"fn":"eventEntryBytes","args":[{"eventId":"evt-1","directory":"/repo","payload":{"type":"message.part.updated","properties":{"part":{"id":"p","text":"héllo \"quoted\"   🚀","n":[1,null,true]}}}}],"ok":222}
+{"fn":"eventEntryBytes","args":[{"eventId":"","directory":"","payload":{"type":"message.part.updated","properties":{"part":{"id":"p","text":"héllo \"quoted\"   🚀","n":[1,null,true]}}}}],"ok":212}
+{"fn":"serializeEventPayload","args":[{"type":"openchamber:heartbeat","timestamp":1}],"ok":"{\"type\":\"openchamber:heartbeat\",\"timestamp\":1}"}
+{"fn":"serializeEventPayload","args":[{"type":"openchamber:heartbeat","timestamp":1},"devryan"],"ok":"{\"type\":\"devryan:heartbeat\",\"timestamp\":1}"}
+{"fn":"eventPayloadBytes","args":[{"type":"openchamber:heartbeat","timestamp":1}],"ok":46}
+{"fn":"eventEntryBytes","args":[{"payload":{"type":"openchamber:heartbeat","timestamp":1}}],"ok":142}
+{"fn":"eventEntryBytes","args":[{"eventId":"evt-1","payload":{"type":"openchamber:heartbeat","timestamp":1}}],"ok":147}
+{"fn":"eventEntryBytes","args":[{"directory":"/repo","payload":{"type":"openchamber:heartbeat","timestamp":1}}],"ok":147}
+{"fn":"eventEntryBytes","args":[{"eventId":"evt-1","directory":"/repo","payload":{"type":"openchamber:heartbeat","timestamp":1}}],"ok":152}
+{"fn":"eventEntryBytes","args":[{"eventId":"","directory":"","payload":{"type":"openchamber:heartbeat","timestamp":1}}],"ok":142}
+{"fn":"serializeEventPayload","args":[{}],"ok":"{}"}
+{"fn":"serializeEventPayload","args":[{},"devryan"],"ok":"{}"}
+{"fn":"eventPayloadBytes","args":[{}],"ok":2}
+{"fn":"eventEntryBytes","args":[{"payload":{}}],"ok":98}
+{"fn":"eventEntryBytes","args":[{"eventId":"evt-1","payload":{}}],"ok":103}
+{"fn":"eventEntryBytes","args":[{"directory":"/repo","payload":{}}],"ok":103}
+{"fn":"eventEntryBytes","args":[{"eventId":"evt-1","directory":"/repo","payload":{}}],"ok":108}
+{"fn":"eventEntryBytes","args":[{"eventId":"","directory":"","payload":{}}],"ok":98}
+{"fn":"serializeEventPayload","args":[[]],"ok":"[]"}
+{"fn":"serializeEventPayload","args":[[],"devryan"],"ok":"[]"}
+{"fn":"eventPayloadBytes","args":[[]],"ok":2}
+{"fn":"eventEntryBytes","args":[{"payload":[]}],"ok":98}
+{"fn":"eventEntryBytes","args":[{"eventId":"evt-1","payload":[]}],"ok":103}
+{"fn":"eventEntryBytes","args":[{"directory":"/repo","payload":[]}],"ok":103}
+{"fn":"eventEntryBytes","args":[{"eventId":"evt-1","directory":"/repo","payload":[]}],"ok":108}
+{"fn":"eventEntryBytes","args":[{"eventId":"","directory":"","payload":[]}],"ok":98}
+{"fn":"serializeEventPayload","args":["text"],"ok":"\"text\""}
+{"fn":"serializeEventPayload","args":["text","devryan"],"ok":"\"text\""}
+{"fn":"eventPayloadBytes","args":["text"],"ok":6}
+{"fn":"eventEntryBytes","args":[{"payload":"text"}],"ok":102}
+{"fn":"eventEntryBytes","args":[{"eventId":"evt-1","payload":"text"}],"ok":107}
+{"fn":"eventEntryBytes","args":[{"directory":"/repo","payload":"text"}],"ok":107}
+{"fn":"eventEntryBytes","args":[{"eventId":"evt-1","directory":"/repo","payload":"text"}],"ok":112}
+{"fn":"eventEntryBytes","args":[{"eventId":"","directory":"","payload":"text"}],"ok":102}
+{"fn":"serializeEventPayload","args":[0],"ok":"0"}
+{"fn":"serializeEventPayload","args":[0,"devryan"],"ok":"0"}
+{"fn":"eventPayloadBytes","args":[0],"ok":1}
+{"fn":"eventEntryBytes","args":[{"payload":0}],"ok":97}
+{"fn":"eventEntryBytes","args":[{"eventId":"evt-1","payload":0}],"ok":102}
+{"fn":"eventEntryBytes","args":[{"directory":"/repo","payload":0}],"ok":102}
+{"fn":"eventEntryBytes","args":[{"eventId":"evt-1","directory":"/repo","payload":0}],"ok":107}
+{"fn":"eventEntryBytes","args":[{"eventId":"","directory":"","payload":0}],"ok":97}
+{"fn":"serializeEventPayload","args":[null],"ok":"null"}
+{"fn":"serializeEventPayload","args":[null,"devryan"],"ok":"null"}
+{"fn":"eventPayloadBytes","args":[null],"ok":4}
+{"fn":"eventEntryBytes","args":[{"payload":null}],"ok":100}
+{"fn":"eventEntryBytes","args":[{"eventId":"evt-1","payload":null}],"ok":105}
+{"fn":"eventEntryBytes","args":[{"directory":"/repo","payload":null}],"ok":105}
+{"fn":"eventEntryBytes","args":[{"eventId":"evt-1","directory":"/repo","payload":null}],"ok":110}
+{"fn":"eventEntryBytes","args":[{"eventId":"","directory":"","payload":null}],"ok":100}
+{"fn":"serializeEventPayload","args":[{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"serializeEventPayload","args":[{"$undefined":true},"devryan"],"ok":{"$undefined":true}}
+{"fn":"eventPayloadBytes","args":[{"$undefined":true}],"ok":0}
+{"fn":"eventEntryBytes","args":[{"payload":{"$undefined":true}}],"ok":96}
+{"fn":"eventEntryBytes","args":[{"eventId":"evt-1","payload":{"$undefined":true}}],"ok":101}
+{"fn":"eventEntryBytes","args":[{"directory":"/repo","payload":{"$undefined":true}}],"ok":101}
+{"fn":"eventEntryBytes","args":[{"eventId":"evt-1","directory":"/repo","payload":{"$undefined":true}}],"ok":106}
+{"fn":"eventEntryBytes","args":[{"eventId":"","directory":"","payload":{"$undefined":true}}],"ok":96}

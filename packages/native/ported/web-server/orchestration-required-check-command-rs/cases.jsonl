@@ -58,3 +58,50 @@
 {"fn":"requiredCheckCommandIssue","args":["1A=2 run"],"ok":null}
 {"fn":"requiredCheckCommandIssue","args":["=x run"],"ok":null}
 {"fn":"requiredCheckCommandIssue","args":["source .env"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["npm test"],"ok":null}
+{"fn":"requiredCheckCommandIssue","args":["false"],"ok":null}
+{"fn":"requiredCheckCommandIssue","args":["npm test && echo done"],"ok":null}
+{"fn":"requiredCheckCommandIssue","args":["cd \"directory with spaces\" && npm test"],"ok":null}
+{"fn":"requiredCheckCommandIssue","args":["bun test \"test;literal|name.test.js\""],"ok":null}
+{"fn":"requiredCheckCommandIssue","args":["bun test 'literal$(name).test.js'"],"ok":null}
+{"fn":"requiredCheckCommandIssue","args":["bun test test\\;literal.test.js"],"ok":null}
+{"fn":"requiredCheckCommandIssue","args":["TEST_MODE=unit npm test"],"ok":null}
+{"fn":"requiredCheckCommandIssue","args":["npm run test -- \"a && b\""],"ok":null}
+{"fn":"requiredCheckCommandIssue","args":["bun test \"literal\\$name.test.js\""],"ok":null}
+{"fn":"requiredCheckCommandIssue","args":[""],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":[" "],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["npm test; echo done"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["false; echo done"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["npm test\necho done"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["npm test\r\necho done"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["npm test || echo done"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["npm test | cat"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["npm test &"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["npm test & echo done"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["echo $(npm test)"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["echo `npm test`"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["npm test > /tmp/result"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["(npm test)"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["! npm test"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["sh -c \"false; echo done\""],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["/bin/bash -lc \"npm test\""],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["env sh -c \"npm test\""],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["cmd.exe /c \"exit /b 1 & echo done\""],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["PowerShell -Command \"exit 0\""],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["pwsh -File check.ps1"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["command zsh -c \"npm test\""],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["eval \"false; echo done\""],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["source check.sh"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":[". check.sh"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["trap \"exit 0\" EXIT && false"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["builtin eval \"false; echo done\""],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["env -S 'bash -c false;echo done'"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["coproc npm test"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["npm test # && false"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["npm test &&"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["&& npm test"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["npm test && && echo done"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["bun test \"unterminated"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["bun test trailing\\"],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["echo \"$STATUS\""],"ok":"required_check_command_exit_ambiguous"}
+{"fn":"requiredCheckCommandIssue","args":["npm test\\\necho done"],"ok":"required_check_command_exit_ambiguous"}

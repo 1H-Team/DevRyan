@@ -119,3 +119,12 @@
 {"fn":"applyEventDialect","args":[{"$utf16":[123,34,116,121,112,101,34,58,34,100,101,118,114,121,97,110,58,55296]},null],"ok":{"$utf16":[123,34,116,121,112,101,34,58,34,111,112,101,110,99,104,97,109,98,101,114,58,55296]}}
 {"fn":"applyEventDialect","args":[{"$utf16":[123,34,116,121,112,101,34,58,34,100,101,118,114,121,97,110,58,55296]},"DEVRYAN"],"ok":{"$utf16":[123,34,116,121,112,101,34,58,34,111,112,101,110,99,104,97,109,98,101,114,58,55296]}}
 {"fn":"applyEventDialect","args":[{"$utf16":[123,34,116,121,112,101,34,58,34,100,101,118,114,121,97,110,58,55296]},"x"],"ok":{"$utf16":[123,34,116,121,112,101,34,58,34,111,112,101,110,99,104,97,109,98,101,114,58,55296]}}
+{"fn":"applyEventDialect","args":["{\"type\":\"openchamber:managed-task\",\"properties\":{\"note\":\"openchamber:kept\"}}",null],"ok":"{\"type\":\"openchamber:managed-task\",\"properties\":{\"note\":\"openchamber:kept\"}}"}
+{"fn":"applyEventDialect","args":["{\"type\":\"openchamber:managed-task\",\"properties\":{\"note\":\"openchamber:kept\"}}","devryan"],"ok":"{\"type\":\"devryan:managed-task\",\"properties\":{\"note\":\"openchamber:kept\"}}"}
+{"fn":"applyEventDialect","args":["{\"type\":\"devryan:managed-task\",\"properties\":{\"note\":\"openchamber:kept\"}}",null],"ok":"{\"type\":\"openchamber:managed-task\",\"properties\":{\"note\":\"openchamber:kept\"}}"}
+{"fn":"applyEventDialect","args":["{\"type\":\"devryan:managed-task\",\"properties\":{\"note\":\"openchamber:kept\"}}","devryan"],"ok":"{\"type\":\"devryan:managed-task\",\"properties\":{\"note\":\"openchamber:kept\"}}"}
+{"fn":"applyEventDialect","args":["{\"type\":\"session.status\"}","devryan"],"ok":"{\"type\":\"session.status\"}"}
+{"fn":"applyEventDialect","args":["{\"properties\":{},\"type\":\"openchamber:x\"}","devryan"],"ok":"{\"properties\":{},\"type\":\"openchamber:x\"}"}
+{"fn":"applyEventDialect","args":["{\"type\":\"openchamber:heartbeat\",\"timestamp\":1}",null],"ok":"{\"type\":\"openchamber:heartbeat\",\"timestamp\":1}"}
+{"fn":"applyEventDialect","args":["{\"type\":\"openchamber:heartbeat\",\"timestamp\":1}","devryan"],"ok":"{\"type\":\"devryan:heartbeat\",\"timestamp\":1}"}
+{"fn":"applyEventDialect","args":["{\"type\":\"devryan:heartbeat\",\"timestamp\":1}",null],"ok":"{\"type\":\"openchamber:heartbeat\",\"timestamp\":1}"}

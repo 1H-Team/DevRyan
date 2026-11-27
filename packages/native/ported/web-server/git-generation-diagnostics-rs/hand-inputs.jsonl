@@ -11,3 +11,9 @@
 {"fn": "buildGitGenerationTimingRecord", "args": [{"principal": {"id": "a"}}]}
 {"fn": "buildGitGenerationTimingRecord", "args": [null, {"stagedOnly": "true", "retried": 1}]}
 {"fn": "buildGitGenerationTimingRecord", "args": [null, "str"]}
+{"fn": "buildGitGenerationTimingRecord", "args": [null, {"event": "git_commit_message_model_attempt", "model": "free-a", "attempt": 2, "providerMs": 594, "totalMs": 594, "outcome": "failed", "source": "free_zen", "providerOutcome": "unauthorized", "statusCode": 401, "catalogState": "stale", "retried": true, "prompt": "private diff", "error": "private upstream error"}]}
+{"fn": "buildGitGenerationTimingRecord", "args": [null, {"event": "git_pr_description_model_attempt", "model": "free-a", "attempt": 2, "providerMs": 594, "totalMs": 594, "outcome": "failed", "source": "free_zen", "providerOutcome": "unauthorized", "statusCode": 401, "catalogState": "stale", "retried": true, "prompt": "private diff", "error": "private upstream error"}]}
+{"fn": "buildGitGenerationTimingRecord", "args": [null, {"event": "git_commit_message_generation", "providerOutcome": "complete"}]}
+{"fn": "buildGitGenerationTimingRecord", "args": [null, {"event": "git_commit_message_generation", "providerOutcome": "exhausted"}]}
+{"fn": "buildGitGenerationTimingRecord", "args": [null, {"event": "git_commit_message_generation", "providerOutcome": "catalog_unavailable"}]}
+{"fn": "buildGitGenerationTimingRecord", "args": [null, {"event": "git_commit_message_generation", "providerOutcome": "no_free_models"}]}

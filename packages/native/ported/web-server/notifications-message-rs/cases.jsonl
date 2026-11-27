@@ -162,3 +162,4 @@
 {"fn":"truncateNotificationText","args":[5,"5"],"ok":""}
 {"fn":"truncateNotificationText","args":[5,300],"ok":""}
 {"fn":"truncateNotificationText","args":[5,1],"ok":""}
+{"fn":"truncateNotificationText","args":["abcdef",3],"ok":"abc..."}

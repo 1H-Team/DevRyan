@@ -2,8 +2,8 @@
   "unit": "terminal-ws-protocol.js",
   "files": 1,
   "fingerprint": "cbee818034160382",
-  "cases": 377,
-  "cases_hash": "fc3be85612413a7a",
+  "cases": 382,
+  "cases_hash": "2b61b4abe12fc0fd",
   "coverage": {
     "lines": 53,
     "reached": 16,

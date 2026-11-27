@@ -2,8 +2,8 @@
   "unit": "forwarded-request.js",
   "files": 1,
   "fingerprint": "726fcdae9771d503",
-  "cases": 29,
-  "cases_hash": "f427ca5ddbeddfb9",
+  "cases": 227,
+  "cases_hash": "5eb7cab9e2c2ed4a",
   "coverage": {
     "lines": 7,
     "reached": 7,

@@ -17,3 +17,6 @@
 {"fn": "normalizeSessionPageLimit", "args": ["0x10"]}
 {"fn": "normalizeSessionPageLimit", "args": [[]]}
 {"fn": "normalizeSessionPageLimit", "args": [null]}
+{"fn": "normalizeSessionPageLimit", "args": [{"$undefined": true}]}
+{"fn": "normalizeSessionPageLimit", "args": [0]}
+{"fn": "normalizeSessionPageLimit", "args": [50000]}

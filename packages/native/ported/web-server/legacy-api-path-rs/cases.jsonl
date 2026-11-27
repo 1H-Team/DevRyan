@@ -22,3 +22,9 @@
 {"fn":"canonicalApiUrl","args":["/api/openchamber//"],"ok":"/api/devryan//"}
 {"fn":"canonicalApiUrl","args":[{"$utf16":[47,97,112,105,47,111,112,101,110,99,104,97,109,98,101,114,47,55296]}],"ok":{"$utf16":[47,97,112,105,47,100,101,118,114,121,97,110,47,55296]}}
 {"fn":"canonicalApiUrl","args":[null],"ok":null}
+{"fn":"canonicalApiUrl","args":["/api/openchamber/tunnel/status?x=1"],"ok":"/api/devryan/tunnel/status?x=1"}
+{"fn":"canonicalApiUrl","args":["/api/openchamber?x=1"],"ok":"/api/devryan?x=1"}
+{"fn":"canonicalApiUrl","args":["/api/openchamber"],"ok":"/api/devryan"}
+{"fn":"canonicalApiUrl","args":["/api/openchamberx/a"],"ok":"/api/openchamberx/a"}
+{"fn":"canonicalApiUrl","args":["/api/devryan/a"],"ok":"/api/devryan/a"}
+{"fn":"canonicalApiUrl","args":["/api/session"],"ok":"/api/session"}

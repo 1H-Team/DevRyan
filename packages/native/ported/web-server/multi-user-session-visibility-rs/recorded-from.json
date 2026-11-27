@@ -2,8 +2,8 @@
   "unit": "session-visibility.js",
   "files": 1,
   "fingerprint": "c3409a05165a5577",
-  "cases": 31,
-  "cases_hash": "0c745b97979f90cd",
+  "cases": 34,
+  "cases_hash": "4c4eb912f4e2fe03",
   "coverage": {
     "lines": 73,
     "reached": 21,
