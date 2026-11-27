@@ -1,0 +1,19 @@
+{
+  "unit": "openInApps.ts",
+  "files": 1,
+  "fingerprint": "b08ab0aae12306c9",
+  "cases": 239,
+  "cases_hash": "85e65ccc3c55daf0",
+  "coverage": {
+    "lines": 38,
+    "reached": 38,
+    "files": [
+      {
+        "file": "openInApps.ts",
+        "lines": 38,
+        "reached": 38,
+        "missed": ""
+      }
+    ]
+  }
+}

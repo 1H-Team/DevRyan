@@ -1,0 +1,187 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "agentSelection.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "agentselection-rs",
+  "exports": [
+    {
+      "name": "normalizeAgentName",
+      "file": "agentSelection.ts",
+      "line": 15,
+      "params": [
+        {
+          "name": "name",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isPrimaryAgentMode",
+      "file": "agentSelection.ts",
+      "line": 17,
+      "params": [
+        {
+          "name": "mode",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isHiddenBuiltinAgentOption",
+      "file": "agentSelection.ts",
+      "line": 19,
+      "params": [
+        {
+          "name": "name",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isBuilderAgentName",
+      "file": "agentSelection.ts",
+      "line": 23,
+      "params": [
+        {
+          "name": "name",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isAgentHidden",
+      "file": "agentSelection.ts",
+      "line": 38,
+      "params": [
+        {
+          "name": "agent",
+          "ts_type": "({\n  name: string\n  mode?: string | null\n  hidden?: boolean\n  options?: { hidden?: boolean }\n  model?: {\n    providerID?: string\n    modelID?: string\n  }\n  variant?: string | null\n})",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isSelectablePrimaryAgentOption",
+      "file": "agentSelection.ts",
+      "line": 42,
+      "params": [
+        {
+          "name": "agent",
+          "ts_type": "Pick<({\n  name: string\n  mode?: string | null\n  hidden?: boolean\n  options?: { hidden?: boolean }\n  model?: {\n    providerID?: string\n    modelID?: string\n  }\n  variant?: string | null\n}), \"name\" | \"mode\" | \"hidden\" | \"options\">",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "findSelectableAgentByName",
+      "file": "agentSelection.ts",
+      "line": 81,
+      "params": [
+        {
+          "name": "agents",
+          "ts_type": "(({\n  name: string\n  mode?: string | null\n  hidden?: boolean\n  options?: { hidden?: boolean }\n  model?: {\n    providerID?: string\n    modelID?: string\n  }\n  variant?: string | null\n}))[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "agentName",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "resolveDefaultAgentName",
+      "file": "agentSelection.ts",
+      "line": 98,
+      "params": [
+        {
+          "name": "savedAgent",
+          "ts_type": "string | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "selectableAgents",
+          "ts_type": "(({\n  name: string\n  mode?: string | null\n  hidden?: boolean\n  options?: { hidden?: boolean }\n  model?: {\n    providerID?: string\n    modelID?: string\n  }\n  variant?: string | null\n}))[]",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "compareAgentOptions",
+      "file": "agentSelection.ts",
+      "line": 48,
+      "reason": "ICU collation (localeCompare)"
+    },
+    {
+      "name": "getSelectablePrimaryAgents",
+      "file": "agentSelection.ts",
+      "line": 62,
+      "reason": "sorts with localeCompare (ICU collation)"
+    },
+    {
+      "name": "resolveSelectableAgentOptions",
+      "file": "agentSelection.ts",
+      "line": 72,
+      "reason": "sorts with localeCompare (ICU collation)"
+    }
+  ]
+}

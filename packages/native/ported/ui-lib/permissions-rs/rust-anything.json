@@ -1,0 +1,30 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "permissions/",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "permissions-rs",
+  "exports": [
+    {
+      "name": "getEditModeColors",
+      "file": "permissions/editModeColors.ts",
+      "line": 10,
+      "params": [
+        {
+          "name": "mode",
+          "ts_type": "EditPermissionMode | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "EditModeColors | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

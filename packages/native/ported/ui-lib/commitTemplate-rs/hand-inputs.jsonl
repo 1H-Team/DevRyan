@@ -1,0 +1,75 @@
+{"fn": "validateCommitMessage", "args": ["feat: add thing"]}
+{"fn": "stripCommitComments", "args": ["feat: add thing"]}
+{"fn": "validateCommitMessage", "args": ["feat(ui): add thing"]}
+{"fn": "stripCommitComments", "args": ["feat(ui): add thing"]}
+{"fn": "validateCommitMessage", "args": ["feat(ui)!: break"]}
+{"fn": "stripCommitComments", "args": ["feat(ui)!: break"]}
+{"fn": "validateCommitMessage", "args": ["feat!: break"]}
+{"fn": "stripCommitComments", "args": ["feat!: break"]}
+{"fn": "validateCommitMessage", "args": ["fix:  spaced"]}
+{"fn": "stripCommitComments", "args": ["fix:  spaced"]}
+{"fn": "validateCommitMessage", "args": ["fix:nospace"]}
+{"fn": "stripCommitComments", "args": ["fix:nospace"]}
+{"fn": "validateCommitMessage", "args": ["fix: ends."]}
+{"fn": "stripCommitComments", "args": ["fix: ends."]}
+{"fn": "validateCommitMessage", "args": ["fix: ends. "]}
+{"fn": "stripCommitComments", "args": ["fix: ends. "]}
+{"fn": "validateCommitMessage", "args": ["Feat: x"]}
+{"fn": "stripCommitComments", "args": ["Feat: x"]}
+{"fn": "validateCommitMessage", "args": ["feature: x"]}
+{"fn": "stripCommitComments", "args": ["feature: x"]}
+{"fn": "validateCommitMessage", "args": ["feat(UI): x"]}
+{"fn": "stripCommitComments", "args": ["feat(UI): x"]}
+{"fn": "validateCommitMessage", "args": ["feat(-x): x"]}
+{"fn": "stripCommitComments", "args": ["feat(-x): x"]}
+{"fn": "validateCommitMessage", "args": ["feat(a_b-c): x"]}
+{"fn": "stripCommitComments", "args": ["feat(a_b-c): x"]}
+{"fn": "validateCommitMessage", "args": ["feat(): x"]}
+{"fn": "stripCommitComments", "args": ["feat(): x"]}
+{"fn": "validateCommitMessage", "args": ["feat(a)(b): x"]}
+{"fn": "stripCommitComments", "args": ["feat(a)(b): x"]}
+{"fn": "validateCommitMessage", "args": ["chore: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]}
+{"fn": "stripCommitComments", "args": ["chore: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]}
+{"fn": "validateCommitMessage", "args": ["chore: x y"]}
+{"fn": "stripCommitComments", "args": ["chore: x y"]}
+{"fn": "validateCommitMessage", "args": ["chore: x\ry"]}
+{"fn": "stripCommitComments", "args": ["chore: x\ry"]}
+{"fn": "validateCommitMessage", "args": ["chore:　x"]}
+{"fn": "stripCommitComments", "args": ["chore:　x"]}
+{"fn": "validateCommitMessage", "args": ["chore:x"]}
+{"fn": "stripCommitComments", "args": ["chore:x"]}
+{"fn": "validateCommitMessage", "args": ["# comment\nfeat: x\n# more"]}
+{"fn": "stripCommitComments", "args": ["# comment\nfeat: x\n# more"]}
+{"fn": "validateCommitMessage", "args": ["  # c\r\nfeat: x\r\n\r\nbody"]}
+{"fn": "stripCommitComments", "args": ["  # c\r\nfeat: x\r\n\r\nbody"]}
+{"fn": "validateCommitMessage", "args": ["\n\n  \n"]}
+{"fn": "stripCommitComments", "args": ["\n\n  \n"]}
+{"fn": "validateCommitMessage", "args": [""]}
+{"fn": "stripCommitComments", "args": [""]}
+{"fn": "validateCommitMessage", "args": ["#only"]}
+{"fn": "stripCommitComments", "args": ["#only"]}
+{"fn": "validateCommitMessage", "args": ["feat: x\n\nbody."]}
+{"fn": "stripCommitComments", "args": ["feat: x\n\nbody."]}
+{"fn": "validateCommitMessage", "args": ["revert: \"feat: x\""]}
+{"fn": "stripCommitComments", "args": ["revert: \"feat: x\""]}
+{"fn": "validateCommitMessage", "args": ["ci: 😀éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"]}
+{"fn": "stripCommitComments", "args": ["ci: 😀éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"]}
+{"fn": "validateCommitMessage", "args": ["style: ﻿x"]}
+{"fn": "stripCommitComments", "args": ["style: ﻿x"]}
+{"fn": "validateCommitMessage", "args": ["docs: x\t"]}
+{"fn": "stripCommitComments", "args": ["docs: x\t"]}
+{"fn": "validateCommitMessage", "args": ["perf: ."]}
+{"fn": "stripCommitComments", "args": ["perf: ."]}
+{"fn": "validateCommitMessage", "args": ["test(é): x"]}
+{"fn": "stripCommitComments", "args": ["test(é): x"]}
+{"fn": "validateCommitMessage", "args": ["build(a b): x"]}
+{"fn": "stripCommitComments", "args": ["build(a b): x"]}
+{"fn": "validateCommitMessage", "args": ["feat: a\r\nb"]}
+{"fn": "stripCommitComments", "args": ["feat: a\r\nb"]}
+{"fn": "validateCommitMessage", "args": ["x\r"]}
+{"fn": "stripCommitComments", "args": ["x\r"]}
+{"fn": "validateCommitMessage", "args": ["\rfeat: x"]}
+{"fn": "stripCommitComments", "args": ["\rfeat: x"]}
+{"fn": "validateCommitMessage", "args": ["feat(ui): add "]}
+{"fn": "stripCommitComments", "args": ["feat(ui): add "]}
+{"fn": "buildCommitMsgHookScript", "args": []}

@@ -1,0 +1,19 @@
+{
+  "unit": "executionFailure.ts",
+  "files": 1,
+  "fingerprint": "da110e7fb684d2f3",
+  "cases": 744,
+  "cases_hash": "2d0b3224c6184715",
+  "coverage": {
+    "lines": 34,
+    "reached": 34,
+    "files": [
+      {
+        "file": "executionFailure.ts",
+        "lines": 34,
+        "reached": 34,
+        "missed": ""
+      }
+    ]
+  }
+}

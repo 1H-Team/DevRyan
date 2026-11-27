@@ -1,0 +1,21 @@
+{"fn":"stripCommitComments","args":["feat(dashboard): add settings\n\n# comment that should disappear\nbody line\n"]}
+{"fn":"stripCommitComments","args":["# only comments\n#  another\n"]}
+{"fn":"validateCommitMessage","args":["feat(dashboard): add settings page"]}
+{"fn":"stripCommitComments","args":["feat(dashboard): add settings page"]}
+{"fn":"validateCommitMessage","args":["chore: update deps"]}
+{"fn":"stripCommitComments","args":["chore: update deps"]}
+{"fn":"validateCommitMessage","args":["feat(dashboard)!: drop deprecated endpoint"]}
+{"fn":"stripCommitComments","args":["feat(dashboard)!: drop deprecated endpoint"]}
+{"fn":"validateCommitMessage","args":["perf(git): speed commit drafts\n\n- Batch selected Git diffs\n- Fall back within the latency budget"]}
+{"fn":"stripCommitComments","args":["perf(git): speed commit drafts\n\n- Batch selected Git diffs\n- Fall back within the latency budget"]}
+{"fn":"validateCommitMessage","args":[""]}
+{"fn":"stripCommitComments","args":[""]}
+{"fn":"validateCommitMessage","args":["frobnicate(dashboard): add things"]}
+{"fn":"stripCommitComments","args":["frobnicate(dashboard): add things"]}
+{"fn":"validateCommitMessage","args":["feat: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]}
+{"fn":"stripCommitComments","args":["feat: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]}
+{"fn":"validateCommitMessage","args":["fix(dashboard): correct alignment."]}
+{"fn":"stripCommitComments","args":["fix(dashboard): correct alignment."]}
+{"fn":"validateCommitMessage","args":["feat(dashboard): add card\n\n# template guidance below\n# allowed types: ...\n"]}
+{"fn":"stripCommitComments","args":["feat(dashboard): add card\n\n# template guidance below\n# allowed types: ...\n"]}
+{"fn":"buildCommitMsgHookScript","args":[]}

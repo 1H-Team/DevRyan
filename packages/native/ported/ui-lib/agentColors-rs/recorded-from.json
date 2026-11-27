@@ -1,0 +1,19 @@
+{
+  "unit": "agentColors.ts",
+  "files": 1,
+  "fingerprint": "5517e17e046a328e",
+  "cases": 460,
+  "cases_hash": "cd506222261f6553",
+  "coverage": {
+    "lines": 48,
+    "reached": 48,
+    "files": [
+      {
+        "file": "agentColors.ts",
+        "lines": 48,
+        "reached": 48,
+        "missed": ""
+      }
+    ]
+  }
+}

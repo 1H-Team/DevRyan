@@ -1,0 +1,1261 @@
+{"fn":"isResponseStyleLevel","args":[0],"ok":false}
+{"fn":"isResponseStyleLevel","args":[{}],"ok":false}
+{"fn":"isResponseStyleLevel","args":[true],"ok":false}
+{"fn":"isResponseStyleLevel","args":[{"a":{"b":"c"}}],"ok":false}
+{"fn":"isResponseStyleLevel","args":[["a",1]],"ok":false}
+{"fn":"isResponseStyleLevel","args":[[]],"ok":false}
+{"fn":"isResponseStyleLevel","args":["x"],"ok":false}
+{"fn":"isResponseStyleLevel","args":[{"a":"b"}],"ok":false}
+{"fn":"isResponseStyleLevel","args":[null],"ok":false}
+{"fn":"isResponseStyleLevel","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":false}
+{"fn":"isResponseStyleLevel","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":false}
+{"fn":"isResponseStyleLevel","args":[[3,1,2]],"ok":false}
+{"fn":"isResponseStylePreset","args":[["a",1]],"ok":false}
+{"fn":"isResponseStylePreset","args":[{"a":{"b":"c"}}],"ok":false}
+{"fn":"isResponseStylePreset","args":[true],"ok":false}
+{"fn":"isResponseStylePreset","args":["x"],"ok":false}
+{"fn":"isResponseStylePreset","args":[[]],"ok":false}
+{"fn":"isResponseStylePreset","args":[{}],"ok":false}
+{"fn":"isResponseStylePreset","args":[null],"ok":false}
+{"fn":"isResponseStylePreset","args":[{"a":"b"}],"ok":false}
+{"fn":"isResponseStylePreset","args":[0],"ok":false}
+{"fn":"isResponseStylePreset","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":false}
+{"fn":"isResponseStylePreset","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":false}
+{"fn":"isResponseStylePreset","args":[[3,1,2]],"ok":false}
+{"fn":"resolveResponseStyleLevel","args":[["a",1]],"ok":"provider"}
+{"fn":"resolveResponseStyleLevel","args":["x"],"ok":"provider"}
+{"fn":"resolveResponseStyleLevel","args":[null],"ok":"provider"}
+{"fn":"resolveResponseStyleLevel","args":[{"a":{"b":"c"}}],"ok":"provider"}
+{"fn":"resolveResponseStyleLevel","args":[{}],"ok":"provider"}
+{"fn":"resolveResponseStyleLevel","args":[0],"ok":"provider"}
+{"fn":"resolveResponseStyleLevel","args":[[]],"ok":"provider"}
+{"fn":"resolveResponseStyleLevel","args":[true],"ok":"provider"}
+{"fn":"resolveResponseStyleLevel","args":[{"a":"b"}],"ok":"provider"}
+{"fn":"resolveResponseStyleLevel","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":"provider"}
+{"fn":"resolveResponseStyleLevel","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":"provider"}
+{"fn":"resolveResponseStyleLevel","args":[[3,1,2]],"ok":"provider"}
+{"fn":"getResponseStylePresetInstructions","args":[true],"ok":{"$undefined":true}}
+{"fn":"getResponseStylePresetInstructions","args":[null],"ok":{"$undefined":true}}
+{"fn":"getResponseStylePresetInstructions","args":[0],"ok":{"$undefined":true}}
+{"fn":"getResponseStylePresetInstructions","args":[{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"getResponseStylePresetInstructions","args":[[]],"ok":{"$undefined":true}}
+{"fn":"getResponseStylePresetInstructions","args":[["a",1]],"ok":{"$undefined":true}}
+{"fn":"getResponseStylePresetInstructions","args":[{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"getResponseStylePresetInstructions","args":["x"],"ok":{"$undefined":true}}
+{"fn":"getResponseStylePresetInstructions","args":[{}],"ok":{"$undefined":true}}
+{"fn":"buildResponseStyleInstruction","args":[{}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[[]],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"a":"b"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":{"a":{"b":"c"}},"customInstructions":["a",1]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"customInstructions":["a",1]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":[],"customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":0,"customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"customInstructions":{"a":"b"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":["a",1],"customInstructions":{"a":"b"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":["a",1],"customInstructions":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[["a",1]],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[true],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":["a",1],"customInstructions":{"a":{"b":"c"}}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":"x","customInstructions":{"a":{"b":"c"}}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":[],"customInstructions":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[0],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":[],"customInstructions":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":null,"customInstructions":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":[],"customInstructions":{"a":{"b":"c"}}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":"x","customInstructions":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[null],"error":"Cannot destructure property 'enabled' of 'object null' as it is null."}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"customInstructions":0}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"customInstructions":["a",1]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":["a",1],"customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"customInstructions":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":null,"customInstructions":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":0,"customInstructions":{"a":{"b":"c"}}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":["a",1]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"customInstructions":{"a":"b"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":{"a":"b"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":true,"customInstructions":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":["a",1],"customInstructions":0}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":["a",1],"customInstructions":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"customInstructions":{"a":{"b":"c"}}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":0,"customInstructions":["a",1]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"a":{"b":"c"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":"x","customInstructions":{"a":{"b":"c"}}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":"x","customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":0,"customInstructions":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":true,"customInstructions":{"a":{"b":"c"}}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"customInstructions":{"a":{"b":"c"}}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{"a":{"b":"c"}},"customInstructions":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":"x","customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"customInstructions":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":"x","customInstructions":["a",1]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":null,"customInstructions":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":{"a":"b"},"customInstructions":0}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":true,"customInstructions":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":true,"customInstructions":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":["x"],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"customInstructions":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":[],"customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"customInstructions":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":["a",1],"customInstructions":{"a":"b"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":["a",1],"customInstructions":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":["a",1],"customInstructions":{"a":{"b":"c"}}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":{"a":"b"},"customInstructions":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":null,"customInstructions":{"a":"b"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":{"a":{"b":"c"}},"customInstructions":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"customInstructions":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":true,"customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{"a":"b"},"customInstructions":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":["a",1],"customInstructions":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":true,"customInstructions":{"a":"b"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"customInstructions":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{"a":"b"},"customInstructions":{"a":"b"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{},"customInstructions":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":0,"customInstructions":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":true,"customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{"a":{"b":"c"}},"customInstructions":{"a":{"b":"c"}}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"customInstructions":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":"x","customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"customInstructions":0}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":true,"customInstructions":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":{"a":{"b":"c"}},"customInstructions":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":true,"customInstructions":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{"a":{"b":"c"}},"customInstructions":{"a":"b"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{"a":"b"},"customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":{},"customInstructions":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":{"a":{"b":"c"}},"customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":0,"customInstructions":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"customInstructions":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":{},"customInstructions":{"a":"b"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{"a":{"b":"c"}},"customInstructions":0}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":["a",1],"customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{"a":"b"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":["a",1],"customInstructions":0}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{"a":{"b":"c"}},"customInstructions":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":true,"customInstructions":{"a":"b"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"customInstructions":0}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":{"a":{"b":"c"}}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":[],"customInstructions":["a",1]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":null,"customInstructions":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":["a",1],"customInstructions":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":{"a":{"b":"c"}}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":0,"customInstructions":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":true,"customInstructions":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":{},"customInstructions":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":{},"customInstructions":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":[],"customInstructions":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":[],"customInstructions":["a",1]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":["a",1],"customInstructions":0}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":null,"customInstructions":["a",1]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":0,"customInstructions":["a",1]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":0,"customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{},"customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"customInstructions":{"a":{"b":"c"}}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":[],"customInstructions":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":"x","customInstructions":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":{},"customInstructions":{"a":"b"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":{"a":"b"},"customInstructions":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":null,"customInstructions":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":["a",1],"customInstructions":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":["a",1],"customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":null,"customInstructions":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":[],"customInstructions":0}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":{},"customInstructions":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":null,"customInstructions":["a",1]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":0}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":{"a":"b"},"customInstructions":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{"a":"b"},"customInstructions":0}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":null,"customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":true,"customInstructions":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":0,"customInstructions":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":null,"customInstructions":{"a":{"b":"c"}}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{},"customInstructions":["a",1]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":"x","customInstructions":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":null,"customInstructions":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{},"customInstructions":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":0,"customInstructions":{"a":"b"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":0}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":{},"customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":[],"customInstructions":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":["a",1]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{"a":{"b":"c"}},"customInstructions":["a",1]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":[],"customInstructions":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":0,"customInstructions":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":[],"customInstructions":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":"x","customInstructions":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":{"a":{"b":"c"}},"customInstructions":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":0,"customInstructions":{"a":{"b":"c"}}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":{"a":"b"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":[],"customInstructions":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":{"a":"b"},"customInstructions":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":"x","customInstructions":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":{},"customInstructions":{"a":{"b":"c"}}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":0,"customInstructions":{"a":"b"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{"a":"b"},"customInstructions":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":[],"customInstructions":0}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":true,"customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"customInstructions":{"a":"b"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":[],"customInstructions":{"a":"b"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":0,"customInstructions":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":null,"customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{"a":"b"},"customInstructions":["a",1]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":null,"customInstructions":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":"x","customInstructions":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{},"customInstructions":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":"x","customInstructions":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":{},"customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":[],"customInstructions":["a",1]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":[],"customInstructions":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":0,"customInstructions":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":["a",1],"customInstructions":["a",1]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{},"customInstructions":{"a":"b"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":{"a":"b"},"customInstructions":{"a":"b"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":true,"customInstructions":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":{},"customInstructions":{"a":{"b":"c"}}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":true,"customInstructions":["a",1]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":true,"customInstructions":{"a":{"b":"c"}}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":[],"customInstructions":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":true,"customInstructions":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"customInstructions":{}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":["a",1],"customInstructions":[]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{"a":{"b":"c"}},"customInstructions":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":true}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":[],"customInstructions":{"a":"b"}}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"preset":true,"customInstructions":["a",1]}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{},"customInstructions":null}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":null,"customInstructions":"x"}],"ok":null}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":{},"customInstructions":0}],"ok":null}
+{"fn":"wrapResponseStyleReminder","args":[null,"a:b:c日本語のテキスト"],"ok":"<system-reminder data-devryan-response-style=\"null\">\na:b:c日本語のテキスト\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":["x","{name} has {count} items﻿bom"],"ok":"<system-reminder data-devryan-response-style=\"x\">\n{name} has {count} items﻿bom\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{},"a😀b😀c"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\na😀b😀c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},"ab{name} has {count} items"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nab{name} has {count} items\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"straße"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nstraße\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":{"b":"c"}},"{name} has {count} items"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\n{name} has {count} items\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":{"b":"c"}},"src/a/b.ts"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nsrc/a/b.ts\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"line1\nline2"],"ok":"<system-reminder data-devryan-response-style=\"true\">\nline1\nline2\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[0,"ns:key.path"],"ok":"<system-reminder data-devryan-response-style=\"0\">\nns:key.path\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"a.b.c"],"ok":"<system-reminder data-devryan-response-style=\"null\">\na.b.c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"a:b:c"],"ok":"<system-reminder data-devryan-response-style=\"true\">\na:b:c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[0,"a{name} has {count} items"],"ok":"<system-reminder data-devryan-response-style=\"0\">\na{name} has {count} items\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":["x","key_name-1"],"ok":"<system-reminder data-devryan-response-style=\"x\">\nkey_name-1\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[0,"a:b:c"],"ok":"<system-reminder data-devryan-response-style=\"0\">\na:b:c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"straße"],"ok":"<system-reminder data-devryan-response-style=\"\">\nstraße\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":["x","straße"],"ok":"<system-reminder data-devryan-response-style=\"x\">\nstraße\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},"日本語のテキスト"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\n日本語のテキスト\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"﻿bom"],"ok":"<system-reminder data-devryan-response-style=\"true\">\nbom\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[0,"😀"],"ok":"<system-reminder data-devryan-response-style=\"0\">\n😀\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"key_name-1😀"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nkey_name-1😀\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":{"b":"c"}},"İstanbul"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nİstanbul\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"line1\nline2"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nline1\nline2\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[0,"tab\tseparated"],"ok":"<system-reminder data-devryan-response-style=\"0\">\ntab\tseparated\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"a..b"],"ok":"<system-reminder data-devryan-response-style=\"\">\na..b\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{},"a.b.c"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\na.b.c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":{"b":"c"}},"a:b:c"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\na:b:c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"ΣΊΣΥΦΟΣ"],"ok":"<system-reminder data-devryan-response-style=\"\">\nΣΊΣΥΦΟΣ\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[0,"a.b.c"],"ok":"<system-reminder data-devryan-response-style=\"0\">\na.b.c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"straßens:key.path"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nstraßens:key.path\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"tab\tseparated"],"ok":"<system-reminder data-devryan-response-style=\"null\">\ntab\tseparated\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},"a😀b😀c"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\na😀b😀c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"abcΣΊΣΥΦΟΣ"],"ok":"<system-reminder data-devryan-response-style=\"true\">\nabcΣΊΣΥΦΟΣ\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"a..b"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\na..b\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[0,"abc"],"ok":"<system-reminder data-devryan-response-style=\"0\">\nabc\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[0,"straße"],"ok":"<system-reminder data-devryan-response-style=\"0\">\nstraße\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":{"b":"c"}},"HELLO"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nHELLO\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"Hello World"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\nHello World\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":["x","a:b:c日本語のテキスト"],"ok":"<system-reminder data-devryan-response-style=\"x\">\na:b:c日本語のテキスト\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":{"b":"c"}},"ΣΊΣΥΦΟΣ"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nΣΊΣΥΦΟΣ\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":{"b":"c"}},"HELLOa.b.c"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nHELLOa.b.c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"key_name-1"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\nkey_name-1\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"./x/**/*.json"],"ok":"<system-reminder data-devryan-response-style=\"true\">\n./x/**/*.json\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"a😀b😀c"],"ok":"<system-reminder data-devryan-response-style=\"true\">\na😀b😀c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"./x/**/*.json"],"ok":"<system-reminder data-devryan-response-style=\"\">\n./x/**/*.json\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"src/a/b.ts"],"ok":"<system-reminder data-devryan-response-style=\"true\">\nsrc/a/b.ts\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[0,"Hello World"],"ok":"<system-reminder data-devryan-response-style=\"0\">\nHello World\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"ünïcödéa😀b😀c"],"ok":"<system-reminder data-devryan-response-style=\"true\">\nünïcödéa😀b😀c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"HELLO"],"ok":"<system-reminder data-devryan-response-style=\"true\">\nHELLO\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"a😀b😀c"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\na😀b😀c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[0,"  padded  "],"ok":"<system-reminder data-devryan-response-style=\"0\">\npadded\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":["x","x"],"ok":"<system-reminder data-devryan-response-style=\"x\">\nx\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"ab"],"ok":"<system-reminder data-devryan-response-style=\"true\">\nab\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":["x","emoji 👍🏽 mixHello World"],"ok":"<system-reminder data-devryan-response-style=\"x\">\nemoji 👍🏽 mixHello World\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,""],"ok":""}
+{"fn":"wrapResponseStyleReminder","args":["x","日本語のテキスト"],"ok":"<system-reminder data-devryan-response-style=\"x\">\n日本語のテキスト\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},"./x/**/*.jsonstraße"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\n./x/**/*.jsonstraße\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},"emoji 👍🏽 mix"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nemoji 👍🏽 mix\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"tab\tseparated"],"ok":"<system-reminder data-devryan-response-style=\"\">\ntab\tseparated\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{},"hello"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nhello\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"abc./x/**/*.json"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nabc./x/**/*.json\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"HELLO"],"ok":"<system-reminder data-devryan-response-style=\"\">\nHELLO\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"a.b.ca"],"ok":"<system-reminder data-devryan-response-style=\"true\">\na.b.ca\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},"straße"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nstraße\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"ns:key.path"],"ok":"<system-reminder data-devryan-response-style=\"\">\nns:key.path\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":["x","a.b.c"],"ok":"<system-reminder data-devryan-response-style=\"x\">\na.b.c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{},"line1\nline2"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nline1\nline2\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":{"b":"c"}},"é"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\né\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},"tab\tseparated"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\ntab\tseparated\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"ünïcödé"],"ok":"<system-reminder data-devryan-response-style=\"true\">\nünïcödé\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"日本語のテキスト"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\n日本語のテキスト\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"é"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\né\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],":"],"ok":"<system-reminder data-devryan-response-style=\"\">\n:\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"emoji 👍🏽 mix"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nemoji 👍🏽 mix\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"日本語のテキスト"],"ok":"<system-reminder data-devryan-response-style=\"true\">\n日本語のテキスト\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"a..babc"],"ok":"<system-reminder data-devryan-response-style=\"true\">\na..babc\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"İstanbul"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\nİstanbul\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{},"a😀b😀c{name} has {count} items"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\na😀b😀c{name} has {count} items\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":["x","a😀b😀c:"],"ok":"<system-reminder data-devryan-response-style=\"x\">\na😀b😀c:\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"😀"],"ok":"<system-reminder data-devryan-response-style=\"\">\n😀\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{},"emoji 👍🏽 mix"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nemoji 👍🏽 mix\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"a😀b😀c"],"ok":"<system-reminder data-devryan-response-style=\"null\">\na😀b😀c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},"emoji 👍🏽 mixünïcödé"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nemoji 👍🏽 mixünïcödé\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{},""],"ok":""}
+{"fn":"wrapResponseStyleReminder","args":[null,"abc"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nabc\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},"İstanbula.b.c"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nİstanbula.b.c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":{"b":"c"}},"a..b"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\na..b\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"key_name-1"],"ok":"<system-reminder data-devryan-response-style=\"\">\nkey_name-1\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"ns:key.path"],"ok":"<system-reminder data-devryan-response-style=\"true\">\nns:key.path\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"HELLO"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nHELLO\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{},"ns:key.path  padded  "],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nns:key.path  padded\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"emoji 👍🏽 mix"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\nemoji 👍🏽 mix\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":{"b":"c"}},"﻿bom"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nbom\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"hello world"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\nhello world\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{},"HELLO"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nHELLO\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},"a.b.c"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\na.b.c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},"ΣΊΣΥΦΟΣ"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nΣΊΣΥΦΟΣ\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{},"a"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\na\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"日本語のテキスト"],"ok":"<system-reminder data-devryan-response-style=\"null\">\n日本語のテキスト\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"ab"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nab\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"İstanbul"],"ok":"<system-reminder data-devryan-response-style=\"\">\nİstanbul\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,".leading"],"ok":"<system-reminder data-devryan-response-style=\"null\">\n.leading\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[0,"line1\nline2hello world"],"ok":"<system-reminder data-devryan-response-style=\"0\">\nline1\nline2hello world\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},"﻿bom"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nbom\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":["x","{name} has {count} items"],"ok":"<system-reminder data-devryan-response-style=\"x\">\n{name} has {count} items\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"ünïcödé"],"ok":"<system-reminder data-devryan-response-style=\"\">\nünïcödé\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},"key_name-1"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nkey_name-1\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"İstanbulline1\nline2"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nİstanbulline1\nline2\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"trailing."],"ok":"<system-reminder data-devryan-response-style=\"null\">\ntrailing.\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[0,"a😀b😀c"],"ok":"<system-reminder data-devryan-response-style=\"0\">\na😀b😀c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":{"b":"c"}},"./x/**/*.json"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\n./x/**/*.json\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"ΣΊΣΥΦΟΣ😀"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\nΣΊΣΥΦΟΣ😀\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"straße"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\nstraße\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[0,"İstanbul"],"ok":"<system-reminder data-devryan-response-style=\"0\">\nİstanbul\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"😀"],"ok":"<system-reminder data-devryan-response-style=\"true\">\n😀\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"日本語のテキスト"],"ok":"<system-reminder data-devryan-response-style=\"\">\n日本語のテキスト\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":["x","src/a/b.ts"],"ok":"<system-reminder data-devryan-response-style=\"x\">\nsrc/a/b.ts\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"﻿bomhello world"],"ok":"<system-reminder data-devryan-response-style=\"\">\nbomhello world\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},"tab\tseparateda..b"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\ntab\tseparateda..b\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"HELLO"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\nHELLO\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},"😀"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\n😀\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"İstanbulab"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\nİstanbulab\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{},"hellohello"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nhellohello\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"emoji 👍🏽 mix"],"ok":"<system-reminder data-devryan-response-style=\"\">\nemoji 👍🏽 mix\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":["x","ab"],"ok":"<system-reminder data-devryan-response-style=\"x\">\nab\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":{"b":"c"}},"{name} has {count} itemsab"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\n{name} has {count} itemsab\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"hello"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nhello\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"HELLOtrailing."],"ok":"<system-reminder data-devryan-response-style=\"null\">\nHELLOtrailing.\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{},"İstanbul"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nİstanbul\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":["👍🏽 ","emoji 👍🏽 mix"],"ok":"<system-reminder data-devryan-response-style=\"👍🏽 \">\nemoji 👍🏽 mix\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},"  padded  "],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\npadded\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"ΣΊΣΥΦΟΣ"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\nΣΊΣΥΦΟΣ\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{},"ünïcödé😀"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nünïcödé😀\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"hello"],"ok":"<system-reminder data-devryan-response-style=\"\">\nhello\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":["x","ns:key.path"],"ok":"<system-reminder data-devryan-response-style=\"x\">\nns:key.path\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":["😀","a😀b😀c"],"ok":"<system-reminder data-devryan-response-style=\"😀\">\na😀b😀c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"trailing."],"ok":"<system-reminder data-devryan-response-style=\"\">\ntrailing.\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{},"ΣΊΣΥΦΟΣ"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nΣΊΣΥΦΟΣ\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"﻿bom"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nbom\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"key_name-1"],"ok":"<system-reminder data-devryan-response-style=\"true\">\nkey_name-1\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],".leading"],"ok":"<system-reminder data-devryan-response-style=\"\">\n.leading\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":{"b":"c"}},"hello worldİstanbul"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nhello worldİstanbul\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{},"{name} has {count} items"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\n{name} has {count} items\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"ns:key.path"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\nns:key.path\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"tab\tseparated"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\ntab\tseparated\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"İstanbulünïcödé"],"ok":"<system-reminder data-devryan-response-style=\"true\">\nİstanbulünïcödé\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"{name} has {count} items"],"ok":"<system-reminder data-devryan-response-style=\"null\">\n{name} has {count} items\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},"HELLO"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nHELLO\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":["x","emoji 👍🏽 mix"],"ok":"<system-reminder data-devryan-response-style=\"x\">\nemoji 👍🏽 mix\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"./x/**/*.json"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\n./x/**/*.json\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":["x",":./x/**/*.json"],"ok":"<system-reminder data-devryan-response-style=\"x\">\n:./x/**/*.json\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[0,"{name} has {count} items"],"ok":"<system-reminder data-devryan-response-style=\"0\">\n{name} has {count} items\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":{"b":"c"}},":"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\n:\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{},"./x/**/*.json"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\n./x/**/*.json\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":{"b":"c"}},"a😀b😀c"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\na😀b😀c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":{"b":"c"}},"hello"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nhello\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[0,"HELLO"],"ok":"<system-reminder data-devryan-response-style=\"0\">\nHELLO\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"a.b.c"],"ok":"<system-reminder data-devryan-response-style=\"\">\na.b.c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},":"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\n:\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"﻿bom.leading"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\nbom.leading\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],":./x/**/*.json"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\n:./x/**/*.json\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},"ab"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nab\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"line1\nline2"],"ok":"<system-reminder data-devryan-response-style=\"\">\nline1\nline2\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{},"a:b:c"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\na:b:c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":{"b":"c"}},"hello worlda.b.c"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nhello worlda.b.c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":{"b":"c"}},"key_name-1"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nkey_name-1\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},"a:b:c"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\na:b:c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":{"b":"c"}},"abca.b.c"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nabca.b.c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"line1\nline2a..b"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\nline1\nline2a..b\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"ab"],"ok":"<system-reminder data-devryan-response-style=\"\">\nab\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":["x",".leading"],"ok":"<system-reminder data-devryan-response-style=\"x\">\n.leading\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{},".leading"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\n.leading\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"a"],"ok":"<system-reminder data-devryan-response-style=\"true\">\na\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},"{name} has {count} items"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\n{name} has {count} items\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":["x","é"],"ok":"<system-reminder data-devryan-response-style=\"x\">\né\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"😀a.b.c"],"ok":"<system-reminder data-devryan-response-style=\"true\">\n😀a.b.c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"hello"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\nhello\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,".leading"],"ok":"<system-reminder data-devryan-response-style=\"true\">\n.leading\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{},"a:b:c./x/**/*.json"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\na:b:c./x/**/*.json\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"a"],"ok":"<system-reminder data-devryan-response-style=\"\">\na\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":"b"},"Hello Worldstraße"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nHello Worldstraße\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"éΣΊΣΥΦΟΣ"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\néΣΊΣΥΦΟΣ\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"src/a/b.ts"],"ok":"<system-reminder data-devryan-response-style=\"\">\nsrc/a/b.ts\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[0,""],"ok":""}
+{"fn":"wrapResponseStyleReminder","args":["x","line1\nline2"],"ok":"<system-reminder data-devryan-response-style=\"x\">\nline1\nline2\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"a:b:c"],"ok":"<system-reminder data-devryan-response-style=\"null\">\na:b:c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{},"src/a/b.ts"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nsrc/a/b.ts\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"  padded  "],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\npadded\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"ünïcödéİstanbul"],"ok":"<system-reminder data-devryan-response-style=\"true\">\nünïcödéİstanbul\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"éhello world"],"ok":"<system-reminder data-devryan-response-style=\"null\">\néhello world\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[true,"trailing."],"ok":"<system-reminder data-devryan-response-style=\"true\">\ntrailing.\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"trailing."],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\ntrailing.\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[0,"ns:key.patha..b"],"ok":"<system-reminder data-devryan-response-style=\"0\">\nns:key.patha..b\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":{"b":"c"}},"😀"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\n😀\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"a😀b😀cabc"],"ok":"<system-reminder data-devryan-response-style=\"null\">\na😀b😀cabc\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"a":{"b":"c"}},"ns:key.path"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nns:key.path\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[0,"﻿bom"],"ok":"<system-reminder data-devryan-response-style=\"0\">\nbom\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a",1],"a:b:c"],"ok":"<system-reminder data-devryan-response-style=\"a,1\">\na:b:c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{},"Hello World"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\nHello World\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[[],"ünïcödéa.b.c"],"ok":"<system-reminder data-devryan-response-style=\"\">\nünïcödéa.b.c\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[0,"a😀b😀c:"],"ok":"<system-reminder data-devryan-response-style=\"0\">\na😀b😀c:\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"héllo wörld"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nhéllo wörld\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"👍🏽 thumbs"],"ok":"<system-reminder data-devryan-response-style=\"null\">\n👍🏽 thumbs\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"日本語"],"ok":"<system-reminder data-devryan-response-style=\"null\">\n日本語\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,""],"ok":""}
+{"fn":"wrapResponseStyleReminder","args":[null,"é"],"ok":"<system-reminder data-devryan-response-style=\"null\">\né\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"İstanbul"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nİstanbul\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"ılık ırmak"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nılık ırmak\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"👨‍👩‍👧 family"],"ok":"<system-reminder data-devryan-response-style=\"null\">\n👨‍👩‍👧 family\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"a b"],"ok":"<system-reminder data-devryan-response-style=\"null\">\na b\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"ΣΊΣΥΦΟΣ"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nΣΊΣΥΦΟΣ\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"a😀b"],"ok":"<system-reminder data-devryan-response-style=\"null\">\na😀b\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"a²b x½ y①"],"ok":"<system-reminder data-devryan-response-style=\"null\">\na²b x½ y①\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"aⅠb Ⅻ"],"ok":"<system-reminder data-devryan-response-style=\"null\">\naⅠb Ⅻ\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"a𐐀b 𝐀bc"],"ok":"<system-reminder data-devryan-response-style=\"null\">\na𐐀b 𝐀bc\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"कि ٣٤"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nकि ٣٤\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"Iı İi"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nIı İi\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"K K k"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nK K k\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"ſ s S"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nſ s S\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"x‍y 👨‍👩‍👧"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nx‍y 👨‍👩‍👧\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"a b c　d"],"ok":"<system-reminder data-devryan-response-style=\"null\">\na b c　d\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"١٢٣ ٤٥"],"ok":"<system-reminder data-devryan-response-style=\"null\">\n١٢٣ ٤٥\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"𝟘𝟙 ²³"],"ok":"<system-reminder data-devryan-response-style=\"null\">\n𝟘𝟙 ²³\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"snake_case foo-bar o'neil"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nsnake_case foo-bar o'neil\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"ǅungla Ǆ"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nǅungla Ǆ\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"one\r\ntwo threefour"],"ok":"<system-reminder data-devryan-response-style=\"null\">\none\r\ntwo threefour\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"café café"],"ok":"<system-reminder data-devryan-response-style=\"null\">\ncafé café\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,"ΣΑΣ σας ς"],"ok":"<system-reminder data-devryan-response-style=\"null\">\nΣΑΣ σας ς\n</system-reminder>"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"},0]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":{"b":"c"}},true,true]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],[],["a",1]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[{"a":"b"}],"error":"parts is not iterable"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],{"a":"b"}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"},"x",{"a":"b"}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":["x"],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,0,true]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[["x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[0,"x",[]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[["a",1]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],["a",1],{}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[["x","x",{"a":"b"}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"},[]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,true,"x"]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[0,0]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{},{}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],true,{"a":"b"}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,[]]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":{"b":"c"}}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[["x",{"a":"b"},"x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],["a",1],true]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[0,{"a":{"b":"c"}}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[{}],"error":"parts is not iterable"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[["x",{"a":{"b":"c"}}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{},true]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[["a",1]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[["a",1],[]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[0,{},[]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,["a",1],true]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,null,"x"]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[0,{}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,{"a":{"b":"c"}},[]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,{"a":{"b":"c"}}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[0,["a",1],"x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[["a",1],{}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[["x",true]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[0]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[null],"error":"parts is not iterable"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],0]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[["a",1],0,{}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":{"b":"c"}},"x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],"x",{"a":"b"}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,{},"x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,["a",1]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],["a",1]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,true,"x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[["x",[]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"},[],{"a":"b"}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],true]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"},{"a":{"b":"c"}},{"a":"b"}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{},"x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[["x",[],{}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[0],"error":"parts is not iterable"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,[],["a",1]]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,{"a":{"b":"c"}},0]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"},{"a":"b"},[]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"},true,{"a":{"b":"c"}}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"},{"a":{"b":"c"}}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,["a",1],{"a":{"b":"c"}}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],"x",{"a":{"b":"c"}}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[["x",["a",1],true]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[true],"error":"parts is not iterable"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"},{"a":"b"},null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":{"b":"c"}},{"a":{"b":"c"}}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"},{}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[["a",1],true]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[0,[]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[0,"x",0]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[{"a":{"b":"c"}}],"error":"parts is not iterable"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":{"b":"c"}},["a",1],"x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"},[],"x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[["a",1],[],0]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,0]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"},0,["a",1]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,0,[]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[["x",true,{}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,true,null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":{"b":"c"}},["a",1]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[0,{"a":"b"}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,{},true]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{},{"a":"b"},0]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,{"a":{"b":"c"}},{"a":"b"}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[0,true]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":{"b":"c"}},{"a":"b"},0]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],{"a":{"b":"c"}}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,{"a":"b"},0]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[0,{},0]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[["a",1],[],["a",1]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[["a",1],0]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[["x",[],true]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":{"b":"c"}},[]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],"x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],{},"x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],0,{"a":"b"}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],[]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[["a",1],{},"x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{},[],0]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,{}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[["x",{},null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,"x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"},true,null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":{"b":"c"}},[],{}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{},[]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],[],{"a":{"b":"c"}}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[["x",{"a":{"b":"c"}},["a",1]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,"x",{"a":"b"}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,["a",1],["a",1]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,true,[]]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[["x",{"a":"b"}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":{"b":"c"}},{},null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],null,0]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[["a",1],{"a":"b"},"x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,true,["a",1]]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{},{"a":{"b":"c"}}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,true,["a",1]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,{"a":"b"}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],{"a":{"b":"c"}},null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],null,"x"]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],{}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,true,[]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],[],true]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[0,["a",1]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[["x",true,{"a":{"b":"c"}}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],["a",1],"x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"},["a",1]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,[],{"a":"b"}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"},{"a":"b"},{}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{},{"a":{"b":"c"}},0]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{},true,["a",1]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[0,"x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[["x",null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[["a",1],"x",0]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,{}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[["a",1],{"a":{"b":"c"}}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{},0]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":{"b":"c"}},null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,true]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,{},null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,["a",1],null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{},{"a":"b"}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,{"a":"b"}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[["x","x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],{"a":"b"},0]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[0,[],"x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[0,["a",1],0]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{},[],[]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,[],"x"]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{},["a",1]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"},["a",1],0]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,true]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"},{"a":{"b":"c"}},[]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{},true,"x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,{"a":{"b":"c"}}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":{"b":"c"}},[],[]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[["x",["a",1],{"a":{"b":"c"}}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"},[],[]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[0,["a",1],["a",1]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,{"a":"b"},[]]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{},{"a":{"b":"c"}},["a",1]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[["a",1],{"a":"b"},true]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"},["a",1],[]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,[],true]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,{"a":{"b":"c"}},{"a":"b"}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[["a",1],0,0]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[0,null,{"a":"b"}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[["x",{"a":{"b":"c"}},0]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,0,"x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,0]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[["x",["a",1],[]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,true,null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[[],0,[]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":{"b":"c"}},"x",{"a":{"b":"c"}}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,{},[]]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[0,{},null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[["a",1],{},{"a":"b"}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[true,{"a":{"b":"c"}},true]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[0,{},["a",1]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"},[],["a",1]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{},{"a":"b"},true]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,"x"]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[0,null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[["a",1],{"a":"b"}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[["x",["a",1],null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{},{"a":"b"},"x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":{"b":"c"}},{"a":{"b":"c"}},["a",1]]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[["a",1],["a",1],{"a":{"b":"c"}}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null,[],{}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":"b"},"x",null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"a":{"b":"c"}},{"a":"b"},"x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{},"x","x"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[["x",true,true]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[null]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1]]},{"parts":[{}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[null,[]]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":"b"}]},{"parts":[{"a":"b"}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[["a",1]],"error":"parts is not iterable"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[null,[]]},{"parts":[]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1],"x",[]]},{"parts":[true,{"a":{"b":"c"}},{"a":{"b":"c"}}]},{"parts":[true,true,true]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[true]},{"parts":["x"]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[[],{"a":{"b":"c"}},["a",1]]},{"parts":["x"]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[null]},{"parts":["x"]},{"parts":[0,0,0]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":{"b":"c"}},[]]},{"parts":[{"a":{"b":"c"}},0,{"a":"b"}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1],{"a":{"b":"c"}}]},{"parts":["x",{"a":{"b":"c"}},["a",1]]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1],true]},{"parts":[true,{"a":"b"},"x"]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":["x"],"error":"parts is not iterable"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[[],"x",{"a":{"b":"c"}}]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[[],0]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":["x"]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{},{"a":{"b":"c"}},0]},{"parts":[[],"x",{}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":["x"]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":{"b":"c"}}]},{"parts":[]},{"parts":[true]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":["x",{"a":"b"},{}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":"b"},{"a":"b"},{"a":"b"}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":["x"]},{"parts":[0,0,null]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[0]},{"parts":[[]]},{"parts":[{}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[{"a":"b"}],"error":"messages is not iterable"}
+{"fn":"readSessionResponseStyleLevel","args":[null],"error":"messages is not iterable"}
+{"fn":"readSessionResponseStyleLevel","args":[{}],"error":"messages is not iterable"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":"b"},"x",[]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":{"b":"c"}},0]},{"parts":[[],{"a":"b"}]},{"parts":[["a",1],true,["a",1]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[{"a":{"b":"c"}}],"error":"messages is not iterable"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1],{"a":"b"}]},{"parts":[["a",1]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[0],"error":"messages is not iterable"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[0]},{"parts":[]},{"parts":["x",null,null]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":["x"]},{"parts":[0,"x"]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1],["a",1],{"a":"b"}]},{"parts":[{},true,0]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":"b"}]},{"parts":[[],0,0]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[]},{"parts":[{"a":"b"}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1]]},{"parts":[]},{"parts":[[]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[true,[]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[{"a":"b"},"x",[]]},{"parts":["x"]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":{"b":"c"}},["a",1]]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1],[],[]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":{"b":"c"}}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[0]},{"parts":["x",0,["a",1]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":"b"}]},{"parts":[["a",1],["a",1],[]]},{"parts":[{},null,null]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":["x",[]]},{"parts":[{"a":"b"},[]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[0,[],true]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":"b"},{},true]},{"parts":[true]},{"parts":[{"a":"b"},"x"]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[0]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1],null]},{"parts":[{"a":{"b":"c"}},null]},{"parts":[{}]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[true,true,null]},{"parts":[[]]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[null,{},{"a":"b"}]},{"parts":[{"a":"b"}]},{"parts":[{},{"a":"b"}]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":{"b":"c"}}]},{"parts":[{"a":"b"},null,0]},{"parts":[0,{"a":"b"}]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[true,{},0]},{"parts":[[],[],"x"]},{"parts":[["a",1],true,["a",1]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[{"a":{"b":"c"}}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[[]]},{"parts":[{}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[true,[],"x"]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":"b"},[],0]},{"parts":[["a",1],true,{"a":{"b":"c"}}]},{"parts":[0,{}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1],[],0]},{"parts":[["a",1],["a",1],null]},{"parts":[]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[[],{"a":"b"}]},{"parts":[{}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{}]},{"parts":["x",{"a":"b"}]},{"parts":["x",null,{}]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":{"b":"c"}},null]},{"parts":[]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[true,[],"x"]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":"b"}]},{"parts":[null,null,0]},{"parts":[0,["a",1],{"a":"b"}]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[true,{"a":"b"},["a",1]]},{"parts":["x"]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[]},{"parts":[{"a":{"b":"c"}},null]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":"b"}]},{"parts":[{"a":{"b":"c"}}]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":"b"},"x",{"a":{"b":"c"}}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{}]},{"parts":[["a",1],null]},{"parts":["x",[],{"a":{"b":"c"}}]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1],{"a":"b"},{"a":{"b":"c"}}]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[null]},{"parts":[["a",1],{"a":{"b":"c"}}]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[null,{"a":{"b":"c"}},"x"]},{"parts":[{"a":"b"},["a",1]]},{"parts":[{},{}]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":{"b":"c"}},"x",["a",1]]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[{}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":{"b":"c"}},true,{}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[0,{"a":{"b":"c"}}]},{"parts":[{"a":"b"}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1],{"a":{"b":"c"}}]},{"parts":[null,true,true]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{}]},{"parts":[]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":"b"},{"a":{"b":"c"}},{}]},{"parts":[{"a":{"b":"c"}},0]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[null]},{"parts":[["a",1]]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[{"a":"b"},[]]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[null,["a",1]]},{"parts":[["a",1],null,{}]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":["x",[]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[0,null]},{"parts":[]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[[],{"a":"b"}]},{"parts":[null,0]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1],{}]},{"parts":[{"a":"b"},{"a":{"b":"c"}},0]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[null,"x"]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1],true,["a",1]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[["a",1],0]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[0]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":{"b":"c"}},"x",{}]},{"parts":[]},{"parts":[0,"x"]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":"b"},0,["a",1]]},{"parts":[null]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[0]},{"parts":[null,true,0]},{"parts":[0,{}]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1],0,["a",1]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1],["a",1]]},{"parts":["x",null,true]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[[],true]},{"parts":[null,"x"]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[[],null,{"a":"b"}]},{"parts":[{"a":{"b":"c"}},true,"x"]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":"b"},null]},{"parts":[true,["a",1]]},{"parts":[]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[0]},{"parts":[]},{"parts":[{"a":{"b":"c"}},["a",1],["a",1]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[true],"error":"messages is not iterable"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[true,{"a":{"b":"c"}},"x"]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[0,{},[]]},{"parts":[0,[],null]},{"parts":[["a",1],{"a":"b"},{}]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":"b"}]},{"parts":[{"a":"b"},["a",1]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[null]},{"parts":[["a",1]]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[[],["a",1],{"a":"b"}]},{"parts":[null,[],0]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":"b"}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":["x",{"a":"b"}]},{"parts":[{"a":"b"},{"a":{"b":"c"}}]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[true,true]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":["x",true]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":["x"]},{"parts":[{"a":{"b":"c"}}]},{"parts":[{},null,{"a":"b"}]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[[],true,true]},{"parts":[]},{"parts":[{}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[0,[],null]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[true,{"a":{"b":"c"}}]},{"parts":[{},null,{}]},{"parts":[true,"x",0]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":"b"},0]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":"b"},0]},{"parts":[]},{"parts":[{"a":"b"},[]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1]]},{"parts":[{"a":{"b":"c"}}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{},{}]},{"parts":[null]},{"parts":[{},["a",1]]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[null,"x","x"]},{"parts":[{},null]},{"parts":[]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[true,{"a":{"b":"c"}},[]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":["x",true]},{"parts":[{"a":{"b":"c"}},null,{}]},{"parts":[]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[null,["a",1]]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":["x",["a",1]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[{"a":{"b":"c"}},"x",true]},{"parts":[null,{"a":{"b":"c"}},{"a":"b"}]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[0,null]},{"parts":[0,true]},{"parts":[]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":"b"}]},{"parts":["x",{},{"a":{"b":"c"}}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1],{"a":"b"}]},{"parts":[null]},{"parts":[]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[["a",1],null,null]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[true]},{"parts":[{"a":{"b":"c"}},{},true]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":"b"},["a",1],[]]},{"parts":[[],true,0]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{}]},{"parts":[]},{"parts":[{"a":"b"}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[null,{"a":{"b":"c"}}]},{"parts":[0]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{},true]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[[]]},{"parts":[{"a":{"b":"c"}},{"a":"b"}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[]},{"parts":[[]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[0,true,{"a":{"b":"c"}}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[[],["a",1]]},{"parts":[null,{"a":"b"}]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{},{}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{},{}]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":{"b":"c"}},true]},{"parts":[{"a":"b"}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[true,["a",1]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[0,["a",1]]},{"parts":[true,["a",1],"x"]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1]]},{"parts":[{"a":"b"}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":["x"]},{"parts":["x",{"a":"b"},[]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":{"b":"c"}},{"a":{"b":"c"}}]},{"parts":[{"a":"b"}]},{"parts":[true]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{}]},{"parts":[null,"x",[]]},{"parts":[]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[true]},{"parts":[null,[]]},{"parts":[{},"x"]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":"b"},true,{"a":"b"}]},{"parts":[{"a":{"b":"c"}}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[{},"x"]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[{"a":"b"}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[null,[],0]},{"parts":[true,["a",1]]},{"parts":[{"a":"b"},{"a":"b"}]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":{"b":"c"}},["a",1],[]]},{"parts":[null,["a",1]]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":["x",[]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{},"x"]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":["x",true]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":{"b":"c"}}]},{"parts":[[]]},{"parts":[null,{"a":"b"},"x"]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[true,null,[]]},{"parts":[null,[],true]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1],null]},{"parts":["x",{"a":{"b":"c"}},["a",1]]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1],0,0]},{"parts":[]},{"parts":[0,true,"x"]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1],["a",1]]},{"parts":[]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{},null]},{"parts":[{"a":"b"},"x",[]]},{"parts":[]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[null,["a",1],[]]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[[],[]]},{"parts":[{"a":"b"}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[0]},{"parts":[{},null,["a",1]]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[[],{"a":"b"}]},{"parts":[{},{},0]},{"parts":[[],{"a":{"b":"c"}}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[0]},{"parts":[null,"x"]},{"parts":[["a",1],[],{"a":{"b":"c"}}]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[true,{"a":"b"}]},{"parts":[0,{"a":{"b":"c"}},["a",1]]},{"parts":[{},[]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[{"a":{"b":"c"}},{}]},{"parts":[["a",1],{"a":{"b":"c"}}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[null,["a",1],null]},{"parts":[true]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[[],{"a":{"b":"c"}},{"a":"b"}]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[["a",1],{"a":"b"},"x"]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[null]},{"parts":[]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":["x",["a",1],["a",1]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1],["a",1],true]},{"parts":["x"]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{}]},{"parts":[[],0]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[null,null,true]},{"parts":[0]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[[]]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1],["a",1]]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":"b"},{"a":"b"}]},{"parts":[0,true]},{"parts":[0,"x",null]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[[],true]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[[]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{},"x"]},{"parts":[[],0,"x"]},{"parts":[true]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[[],0]},{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[["a",1],null]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":["x",{"a":"b"},0]},{"parts":[[],0,{"a":"b"}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[[],[]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[[],0]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[0,[]]},{"parts":[true]},{"parts":[[]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":["x",{"a":{"b":"c"}}]},{"parts":[true,[]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"a":{"b":"c"}},"x","x"]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[null,0]},{"parts":[null,null]},{"parts":[null]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":["x",{"a":{"b":"c"}}]},{"parts":[{"a":"b"},true,null]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{},[],{"a":{"b":"c"}}]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[null,{"a":{"b":"c"}}]},{"parts":[{"a":{"b":"c"}}]},{"parts":[]}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[true]},{"parts":[true,0,"x"]},{"parts":[["a",1]]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[0,["a",1],0]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]},{"parts":[{},true,{"a":{"b":"c"}}]},{"parts":[{},["a",1],{"a":{"b":"c"}}]}]],"ok":"provider"}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":false,"hasExistingSession":true,"existingSessionHasUserMessages":false}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":true,"hasExistingSession":false,"existingSessionHasUserMessages":true}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[null],"error":"Cannot destructure property 'isNewSessionDraft' of 'object null' as it is null."}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":false,"hasExistingSession":false,"existingSessionHasUserMessages":true}],"ok":false}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":false,"hasExistingSession":false,"existingSessionHasUserMessages":false}],"ok":false}
+{"fn":"shouldAttachResponseStyleReminder","args":[0],"ok":{"$undefined":true}}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":true,"hasExistingSession":true,"existingSessionHasUserMessages":true}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":true,"hasExistingSession":false,"existingSessionHasUserMessages":false}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":false,"hasExistingSession":true,"existingSessionHasUserMessages":true}],"ok":false}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":true,"hasExistingSession":true,"existingSessionHasUserMessages":false}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[["a",1]],"ok":{"$undefined":true}}
+{"fn":"shouldAttachResponseStyleReminder","args":[{}],"ok":{"$undefined":true}}
+{"fn":"shouldAttachResponseStyleReminder","args":[[]],"ok":{"$undefined":true}}
+{"fn":"shouldAttachResponseStyleReminder","args":["x"],"ok":{"$undefined":true}}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"shouldAttachResponseStyleReminder","args":[true],"ok":{"$undefined":true}}
+{"fn":"cacheResponseStyleInstructionFromSettings","args":[{"a":{"b":"c"}}],"ok":null}
+{"fn":"cacheResponseStyleInstructionFromSettings","args":[{"a":"b"}],"ok":null}
+{"fn":"cacheResponseStyleInstructionFromSettings","args":[0],"ok":null}
+{"fn":"cacheResponseStyleInstructionFromSettings","args":[{}],"ok":null}
+{"fn":"cacheResponseStyleInstructionFromSettings","args":["x"],"ok":null}
+{"fn":"cacheResponseStyleInstructionFromSettings","args":[true],"ok":null}
+{"fn":"cacheResponseStyleInstructionFromSettings","args":[["a",1]],"ok":null}
+{"fn":"cacheResponseStyleInstructionFromSettings","args":[null],"ok":null}
+{"fn":"cacheResponseStyleInstructionFromSettings","args":[[]],"ok":null}
+{"fn":"cacheResponseStyleInstructionFromSettings","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":null}
+{"fn":"cacheResponseStyleInstructionFromSettings","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":null}
+{"fn":"cacheResponseStyleInstructionFromSettings","args":[[3,1,2]],"ok":null}
+{"fn":"getCachedResponseStyleInstruction","args":[],"ok":null}
+{"fn":"getCachedResponseStyleLevel","args":[],"ok":"provider"}
+{"fn":"isResponseStyleInstructionLoaded","args":[],"ok":true}
+{"fn":"clearResponseStyleInstructionCacheForTests","args":[],"ok":{"$undefined":true}}
+{"fn":"isResponseStyleLevel","args":["provider"],"ok":true}
+{"fn":"isResponseStylePreset","args":["provider"],"ok":false}
+{"fn":"getResponseStylePresetInstructions","args":["provider"],"ok":{"$undefined":true}}
+{"fn":"isResponseStyleLevel","args":["actions"],"ok":true}
+{"fn":"isResponseStylePreset","args":["actions"],"ok":true}
+{"fn":"getResponseStylePresetInstructions","args":["actions"],"ok":"Show only a short action or status summary for each major step. Do not add a separate rationale. Write every visible summary as a complete, punctuated sentence."}
+{"fn":"isResponseStyleLevel","args":["concise"],"ok":true}
+{"fn":"isResponseStylePreset","args":["concise"],"ok":true}
+{"fn":"getResponseStylePresetInstructions","args":["concise"],"ok":"For each major step, include one concise user-facing sentence that explains why it is the right next action. Do not expose private chain-of-thought. Write every visible summary as a complete, punctuated sentence."}
+{"fn":"isResponseStyleLevel","args":["detailed"],"ok":true}
+{"fn":"isResponseStylePreset","args":["detailed"],"ok":true}
+{"fn":"getResponseStylePresetInstructions","args":["detailed"],"ok":"For each major step, provide a short user-facing paragraph summarizing the evidence, rationale, and relevant tradeoffs before taking action. Do not expose private chain-of-thought. Write every visible summary as complete, punctuated prose."}
+{"fn":"isResponseStyleLevel","args":["Concise"],"ok":false}
+{"fn":"isResponseStylePreset","args":["Concise"],"ok":false}
+{"fn":"getResponseStylePresetInstructions","args":["Concise"],"ok":{"$undefined":true}}
+{"fn":"isResponseStyleLevel","args":[""],"ok":false}
+{"fn":"isResponseStylePreset","args":[""],"ok":false}
+{"fn":"getResponseStylePresetInstructions","args":[""],"ok":{"$undefined":true}}
+{"fn":"isResponseStyleLevel","args":[null],"ok":false}
+{"fn":"isResponseStylePreset","args":[null],"ok":false}
+{"fn":"getResponseStylePresetInstructions","args":[null],"ok":{"$undefined":true}}
+{"fn":"isResponseStyleLevel","args":[5],"ok":false}
+{"fn":"isResponseStylePreset","args":[5],"ok":false}
+{"fn":"getResponseStylePresetInstructions","args":[5],"ok":{"$undefined":true}}
+{"fn":"isResponseStyleLevel","args":[["concise"]],"ok":false}
+{"fn":"isResponseStylePreset","args":[["concise"]],"ok":false}
+{"fn":"getResponseStylePresetInstructions","args":[["concise"]],"ok":{"$undefined":true}}
+{"fn":"isResponseStyleLevel","args":[{"x":1}],"ok":false}
+{"fn":"isResponseStylePreset","args":[{"x":1}],"ok":false}
+{"fn":"getResponseStylePresetInstructions","args":[{"x":1}],"ok":{"$undefined":true}}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":true,"responseStylePreset":"actions"}],"ok":"actions"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":"actions"}],"ok":"Show only a short action or status summary for each major step. Do not add a separate rationale. Write every visible summary as a complete, punctuated sentence."}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":false,"responseStylePreset":"actions"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":"actions"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":"true","responseStylePreset":"actions"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":"true","preset":"actions"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":1,"responseStylePreset":"actions"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":1,"preset":"actions"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":null,"responseStylePreset":"actions"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":null,"preset":"actions"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":true,"responseStylePreset":"concise"}],"ok":"concise"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":"concise"}],"ok":"For each major step, include one concise user-facing sentence that explains why it is the right next action. Do not expose private chain-of-thought. Write every visible summary as a complete, punctuated sentence."}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":false,"responseStylePreset":"concise"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":"concise"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":"true","responseStylePreset":"concise"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":"true","preset":"concise"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":1,"responseStylePreset":"concise"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":1,"preset":"concise"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":null,"responseStylePreset":"concise"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":null,"preset":"concise"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":true,"responseStylePreset":"detailed"}],"ok":"detailed"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":"detailed"}],"ok":"For each major step, provide a short user-facing paragraph summarizing the evidence, rationale, and relevant tradeoffs before taking action. Do not expose private chain-of-thought. Write every visible summary as complete, punctuated prose."}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":false,"responseStylePreset":"detailed"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":"detailed"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":"true","responseStylePreset":"detailed"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":"true","preset":"detailed"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":1,"responseStylePreset":"detailed"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":1,"preset":"detailed"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":null,"responseStylePreset":"detailed"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":null,"preset":"detailed"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":true,"responseStylePreset":"noFiller"}],"ok":"concise"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":"noFiller"}],"ok":"For each major step, include one concise user-facing sentence that explains why it is the right next action. Do not expose private chain-of-thought. Write every visible summary as a complete, punctuated sentence."}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":false,"responseStylePreset":"noFiller"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":"noFiller"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":"true","responseStylePreset":"noFiller"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":"true","preset":"noFiller"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":1,"responseStylePreset":"noFiller"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":1,"preset":"noFiller"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":null,"responseStylePreset":"noFiller"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":null,"preset":"noFiller"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":true,"responseStylePreset":"matchEnergy"}],"ok":"concise"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":"matchEnergy"}],"ok":"For each major step, include one concise user-facing sentence that explains why it is the right next action. Do not expose private chain-of-thought. Write every visible summary as a complete, punctuated sentence."}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":false,"responseStylePreset":"matchEnergy"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":"matchEnergy"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":"true","responseStylePreset":"matchEnergy"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":"true","preset":"matchEnergy"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":1,"responseStylePreset":"matchEnergy"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":1,"preset":"matchEnergy"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":null,"responseStylePreset":"matchEnergy"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":null,"preset":"matchEnergy"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":true,"responseStylePreset":"mentor"}],"ok":"detailed"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":"mentor"}],"ok":"For each major step, provide a short user-facing paragraph summarizing the evidence, rationale, and relevant tradeoffs before taking action. Do not expose private chain-of-thought. Write every visible summary as complete, punctuated prose."}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":false,"responseStylePreset":"mentor"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":"mentor"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":"true","responseStylePreset":"mentor"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":"true","preset":"mentor"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":1,"responseStylePreset":"mentor"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":1,"preset":"mentor"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":null,"responseStylePreset":"mentor"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":null,"preset":"mentor"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":true,"responseStylePreset":"pushback"}],"ok":"detailed"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":"pushback"}],"ok":"For each major step, provide a short user-facing paragraph summarizing the evidence, rationale, and relevant tradeoffs before taking action. Do not expose private chain-of-thought. Write every visible summary as complete, punctuated prose."}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":false,"responseStylePreset":"pushback"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":"pushback"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":"true","responseStylePreset":"pushback"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":"true","preset":"pushback"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":1,"responseStylePreset":"pushback"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":1,"preset":"pushback"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":null,"responseStylePreset":"pushback"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":null,"preset":"pushback"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":true,"responseStylePreset":"warmPeer"}],"ok":"detailed"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":"warmPeer"}],"ok":"For each major step, provide a short user-facing paragraph summarizing the evidence, rationale, and relevant tradeoffs before taking action. Do not expose private chain-of-thought. Write every visible summary as complete, punctuated prose."}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":false,"responseStylePreset":"warmPeer"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":"warmPeer"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":"true","responseStylePreset":"warmPeer"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":"true","preset":"warmPeer"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":1,"responseStylePreset":"warmPeer"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":1,"preset":"warmPeer"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":null,"responseStylePreset":"warmPeer"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":null,"preset":"warmPeer"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":true,"responseStylePreset":"custom"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":"custom"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":false,"responseStylePreset":"custom"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":"custom"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":"true","responseStylePreset":"custom"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":"true","preset":"custom"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":1,"responseStylePreset":"custom"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":1,"preset":"custom"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":null,"responseStylePreset":"custom"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":null,"preset":"custom"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":true,"responseStylePreset":null}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":null}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":false,"responseStylePreset":null}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":null}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":"true","responseStylePreset":null}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":"true","preset":null}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":1,"responseStylePreset":null}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":1,"preset":null}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":null,"responseStylePreset":null}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":null,"preset":null}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":true,"responseStylePreset":["mentor"]}],"ok":"detailed"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":["mentor"]}],"ok":"For each major step, provide a short user-facing paragraph summarizing the evidence, rationale, and relevant tradeoffs before taking action. Do not expose private chain-of-thought. Write every visible summary as complete, punctuated prose."}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":false,"responseStylePreset":["mentor"]}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":["mentor"]}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":"true","responseStylePreset":["mentor"]}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":"true","preset":["mentor"]}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":1,"responseStylePreset":["mentor"]}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":1,"preset":["mentor"]}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":null,"responseStylePreset":["mentor"]}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":null,"preset":["mentor"]}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":true,"responseStylePreset":[["concise"]]}],"ok":"concise"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":[["concise"]]}],"ok":"For each major step, include one concise user-facing sentence that explains why it is the right next action. Do not expose private chain-of-thought. Write every visible summary as a complete, punctuated sentence."}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":false,"responseStylePreset":[["concise"]]}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":[["concise"]]}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":"true","responseStylePreset":[["concise"]]}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":"true","preset":[["concise"]]}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":1,"responseStylePreset":[["concise"]]}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":1,"preset":[["concise"]]}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":null,"responseStylePreset":[["concise"]]}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":null,"preset":[["concise"]]}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":true,"responseStylePreset":["actions"]}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":["actions"]}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":false,"responseStylePreset":["actions"]}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":["actions"]}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":"true","responseStylePreset":["actions"]}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":"true","preset":["actions"]}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":1,"responseStylePreset":["actions"]}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":1,"preset":["actions"]}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":null,"responseStylePreset":["actions"]}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":null,"preset":["actions"]}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":true,"responseStylePreset":5}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":5}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":false,"responseStylePreset":5}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":5}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":"true","responseStylePreset":5}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":"true","preset":5}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":1,"responseStylePreset":5}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":1,"preset":5}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":null,"responseStylePreset":5}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":null,"preset":5}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":true,"responseStylePreset":{"a":1}}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":{"a":1}}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":false,"responseStylePreset":{"a":1}}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":{"a":1}}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":"true","responseStylePreset":{"a":1}}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":"true","preset":{"a":1}}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":1,"responseStylePreset":{"a":1}}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":1,"preset":{"a":1}}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":null,"responseStylePreset":{"a":1}}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":null,"preset":{"a":1}}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":true,"responseStylePreset":"provider"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":"provider"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":false,"responseStylePreset":"provider"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":"provider"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":"true","responseStylePreset":"provider"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":"true","preset":"provider"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":1,"responseStylePreset":"provider"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":1,"preset":"provider"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":null,"responseStylePreset":"provider"}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":null,"preset":"provider"}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":true,"responseStylePreset":true}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":true}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":false,"responseStylePreset":true}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":true}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":"true","responseStylePreset":true}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":"true","preset":true}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":1,"responseStylePreset":true}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":1,"preset":true}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":null,"responseStylePreset":true}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":null,"preset":true}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":true,"responseStylePreset":[]}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":true,"preset":[]}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":false,"responseStylePreset":[]}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":false,"preset":[]}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":"true","responseStylePreset":[]}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":"true","preset":[]}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":1,"responseStylePreset":[]}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":1,"preset":[]}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{"responseStyleEnabled":null,"responseStylePreset":[]}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{"enabled":null,"preset":[]}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[null],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[null],"error":"Cannot destructure property 'enabled' of 'object null' as it is null."}
+{"fn":"resolveResponseStyleLevel","args":["str"],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":["str"],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[5],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[5],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[[1]],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[[1]],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[{}],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[{}],"ok":null}
+{"fn":"resolveResponseStyleLevel","args":[],"ok":"provider"}
+{"fn":"buildResponseStyleInstruction","args":[],"error":"Cannot destructure property 'enabled' of 'undefined' as it is undefined."}
+{"fn":"wrapResponseStyleReminder","args":["provider",""],"ok":""}
+{"fn":"wrapResponseStyleReminder","args":["provider","  "],"ok":""}
+{"fn":"wrapResponseStyleReminder","args":["provider","do it"],"ok":""}
+{"fn":"wrapResponseStyleReminder","args":["provider"," ﻿do it "],"ok":""}
+{"fn":"wrapResponseStyleReminder","args":["actions",""],"ok":""}
+{"fn":"wrapResponseStyleReminder","args":["actions","  "],"ok":""}
+{"fn":"wrapResponseStyleReminder","args":["actions","do it"],"ok":"<system-reminder data-devryan-response-style=\"actions\">\ndo it\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":["actions"," ﻿do it "],"ok":"<system-reminder data-devryan-response-style=\"actions\">\ndo it\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":["concise",""],"ok":""}
+{"fn":"wrapResponseStyleReminder","args":["concise","  "],"ok":""}
+{"fn":"wrapResponseStyleReminder","args":["concise","do it"],"ok":"<system-reminder data-devryan-response-style=\"concise\">\ndo it\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":["concise"," ﻿do it "],"ok":"<system-reminder data-devryan-response-style=\"concise\">\ndo it\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[5,""],"ok":""}
+{"fn":"wrapResponseStyleReminder","args":[5,"  "],"ok":""}
+{"fn":"wrapResponseStyleReminder","args":[5,"do it"],"ok":"<system-reminder data-devryan-response-style=\"5\">\ndo it\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[5," ﻿do it "],"ok":"<system-reminder data-devryan-response-style=\"5\">\ndo it\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null,""],"ok":""}
+{"fn":"wrapResponseStyleReminder","args":[null,"  "],"ok":""}
+{"fn":"wrapResponseStyleReminder","args":[null,"do it"],"ok":"<system-reminder data-devryan-response-style=\"null\">\ndo it\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[null," ﻿do it "],"ok":"<system-reminder data-devryan-response-style=\"null\">\ndo it\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a","b"],""],"ok":""}
+{"fn":"wrapResponseStyleReminder","args":[["a","b"],"  "],"ok":""}
+{"fn":"wrapResponseStyleReminder","args":[["a","b"],"do it"],"ok":"<system-reminder data-devryan-response-style=\"a,b\">\ndo it\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[["a","b"]," ﻿do it "],"ok":"<system-reminder data-devryan-response-style=\"a,b\">\ndo it\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"x":1},""],"ok":""}
+{"fn":"wrapResponseStyleReminder","args":[{"x":1},"  "],"ok":""}
+{"fn":"wrapResponseStyleReminder","args":[{"x":1},"do it"],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\ndo it\n</system-reminder>"}
+{"fn":"wrapResponseStyleReminder","args":[{"x":1}," ﻿do it "],"ok":"<system-reminder data-devryan-response-style=\"[object Object]\">\ndo it\n</system-reminder>"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"type":"text","text":"<system-reminder data-devryan-response-style=\"concise\">\nX\n</system-reminder>","synthetic":true}]],"ok":"concise"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"type":"text","text":"<system-reminder data-devryan-response-style=\"detailed\">\nX\n</system-reminder>","synthetic":false}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"type":"reasoning","text":"<system-reminder data-devryan-response-style=\"actions\">\nX\n</system-reminder>","synthetic":true}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"type":"text","text":"<system-reminder data-devryan-response-style=\"provider\">\nX\n</system-reminder>","synthetic":true}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"type":"text","text":"x","synthetic":true},{"type":"text","text":"<system-reminder data-devryan-response-style=\"actions\">\nX\n</system-reminder>","synthetic":true}]],"ok":"actions"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"type":"text","text":"<system-reminder　\ndata-devryan-response-style=\"detailed\">","synthetic":true}]],"ok":"detailed"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"type":"text","text":"<system-reminderdata-devryan-response-style=\"detailed\">","synthetic":true}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"type":"text","text":"<system-reminder <system-reminder data-devryan-response-style=\"concise\">","synthetic":true}]],"ok":"concise"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"type":"text","text":"<system-reminder  data-devryan-response-style=\"concised\">","synthetic":true}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"type":"text","text":"<system-reminderdata-devryan-response-style=\"concise\">","synthetic":true}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"type":"text","text":"<system-reminder﻿data-devryan-response-style=\"concise\">","synthetic":true}]],"ok":"concise"}
+{"fn":"readResponseStyleLevelFromParts","args":[[null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"readResponseStyleLevelFromParts","args":[["abc"]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"type":"text","text":5,"synthetic":true}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[[{"type":"text","text":"<system-reminder data-devryan-response-style=\"concise\">\nX\n</system-reminder>","synthetic":"true"}]],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[null],"error":"parts is not iterable"}
+{"fn":"readResponseStyleLevelFromParts","args":["ab"],"ok":"provider"}
+{"fn":"readResponseStyleLevelFromParts","args":[{}],"error":"parts is not iterable"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"type":"text","text":"x","synthetic":true}]},{"parts":[{"type":"text","text":"<system-reminder data-devryan-response-style=\"concise\">\nX\n</system-reminder>","synthetic":true}]}]],"ok":"concise"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[]}]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[]],"ok":"provider"}
+{"fn":"readSessionResponseStyleLevel","args":[[null]],"error":"Cannot read properties of null (reading 'parts')"}
+{"fn":"readSessionResponseStyleLevel","args":[["a"]],"error":"parts is not iterable"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":null}]],"error":"parts is not iterable"}
+{"fn":"readSessionResponseStyleLevel","args":[[{}]],"error":"parts is not iterable"}
+{"fn":"readSessionResponseStyleLevel","args":[[{"parts":[{"type":"text","text":"x","synthetic":true},{"type":"text","text":"<system-reminder data-devryan-response-style=\"actions\">\nX\n</system-reminder>","synthetic":true}]},{"parts":[{"type":"text","text":"<system-reminder data-devryan-response-style=\"concise\">\nX\n</system-reminder>","synthetic":true}]}]],"ok":"actions"}
+{"fn":"readSessionResponseStyleLevel","args":[null],"error":"messages is not iterable"}
+{"fn":"readSessionResponseStyleLevel","args":[5],"error":"messages is not iterable"}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":true,"hasExistingSession":true,"existingSessionHasUserMessages":true}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":true,"hasExistingSession":true,"existingSessionHasUserMessages":false}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":true,"hasExistingSession":true,"existingSessionHasUserMessages":0}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":true,"hasExistingSession":false,"existingSessionHasUserMessages":true}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":true,"hasExistingSession":false,"existingSessionHasUserMessages":false}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":true,"hasExistingSession":false,"existingSessionHasUserMessages":0}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":true,"hasExistingSession":"","existingSessionHasUserMessages":true}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":true,"hasExistingSession":"","existingSessionHasUserMessages":false}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":true,"hasExistingSession":"","existingSessionHasUserMessages":0}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":true,"hasExistingSession":1,"existingSessionHasUserMessages":true}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":true,"hasExistingSession":1,"existingSessionHasUserMessages":false}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":true,"hasExistingSession":1,"existingSessionHasUserMessages":0}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":false,"hasExistingSession":true,"existingSessionHasUserMessages":true}],"ok":false}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":false,"hasExistingSession":true,"existingSessionHasUserMessages":false}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":false,"hasExistingSession":true,"existingSessionHasUserMessages":0}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":false,"hasExistingSession":false,"existingSessionHasUserMessages":true}],"ok":false}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":false,"hasExistingSession":false,"existingSessionHasUserMessages":false}],"ok":false}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":false,"hasExistingSession":false,"existingSessionHasUserMessages":0}],"ok":false}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":false,"hasExistingSession":"","existingSessionHasUserMessages":true}],"ok":""}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":false,"hasExistingSession":"","existingSessionHasUserMessages":false}],"ok":""}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":false,"hasExistingSession":"","existingSessionHasUserMessages":0}],"ok":""}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":false,"hasExistingSession":1,"existingSessionHasUserMessages":true}],"ok":false}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":false,"hasExistingSession":1,"existingSessionHasUserMessages":false}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":false,"hasExistingSession":1,"existingSessionHasUserMessages":0}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":"x","hasExistingSession":true,"existingSessionHasUserMessages":true}],"ok":"x"}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":"x","hasExistingSession":true,"existingSessionHasUserMessages":false}],"ok":"x"}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":"x","hasExistingSession":true,"existingSessionHasUserMessages":0}],"ok":"x"}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":"x","hasExistingSession":false,"existingSessionHasUserMessages":true}],"ok":"x"}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":"x","hasExistingSession":false,"existingSessionHasUserMessages":false}],"ok":"x"}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":"x","hasExistingSession":false,"existingSessionHasUserMessages":0}],"ok":"x"}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":"x","hasExistingSession":"","existingSessionHasUserMessages":true}],"ok":"x"}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":"x","hasExistingSession":"","existingSessionHasUserMessages":false}],"ok":"x"}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":"x","hasExistingSession":"","existingSessionHasUserMessages":0}],"ok":"x"}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":"x","hasExistingSession":1,"existingSessionHasUserMessages":true}],"ok":"x"}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":"x","hasExistingSession":1,"existingSessionHasUserMessages":false}],"ok":"x"}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":"x","hasExistingSession":1,"existingSessionHasUserMessages":0}],"ok":"x"}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":0,"hasExistingSession":true,"existingSessionHasUserMessages":true}],"ok":false}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":0,"hasExistingSession":true,"existingSessionHasUserMessages":false}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":0,"hasExistingSession":true,"existingSessionHasUserMessages":0}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":0,"hasExistingSession":false,"existingSessionHasUserMessages":true}],"ok":false}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":0,"hasExistingSession":false,"existingSessionHasUserMessages":false}],"ok":false}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":0,"hasExistingSession":false,"existingSessionHasUserMessages":0}],"ok":false}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":0,"hasExistingSession":"","existingSessionHasUserMessages":true}],"ok":""}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":0,"hasExistingSession":"","existingSessionHasUserMessages":false}],"ok":""}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":0,"hasExistingSession":"","existingSessionHasUserMessages":0}],"ok":""}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":0,"hasExistingSession":1,"existingSessionHasUserMessages":true}],"ok":false}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":0,"hasExistingSession":1,"existingSessionHasUserMessages":false}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":0,"hasExistingSession":1,"existingSessionHasUserMessages":0}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":null,"hasExistingSession":true,"existingSessionHasUserMessages":true}],"ok":false}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":null,"hasExistingSession":true,"existingSessionHasUserMessages":false}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":null,"hasExistingSession":true,"existingSessionHasUserMessages":0}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":null,"hasExistingSession":false,"existingSessionHasUserMessages":true}],"ok":false}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":null,"hasExistingSession":false,"existingSessionHasUserMessages":false}],"ok":false}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":null,"hasExistingSession":false,"existingSessionHasUserMessages":0}],"ok":false}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":null,"hasExistingSession":"","existingSessionHasUserMessages":true}],"ok":""}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":null,"hasExistingSession":"","existingSessionHasUserMessages":false}],"ok":""}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":null,"hasExistingSession":"","existingSessionHasUserMessages":0}],"ok":""}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":null,"hasExistingSession":1,"existingSessionHasUserMessages":true}],"ok":false}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":null,"hasExistingSession":1,"existingSessionHasUserMessages":false}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[{"isNewSessionDraft":null,"hasExistingSession":1,"existingSessionHasUserMessages":0}],"ok":true}
+{"fn":"shouldAttachResponseStyleReminder","args":[null],"error":"Cannot destructure property 'isNewSessionDraft' of 'object null' as it is null."}
+{"fn":"shouldAttachResponseStyleReminder","args":[{}],"ok":{"$undefined":true}}
+{"fn":"isResponseStyleInstructionLoaded","args":[],"ok":false}
+{"fn":"getCachedResponseStyleLevel","args":[],"ok":"provider"}
+{"fn":"getCachedResponseStyleInstruction","args":[],"ok":null}
+{"fn":"cacheResponseStyleInstructionFromSettings","args":[{"responseStyleEnabled":true,"responseStylePreset":"mentor"}],"ok":"For each major step, provide a short user-facing paragraph summarizing the evidence, rationale, and relevant tradeoffs before taking action. Do not expose private chain-of-thought. Write every visible summary as complete, punctuated prose."}
+{"fn":"isResponseStyleInstructionLoaded","args":[],"ok":true}
+{"fn":"getCachedResponseStyleLevel","args":[],"ok":"detailed"}
+{"fn":"getCachedResponseStyleInstruction","args":[],"ok":"For each major step, provide a short user-facing paragraph summarizing the evidence, rationale, and relevant tradeoffs before taking action. Do not expose private chain-of-thought. Write every visible summary as complete, punctuated prose."}
+{"fn":"cacheResponseStyleInstructionFromSettings","args":[null],"ok":null}
+{"fn":"getCachedResponseStyleLevel","args":[],"ok":"provider"}
+{"fn":"getCachedResponseStyleInstruction","args":[],"ok":null}
+{"fn":"cacheResponseStyleInstructionFromSettings","args":[{"responseStyleEnabled":true,"responseStylePreset":"actions"}],"ok":"Show only a short action or status summary for each major step. Do not add a separate rationale. Write every visible summary as a complete, punctuated sentence."}
+{"fn":"getCachedResponseStyleInstruction","args":[],"ok":"Show only a short action or status summary for each major step. Do not add a separate rationale. Write every visible summary as a complete, punctuated sentence."}
+{"fn":"clearResponseStyleInstructionCacheForTests","args":[],"ok":{"$undefined":true}}
+{"fn":"isResponseStyleInstructionLoaded","args":[],"ok":false}
+{"fn":"getCachedResponseStyleLevel","args":[],"ok":"provider"}

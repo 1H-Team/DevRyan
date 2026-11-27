@@ -1,0 +1,19 @@
+{
+  "unit": "sessionLifecycleStatus.ts",
+  "files": 1,
+  "fingerprint": "eaa41a3d3326675f",
+  "cases": 227,
+  "cases_hash": "30d3a6d4c0f57a48",
+  "coverage": {
+    "lines": 80,
+    "reached": 80,
+    "files": [
+      {
+        "file": "sessionLifecycleStatus.ts",
+        "lines": 80,
+        "reached": 80,
+        "missed": ""
+      }
+    ]
+  }
+}

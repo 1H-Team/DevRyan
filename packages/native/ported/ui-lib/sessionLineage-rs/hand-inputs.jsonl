@@ -1,0 +1,71 @@
+{"fn": "resolveSessionLineage", "args": ["child", [{"id": "root"}, {"id": "parent", "parentID": "root"}, {"id": "child", "parentID": "parent"}]]}
+{"fn": "resolveRootSessionID", "args": ["child", [{"id": "root"}, {"id": "parent", "parentID": "root"}, {"id": "child", "parentID": "parent"}]]}
+{"fn": "resolveSessionLineage", "args": ["a", [{"id": "root"}, {"id": "parent", "parentID": "root"}, {"id": "child", "parentID": "parent"}]]}
+{"fn": "resolveRootSessionID", "args": ["a", [{"id": "root"}, {"id": "parent", "parentID": "root"}, {"id": "child", "parentID": "parent"}]]}
+{"fn": "resolveSessionLineage", "args": [" c ", [{"id": "root"}, {"id": "parent", "parentID": "root"}, {"id": "child", "parentID": "parent"}]]}
+{"fn": "resolveRootSessionID", "args": [" c ", [{"id": "root"}, {"id": "parent", "parentID": "root"}, {"id": "child", "parentID": "parent"}]]}
+{"fn": "resolveSessionLineage", "args": ["c", [{"id": "root"}, {"id": "parent", "parentID": "root"}, {"id": "child", "parentID": "parent"}]]}
+{"fn": "resolveRootSessionID", "args": ["c", [{"id": "root"}, {"id": "parent", "parentID": "root"}, {"id": "child", "parentID": "parent"}]]}
+{"fn": "resolveSessionLineage", "args": ["zz", [{"id": "root"}, {"id": "parent", "parentID": "root"}, {"id": "child", "parentID": "parent"}]]}
+{"fn": "resolveRootSessionID", "args": ["zz", [{"id": "root"}, {"id": "parent", "parentID": "root"}, {"id": "child", "parentID": "parent"}]]}
+{"fn": "resolveSessionLineage", "args": ["child", [{"id": "child", "parentID": "root-not-loaded"}]]}
+{"fn": "resolveRootSessionID", "args": ["child", [{"id": "child", "parentID": "root-not-loaded"}]]}
+{"fn": "resolveSessionLineage", "args": ["a", [{"id": "child", "parentID": "root-not-loaded"}]]}
+{"fn": "resolveRootSessionID", "args": ["a", [{"id": "child", "parentID": "root-not-loaded"}]]}
+{"fn": "resolveSessionLineage", "args": [" c ", [{"id": "child", "parentID": "root-not-loaded"}]]}
+{"fn": "resolveRootSessionID", "args": [" c ", [{"id": "child", "parentID": "root-not-loaded"}]]}
+{"fn": "resolveSessionLineage", "args": ["c", [{"id": "child", "parentID": "root-not-loaded"}]]}
+{"fn": "resolveRootSessionID", "args": ["c", [{"id": "child", "parentID": "root-not-loaded"}]]}
+{"fn": "resolveSessionLineage", "args": ["zz", [{"id": "child", "parentID": "root-not-loaded"}]]}
+{"fn": "resolveRootSessionID", "args": ["zz", [{"id": "child", "parentID": "root-not-loaded"}]]}
+{"fn": "resolveSessionLineage", "args": ["child", [{"id": "a", "parentID": "b"}, {"id": "b", "parentID": "a"}]]}
+{"fn": "resolveRootSessionID", "args": ["child", [{"id": "a", "parentID": "b"}, {"id": "b", "parentID": "a"}]]}
+{"fn": "resolveSessionLineage", "args": ["a", [{"id": "a", "parentID": "b"}, {"id": "b", "parentID": "a"}]]}
+{"fn": "resolveRootSessionID", "args": ["a", [{"id": "a", "parentID": "b"}, {"id": "b", "parentID": "a"}]]}
+{"fn": "resolveSessionLineage", "args": [" c ", [{"id": "a", "parentID": "b"}, {"id": "b", "parentID": "a"}]]}
+{"fn": "resolveRootSessionID", "args": [" c ", [{"id": "a", "parentID": "b"}, {"id": "b", "parentID": "a"}]]}
+{"fn": "resolveSessionLineage", "args": ["c", [{"id": "a", "parentID": "b"}, {"id": "b", "parentID": "a"}]]}
+{"fn": "resolveRootSessionID", "args": ["c", [{"id": "a", "parentID": "b"}, {"id": "b", "parentID": "a"}]]}
+{"fn": "resolveSessionLineage", "args": ["zz", [{"id": "a", "parentID": "b"}, {"id": "b", "parentID": "a"}]]}
+{"fn": "resolveRootSessionID", "args": ["zz", [{"id": "a", "parentID": "b"}, {"id": "b", "parentID": "a"}]]}
+{"fn": "resolveSessionLineage", "args": ["child", [null, "x", {"id": " c ", "parentID": " p "}, {"id": "p", "parentID": "  "}, {"id": 5}, {"id": "c", "parentID": "q"}]]}
+{"fn": "resolveRootSessionID", "args": ["child", [null, "x", {"id": " c ", "parentID": " p "}, {"id": "p", "parentID": "  "}, {"id": 5}, {"id": "c", "parentID": "q"}]]}
+{"fn": "resolveSessionLineage", "args": ["a", [null, "x", {"id": " c ", "parentID": " p "}, {"id": "p", "parentID": "  "}, {"id": 5}, {"id": "c", "parentID": "q"}]]}
+{"fn": "resolveRootSessionID", "args": ["a", [null, "x", {"id": " c ", "parentID": " p "}, {"id": "p", "parentID": "  "}, {"id": 5}, {"id": "c", "parentID": "q"}]]}
+{"fn": "resolveSessionLineage", "args": [" c ", [null, "x", {"id": " c ", "parentID": " p "}, {"id": "p", "parentID": "  "}, {"id": 5}, {"id": "c", "parentID": "q"}]]}
+{"fn": "resolveRootSessionID", "args": [" c ", [null, "x", {"id": " c ", "parentID": " p "}, {"id": "p", "parentID": "  "}, {"id": 5}, {"id": "c", "parentID": "q"}]]}
+{"fn": "resolveSessionLineage", "args": ["c", [null, "x", {"id": " c ", "parentID": " p "}, {"id": "p", "parentID": "  "}, {"id": 5}, {"id": "c", "parentID": "q"}]]}
+{"fn": "resolveRootSessionID", "args": ["c", [null, "x", {"id": " c ", "parentID": " p "}, {"id": "p", "parentID": "  "}, {"id": 5}, {"id": "c", "parentID": "q"}]]}
+{"fn": "resolveSessionLineage", "args": ["zz", [null, "x", {"id": " c ", "parentID": " p "}, {"id": "p", "parentID": "  "}, {"id": 5}, {"id": "c", "parentID": "q"}]]}
+{"fn": "resolveRootSessionID", "args": ["zz", [null, "x", {"id": " c ", "parentID": " p "}, {"id": "p", "parentID": "  "}, {"id": 5}, {"id": "c", "parentID": "q"}]]}
+{"fn": "resolveSessionLineage", "args": ["child", [{"id": "a", "parentID": "a"}]]}
+{"fn": "resolveRootSessionID", "args": ["child", [{"id": "a", "parentID": "a"}]]}
+{"fn": "resolveSessionLineage", "args": ["a", [{"id": "a", "parentID": "a"}]]}
+{"fn": "resolveRootSessionID", "args": ["a", [{"id": "a", "parentID": "a"}]]}
+{"fn": "resolveSessionLineage", "args": [" c ", [{"id": "a", "parentID": "a"}]]}
+{"fn": "resolveRootSessionID", "args": [" c ", [{"id": "a", "parentID": "a"}]]}
+{"fn": "resolveSessionLineage", "args": ["c", [{"id": "a", "parentID": "a"}]]}
+{"fn": "resolveRootSessionID", "args": ["c", [{"id": "a", "parentID": "a"}]]}
+{"fn": "resolveSessionLineage", "args": ["zz", [{"id": "a", "parentID": "a"}]]}
+{"fn": "resolveRootSessionID", "args": ["zz", [{"id": "a", "parentID": "a"}]]}
+{"fn": "resolveSessionLineage", "args": ["child", [{"id": "a", "parentID": "b"}, {"id": "b", "parentID": "c"}, {"id": "c", "parentID": "b"}]]}
+{"fn": "resolveRootSessionID", "args": ["child", [{"id": "a", "parentID": "b"}, {"id": "b", "parentID": "c"}, {"id": "c", "parentID": "b"}]]}
+{"fn": "resolveSessionLineage", "args": ["a", [{"id": "a", "parentID": "b"}, {"id": "b", "parentID": "c"}, {"id": "c", "parentID": "b"}]]}
+{"fn": "resolveRootSessionID", "args": ["a", [{"id": "a", "parentID": "b"}, {"id": "b", "parentID": "c"}, {"id": "c", "parentID": "b"}]]}
+{"fn": "resolveSessionLineage", "args": [" c ", [{"id": "a", "parentID": "b"}, {"id": "b", "parentID": "c"}, {"id": "c", "parentID": "b"}]]}
+{"fn": "resolveRootSessionID", "args": [" c ", [{"id": "a", "parentID": "b"}, {"id": "b", "parentID": "c"}, {"id": "c", "parentID": "b"}]]}
+{"fn": "resolveSessionLineage", "args": ["c", [{"id": "a", "parentID": "b"}, {"id": "b", "parentID": "c"}, {"id": "c", "parentID": "b"}]]}
+{"fn": "resolveRootSessionID", "args": ["c", [{"id": "a", "parentID": "b"}, {"id": "b", "parentID": "c"}, {"id": "c", "parentID": "b"}]]}
+{"fn": "resolveSessionLineage", "args": ["zz", [{"id": "a", "parentID": "b"}, {"id": "b", "parentID": "c"}, {"id": "c", "parentID": "b"}]]}
+{"fn": "resolveRootSessionID", "args": ["zz", [{"id": "a", "parentID": "b"}, {"id": "b", "parentID": "c"}, {"id": "c", "parentID": "b"}]]}
+{"fn": "resolveSessionLineage", "args": ["  ", []]}
+{"fn": "resolveRootSessionID", "args": [null, []]}
+{"fn": "resolveRootSessionID", "args": []}
+{"fn": "resolveRootSessionID", "args": ["", [{"id": "root"}, {"id": "parent", "parentID": "root"}, {"id": "child", "parentID": "parent"}]]}
+{"fn": "resolveSessionLineage", "args": ["﻿a", [{"id": "a", "parentID": "b"}, {"id": "b", "parentID": "a"}]]}
+{"fn":"resolveSessionLineage","args":["a",null]}
+{"fn":"resolveSessionLineage","args":["a"]}
+{"fn":"resolveSessionLineage","args":["a",5]}
+{"fn":"resolveSessionLineage","args":["a",{"id":"a"}]}
+{"fn":"resolveRootSessionID","args":["a",{"$set":[{"id":"a","parentID":"b"}]}]}
+{"fn":"resolveSessionLineage","args":[5,null]}

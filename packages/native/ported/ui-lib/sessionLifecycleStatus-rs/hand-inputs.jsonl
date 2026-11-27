@@ -1,0 +1,27 @@
+{"fn": "deriveSessionLifecycleStatus", "args": [{"planModeOn": false, "questionCount": 0, "planIndicatorState": null, "assistantActivity": "idle", "sdkSessionStatusError": null}]}
+{"fn": "deriveSessionLifecycleStatus", "args": [{"planModeOn": false, "questionCount": 2, "planIndicatorState": null, "assistantActivity": "idle", "sdkSessionStatusError": "boom"}]}
+{"fn": "deriveSessionLifecycleStatus", "args": [{"planModeOn": false, "questionCount": 0, "planIndicatorState": null, "assistantActivity": "idle", "sdkSessionStatusError": ""}]}
+{"fn": "deriveSessionLifecycleStatus", "args": [{"planModeOn": false, "questionCount": 3, "planIndicatorState": null, "assistantActivity": "idle", "sdkSessionStatusError": null}]}
+{"fn": "deriveSessionLifecycleStatus", "args": [{"planModeOn": false, "questionCount": "2", "planIndicatorState": null, "assistantActivity": "idle", "sdkSessionStatusError": null}]}
+{"fn": "deriveSessionLifecycleStatus", "args": [{"planModeOn": false, "questionCount": [1], "planIndicatorState": null, "assistantActivity": "idle", "sdkSessionStatusError": null}]}
+{"fn": "deriveSessionLifecycleStatus", "args": [{"planModeOn": false, "questionCount": true, "planIndicatorState": null, "assistantActivity": "idle", "sdkSessionStatusError": null}]}
+{"fn": "deriveSessionLifecycleStatus", "args": [{"planModeOn": false, "questionCount": " 0x1 ", "planIndicatorState": null, "assistantActivity": "idle", "sdkSessionStatusError": null}]}
+{"fn": "deriveSessionLifecycleStatus", "args": [{"planModeOn": false, "questionCount": {"$num": "Infinity"}, "planIndicatorState": null, "assistantActivity": "idle", "sdkSessionStatusError": null}]}
+{"fn": "deriveSessionLifecycleStatus", "args": [{"planModeOn": false, "questionCount": {"$num": "NaN"}, "planIndicatorState": null, "assistantActivity": "idle", "sdkSessionStatusError": null}]}
+{"fn": "deriveSessionLifecycleStatus", "args": [{"planModeOn": false, "questionCount": -1, "planIndicatorState": null, "assistantActivity": "idle", "sdkSessionStatusError": null}]}
+{"fn": "deriveSessionLifecycleStatus", "args": [{"planModeOn": false, "questionCount": 0, "planIndicatorState": "implementing", "assistantActivity": "streaming", "sdkSessionStatusError": null}]}
+{"fn": "deriveSessionLifecycleStatus", "args": [{"planModeOn": false, "questionCount": 0, "planIndicatorState": "proposed", "assistantActivity": "tooling", "sdkSessionStatusError": null}]}
+{"fn": "deriveSessionLifecycleStatus", "args": [{"planModeOn": true, "questionCount": 0, "planIndicatorState": "completed", "assistantActivity": "cooldown", "sdkSessionStatusError": null}]}
+{"fn": "deriveSessionLifecycleStatus", "args": [{"planModeOn": false, "questionCount": 0, "planIndicatorState": null, "assistantActivity": "permission", "sdkSessionStatusError": null}]}
+{"fn": "deriveSessionLifecycleStatus", "args": [{"planModeOn": false, "questionCount": 0, "planIndicatorState": null, "assistantActivity": "STREAMING", "sdkSessionStatusError": null}]}
+{"fn": "deriveSessionLifecycleStatus", "args": [{"planModeOn": false, "questionCount": 0, "planIndicatorState": null, "assistantActivity": null, "sdkSessionStatusError": null}]}
+{"fn": "deriveSessionLifecycleStatus", "args": [{"planModeOn": true}]}
+{"fn": "deriveSessionLifecycleStatus", "args": [{}]}
+{"fn": "deriveSessionLifecycleStatus", "args": [null]}
+{"fn": "deriveSessionLifecycleStatus", "args": ["str"]}
+{"fn": "deriveSessionLifecycleStatus", "args": [5]}
+{"fn": "deriveSessionLifecycleStatus", "args": [[1]]}
+{"fn": "deriveSessionLifecycleStatus", "args": [{"planModeOn": false, "questionCount": 0, "planIndicatorState": null, "assistantActivity": "idle", "sdkSessionStatusError": 5}]}
+{"fn": "deriveSessionLifecycleStatus", "args": [{"planModeOn": false, "questionCount": 0, "planIndicatorState": null, "assistantActivity": "idle", "sdkSessionStatusError": {"a": 1}}]}
+{"fn": "deriveSessionLifecycleStatus", "args": [{"planModeOn": false, "questionCount": 0.5, "planIndicatorState": null, "assistantActivity": "idle", "sdkSessionStatusError": 0}]}
+{"fn": "deriveSessionLifecycleStatus", "args": []}

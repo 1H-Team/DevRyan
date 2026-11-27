@@ -1,0 +1,19 @@
+{
+  "unit": "modelIdentifier.ts",
+  "files": 1,
+  "fingerprint": "c562480372a0f80c",
+  "cases": 222,
+  "cases_hash": "36c7aacc696ad67c",
+  "coverage": {
+    "lines": 17,
+    "reached": 17,
+    "files": [
+      {
+        "file": "modelIdentifier.ts",
+        "lines": 17,
+        "reached": 17,
+        "missed": ""
+      }
+    ]
+  }
+}

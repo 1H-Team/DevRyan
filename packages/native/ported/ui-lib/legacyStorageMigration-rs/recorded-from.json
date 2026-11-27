@@ -1,0 +1,19 @@
+{
+  "unit": "legacyStorageMigration.ts",
+  "files": 1,
+  "fingerprint": "f517e6cdc0eba751",
+  "cases": 233,
+  "cases_hash": "37072e36605b1c20",
+  "coverage": {
+    "lines": 33,
+    "reached": 15,
+    "files": [
+      {
+        "file": "legacyStorageMigration.ts",
+        "lines": 33,
+        "reached": 15,
+        "missed": "14-28, 33-35"
+      }
+    ]
+  }
+}

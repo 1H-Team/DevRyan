@@ -1,0 +1,19 @@
+{
+  "unit": "formatBytes.ts",
+  "files": 1,
+  "fingerprint": "603d1af94a86a482",
+  "cases": 1896,
+  "cases_hash": "58f00e289d9b6910",
+  "coverage": {
+    "lines": 12,
+    "reached": 12,
+    "files": [
+      {
+        "file": "formatBytes.ts",
+        "lines": 12,
+        "reached": 12,
+        "missed": ""
+      }
+    ]
+  }
+}

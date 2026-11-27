@@ -1,0 +1,39 @@
+{"fn": "normalizeProjectPath", "args": ["/a/b/"]}
+{"fn": "normalizeProjectPath", "args": ["C:\\a\\"]}
+{"fn": "normalizeProjectPath", "args": ["/"]}
+{"fn": "normalizeProjectPath", "args": ["//"]}
+{"fn": "normalizeProjectPath", "args": ["  "]}
+{"fn": "normalizeProjectPath", "args": ["x"]}
+{"fn": "normalizeProjectPath", "args": ["\\"]}
+{"fn": "normalizeProjectPath", "args": ["a//"]}
+{"fn": "normalizeProjectPath", "args": []}
+{"fn": "normalizeProjectPath", "args": [5]}
+{"fn": "normalizeProjectPath", "args": ["﻿/é😀/"]}
+{"fn": "resolveProjectForSessionDirectory", "args": [[{"id": "parent", "path": "/repo"}, {"id": "child", "path": "/repo/packages/child"}], {"$map": [["/repo", [{"path": "/repo/packages", "projectDirectory": "/repo"}]]]}, "/repo/packages/child/src"]}
+{"fn": "resolveProjectForSessionDirectory", "args": [[{"id": "parent", "path": "C:\\repo\\"}], {"$map": [["C:\\repo\\", [{"path": "D:\\worktrees\\feature\\", "projectDirectory": "C:\\repo\\"}]]]}, "D:\\worktrees\\feature\\src"]}
+{"fn": "resolveProjectFromWorktreeDirectory", "args": [[{"id": "parent", "path": "C:\\repo\\"}], {"$map": [["C:\\repo\\", [{"path": "D:\\worktrees\\feature\\", "projectDirectory": "C:\\repo\\"}]]]}, "D:\\worktrees\\feature"]}
+{"fn": "resolveProjectFromWorktreeDirectory", "args": [[{"id": "x", "path": "/other"}, {"id": "n", "path": "/repo"}], {"$map": [["/repo/", [{"path": "/wt", "projectDirectory": "/nope"}, {"path": "/wt/deep", "projectDirectory": null}]]]}, "/wt/deep/x"]}
+{"fn": "resolveProjectFromWorktreeDirectory", "args": [[{"id": "x", "path": "/repo/sub"}], {"$map": [["/repo", [{"path": "/wt", "projectDirectory": "/repo/sub/inner"}]]]}, "/wt"]}
+{"fn": "resolveProjectFromWorktreeDirectory", "args": [[{"id": "x", "path": "/r"}], [[{"path": "/wt", "projectDirectory": "/r"}]], "/wt"]}
+{"fn": "resolveProjectFromWorktreeDirectory", "args": [[{"id": "x", "path": "/r"}], {"$set": [[{"path": "/wt", "projectDirectory": "/r"}]]}, "/wt"]}
+{"fn": "resolveProjectFromWorktreeDirectory", "args": [[{"id": "x", "path": "/r"}], null, "/wt"]}
+{"fn": "resolveProjectFromWorktreeDirectory", "args": [[{"id": "x", "path": "/r"}], {}, "/wt"]}
+{"fn": "resolveProjectFromWorktreeDirectory", "args": [[{"id": "x", "path": "/r"}], {"$map": [["/r", null]]}, "/wt"]}
+{"fn": "resolveProjectFromWorktreeDirectory", "args": [[{"id": "x", "path": "/r"}], {"$map": [["/r", [null]]]}, "/wt"]}
+{"fn": "resolveProjectFromWorktreeDirectory", "args": [[{"id": "x", "path": "/r"}], {"$map": [["/r", "ab"]]}, "/wt"]}
+{"fn": "resolveProjectFromWorktreeDirectory", "args": ["str", {"$map": [["/r", [{"path": "/wt", "projectDirectory": "/r"}]]]}, "/wt"]}
+{"fn": "resolveProjectFromWorktreeDirectory", "args": [null, {"$map": [["/r", [{"path": "/wt", "projectDirectory": "/r"}]]]}, "/wt"]}
+{"fn": "resolveProjectFromWorktreeDirectory", "args": [[null], {"$map": [["/r", [{"path": "/wt", "projectDirectory": "/r"}]]]}, "/wt"]}
+{"fn": "resolveProjectFromWorktreeDirectory", "args": [[{"id": "x", "path": "/r"}], {"$map": [["/r", [{"path": "/wt", "projectDirectory": "/r"}]]]}, "/"]}
+{"fn": "resolveProjectForDirectory", "args": [[{"id": "a", "path": "/"}, {"id": "b", "path": "/x"}], "/x/y"]}
+{"fn": "resolveProjectForDirectory", "args": [[{"id": "a", "path": "/x"}, {"id": "b", "path": "/x/"}], "/x/y"]}
+{"fn": "resolveProjectForDirectory", "args": [[{"id": "a", "path": "/é"}, {"id": "b", "path": "/e1"}], "/é/"]}
+{"fn": "resolveProjectForDirectory", "args": [[{"id": "a", "path": "/😀"}, {"id": "b", "path": "/ab"}], "/😀/x"]}
+{"fn": "resolveProjectForDirectory", "args": [[{"id": "a", "path": "/ab"}, {"id": "b", "path": "/😀"}], "/😀/x"]}
+{"fn": "resolveProjectForDirectory", "args": [null, "/x"]}
+{"fn": "resolveProjectForDirectory", "args": ["abc", "/x"]}
+{"fn": "resolveProjectForDirectory", "args": [[null], "/x"]}
+{"fn": "resolveProjectForDirectory", "args": [[null], null]}
+{"fn": "resolveProjectForDirectory", "args": [5, "/x"]}
+{"fn": "resolveProjectForDirectory", "args": [[{"path": 5}, {"id": 1}], "/x"]}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"id":"x","path":"/repo"}],{"$map":[["/zzz",[{"path":"/wt","projectDirectory":"/repo/sub"}]]]},"/wt"]}

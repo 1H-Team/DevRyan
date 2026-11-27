@@ -1,0 +1,4 @@
+{"fn":"describeExecutionFailure","args":["local_execution_timeout"]}
+{"fn":"describeExecutionFailure","args":["local_execution_timeout; execution did not start; cleanup unconfirmed"]}
+{"fn":"describeExecutionFailure","args":["payload_too_large"]}
+{"fn":"describeExecutionFailure","args":["provider error"]}

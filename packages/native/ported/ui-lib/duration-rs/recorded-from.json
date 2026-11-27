@@ -1,0 +1,19 @@
+{
+  "unit": "duration.ts",
+  "files": 1,
+  "fingerprint": "470559803b14683d",
+  "cases": 1078,
+  "cases_hash": "fdced77dee86bef9",
+  "coverage": {
+    "lines": 54,
+    "reached": 54,
+    "files": [
+      {
+        "file": "duration.ts",
+        "lines": 54,
+        "reached": 54,
+        "missed": ""
+      }
+    ]
+  }
+}

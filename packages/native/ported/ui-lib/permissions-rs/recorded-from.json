@@ -1,0 +1,19 @@
+{
+  "unit": "permissions/",
+  "files": 1,
+  "fingerprint": "41a8f11796c737a2",
+  "cases": 18,
+  "cases_hash": "9dc3203df31203ed",
+  "coverage": {
+    "lines": 26,
+    "reached": 26,
+    "files": [
+      {
+        "file": "permissions/editModeColors.ts",
+        "lines": 26,
+        "reached": 26,
+        "missed": ""
+      }
+    ]
+  }
+}

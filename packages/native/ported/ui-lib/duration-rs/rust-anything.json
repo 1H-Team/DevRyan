@@ -1,0 +1,66 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "duration.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "duration-rs",
+  "exports": [
+    {
+      "name": "formatDurationMilliseconds",
+      "file": "duration.ts",
+      "line": 11,
+      "params": [
+        {
+          "name": "milliseconds",
+          "ts_type": "number",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "options",
+          "ts_type": "{ final?: boolean }",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "(| { available: true; label: string; milliseconds: number }\n  | { available: false; label: 'Unavailable'; milliseconds: null })",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "formatElapsedDuration",
+      "file": "duration.ts",
+      "line": 52,
+      "params": [
+        {
+          "name": "start",
+          "ts_type": "number",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "end",
+          "ts_type": "number | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "now",
+          "ts_type": "number",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "(| { available: true; label: string; milliseconds: number }\n  | { available: false; label: 'Unavailable'; milliseconds: null })",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

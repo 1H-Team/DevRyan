@@ -1,0 +1,30 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "github/",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "github-rs",
+  "exports": [
+    {
+      "name": "resolveGitHubSourceRepo",
+      "file": "github/sourceRepo.ts",
+      "line": 3,
+      "params": [
+        {
+          "name": "repo",
+          "ts_type": "{ owner?: unknown; repo?: unknown } | null | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "GitHubRepoSelector | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

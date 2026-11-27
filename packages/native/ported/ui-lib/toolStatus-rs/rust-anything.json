@@ -1,0 +1,66 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "toolStatus.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "toolstatus-rs",
+  "exports": [
+    {
+      "name": "normalizeToolStatus",
+      "file": "toolStatus.ts",
+      "line": 27,
+      "params": [
+        {
+          "name": "status",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isFinalToolStatus",
+      "file": "toolStatus.ts",
+      "line": 36,
+      "params": [
+        {
+          "name": "status",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getToolLifecycleState",
+      "file": "toolStatus.ts",
+      "line": 53,
+      "params": [
+        {
+          "name": "state",
+          "ts_type": "{ status?: unknown; time?: { start?: unknown; end?: unknown } } | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "{\n    status?: string;\n    start?: number;\n    end?: number;\n    hasStarted: boolean;\n    hasEnded: boolean;\n    isStatusActive: boolean;\n    isStatusFinal: boolean;\n    isInFlight: boolean;\n    isFinalized: boolean;\n}",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

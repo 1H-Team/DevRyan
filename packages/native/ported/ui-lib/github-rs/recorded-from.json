@@ -1,0 +1,19 @@
+{
+  "unit": "github/",
+  "files": 2,
+  "fingerprint": "4305c4cc6f054293",
+  "cases": 121,
+  "cases_hash": "c11d6dd643d6ad7b",
+  "coverage": {
+    "lines": 8,
+    "reached": 8,
+    "files": [
+      {
+        "file": "github/sourceRepo.ts",
+        "lines": 8,
+        "reached": 8,
+        "missed": ""
+      }
+    ]
+  }
+}

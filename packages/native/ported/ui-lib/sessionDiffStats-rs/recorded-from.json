@@ -1,0 +1,19 @@
+{
+  "unit": "sessionDiffStats.ts",
+  "files": 1,
+  "fingerprint": "098fa0e41cd77f1f",
+  "cases": 1349,
+  "cases_hash": "35662607c5bf68d4",
+  "coverage": {
+    "lines": 113,
+    "reached": 113,
+    "files": [
+      {
+        "file": "sessionDiffStats.ts",
+        "lines": 113,
+        "reached": 113,
+        "missed": ""
+      }
+    ]
+  }
+}

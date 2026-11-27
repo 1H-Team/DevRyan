@@ -1,0 +1,36 @@
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": "s1", "usage": {"activeInputTokens": 10, "lastOutputTokens": 0}, "resolved": false}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": "s1", "usage": null, "resolved": false}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": "s1", "usage": null, "resolved": true}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": "  ", "usage": {"activeInputTokens": 5, "lastOutputTokens": 0}, "resolved": true}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": null, "usage": {"activeInputTokens": 5, "lastOutputTokens": 0}, "resolved": true}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"usage": {"activeInputTokens": 5, "lastOutputTokens": 0}}]}
+{"fn": "resolveContextUsageAvailability", "args": [null]}
+{"fn": "resolveContextUsageAvailability", "args": []}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": 5}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": "s", "usage": {"activeInputTokens": "5", "lastOutputTokens": 0}}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": "s", "usage": {"activeInputTokens": " 0x1f ", "lastOutputTokens": 0}}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": "s", "usage": {"activeInputTokens": [3], "lastOutputTokens": 0}}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": "s", "usage": {"activeInputTokens": [[2]], "lastOutputTokens": 0}}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": "s", "usage": {"activeInputTokens": [1, 2], "lastOutputTokens": 0}}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": "s", "usage": {"activeInputTokens": {}, "lastOutputTokens": 0}}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": "s", "usage": {"activeInputTokens": true, "lastOutputTokens": 0}}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": "s", "usage": {"activeInputTokens": "Infinity", "lastOutputTokens": 0}}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": "s", "usage": {"activeInputTokens": "-1", "lastOutputTokens": 0}}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": "s", "usage": {"activeInputTokens": {"$num": "Infinity"}, "lastOutputTokens": 0}, "resolved": 1}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": "s", "usage": "abc", "resolved": "x"}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": "s", "usage": 0, "resolved": ""}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": "s", "usage": {"activeInputTokens": "1e3", "lastOutputTokens": 0}}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": "s", "usage": {"activeInputTokens": ".5", "lastOutputTokens": 0}}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": "s", "usage": {"activeInputTokens": "5.", "lastOutputTokens": 0}}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": "s", "usage": {"activeInputTokens": "1_0", "lastOutputTokens": 0}}]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": "﻿s"}]}
+{"fn": "resolveContextUsageAvailability", "args": ["str"]}
+{"fn": "resolveContextUsageAvailability", "args": [[1]]}
+{"fn": "resolveContextUsageAvailability", "args": [{"sessionId": true}]}
+{"fn": "shouldShowComposerContextUsage", "args": [{"isMobile": false}]}
+{"fn": "shouldShowComposerContextUsage", "args": [{"isMobile": true}]}
+{"fn": "shouldShowComposerContextUsage", "args": [{}]}
+{"fn": "shouldShowComposerContextUsage", "args": [null]}
+{"fn": "shouldShowComposerContextUsage", "args": []}
+{"fn": "shouldShowComposerContextUsage", "args": [{"isMobile": "x"}]}
+{"fn": "shouldShowComposerContextUsage", "args": [5]}

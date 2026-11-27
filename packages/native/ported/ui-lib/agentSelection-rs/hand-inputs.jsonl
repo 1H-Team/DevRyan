@@ -1,0 +1,416 @@
+{"fn": "normalizeAgentName", "args": []}
+{"fn": "isHiddenBuiltinAgentOption", "args": []}
+{"fn": "isBuilderAgentName", "args": []}
+{"fn": "normalizeAgentName", "args": [""]}
+{"fn": "isHiddenBuiltinAgentOption", "args": [""]}
+{"fn": "isBuilderAgentName", "args": [""]}
+{"fn": "normalizeAgentName", "args": ["  Build "]}
+{"fn": "isHiddenBuiltinAgentOption", "args": ["  Build "]}
+{"fn": "isBuilderAgentName", "args": ["  Build "]}
+{"fn": "normalizeAgentName", "args": ["PLAN"]}
+{"fn": "isHiddenBuiltinAgentOption", "args": ["PLAN"]}
+{"fn": "isBuilderAgentName", "args": ["PLAN"]}
+{"fn": "normalizeAgentName", "args": ["builder"]}
+{"fn": "isHiddenBuiltinAgentOption", "args": ["builder"]}
+{"fn": "isBuilderAgentName", "args": ["builder"]}
+{"fn": "normalizeAgentName", "args": ["x"]}
+{"fn": "isHiddenBuiltinAgentOption", "args": ["x"]}
+{"fn": "isBuilderAgentName", "args": ["x"]}
+{"fn": "normalizeAgentName", "args": [5]}
+{"fn": "isHiddenBuiltinAgentOption", "args": [5]}
+{"fn": "isBuilderAgentName", "args": [5]}
+{"fn": "normalizeAgentName", "args": [["a"]]}
+{"fn": "isHiddenBuiltinAgentOption", "args": [["a"]]}
+{"fn": "isBuilderAgentName", "args": [["a"]]}
+{"fn": "normalizeAgentName", "args": ["İ"]}
+{"fn": "isHiddenBuiltinAgentOption", "args": ["İ"]}
+{"fn": "isBuilderAgentName", "args": ["İ"]}
+{"fn": "isPrimaryAgentMode", "args": ["primary"]}
+{"fn": "isPrimaryAgentMode", "args": ["all"]}
+{"fn": "isPrimaryAgentMode", "args": ["subagent"]}
+{"fn": "isPrimaryAgentMode", "args": [null]}
+{"fn": "isPrimaryAgentMode", "args": ["Primary"]}
+{"fn": "isAgentHidden", "args": [{"name": "x", "mode": "primary"}]}
+{"fn": "isSelectablePrimaryAgentOption", "args": [{"name": "x", "mode": "primary"}]}
+{"fn": "isAgentHidden", "args": [{"name": "x", "mode": "primary", "hidden": true}]}
+{"fn": "isSelectablePrimaryAgentOption", "args": [{"name": "x", "mode": "primary", "hidden": true}]}
+{"fn": "isAgentHidden", "args": [{"name": "x", "mode": "primary", "options": {"hidden": true}}]}
+{"fn": "isSelectablePrimaryAgentOption", "args": [{"name": "x", "mode": "primary", "options": {"hidden": true}}]}
+{"fn": "isAgentHidden", "args": [{"name": "x", "mode": "primary", "options": {"hidden": "true"}}]}
+{"fn": "isSelectablePrimaryAgentOption", "args": [{"name": "x", "mode": "primary", "options": {"hidden": "true"}}]}
+{"fn": "isAgentHidden", "args": [{"name": "plan", "mode": "primary"}]}
+{"fn": "isSelectablePrimaryAgentOption", "args": [{"name": "plan", "mode": "primary"}]}
+{"fn": "isAgentHidden", "args": [{"name": "x", "mode": "subagent"}]}
+{"fn": "isSelectablePrimaryAgentOption", "args": [{"name": "x", "mode": "subagent"}]}
+{"fn": "isAgentHidden", "args": [{"name": "x", "mode": "primary", "options": null}]}
+{"fn": "isSelectablePrimaryAgentOption", "args": [{"name": "x", "mode": "primary", "options": null}]}
+{"fn": "isAgentHidden", "args": [null]}
+{"fn": "isSelectablePrimaryAgentOption", "args": [null]}
+{"fn": "isAgentHidden", "args": [{}]}
+{"fn": "isSelectablePrimaryAgentOption", "args": [{}]}
+{"fn": "isAgentHidden", "args": ["s"]}
+{"fn": "isSelectablePrimaryAgentOption", "args": ["s"]}
+{"fn": "isAgentHidden", "args": [{"name": 5, "mode": "primary"}]}
+{"fn": "isSelectablePrimaryAgentOption", "args": [{"name": 5, "mode": "primary"}]}
+{"fn": "isAgentHidden", "args": [{"name": 5, "mode": "subagent"}]}
+{"fn": "isSelectablePrimaryAgentOption", "args": [{"name": 5, "mode": "subagent"}]}
+{"fn": "isAgentHidden", "args": [{"name": "plan ", "mode": "all"}]}
+{"fn": "isSelectablePrimaryAgentOption", "args": [{"name": "plan ", "mode": "all"}]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}], null]}
+{"fn": "resolveDefaultAgentName", "args": [null, [{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}], ""]}
+{"fn": "resolveDefaultAgentName", "args": ["", [{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}], "  "]}
+{"fn": "resolveDefaultAgentName", "args": ["  ", [{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}], "build"]}
+{"fn": "resolveDefaultAgentName", "args": ["build", [{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}], "Builder"]}
+{"fn": "resolveDefaultAgentName", "args": ["Builder", [{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}], "orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["orchestrator", [{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}], "Orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["Orchestrator", [{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}], "plan"]}
+{"fn": "resolveDefaultAgentName", "args": ["plan", [{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}], "zed"]}
+{"fn": "resolveDefaultAgentName", "args": ["zed", [{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}], "nope"]}
+{"fn": "resolveDefaultAgentName", "args": ["nope", [{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}], 5]}
+{"fn": "resolveDefaultAgentName", "args": [5, [{"name": "orchestrator", "mode": "primary"}, {"name": "builder", "mode": "primary"}, {"name": "build", "mode": "primary"}, {"name": "plan", "mode": "primary"}, {"name": "explorer", "mode": "subagent"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}], null]}
+{"fn": "resolveDefaultAgentName", "args": [null, [{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}], ""]}
+{"fn": "resolveDefaultAgentName", "args": ["", [{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}], "  "]}
+{"fn": "resolveDefaultAgentName", "args": ["  ", [{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}], "build"]}
+{"fn": "resolveDefaultAgentName", "args": ["build", [{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}], "Builder"]}
+{"fn": "resolveDefaultAgentName", "args": ["Builder", [{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}], "orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["orchestrator", [{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}], "Orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["Orchestrator", [{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}], "plan"]}
+{"fn": "resolveDefaultAgentName", "args": ["plan", [{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}], "zed"]}
+{"fn": "resolveDefaultAgentName", "args": ["zed", [{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}], "nope"]}
+{"fn": "resolveDefaultAgentName", "args": ["nope", [{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}], 5]}
+{"fn": "resolveDefaultAgentName", "args": [5, [{"name": "build", "mode": "primary"}, {"name": "Orchestrator ", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}], null]}
+{"fn": "resolveDefaultAgentName", "args": [null, [{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}], ""]}
+{"fn": "resolveDefaultAgentName", "args": ["", [{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}], "  "]}
+{"fn": "resolveDefaultAgentName", "args": ["  ", [{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}], "build"]}
+{"fn": "resolveDefaultAgentName", "args": ["build", [{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}], "Builder"]}
+{"fn": "resolveDefaultAgentName", "args": ["Builder", [{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}], "orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["orchestrator", [{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}], "Orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["Orchestrator", [{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}], "plan"]}
+{"fn": "resolveDefaultAgentName", "args": ["plan", [{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}], "zed"]}
+{"fn": "resolveDefaultAgentName", "args": ["zed", [{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}], "nope"]}
+{"fn": "resolveDefaultAgentName", "args": ["nope", [{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}], 5]}
+{"fn": "resolveDefaultAgentName", "args": [5, [{"name": "Builder", "mode": "primary"}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}], null]}
+{"fn": "resolveDefaultAgentName", "args": [null, [{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}], ""]}
+{"fn": "resolveDefaultAgentName", "args": ["", [{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}], "  "]}
+{"fn": "resolveDefaultAgentName", "args": ["  ", [{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}], "build"]}
+{"fn": "resolveDefaultAgentName", "args": ["build", [{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}], "Builder"]}
+{"fn": "resolveDefaultAgentName", "args": ["Builder", [{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}], "orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["orchestrator", [{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}], "Orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["Orchestrator", [{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}], "plan"]}
+{"fn": "resolveDefaultAgentName", "args": ["plan", [{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}], "zed"]}
+{"fn": "resolveDefaultAgentName", "args": ["zed", [{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}], "nope"]}
+{"fn": "resolveDefaultAgentName", "args": ["nope", [{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}], 5]}
+{"fn": "resolveDefaultAgentName", "args": [5, [{"name": "build", "mode": "primary"}, {"name": "x", "mode": "primary", "hidden": true}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}], null]}
+{"fn": "resolveDefaultAgentName", "args": [null, [{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}], ""]}
+{"fn": "resolveDefaultAgentName", "args": ["", [{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}], "  "]}
+{"fn": "resolveDefaultAgentName", "args": ["  ", [{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}], "build"]}
+{"fn": "resolveDefaultAgentName", "args": ["build", [{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}], "Builder"]}
+{"fn": "resolveDefaultAgentName", "args": ["Builder", [{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}], "orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["orchestrator", [{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}], "Orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["Orchestrator", [{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}], "plan"]}
+{"fn": "resolveDefaultAgentName", "args": ["plan", [{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}], "zed"]}
+{"fn": "resolveDefaultAgentName", "args": ["zed", [{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}], "nope"]}
+{"fn": "resolveDefaultAgentName", "args": ["nope", [{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}], 5]}
+{"fn": "resolveDefaultAgentName", "args": [5, [{"name": "builder", "mode": "primary", "hidden": true}, {"name": "build", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}], null]}
+{"fn": "resolveDefaultAgentName", "args": [null, [{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}], ""]}
+{"fn": "resolveDefaultAgentName", "args": ["", [{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}], "  "]}
+{"fn": "resolveDefaultAgentName", "args": ["  ", [{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}], "build"]}
+{"fn": "resolveDefaultAgentName", "args": ["build", [{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}], "Builder"]}
+{"fn": "resolveDefaultAgentName", "args": ["Builder", [{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}], "orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["orchestrator", [{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}], "Orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["Orchestrator", [{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}], "plan"]}
+{"fn": "resolveDefaultAgentName", "args": ["plan", [{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}], "zed"]}
+{"fn": "resolveDefaultAgentName", "args": ["zed", [{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}], "nope"]}
+{"fn": "resolveDefaultAgentName", "args": ["nope", [{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}], 5]}
+{"fn": "resolveDefaultAgentName", "args": [5, [{"name": "builder", "mode": "primary", "options": {"hidden": true}}, {"name": "build", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[], null]}
+{"fn": "resolveDefaultAgentName", "args": [null, []]}
+{"fn": "findSelectableAgentByName", "args": [[], ""]}
+{"fn": "resolveDefaultAgentName", "args": ["", []]}
+{"fn": "findSelectableAgentByName", "args": [[], "  "]}
+{"fn": "resolveDefaultAgentName", "args": ["  ", []]}
+{"fn": "findSelectableAgentByName", "args": [[], "build"]}
+{"fn": "resolveDefaultAgentName", "args": ["build", []]}
+{"fn": "findSelectableAgentByName", "args": [[], "Builder"]}
+{"fn": "resolveDefaultAgentName", "args": ["Builder", []]}
+{"fn": "findSelectableAgentByName", "args": [[], "orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["orchestrator", []]}
+{"fn": "findSelectableAgentByName", "args": [[], "Orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["Orchestrator", []]}
+{"fn": "findSelectableAgentByName", "args": [[], "plan"]}
+{"fn": "resolveDefaultAgentName", "args": ["plan", []]}
+{"fn": "findSelectableAgentByName", "args": [[], "zed"]}
+{"fn": "resolveDefaultAgentName", "args": ["zed", []]}
+{"fn": "findSelectableAgentByName", "args": [[], "nope"]}
+{"fn": "resolveDefaultAgentName", "args": ["nope", []]}
+{"fn": "findSelectableAgentByName", "args": [[], 5]}
+{"fn": "resolveDefaultAgentName", "args": [5, []]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}], null]}
+{"fn": "resolveDefaultAgentName", "args": [null, [{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}], ""]}
+{"fn": "resolveDefaultAgentName", "args": ["", [{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}], "  "]}
+{"fn": "resolveDefaultAgentName", "args": ["  ", [{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}], "build"]}
+{"fn": "resolveDefaultAgentName", "args": ["build", [{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}], "Builder"]}
+{"fn": "resolveDefaultAgentName", "args": ["Builder", [{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}], "orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["orchestrator", [{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}], "Orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["Orchestrator", [{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}], "plan"]}
+{"fn": "resolveDefaultAgentName", "args": ["plan", [{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}], "zed"]}
+{"fn": "resolveDefaultAgentName", "args": ["zed", [{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}], "nope"]}
+{"fn": "resolveDefaultAgentName", "args": ["nope", [{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}], 5]}
+{"fn": "resolveDefaultAgentName", "args": [5, [{"name": "zed", "mode": "primary"}, {"name": "alpha", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "plan", "mode": "primary"}], null]}
+{"fn": "resolveDefaultAgentName", "args": [null, [{"name": "plan", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "plan", "mode": "primary"}], ""]}
+{"fn": "resolveDefaultAgentName", "args": ["", [{"name": "plan", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "plan", "mode": "primary"}], "  "]}
+{"fn": "resolveDefaultAgentName", "args": ["  ", [{"name": "plan", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "plan", "mode": "primary"}], "build"]}
+{"fn": "resolveDefaultAgentName", "args": ["build", [{"name": "plan", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "plan", "mode": "primary"}], "Builder"]}
+{"fn": "resolveDefaultAgentName", "args": ["Builder", [{"name": "plan", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "plan", "mode": "primary"}], "orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["orchestrator", [{"name": "plan", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "plan", "mode": "primary"}], "Orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["Orchestrator", [{"name": "plan", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "plan", "mode": "primary"}], "plan"]}
+{"fn": "resolveDefaultAgentName", "args": ["plan", [{"name": "plan", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "plan", "mode": "primary"}], "zed"]}
+{"fn": "resolveDefaultAgentName", "args": ["zed", [{"name": "plan", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "plan", "mode": "primary"}], "nope"]}
+{"fn": "resolveDefaultAgentName", "args": ["nope", [{"name": "plan", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "plan", "mode": "primary"}], 5]}
+{"fn": "resolveDefaultAgentName", "args": [5, [{"name": "plan", "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"mode": "primary"}], null]}
+{"fn": "resolveDefaultAgentName", "args": [null, [{"mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"mode": "primary"}], ""]}
+{"fn": "resolveDefaultAgentName", "args": ["", [{"mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"mode": "primary"}], "  "]}
+{"fn": "resolveDefaultAgentName", "args": ["  ", [{"mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"mode": "primary"}], "build"]}
+{"fn": "resolveDefaultAgentName", "args": ["build", [{"mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"mode": "primary"}], "Builder"]}
+{"fn": "resolveDefaultAgentName", "args": ["Builder", [{"mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"mode": "primary"}], "orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["orchestrator", [{"mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"mode": "primary"}], "Orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["Orchestrator", [{"mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"mode": "primary"}], "plan"]}
+{"fn": "resolveDefaultAgentName", "args": ["plan", [{"mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"mode": "primary"}], "zed"]}
+{"fn": "resolveDefaultAgentName", "args": ["zed", [{"mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"mode": "primary"}], "nope"]}
+{"fn": "resolveDefaultAgentName", "args": ["nope", [{"mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"mode": "primary"}], 5]}
+{"fn": "resolveDefaultAgentName", "args": [5, [{"mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}], null]}
+{"fn": "resolveDefaultAgentName", "args": [null, [{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}], ""]}
+{"fn": "resolveDefaultAgentName", "args": ["", [{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}], "  "]}
+{"fn": "resolveDefaultAgentName", "args": ["  ", [{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}], "build"]}
+{"fn": "resolveDefaultAgentName", "args": ["build", [{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}], "Builder"]}
+{"fn": "resolveDefaultAgentName", "args": ["Builder", [{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}], "orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["orchestrator", [{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}], "Orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["Orchestrator", [{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}], "plan"]}
+{"fn": "resolveDefaultAgentName", "args": ["plan", [{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}], "zed"]}
+{"fn": "resolveDefaultAgentName", "args": ["zed", [{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}], "nope"]}
+{"fn": "resolveDefaultAgentName", "args": ["nope", [{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}], 5]}
+{"fn": "resolveDefaultAgentName", "args": [5, [{"name": "BUILD", "mode": "primary"}, {"name": "Builder ", "mode": "all"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "x", "mode": "primary", "options": null}], null]}
+{"fn": "resolveDefaultAgentName", "args": [null, [{"name": "x", "mode": "primary", "options": null}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "x", "mode": "primary", "options": null}], ""]}
+{"fn": "resolveDefaultAgentName", "args": ["", [{"name": "x", "mode": "primary", "options": null}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "x", "mode": "primary", "options": null}], "  "]}
+{"fn": "resolveDefaultAgentName", "args": ["  ", [{"name": "x", "mode": "primary", "options": null}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "x", "mode": "primary", "options": null}], "build"]}
+{"fn": "resolveDefaultAgentName", "args": ["build", [{"name": "x", "mode": "primary", "options": null}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "x", "mode": "primary", "options": null}], "Builder"]}
+{"fn": "resolveDefaultAgentName", "args": ["Builder", [{"name": "x", "mode": "primary", "options": null}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "x", "mode": "primary", "options": null}], "orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["orchestrator", [{"name": "x", "mode": "primary", "options": null}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "x", "mode": "primary", "options": null}], "Orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["Orchestrator", [{"name": "x", "mode": "primary", "options": null}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "x", "mode": "primary", "options": null}], "plan"]}
+{"fn": "resolveDefaultAgentName", "args": ["plan", [{"name": "x", "mode": "primary", "options": null}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "x", "mode": "primary", "options": null}], "zed"]}
+{"fn": "resolveDefaultAgentName", "args": ["zed", [{"name": "x", "mode": "primary", "options": null}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "x", "mode": "primary", "options": null}], "nope"]}
+{"fn": "resolveDefaultAgentName", "args": ["nope", [{"name": "x", "mode": "primary", "options": null}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "x", "mode": "primary", "options": null}], 5]}
+{"fn": "resolveDefaultAgentName", "args": [5, [{"name": "x", "mode": "primary", "options": null}]]}
+{"fn": "findSelectableAgentByName", "args": [[null], null]}
+{"fn": "resolveDefaultAgentName", "args": [null, [null]]}
+{"fn": "findSelectableAgentByName", "args": [[null], ""]}
+{"fn": "resolveDefaultAgentName", "args": ["", [null]]}
+{"fn": "findSelectableAgentByName", "args": [[null], "  "]}
+{"fn": "resolveDefaultAgentName", "args": ["  ", [null]]}
+{"fn": "findSelectableAgentByName", "args": [[null], "build"]}
+{"fn": "resolveDefaultAgentName", "args": ["build", [null]]}
+{"fn": "findSelectableAgentByName", "args": [[null], "Builder"]}
+{"fn": "resolveDefaultAgentName", "args": ["Builder", [null]]}
+{"fn": "findSelectableAgentByName", "args": [[null], "orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["orchestrator", [null]]}
+{"fn": "findSelectableAgentByName", "args": [[null], "Orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["Orchestrator", [null]]}
+{"fn": "findSelectableAgentByName", "args": [[null], "plan"]}
+{"fn": "resolveDefaultAgentName", "args": ["plan", [null]]}
+{"fn": "findSelectableAgentByName", "args": [[null], "zed"]}
+{"fn": "resolveDefaultAgentName", "args": ["zed", [null]]}
+{"fn": "findSelectableAgentByName", "args": [[null], "nope"]}
+{"fn": "resolveDefaultAgentName", "args": ["nope", [null]]}
+{"fn": "findSelectableAgentByName", "args": [[null], 5]}
+{"fn": "resolveDefaultAgentName", "args": [5, [null]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": 5, "mode": "primary"}], null]}
+{"fn": "resolveDefaultAgentName", "args": [null, [{"name": 5, "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": 5, "mode": "primary"}], ""]}
+{"fn": "resolveDefaultAgentName", "args": ["", [{"name": 5, "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": 5, "mode": "primary"}], "  "]}
+{"fn": "resolveDefaultAgentName", "args": ["  ", [{"name": 5, "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": 5, "mode": "primary"}], "build"]}
+{"fn": "resolveDefaultAgentName", "args": ["build", [{"name": 5, "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": 5, "mode": "primary"}], "Builder"]}
+{"fn": "resolveDefaultAgentName", "args": ["Builder", [{"name": 5, "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": 5, "mode": "primary"}], "orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["orchestrator", [{"name": 5, "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": 5, "mode": "primary"}], "Orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["Orchestrator", [{"name": 5, "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": 5, "mode": "primary"}], "plan"]}
+{"fn": "resolveDefaultAgentName", "args": ["plan", [{"name": 5, "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": 5, "mode": "primary"}], "zed"]}
+{"fn": "resolveDefaultAgentName", "args": ["zed", [{"name": 5, "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": 5, "mode": "primary"}], "nope"]}
+{"fn": "resolveDefaultAgentName", "args": ["nope", [{"name": 5, "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": 5, "mode": "primary"}], 5]}
+{"fn": "resolveDefaultAgentName", "args": [5, [{"name": 5, "mode": "primary"}]]}
+{"fn": "findSelectableAgentByName", "args": [["str"], null]}
+{"fn": "resolveDefaultAgentName", "args": [null, ["str"]]}
+{"fn": "findSelectableAgentByName", "args": [["str"], ""]}
+{"fn": "resolveDefaultAgentName", "args": ["", ["str"]]}
+{"fn": "findSelectableAgentByName", "args": [["str"], "  "]}
+{"fn": "resolveDefaultAgentName", "args": ["  ", ["str"]]}
+{"fn": "findSelectableAgentByName", "args": [["str"], "build"]}
+{"fn": "resolveDefaultAgentName", "args": ["build", ["str"]]}
+{"fn": "findSelectableAgentByName", "args": [["str"], "Builder"]}
+{"fn": "resolveDefaultAgentName", "args": ["Builder", ["str"]]}
+{"fn": "findSelectableAgentByName", "args": [["str"], "orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["orchestrator", ["str"]]}
+{"fn": "findSelectableAgentByName", "args": [["str"], "Orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["Orchestrator", ["str"]]}
+{"fn": "findSelectableAgentByName", "args": [["str"], "plan"]}
+{"fn": "resolveDefaultAgentName", "args": ["plan", ["str"]]}
+{"fn": "findSelectableAgentByName", "args": [["str"], "zed"]}
+{"fn": "resolveDefaultAgentName", "args": ["zed", ["str"]]}
+{"fn": "findSelectableAgentByName", "args": [["str"], "nope"]}
+{"fn": "resolveDefaultAgentName", "args": ["nope", ["str"]]}
+{"fn": "findSelectableAgentByName", "args": [["str"], 5]}
+{"fn": "resolveDefaultAgentName", "args": [5, ["str"]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary", "hidden": "true"}], null]}
+{"fn": "resolveDefaultAgentName", "args": [null, [{"name": "orchestrator", "mode": "primary", "hidden": "true"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary", "hidden": "true"}], ""]}
+{"fn": "resolveDefaultAgentName", "args": ["", [{"name": "orchestrator", "mode": "primary", "hidden": "true"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary", "hidden": "true"}], "  "]}
+{"fn": "resolveDefaultAgentName", "args": ["  ", [{"name": "orchestrator", "mode": "primary", "hidden": "true"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary", "hidden": "true"}], "build"]}
+{"fn": "resolveDefaultAgentName", "args": ["build", [{"name": "orchestrator", "mode": "primary", "hidden": "true"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary", "hidden": "true"}], "Builder"]}
+{"fn": "resolveDefaultAgentName", "args": ["Builder", [{"name": "orchestrator", "mode": "primary", "hidden": "true"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary", "hidden": "true"}], "orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["orchestrator", [{"name": "orchestrator", "mode": "primary", "hidden": "true"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary", "hidden": "true"}], "Orchestrator"]}
+{"fn": "resolveDefaultAgentName", "args": ["Orchestrator", [{"name": "orchestrator", "mode": "primary", "hidden": "true"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary", "hidden": "true"}], "plan"]}
+{"fn": "resolveDefaultAgentName", "args": ["plan", [{"name": "orchestrator", "mode": "primary", "hidden": "true"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary", "hidden": "true"}], "zed"]}
+{"fn": "resolveDefaultAgentName", "args": ["zed", [{"name": "orchestrator", "mode": "primary", "hidden": "true"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary", "hidden": "true"}], "nope"]}
+{"fn": "resolveDefaultAgentName", "args": ["nope", [{"name": "orchestrator", "mode": "primary", "hidden": "true"}]]}
+{"fn": "findSelectableAgentByName", "args": [[{"name": "orchestrator", "mode": "primary", "hidden": "true"}], 5]}
+{"fn": "resolveDefaultAgentName", "args": [5, [{"name": "orchestrator", "mode": "primary", "hidden": "true"}]]}
+{"fn": "findSelectableAgentByName", "args": [null, "x"]}
+{"fn": "findSelectableAgentByName", "args": ["str", "x"]}
+{"fn": "findSelectableAgentByName", "args": [{}, "x"]}
+{"fn": "resolveDefaultAgentName", "args": ["x", null]}
+{"fn": "resolveDefaultAgentName", "args": [null, {}]}
+{"fn": "resolveDefaultAgentName", "args": [null, "abc"]}

@@ -1,0 +1,19 @@
+{
+  "unit": "projectDisplayName.ts",
+  "files": 1,
+  "fingerprint": "971e229d9740cdf1",
+  "cases": 487,
+  "cases_hash": "d9da68f675871636",
+  "coverage": {
+    "lines": 19,
+    "reached": 19,
+    "files": [
+      {
+        "file": "projectDisplayName.ts",
+        "lines": 19,
+        "reached": 19,
+        "missed": ""
+      }
+    ]
+  }
+}

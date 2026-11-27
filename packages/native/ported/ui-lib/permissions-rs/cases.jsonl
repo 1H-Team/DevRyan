@@ -1,0 +1,18 @@
+{"fn":"getEditModeColors","args":[null],"ok":null}
+{"fn":"getEditModeColors","args":[{"$undefined":true}],"ok":null}
+{"fn":"getEditModeColors","args":[true],"ok":null}
+{"fn":"getEditModeColors","args":[{"a":{"b":"c"}}],"ok":null}
+{"fn":"getEditModeColors","args":[["a",1]],"ok":null}
+{"fn":"getEditModeColors","args":[{}],"ok":null}
+{"fn":"getEditModeColors","args":["x"],"ok":null}
+{"fn":"getEditModeColors","args":[[]],"ok":null}
+{"fn":"getEditModeColors","args":[],"ok":null}
+{"fn":"getEditModeColors","args":[{"a":"b"}],"ok":null}
+{"fn":"getEditModeColors","args":[0],"ok":null}
+{"fn":"getEditModeColors","args":["full"],"ok":{"text":"var(--status-info)","border":"color-mix(in srgb, var(--status-info) 25%, transparent)","background":"color-mix(in srgb, var(--status-info) 4%, transparent)","borderWidth":1.5}}
+{"fn":"getEditModeColors","args":["allow"],"ok":{"text":"var(--status-info)","border":"color-mix(in srgb, var(--status-info) 25%, transparent)","background":"color-mix(in srgb, var(--status-info) 4%, transparent)","borderWidth":1.5}}
+{"fn":"getEditModeColors","args":["ask"],"ok":null}
+{"fn":"getEditModeColors","args":[null],"ok":null}
+{"fn":"getEditModeColors","args":[],"ok":null}
+{"fn":"getEditModeColors","args":["FULL"],"ok":null}
+{"fn":"getEditModeColors","args":[["full"]],"ok":null}

@@ -1,0 +1,19 @@
+{
+  "unit": "fileOpenLimits.ts",
+  "files": 1,
+  "fingerprint": "bbc10a4f403073cc",
+  "cases": 232,
+  "cases_hash": "18cd4c1f79141dda",
+  "coverage": {
+    "lines": 16,
+    "reached": 16,
+    "files": [
+      {
+        "file": "fileOpenLimits.ts",
+        "lines": 16,
+        "reached": 16,
+        "missed": ""
+      }
+    ]
+  }
+}

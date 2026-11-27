@@ -1,0 +1,233 @@
+{"fn":"createProjectIdFromPath","args":[""],"ok":""}
+{"fn":"createProjectIdFromPath","args":["a:b:c"],"ok":"path_YTpiOmM"}
+{"fn":"createProjectIdFromPath","args":["a..b"],"ok":"path_YS4uYg"}
+{"fn":"createProjectIdFromPath","args":["hello"],"ok":"path_aGVsbG8"}
+{"fn":"createProjectIdFromPath","args":["line1\nline2trailing."],"ok":"path_bGluZTEKbGluZTJ0cmFpbGluZy4"}
+{"fn":"createProjectIdFromPath","args":["ns:key.path"],"ok":"path_bnM6a2V5LnBhdGg"}
+{"fn":"createProjectIdFromPath","args":["trailing.ünïcödé"],"ok":"path_dHJhaWxpbmcuw7xuw69jw7Zkw6k"}
+{"fn":"createProjectIdFromPath","args":["ab"],"ok":"path_YWI"}
+{"fn":"createProjectIdFromPath","args":["a.b.c"],"ok":"path_YS5iLmM"}
+{"fn":"createProjectIdFromPath","args":["emoji 👍🏽 mix"],"ok":"path_ZW1vamkg8J-RjfCfj70gbWl4"}
+{"fn":"createProjectIdFromPath","args":["line1\nline2"],"ok":"path_bGluZTEKbGluZTI"}
+{"fn":"createProjectIdFromPath","args":["key_name-1"],"ok":"path_a2V5X25hbWUtMQ"}
+{"fn":"createProjectIdFromPath","args":["hello world"],"ok":"path_aGVsbG8gd29ybGQ"}
+{"fn":"createProjectIdFromPath","args":[".leadingemoji 👍🏽 mix"],"ok":"path_LmxlYWRpbmdlbW9qaSDwn5GN8J-PvSBtaXg"}
+{"fn":"createProjectIdFromPath","args":["abc"],"ok":"path_YWJj"}
+{"fn":"createProjectIdFromPath","args":["ΣΊΣΥΦΟΣ"],"ok":"path_zqPOis6jzqXOps6fzqM"}
+{"fn":"createProjectIdFromPath","args":["é"],"ok":"path_ZcyB"}
+{"fn":"createProjectIdFromPath","args":["a  padded  "],"ok":"path_YSAgcGFkZGVk"}
+{"fn":"createProjectIdFromPath","args":[":"],"ok":"path_Og"}
+{"fn":"createProjectIdFromPath","args":["﻿bom"],"ok":"path_Ym9t"}
+{"fn":"createProjectIdFromPath","args":[".leading"],"ok":"path_LmxlYWRpbmc"}
+{"fn":"createProjectIdFromPath","args":["a😀b😀c"],"ok":"path_YfCfmIBi8J-YgGM"}
+{"fn":"createProjectIdFromPath","args":["hello worldtrailing."],"ok":"path_aGVsbG8gd29ybGR0cmFpbGluZy4"}
+{"fn":"createProjectIdFromPath","args":["HELLOtrailing."],"ok":"path_SEVMTE90cmFpbGluZy4"}
+{"fn":"createProjectIdFromPath","args":["😀"],"ok":"path_8J-YgA"}
+{"fn":"createProjectIdFromPath","args":["./x/**/*.json"],"ok":"path_Li94LyoqLyouanNvbg"}
+{"fn":"createProjectIdFromPath","args":["abctrailing."],"ok":"path_YWJjdHJhaWxpbmcu"}
+{"fn":"createProjectIdFromPath","args":[".leadingns:key.path"],"ok":"path_LmxlYWRpbmduczprZXkucGF0aA"}
+{"fn":"createProjectIdFromPath","args":["Hello World"],"ok":"path_SGVsbG8gV29ybGQ"}
+{"fn":"createProjectIdFromPath","args":["😀src/a/b.ts"],"ok":"path_8J-YgHNyYy9hL2IudHM"}
+{"fn":"createProjectIdFromPath","args":["ünïcödé"],"ok":"path_w7xuw69jw7Zkw6k"}
+{"fn":"createProjectIdFromPath","args":["straße  padded  "],"ok":"path_c3RyYcOfZSAgcGFkZGVk"}
+{"fn":"createProjectIdFromPath","args":["a"],"ok":"path_YQ"}
+{"fn":"createProjectIdFromPath","args":["tab\tseparated"],"ok":"path_dGFiCXNlcGFyYXRlZA"}
+{"fn":"createProjectIdFromPath","args":["HELLOΣΊΣΥΦΟΣ"],"ok":"path_SEVMTE_Oo86KzqPOpc6mzp_Oow"}
+{"fn":"createProjectIdFromPath","args":["İstanbul"],"ok":"path_xLBzdGFuYnVs"}
+{"fn":"createProjectIdFromPath","args":["日本語のテキスト"],"ok":"path_5pel5pys6Kqe44Gu44OG44Kt44K544OI"}
+{"fn":"createProjectIdFromPath","args":["src/a/b.ts"],"ok":"path_c3JjL2EvYi50cw"}
+{"fn":"createProjectIdFromPath","args":["./x/**/*.json./x/**/*.json"],"ok":"path_Li94LyoqLyouanNvbi4veC8qKi8qLmpzb24"}
+{"fn":"createProjectIdFromPath","args":["a:b:c😀"],"ok":"path_YTpiOmPwn5iA"}
+{"fn":"createProjectIdFromPath","args":["helloabc"],"ok":"path_aGVsbG9hYmM"}
+{"fn":"createProjectIdFromPath","args":["hello worldhello"],"ok":"path_aGVsbG8gd29ybGRoZWxsbw"}
+{"fn":"createProjectIdFromPath","args":["./x/**/*.json.leading"],"ok":"path_Li94LyoqLyouanNvbi5sZWFkaW5n"}
+{"fn":"createProjectIdFromPath","args":["emoji 👍🏽 mixtab\tseparated"],"ok":"path_ZW1vamkg8J-RjfCfj70gbWl4dGFiCXNlcGFyYXRlZA"}
+{"fn":"createProjectIdFromPath","args":["straße"],"ok":"path_c3RyYcOfZQ"}
+{"fn":"createProjectIdFromPath","args":["key_name-1HELLO"],"ok":"path_a2V5X25hbWUtMUhFTExP"}
+{"fn":"createProjectIdFromPath","args":["{name} has {count} itemsstraße"],"ok":"path_e25hbWV9IGhhcyB7Y291bnR9IGl0ZW1zc3RyYcOfZQ"}
+{"fn":"createProjectIdFromPath","args":["HELLO"],"ok":"path_SEVMTE8"}
+{"fn":"createProjectIdFromPath","args":["key_name-1:"],"ok":"path_a2V5X25hbWUtMTo"}
+{"fn":"createProjectIdFromPath","args":["trailing."],"ok":"path_dHJhaWxpbmcu"}
+{"fn":"createProjectIdFromPath","args":["﻿boma..b"],"ok":"path_Ym9tYS4uYg"}
+{"fn":"createProjectIdFromPath","args":["日本語のテキストabc"],"ok":"path_5pel5pys6Kqe44Gu44OG44Kt44K544OIYWJj"}
+{"fn":"createProjectIdFromPath","args":["  padded  "],"ok":"path_cGFkZGVk"}
+{"fn":"createProjectIdFromPath","args":["Hello Worlda😀b😀c"],"ok":"path_SGVsbG8gV29ybGRh8J-YgGLwn5iAYw"}
+{"fn":"createProjectIdFromPath","args":["straße./x/**/*.json"],"ok":"path_c3RyYcOfZS4veC8qKi8qLmpzb24"}
+{"fn":"createProjectIdFromPath","args":["ΣΊΣΥΦΟΣ😀"],"ok":"path_zqPOis6jzqXOps6fzqPwn5iA"}
+{"fn":"createProjectIdFromPath","args":["  padded  a😀b😀c"],"ok":"path_cGFkZGVkICBh8J-YgGLwn5iAYw"}
+{"fn":"createProjectIdFromPath","args":["{name} has {count} items"],"ok":"path_e25hbWV9IGhhcyB7Y291bnR9IGl0ZW1z"}
+{"fn":"createProjectIdFromPath","args":["{name} has {count} itemsİstanbul"],"ok":"path_e25hbWV9IGhhcyB7Y291bnR9IGl0ZW1zxLBzdGFuYnVs"}
+{"fn":"createProjectIdFromPath","args":["abab"],"ok":"path_YWJhYg"}
+{"fn":"createProjectIdFromPath","args":["a.b.c😀"],"ok":"path_YS5iLmPwn5iA"}
+{"fn":"createProjectIdFromPath","args":["helloa"],"ok":"path_aGVsbG9h"}
+{"fn":"createProjectIdFromPath","args":["HELLO{name} has {count} items"],"ok":"path_SEVMTE97bmFtZX0gaGFzIHtjb3VudH0gaXRlbXM"}
+{"fn":"createProjectIdFromPath","args":["ab😀"],"ok":"path_YWLwn5iA"}
+{"fn":"createProjectIdFromPath","args":["src/a/b.ts.leading"],"ok":"path_c3JjL2EvYi50cy5sZWFkaW5n"}
+{"fn":"createProjectIdFromPath","args":["src/a/b.tstab\tseparated"],"ok":"path_c3JjL2EvYi50c3RhYglzZXBhcmF0ZWQ"}
+{"fn":"createProjectIdFromPath","args":["hello worldünïcödé"],"ok":"path_aGVsbG8gd29ybGTDvG7Dr2PDtmTDqQ"}
+{"fn":"createProjectIdFromPath","args":["hello:"],"ok":"path_aGVsbG86"}
+{"fn":"createProjectIdFromPath","args":["a..ba.b.c"],"ok":"path_YS4uYmEuYi5j"}
+{"fn":"createProjectIdFromPath","args":["a:b:ca"],"ok":"path_YTpiOmNh"}
+{"fn":"createProjectIdFromPath","args":["trailing.😀"],"ok":"path_dHJhaWxpbmcu8J-YgA"}
+{"fn":"createProjectIdFromPath","args":["Hello WorldΣΊΣΥΦΟΣ"],"ok":"path_SGVsbG8gV29ybGTOo86KzqPOpc6mzp_Oow"}
+{"fn":"createProjectIdFromPath","args":["tab\tseparatedHELLO"],"ok":"path_dGFiCXNlcGFyYXRlZEhFTExP"}
+{"fn":"createProjectIdFromPath","args":[".leading:"],"ok":"path_LmxlYWRpbmc6"}
+{"fn":"createProjectIdFromPath","args":["{name} has {count} itemsa:b:c"],"ok":"path_e25hbWV9IGhhcyB7Y291bnR9IGl0ZW1zYTpiOmM"}
+{"fn":"createProjectIdFromPath","args":["ünïcödéns:key.path"],"ok":"path_w7xuw69jw7Zkw6luczprZXkucGF0aA"}
+{"fn":"createProjectIdFromPath","args":["trailing.hello world"],"ok":"path_dHJhaWxpbmcuaGVsbG8gd29ybGQ"}
+{"fn":"createProjectIdFromPath","args":["aHELLO"],"ok":"path_YUhFTExP"}
+{"fn":"createProjectIdFromPath","args":["ns:key.patha:b:c"],"ok":"path_bnM6a2V5LnBhdGhhOmI6Yw"}
+{"fn":"createProjectIdFromPath","args":["HELLOns:key.path"],"ok":"path_SEVMTE9uczprZXkucGF0aA"}
+{"fn":"createProjectIdFromPath","args":["hello﻿bom"],"ok":"path_aGVsbG_vu79ib20"}
+{"fn":"createProjectIdFromPath","args":["src/a/b.tstrailing."],"ok":"path_c3JjL2EvYi50c3RyYWlsaW5nLg"}
+{"fn":"createProjectIdFromPath","args":["ns:key.pathhello"],"ok":"path_bnM6a2V5LnBhdGhoZWxsbw"}
+{"fn":"createProjectIdFromPath","args":["Hello Worldline1\nline2"],"ok":"path_SGVsbG8gV29ybGRsaW5lMQpsaW5lMg"}
+{"fn":"createProjectIdFromPath","args":["😀a"],"ok":"path_8J-YgGE"}
+{"fn":"createProjectIdFromPath","args":["Hello World.leading"],"ok":"path_SGVsbG8gV29ybGQubGVhZGluZw"}
+{"fn":"createProjectIdFromPath","args":["日本語のテキストhello world"],"ok":"path_5pel5pys6Kqe44Gu44OG44Kt44K544OIaGVsbG8gd29ybGQ"}
+{"fn":"createProjectIdFromPath","args":["é./x/**/*.json"],"ok":"path_ZcyBLi94LyoqLyouanNvbg"}
+{"fn":"createProjectIdFromPath","args":["日本語のテキスト./x/**/*.json"],"ok":"path_5pel5pys6Kqe44Gu44OG44Kt44K544OILi94LyoqLyouanNvbg"}
+{"fn":"createProjectIdFromPath","args":["HELLO😀"],"ok":"path_SEVMTE_wn5iA"}
+{"fn":"createProjectIdFromPath","args":["absrc/a/b.ts"],"ok":"path_YWJzcmMvYS9iLnRz"}
+{"fn":"createProjectIdFromPath","args":["key_name-1a:b:c"],"ok":"path_a2V5X25hbWUtMWE6Yjpj"}
+{"fn":"createProjectIdFromPath","args":["﻿boma:b:c"],"ok":"path_Ym9tYTpiOmM"}
+{"fn":"createProjectIdFromPath","args":["./x/**/*.jsonab"],"ok":"path_Li94LyoqLyouanNvbmFi"}
+{"fn":"createProjectIdFromPath","args":["İstanbulé"],"ok":"path_xLBzdGFuYnVsZcyB"}
+{"fn":"createProjectIdFromPath","args":["hello worlda"],"ok":"path_aGVsbG8gd29ybGRh"}
+{"fn":"createProjectIdFromPath","args":["ünïcödétab\tseparated"],"ok":"path_w7xuw69jw7Zkw6l0YWIJc2VwYXJhdGVk"}
+{"fn":"createProjectIdFromPath","args":["日本語のテキストİstanbul"],"ok":"path_5pel5pys6Kqe44Gu44OG44Kt44K544OIxLBzdGFuYnVs"}
+{"fn":"createProjectIdFromPath","args":["a﻿bom"],"ok":"path_Ye-7v2JvbQ"}
+{"fn":"createProjectIdFromPath","args":["﻿bomHELLO"],"ok":"path_Ym9tSEVMTE8"}
+{"fn":"createProjectIdFromPath","args":["﻿bom日本語のテキスト"],"ok":"path_Ym9t5pel5pys6Kqe44Gu44OG44Kt44K544OI"}
+{"fn":"createProjectIdFromPath","args":["HELLOemoji 👍🏽 mix"],"ok":"path_SEVMTE9lbW9qaSDwn5GN8J-PvSBtaXg"}
+{"fn":"createProjectIdFromPath","args":["aΣΊΣΥΦΟΣ"],"ok":"path_Yc6jzorOo86lzqbOn86j"}
+{"fn":"createProjectIdFromPath","args":[":İstanbul"],"ok":"path_OsSwc3RhbmJ1bA"}
+{"fn":"createProjectIdFromPath","args":["key_name-1src/a/b.ts"],"ok":"path_a2V5X25hbWUtMXNyYy9hL2IudHM"}
+{"fn":"createProjectIdFromPath","args":["src/a/b.tsstraße"],"ok":"path_c3JjL2EvYi50c3N0cmHDn2U"}
+{"fn":"createProjectIdFromPath","args":["a😀b😀cemoji 👍🏽 mix"],"ok":"path_YfCfmIBi8J-YgGNlbW9qaSDwn5GN8J-PvSBtaXg"}
+{"fn":"createProjectIdFromPath","args":["trailing.a.b.c"],"ok":"path_dHJhaWxpbmcuYS5iLmM"}
+{"fn":"createProjectIdFromPath","args":["./x/**/*.jsona..b"],"ok":"path_Li94LyoqLyouanNvbmEuLmI"}
+{"fn":"createProjectIdFromPath","args":["ns:key.pathHELLO"],"ok":"path_bnM6a2V5LnBhdGhIRUxMTw"}
+{"fn":"createProjectIdFromPath","args":["Hello Worldsrc/a/b.ts"],"ok":"path_SGVsbG8gV29ybGRzcmMvYS9iLnRz"}
+{"fn":"createProjectIdFromPath","args":["ns:key.patha.b.c"],"ok":"path_bnM6a2V5LnBhdGhhLmIuYw"}
+{"fn":"createProjectIdFromPath","args":["😀ab"],"ok":"path_8J-YgGFi"}
+{"fn":"createProjectIdFromPath","args":["﻿bomline1\nline2"],"ok":"path_Ym9tbGluZTEKbGluZTI"}
+{"fn":"createProjectIdFromPath","args":["helloemoji 👍🏽 mix"],"ok":"path_aGVsbG9lbW9qaSDwn5GN8J-PvSBtaXg"}
+{"fn":"createProjectIdFromPath","args":["a😀b😀cab"],"ok":"path_YfCfmIBi8J-YgGNhYg"}
+{"fn":"createProjectIdFromPath","args":["﻿bomtrailing."],"ok":"path_Ym9tdHJhaWxpbmcu"}
+{"fn":"createProjectIdFromPath","args":["HELLOhello world"],"ok":"path_SEVMTE9oZWxsbyB3b3JsZA"}
+{"fn":"createProjectIdFromPath","args":["é﻿bom"],"ok":"path_ZcyB77u_Ym9t"}
+{"fn":"createProjectIdFromPath","args":["straßekey_name-1"],"ok":"path_c3RyYcOfZWtleV9uYW1lLTE"}
+{"fn":"createProjectIdFromPath","args":["İstanbulhello world"],"ok":"path_xLBzdGFuYnVsaGVsbG8gd29ybGQ"}
+{"fn":"createProjectIdFromPath","args":["a.b.cHELLO"],"ok":"path_YS5iLmNIRUxMTw"}
+{"fn":"createProjectIdFromPath","args":["key_name-1straße"],"ok":"path_a2V5X25hbWUtMXN0cmHDn2U"}
+{"fn":"createProjectIdFromPath","args":["﻿boma.b.c"],"ok":"path_Ym9tYS5iLmM"}
+{"fn":"createProjectIdFromPath","args":["hello worldns:key.path"],"ok":"path_aGVsbG8gd29ybGRuczprZXkucGF0aA"}
+{"fn":"createProjectIdFromPath","args":["ΣΊΣΥΦΟΣünïcödé"],"ok":"path_zqPOis6jzqXOps6fzqPDvG7Dr2PDtmTDqQ"}
+{"fn":"createProjectIdFromPath","args":["a:b:ca.b.c"],"ok":"path_YTpiOmNhLmIuYw"}
+{"fn":"createProjectIdFromPath","args":["Hello Worldkey_name-1"],"ok":"path_SGVsbG8gV29ybGRrZXlfbmFtZS0x"}
+{"fn":"createProjectIdFromPath","args":["a:b:cHELLO"],"ok":"path_YTpiOmNIRUxMTw"}
+{"fn":"createProjectIdFromPath","args":["atrailing."],"ok":"path_YXRyYWlsaW5nLg"}
+{"fn":"createProjectIdFromPath","args":["hello world{name} has {count} items"],"ok":"path_aGVsbG8gd29ybGR7bmFtZX0gaGFzIHtjb3VudH0gaXRlbXM"}
+{"fn":"createProjectIdFromPath","args":["İstanbultab\tseparated"],"ok":"path_xLBzdGFuYnVsdGFiCXNlcGFyYXRlZA"}
+{"fn":"createProjectIdFromPath","args":["日本語のテキストΣΊΣΥΦΟΣ"],"ok":"path_5pel5pys6Kqe44Gu44OG44Kt44K544OIzqPOis6jzqXOps6fzqM"}
+{"fn":"createProjectIdFromPath","args":["hellostraße"],"ok":"path_aGVsbG9zdHJhw59l"}
+{"fn":"createProjectIdFromPath","args":["tab\tseparatedHello World"],"ok":"path_dGFiCXNlcGFyYXRlZEhlbGxvIFdvcmxk"}
+{"fn":"createProjectIdFromPath","args":["ans:key.path"],"ok":"path_YW5zOmtleS5wYXRo"}
+{"fn":"createProjectIdFromPath","args":["ésrc/a/b.ts"],"ok":"path_ZcyBc3JjL2EvYi50cw"}
+{"fn":"createProjectIdFromPath","args":["trailing.tab\tseparated"],"ok":"path_dHJhaWxpbmcudGFiCXNlcGFyYXRlZA"}
+{"fn":"createProjectIdFromPath","args":["emoji 👍🏽 mixstraße"],"ok":"path_ZW1vamkg8J-RjfCfj70gbWl4c3RyYcOfZQ"}
+{"fn":"createProjectIdFromPath","args":["ΣΊΣΥΦΟΣ:"],"ok":"path_zqPOis6jzqXOps6fzqM6"}
+{"fn":"createProjectIdFromPath","args":["{name} has {count} items  padded  "],"ok":"path_e25hbWV9IGhhcyB7Y291bnR9IGl0ZW1zICBwYWRkZWQ"}
+{"fn":"createProjectIdFromPath","args":["src/a/b.ts./x/**/*.json"],"ok":"path_c3JjL2EvYi50cy4veC8qKi8qLmpzb24"}
+{"fn":"createProjectIdFromPath","args":["a.b.ca"],"ok":"path_YS5iLmNh"}
+{"fn":"createProjectIdFromPath","args":["ünïcödéa😀b😀c"],"ok":"path_w7xuw69jw7Zkw6lh8J-YgGLwn5iAYw"}
+{"fn":"createProjectIdFromPath","args":["trailing.ΣΊΣΥΦΟΣ"],"ok":"path_dHJhaWxpbmcuzqPOis6jzqXOps6fzqM"}
+{"fn":"createProjectIdFromPath","args":["HELLOline1\nline2"],"ok":"path_SEVMTE9saW5lMQpsaW5lMg"}
+{"fn":"createProjectIdFromPath","args":[":.leading"],"ok":"path_Oi5sZWFkaW5n"}
+{"fn":"createProjectIdFromPath","args":["HELLO日本語のテキスト"],"ok":"path_SEVMTE_ml6XmnKzoqp7jga7jg4bjgq3jgrnjg4g"}
+{"fn":"createProjectIdFromPath","args":["trailing.HELLO"],"ok":"path_dHJhaWxpbmcuSEVMTE8"}
+{"fn":"createProjectIdFromPath","args":["😀emoji 👍🏽 mix"],"ok":"path_8J-YgGVtb2ppIPCfkY3wn4-9IG1peA"}
+{"fn":"createProjectIdFromPath","args":["hello worlda.b.c"],"ok":"path_aGVsbG8gd29ybGRhLmIuYw"}
+{"fn":"createProjectIdFromPath","args":["日本語のテキスト  padded  "],"ok":"path_5pel5pys6Kqe44Gu44OG44Kt44K544OIICBwYWRkZWQ"}
+{"fn":"createProjectIdFromPath","args":["İstanbul:"],"ok":"path_xLBzdGFuYnVsOg"}
+{"fn":"createProjectIdFromPath","args":["key_name-1key_name-1"],"ok":"path_a2V5X25hbWUtMWtleV9uYW1lLTE"}
+{"fn":"createProjectIdFromPath","args":["ünïcödéabc"],"ok":"path_w7xuw69jw7Zkw6lhYmM"}
+{"fn":"createProjectIdFromPath","args":["a.b.cHello World"],"ok":"path_YS5iLmNIZWxsbyBXb3JsZA"}
+{"fn":"createProjectIdFromPath","args":["İstanbulünïcödé"],"ok":"path_xLBzdGFuYnVsw7xuw69jw7Zkw6k"}
+{"fn":"createProjectIdFromPath","args":["ΣΊΣΥΦΟΣa.b.c"],"ok":"path_zqPOis6jzqXOps6fzqNhLmIuYw"}
+{"fn":"createProjectIdFromPath","args":["ns:key.path😀"],"ok":"path_bnM6a2V5LnBhdGjwn5iA"}
+{"fn":"createProjectIdFromPath","args":["Hello Worldtrailing."],"ok":"path_SGVsbG8gV29ybGR0cmFpbGluZy4"}
+{"fn":"createProjectIdFromPath","args":["İstanbula..b"],"ok":"path_xLBzdGFuYnVsYS4uYg"}
+{"fn":"createProjectIdFromPath","args":["a.b.ca..b"],"ok":"path_YS5iLmNhLi5i"}
+{"fn":"createProjectIdFromPath","args":["abca"],"ok":"path_YWJjYQ"}
+{"fn":"createProjectIdFromPath","args":["a:b:c.leading"],"ok":"path_YTpiOmMubGVhZGluZw"}
+{"fn":"createProjectIdFromPath","args":["a😀b😀ctrailing."],"ok":"path_YfCfmIBi8J-YgGN0cmFpbGluZy4"}
+{"fn":"createProjectIdFromPath","args":["é.leading"],"ok":"path_ZcyBLmxlYWRpbmc"}
+{"fn":"createProjectIdFromPath","args":["straße:"],"ok":"path_c3RyYcOfZTo"}
+{"fn":"createProjectIdFromPath","args":["Hello Worlda:b:c"],"ok":"path_SGVsbG8gV29ybGRhOmI6Yw"}
+{"fn":"createProjectIdFromPath","args":["é  padded  "],"ok":"path_ZcyBICBwYWRkZWQ"}
+{"fn":"createProjectIdFromPath","args":["./x/**/*.jsonhello world"],"ok":"path_Li94LyoqLyouanNvbmhlbGxvIHdvcmxk"}
+{"fn":"createProjectIdFromPath","args":["😀a.b.c"],"ok":"path_8J-YgGEuYi5j"}
+{"fn":"createProjectIdFromPath","args":["emoji 👍🏽 mixns:key.path"],"ok":"path_ZW1vamkg8J-RjfCfj70gbWl4bnM6a2V5LnBhdGg"}
+{"fn":"createProjectIdFromPath","args":["  padded  ﻿bom"],"ok":"path_cGFkZGVkICDvu79ib20"}
+{"fn":"createProjectIdFromPath","args":["Hello WorldHELLO"],"ok":"path_SGVsbG8gV29ybGRIRUxMTw"}
+{"fn":"createProjectIdFromPath","args":["a.b.cstraße"],"ok":"path_YS5iLmNzdHJhw59l"}
+{"fn":"createProjectIdFromPath","args":["ünïcödéünïcödé"],"ok":"path_w7xuw69jw7Zkw6nDvG7Dr2PDtmTDqQ"}
+{"fn":"createProjectIdFromPath","args":["line1\nline2straße"],"ok":"path_bGluZTEKbGluZTJzdHJhw59l"}
+{"fn":"createProjectIdFromPath","args":["ns:key.pathtrailing."],"ok":"path_bnM6a2V5LnBhdGh0cmFpbGluZy4"}
+{"fn":"createProjectIdFromPath","args":["aa.b.c"],"ok":"path_YWEuYi5j"}
+{"fn":"createProjectIdFromPath","args":[".leadingabc"],"ok":"path_LmxlYWRpbmdhYmM"}
+{"fn":"createProjectIdFromPath","args":["key_name-1hello"],"ok":"path_a2V5X25hbWUtMWhlbGxv"}
+{"fn":"createProjectIdFromPath","args":[".leading.leading"],"ok":"path_LmxlYWRpbmcubGVhZGluZw"}
+{"fn":"createProjectIdFromPath","args":["ΣΊΣΥΦΟΣhello"],"ok":"path_zqPOis6jzqXOps6fzqNoZWxsbw"}
+{"fn":"createProjectIdFromPath","args":["trailing.src/a/b.ts"],"ok":"path_dHJhaWxpbmcuc3JjL2EvYi50cw"}
+{"fn":"createProjectIdFromPath","args":["{name} has {count} items﻿bom"],"ok":"path_e25hbWV9IGhhcyB7Y291bnR9IGl0ZW1z77u_Ym9t"}
+{"fn":"createProjectIdFromPath","args":["straßea:b:c"],"ok":"path_c3RyYcOfZWE6Yjpj"}
+{"fn":"createProjectIdFromPath","args":["HELLO﻿bom"],"ok":"path_SEVMTE_vu79ib20"}
+{"fn":"createProjectIdFromPath","args":["HELLOa.b.c"],"ok":"path_SEVMTE9hLmIuYw"}
+{"fn":"createProjectIdFromPath","args":[".leading./x/**/*.json"],"ok":"path_LmxlYWRpbmcuL3gvKiovKi5qc29u"}
+{"fn":"createProjectIdFromPath","args":["helloHello World"],"ok":"path_aGVsbG9IZWxsbyBXb3JsZA"}
+{"fn":"createProjectIdFromPath","args":["日本語のテキストünïcödé"],"ok":"path_5pel5pys6Kqe44Gu44OG44Kt44K544OIw7xuw69jw7Zkw6k"}
+{"fn":"createProjectIdFromPath","args":["hello worldΣΊΣΥΦΟΣ"],"ok":"path_aGVsbG8gd29ybGTOo86KzqPOpc6mzp_Oow"}
+{"fn":"createProjectIdFromPath","args":["atab\tseparated"],"ok":"path_YXRhYglzZXBhcmF0ZWQ"}
+{"fn":"createProjectIdFromPath","args":["a:b:c{name} has {count} items"],"ok":"path_YTpiOmN7bmFtZX0gaGFzIHtjb3VudH0gaXRlbXM"}
+{"fn":"createProjectIdFromPath","args":["abhello"],"ok":"path_YWJoZWxsbw"}
+{"fn":"createProjectIdFromPath","args":["ékey_name-1"],"ok":"path_ZcyBa2V5X25hbWUtMQ"}
+{"fn":"createProjectIdFromPath","args":["😀ns:key.path"],"ok":"path_8J-YgG5zOmtleS5wYXRo"}
+{"fn":"createProjectIdFromPath","args":["a😀b😀cabc"],"ok":"path_YfCfmIBi8J-YgGNhYmM"}
+{"fn":"createProjectIdFromPath","args":[":a😀b😀c"],"ok":"path_OmHwn5iAYvCfmIBj"}
+{"fn":"createProjectIdFromPath","args":["éİstanbul"],"ok":"path_ZcyBxLBzdGFuYnVs"}
+{"fn":"createProjectIdFromPath","args":["héllo wörld"],"ok":"path_aMOpbGxvIHfDtnJsZA"}
+{"fn":"createProjectIdFromPath","args":["👍🏽 thumbs"],"ok":"path_8J-RjfCfj70gdGh1bWJz"}
+{"fn":"createProjectIdFromPath","args":["日本語"],"ok":"path_5pel5pys6Kqe"}
+{"fn":"createProjectIdFromPath","args":["ılık ırmak"],"ok":"path_xLFsxLFrIMSxcm1haw"}
+{"fn":"createProjectIdFromPath","args":["👨‍👩‍👧 family"],"ok":"path_8J-RqOKAjfCfkanigI3wn5GnIGZhbWlseQ"}
+{"fn":"createProjectIdFromPath","args":["a b"],"ok":"path_YcKgYg"}
+{"fn":"createProjectIdFromPath","args":["a😀b"],"ok":"path_YfCfmIBi"}
+{"fn":"createProjectIdFromPath","args":["a²b x½ y①"],"ok":"path_YcKyYiB4wr0geeKRoA"}
+{"fn":"createProjectIdFromPath","args":["aⅠb Ⅻ"],"ok":"path_YeKFoGIg4oWr"}
+{"fn":"createProjectIdFromPath","args":["a𐐀b 𝐀bc"],"ok":"path_YfCQkIBiIPCdkIBiYw"}
+{"fn":"createProjectIdFromPath","args":["कि ٣٤"],"ok":"path_4KSV4KS_INmj2aQ"}
+{"fn":"createProjectIdFromPath","args":["Iı İi"],"ok":"path_ScSxIMSwaQ"}
+{"fn":"createProjectIdFromPath","args":["K K k"],"ok":"path_SyDihKogaw"}
+{"fn":"createProjectIdFromPath","args":["ſ s S"],"ok":"path_xb8gcyBT"}
+{"fn":"createProjectIdFromPath","args":["x‍y 👨‍👩‍👧"],"ok":"path_eOKAjXkg8J-RqOKAjfCfkanigI3wn5Gn"}
+{"fn":"createProjectIdFromPath","args":["a b c　d"],"ok":"path_YcKgYuKAiWPjgIBk"}
+{"fn":"createProjectIdFromPath","args":["١٢٣ ٤٥"],"ok":"path_2aHZotmjINmk2aU"}
+{"fn":"createProjectIdFromPath","args":["𝟘𝟙 ²³"],"ok":"path_8J2fmPCdn5kgwrLCsw"}
+{"fn":"createProjectIdFromPath","args":["snake_case foo-bar o'neil"],"ok":"path_c25ha2VfY2FzZSBmb28tYmFyIG8nbmVpbA"}
+{"fn":"createProjectIdFromPath","args":["ǅungla Ǆ"],"ok":"path_x4V1bmdsYSDHhA"}
+{"fn":"createProjectIdFromPath","args":["one\r\ntwo threefour"],"ok":"path_b25lDQp0d2_igKh0aHJlZcKFZm91cg"}
+{"fn":"createProjectIdFromPath","args":["café café"],"ok":"path_Y2FmZcyBIGNhZsOp"}
+{"fn":"createProjectIdFromPath","args":["ΣΑΣ σας ς"],"ok":"path_zqPOkc6jIM-DzrHPgiDPgg"}
+{"fn":"createProjectIdFromPath","args":["/Users/a/project"],"ok":"path_L1VzZXJzL2EvcHJvamVjdA"}
+{"fn":"createProjectIdFromPath","args":["C:\\a\\b\\"],"ok":"path_QzovYS9i"}
+{"fn":"createProjectIdFromPath","args":["///"],"ok":""}
+{"fn":"createProjectIdFromPath","args":["a/ "],"ok":"path_YS8"}
+{"fn":"createProjectIdFromPath","args":[" /a// "],"ok":"path_L2EvLw"}
+{"fn":"createProjectIdFromPath","args":["é😀/x"],"ok":"path_w6nwn5iAL3g"}
+{"fn":"createProjectIdFromPath","args":["ab"],"ok":"path_YWI"}
+{"fn":"createProjectIdFromPath","args":["abc"],"ok":"path_YWJj"}
+{"fn":"createProjectIdFromPath","args":["abcd"],"ok":"path_YWJjZA"}
+{"fn":"createProjectIdFromPath","args":["ÿþ>?"],"ok":"path_w7_Dvj4_"}

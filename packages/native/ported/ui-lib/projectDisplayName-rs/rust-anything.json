@@ -1,0 +1,60 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "projectDisplayName.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "projectdisplayname-rs",
+  "exports": [
+    {
+      "name": "getExactProjectBasename",
+      "file": "projectDisplayName.ts",
+      "line": 6,
+      "params": [
+        {
+          "name": "projectPath",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "rootFallback",
+          "ts_type": "string",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "resolveProjectDisplayName",
+      "file": "projectDisplayName.ts",
+      "line": 13,
+      "params": [
+        {
+          "name": "project",
+          "ts_type": "({\n  label?: string | null\n  path: string\n})",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "rootFallback",
+          "ts_type": "string",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

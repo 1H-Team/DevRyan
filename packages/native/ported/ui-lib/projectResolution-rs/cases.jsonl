@@ -1,0 +1,882 @@
+{"fn":"normalizeProjectPath","args":["hello"],"ok":"hello"}
+{"fn":"normalizeProjectPath","args":["{name} has {count} items"],"ok":"{name} has {count} items"}
+{"fn":"normalizeProjectPath","args":["ΣΊΣΥΦΟΣ"],"ok":"ΣΊΣΥΦΟΣ"}
+{"fn":"normalizeProjectPath","args":[],"ok":null}
+{"fn":"normalizeProjectPath","args":[{"$undefined":true}],"ok":null}
+{"fn":"normalizeProjectPath","args":["HELLOns:key.path"],"ok":"HELLOns:key.path"}
+{"fn":"normalizeProjectPath","args":["key_name-1"],"ok":"key_name-1"}
+{"fn":"normalizeProjectPath","args":["a.b.c"],"ok":"a.b.c"}
+{"fn":"normalizeProjectPath","args":[".leadinga.b.c"],"ok":".leadinga.b.c"}
+{"fn":"normalizeProjectPath","args":["  padded  😀"],"ok":"padded  😀"}
+{"fn":"normalizeProjectPath","args":["İstanbul"],"ok":"İstanbul"}
+{"fn":"normalizeProjectPath","args":["hellohello world"],"ok":"hellohello world"}
+{"fn":"normalizeProjectPath","args":[""],"ok":null}
+{"fn":"normalizeProjectPath","args":["emoji 👍🏽 mix"],"ok":"emoji 👍🏽 mix"}
+{"fn":"normalizeProjectPath","args":["a..bkey_name-1"],"ok":"a..bkey_name-1"}
+{"fn":"normalizeProjectPath","args":["a"],"ok":"a"}
+{"fn":"normalizeProjectPath","args":["ns:key.path"],"ok":"ns:key.path"}
+{"fn":"normalizeProjectPath","args":["line1\nline2"],"ok":"line1\nline2"}
+{"fn":"normalizeProjectPath","args":["日本語のテキスト"],"ok":"日本語のテキスト"}
+{"fn":"normalizeProjectPath","args":["ab"],"ok":"ab"}
+{"fn":"normalizeProjectPath","args":[":"],"ok":":"}
+{"fn":"normalizeProjectPath","args":["abc"],"ok":"abc"}
+{"fn":"normalizeProjectPath","args":[".leading"],"ok":".leading"}
+{"fn":"normalizeProjectPath","args":["😀{name} has {count} items"],"ok":"😀{name} has {count} items"}
+{"fn":"normalizeProjectPath","args":["😀"],"ok":"😀"}
+{"fn":"normalizeProjectPath","args":["a:b:c"],"ok":"a:b:c"}
+{"fn":"normalizeProjectPath","args":["straße"],"ok":"straße"}
+{"fn":"normalizeProjectPath","args":["trailing."],"ok":"trailing."}
+{"fn":"normalizeProjectPath","args":["src/a/b.ts"],"ok":"src/a/b.ts"}
+{"fn":"normalizeProjectPath","args":["Hello Worldtrailing."],"ok":"Hello Worldtrailing."}
+{"fn":"normalizeProjectPath","args":["HELLO./x/**/*.json"],"ok":"HELLO./x/**/*.json"}
+{"fn":"normalizeProjectPath","args":["Hello World"],"ok":"Hello World"}
+{"fn":"normalizeProjectPath","args":["./x/**/*.jsonHELLO"],"ok":"./x/**/*.jsonHELLO"}
+{"fn":"normalizeProjectPath","args":["./x/**/*.jsoné"],"ok":"./x/**/*.jsoné"}
+{"fn":"normalizeProjectPath","args":["ünïcödé"],"ok":"ünïcödé"}
+{"fn":"normalizeProjectPath","args":["aa..b"],"ok":"aa..b"}
+{"fn":"normalizeProjectPath","args":["  padded  HELLO"],"ok":"padded  HELLO"}
+{"fn":"normalizeProjectPath","args":["ünïcödéé"],"ok":"ünïcödéé"}
+{"fn":"normalizeProjectPath","args":["a😀b😀c"],"ok":"a😀b😀c"}
+{"fn":"normalizeProjectPath","args":["éünïcödé"],"ok":"éünïcödé"}
+{"fn":"normalizeProjectPath","args":["﻿bom"],"ok":"bom"}
+{"fn":"normalizeProjectPath","args":["  padded  "],"ok":"padded"}
+{"fn":"normalizeProjectPath","args":["./x/**/*.json:"],"ok":"./x/**/*.json:"}
+{"fn":"normalizeProjectPath","args":["﻿boma.b.c"],"ok":"boma.b.c"}
+{"fn":"normalizeProjectPath","args":["hello world"],"ok":"hello world"}
+{"fn":"normalizeProjectPath","args":["./x/**/*.json"],"ok":"./x/**/*.json"}
+{"fn":"normalizeProjectPath","args":["a..b"],"ok":"a..b"}
+{"fn":"normalizeProjectPath","args":[":abc"],"ok":":abc"}
+{"fn":"normalizeProjectPath","args":["a😀b😀ckey_name-1"],"ok":"a😀b😀ckey_name-1"}
+{"fn":"normalizeProjectPath","args":["é"],"ok":"é"}
+{"fn":"normalizeProjectPath","args":["hello world{name} has {count} items"],"ok":"hello world{name} has {count} items"}
+{"fn":"normalizeProjectPath","args":["./x/**/*.jsontab\tseparated"],"ok":"./x/**/*.jsontab\tseparated"}
+{"fn":"normalizeProjectPath","args":["trailing.a😀b😀c"],"ok":"trailing.a😀b😀c"}
+{"fn":"normalizeProjectPath","args":["ΣΊΣΥΦΟΣ  padded  "],"ok":"ΣΊΣΥΦΟΣ  padded"}
+{"fn":"normalizeProjectPath","args":["{name} has {count} items  padded  "],"ok":"{name} has {count} items  padded"}
+{"fn":"normalizeProjectPath","args":["HELLOsrc/a/b.ts"],"ok":"HELLOsrc/a/b.ts"}
+{"fn":"normalizeProjectPath","args":["./x/**/*.json.leading"],"ok":"./x/**/*.json.leading"}
+{"fn":"normalizeProjectPath","args":[":İstanbul"],"ok":":İstanbul"}
+{"fn":"normalizeProjectPath","args":["src/a/b.ts.leading"],"ok":"src/a/b.ts.leading"}
+{"fn":"normalizeProjectPath","args":["﻿bom﻿bom"],"ok":"bom﻿bom"}
+{"fn":"normalizeProjectPath","args":[":trailing."],"ok":":trailing."}
+{"fn":"normalizeProjectPath","args":["Hello Worldemoji 👍🏽 mix"],"ok":"Hello Worldemoji 👍🏽 mix"}
+{"fn":"normalizeProjectPath","args":["straße{name} has {count} items"],"ok":"straße{name} has {count} items"}
+{"fn":"normalizeProjectPath","args":["hello./x/**/*.json"],"ok":"hello./x/**/*.json"}
+{"fn":"normalizeProjectPath","args":["日本語のテキストé"],"ok":"日本語のテキストé"}
+{"fn":"normalizeProjectPath","args":["HELLOtab\tseparated"],"ok":"HELLOtab\tseparated"}
+{"fn":"normalizeProjectPath","args":[":straße"],"ok":":straße"}
+{"fn":"normalizeProjectPath","args":["HELLO"],"ok":"HELLO"}
+{"fn":"normalizeProjectPath","args":["ns:key.patha:b:c"],"ok":"ns:key.patha:b:c"}
+{"fn":"normalizeProjectPath","args":["./x/**/*.jsonabc"],"ok":"./x/**/*.jsonabc"}
+{"fn":"normalizeProjectPath","args":["a..bHELLO"],"ok":"a..bHELLO"}
+{"fn":"normalizeProjectPath","args":["a..bstraße"],"ok":"a..bstraße"}
+{"fn":"normalizeProjectPath","args":["a:b:c:"],"ok":"a:b:c:"}
+{"fn":"normalizeProjectPath","args":["line1\nline2﻿bom"],"ok":"line1\nline2﻿bom"}
+{"fn":"normalizeProjectPath","args":["a😀b😀csrc/a/b.ts"],"ok":"a😀b😀csrc/a/b.ts"}
+{"fn":"normalizeProjectPath","args":["HELLOa"],"ok":"HELLOa"}
+{"fn":"normalizeProjectPath","args":["ΣΊΣΥΦΟΣ./x/**/*.json"],"ok":"ΣΊΣΥΦΟΣ./x/**/*.json"}
+{"fn":"normalizeProjectPath","args":["ns:key.pathhello"],"ok":"ns:key.pathhello"}
+{"fn":"normalizeProjectPath","args":["ab日本語のテキスト"],"ok":"ab日本語のテキスト"}
+{"fn":"normalizeProjectPath","args":["trailing.ΣΊΣΥΦΟΣ"],"ok":"trailing.ΣΊΣΥΦΟΣ"}
+{"fn":"normalizeProjectPath","args":["éa"],"ok":"éa"}
+{"fn":"normalizeProjectPath","args":["😀ns:key.path"],"ok":"😀ns:key.path"}
+{"fn":"normalizeProjectPath","args":["tab\tseparated"],"ok":"tab\tseparated"}
+{"fn":"normalizeProjectPath","args":["😀src/a/b.ts"],"ok":"😀src/a/b.ts"}
+{"fn":"normalizeProjectPath","args":["😀a😀b😀c"],"ok":"😀a😀b😀c"}
+{"fn":"normalizeProjectPath","args":["é.leading"],"ok":"é.leading"}
+{"fn":"normalizeProjectPath","args":["abcΣΊΣΥΦΟΣ"],"ok":"abcΣΊΣΥΦΟΣ"}
+{"fn":"normalizeProjectPath","args":["aünïcödé"],"ok":"aünïcödé"}
+{"fn":"normalizeProjectPath","args":["emoji 👍🏽 mixtab\tseparated"],"ok":"emoji 👍🏽 mixtab\tseparated"}
+{"fn":"normalizeProjectPath","args":["İstanbulhello"],"ok":"İstanbulhello"}
+{"fn":"normalizeProjectPath","args":["abline1\nline2"],"ok":"abline1\nline2"}
+{"fn":"normalizeProjectPath","args":["tab\tseparatedtab\tseparated"],"ok":"tab\tseparatedtab\tseparated"}
+{"fn":"normalizeProjectPath","args":["  padded  a.b.c"],"ok":"padded  a.b.c"}
+{"fn":"normalizeProjectPath","args":["tab\tseparatedHello World"],"ok":"tab\tseparatedHello World"}
+{"fn":"normalizeProjectPath","args":[".leadinga..b"],"ok":".leadinga..b"}
+{"fn":"normalizeProjectPath","args":["a.b.cline1\nline2"],"ok":"a.b.cline1\nline2"}
+{"fn":"normalizeProjectPath","args":["İstanbula..b"],"ok":"İstanbula..b"}
+{"fn":"normalizeProjectPath","args":["a:b:chello world"],"ok":"a:b:chello world"}
+{"fn":"normalizeProjectPath","args":["abc﻿bom"],"ok":"abc﻿bom"}
+{"fn":"normalizeProjectPath","args":["éab"],"ok":"éab"}
+{"fn":"normalizeProjectPath","args":["abΣΊΣΥΦΟΣ"],"ok":"abΣΊΣΥΦΟΣ"}
+{"fn":"normalizeProjectPath","args":["trailing../x/**/*.json"],"ok":"trailing../x/**/*.json"}
+{"fn":"normalizeProjectPath","args":["HELLOa..b"],"ok":"HELLOa..b"}
+{"fn":"normalizeProjectPath","args":["abc日本語のテキスト"],"ok":"abc日本語のテキスト"}
+{"fn":"normalizeProjectPath","args":["./x/**/*.jsonhello"],"ok":"./x/**/*.jsonhello"}
+{"fn":"normalizeProjectPath","args":["ns:key.pathhello world"],"ok":"ns:key.pathhello world"}
+{"fn":"normalizeProjectPath","args":[".leading:"],"ok":".leading:"}
+{"fn":"normalizeProjectPath","args":["a.b.cünïcödé"],"ok":"a.b.cünïcödé"}
+{"fn":"normalizeProjectPath","args":["aline1\nline2"],"ok":"aline1\nline2"}
+{"fn":"normalizeProjectPath","args":["{name} has {count} itemsemoji 👍🏽 mix"],"ok":"{name} has {count} itemsemoji 👍🏽 mix"}
+{"fn":"normalizeProjectPath","args":["line1\nline2:"],"ok":"line1\nline2:"}
+{"fn":"normalizeProjectPath","args":[".leadingΣΊΣΥΦΟΣ"],"ok":".leadingΣΊΣΥΦΟΣ"}
+{"fn":"normalizeProjectPath","args":["{name} has {count} itemshello world"],"ok":"{name} has {count} itemshello world"}
+{"fn":"normalizeProjectPath","args":["Hello World:"],"ok":"Hello World:"}
+{"fn":"normalizeProjectPath","args":[":﻿bom"],"ok":":﻿bom"}
+{"fn":"normalizeProjectPath","args":["ünïcödéline1\nline2"],"ok":"ünïcödéline1\nline2"}
+{"fn":"normalizeProjectPath","args":["hello worlda..b"],"ok":"hello worlda..b"}
+{"fn":"normalizeProjectPath","args":["src/a/b.ts./x/**/*.json"],"ok":"src/a/b.ts./x/**/*.json"}
+{"fn":"normalizeProjectPath","args":["helloa:b:c"],"ok":"helloa:b:c"}
+{"fn":"normalizeProjectPath","args":["a:b:cline1\nline2"],"ok":"a:b:cline1\nline2"}
+{"fn":"normalizeProjectPath","args":["aa😀b😀c"],"ok":"aa😀b😀c"}
+{"fn":"normalizeProjectPath","args":["ns:key.pathé"],"ok":"ns:key.pathé"}
+{"fn":"normalizeProjectPath","args":["{name} has {count} items日本語のテキスト"],"ok":"{name} has {count} items日本語のテキスト"}
+{"fn":"normalizeProjectPath","args":["line1\nline2  padded  "],"ok":"line1\nline2  padded"}
+{"fn":"normalizeProjectPath","args":["{name} has {count} itemsHELLO"],"ok":"{name} has {count} itemsHELLO"}
+{"fn":"normalizeProjectPath","args":["a..b./x/**/*.json"],"ok":"a..b./x/**/*.json"}
+{"fn":"normalizeProjectPath","args":["emoji 👍🏽 mix./x/**/*.json"],"ok":"emoji 👍🏽 mix./x/**/*.json"}
+{"fn":"normalizeProjectPath","args":["./x/**/*.jsonhello world"],"ok":"./x/**/*.jsonhello world"}
+{"fn":"normalizeProjectPath","args":["日本語のテキストa.b.c"],"ok":"日本語のテキストa.b.c"}
+{"fn":"normalizeProjectPath","args":["aHELLO"],"ok":"aHELLO"}
+{"fn":"normalizeProjectPath","args":["./x/**/*.jsonns:key.path"],"ok":"./x/**/*.jsonns:key.path"}
+{"fn":"normalizeProjectPath","args":["{name} has {count} itemsa😀b😀c"],"ok":"{name} has {count} itemsa😀b😀c"}
+{"fn":"normalizeProjectPath","args":["ünïcödé😀"],"ok":"ünïcödé😀"}
+{"fn":"normalizeProjectPath","args":["{name} has {count} itemsstraße"],"ok":"{name} has {count} itemsstraße"}
+{"fn":"normalizeProjectPath","args":["abca.b.c"],"ok":"abca.b.c"}
+{"fn":"normalizeProjectPath","args":["éΣΊΣΥΦΟΣ"],"ok":"éΣΊΣΥΦΟΣ"}
+{"fn":"normalizeProjectPath","args":["src/a/b.tsHELLO"],"ok":"src/a/b.tsHELLO"}
+{"fn":"normalizeProjectPath","args":["İstanbul﻿bom"],"ok":"İstanbul﻿bom"}
+{"fn":"normalizeProjectPath","args":["key_name-1日本語のテキスト"],"ok":"key_name-1日本語のテキスト"}
+{"fn":"normalizeProjectPath","args":["abtrailing."],"ok":"abtrailing."}
+{"fn":"normalizeProjectPath","args":["ab{name} has {count} items"],"ok":"ab{name} has {count} items"}
+{"fn":"normalizeProjectPath","args":["line1\nline2src/a/b.ts"],"ok":"line1\nline2src/a/b.ts"}
+{"fn":"normalizeProjectPath","args":["a😀b😀cHello World"],"ok":"a😀b😀cHello World"}
+{"fn":"normalizeProjectPath","args":["abcns:key.path"],"ok":"abcns:key.path"}
+{"fn":"normalizeProjectPath","args":["key_name-1HELLO"],"ok":"key_name-1HELLO"}
+{"fn":"normalizeProjectPath","args":["a..bhello"],"ok":"a..bhello"}
+{"fn":"normalizeProjectPath","args":["key_name-1key_name-1"],"ok":"key_name-1key_name-1"}
+{"fn":"normalizeProjectPath","args":["hello world./x/**/*.json"],"ok":"hello world./x/**/*.json"}
+{"fn":"normalizeProjectPath","args":["straßetab\tseparated"],"ok":"straßetab\tseparated"}
+{"fn":"normalizeProjectPath","args":["ünïcödétrailing."],"ok":"ünïcödétrailing."}
+{"fn":"normalizeProjectPath","args":["Hello World😀"],"ok":"Hello World😀"}
+{"fn":"normalizeProjectPath","args":[".leadingkey_name-1"],"ok":".leadingkey_name-1"}
+{"fn":"normalizeProjectPath","args":["straße.leading"],"ok":"straße.leading"}
+{"fn":"normalizeProjectPath","args":["a.b.c:"],"ok":"a.b.c:"}
+{"fn":"normalizeProjectPath","args":["İstanbul  padded  "],"ok":"İstanbul  padded"}
+{"fn":"normalizeProjectPath","args":["trailing.key_name-1"],"ok":"trailing.key_name-1"}
+{"fn":"normalizeProjectPath","args":["Hello Worldİstanbul"],"ok":"Hello Worldİstanbul"}
+{"fn":"normalizeProjectPath","args":["İstanbul日本語のテキスト"],"ok":"İstanbul日本語のテキスト"}
+{"fn":"normalizeProjectPath","args":["ΣΊΣΥΦΟΣ:"],"ok":"ΣΊΣΥΦΟΣ:"}
+{"fn":"normalizeProjectPath","args":["日本語のテキストhello"],"ok":"日本語のテキストhello"}
+{"fn":"normalizeProjectPath","args":["Hello Worldns:key.path"],"ok":"Hello Worldns:key.path"}
+{"fn":"normalizeProjectPath","args":["hello worldünïcödé"],"ok":"hello worldünïcödé"}
+{"fn":"normalizeProjectPath","args":["a.b.chello"],"ok":"a.b.chello"}
+{"fn":"normalizeProjectPath","args":["aé"],"ok":"aé"}
+{"fn":"normalizeProjectPath","args":["line1\nline2a:b:c"],"ok":"line1\nline2a:b:c"}
+{"fn":"normalizeProjectPath","args":["absrc/a/b.ts"],"ok":"absrc/a/b.ts"}
+{"fn":"normalizeProjectPath","args":["emoji 👍🏽 mix﻿bom"],"ok":"emoji 👍🏽 mix﻿bom"}
+{"fn":"normalizeProjectPath","args":["a.b.cİstanbul"],"ok":"a.b.cİstanbul"}
+{"fn":"normalizeProjectPath","args":["日本語のテキストhello world"],"ok":"日本語のテキストhello world"}
+{"fn":"normalizeProjectPath","args":["{name} has {count} itemstrailing."],"ok":"{name} has {count} itemstrailing."}
+{"fn":"normalizeProjectPath","args":["abcemoji 👍🏽 mix"],"ok":"abcemoji 👍🏽 mix"}
+{"fn":"normalizeProjectPath","args":["a..ba:b:c"],"ok":"a..ba:b:c"}
+{"fn":"normalizeProjectPath","args":["ns:key.path﻿bom"],"ok":"ns:key.path﻿bom"}
+{"fn":"normalizeProjectPath","args":["{name} has {count} itemskey_name-1"],"ok":"{name} has {count} itemskey_name-1"}
+{"fn":"normalizeProjectPath","args":["é﻿bom"],"ok":"é﻿bom"}
+{"fn":"normalizeProjectPath","args":["ns:key.pathsrc/a/b.ts"],"ok":"ns:key.pathsrc/a/b.ts"}
+{"fn":"normalizeProjectPath","args":["line1\nline2{name} has {count} items"],"ok":"line1\nline2{name} has {count} items"}
+{"fn":"normalizeProjectPath","args":["Hello World.leading"],"ok":"Hello World.leading"}
+{"fn":"normalizeProjectPath","args":["ünïcödéhello world"],"ok":"ünïcödéhello world"}
+{"fn":"normalizeProjectPath","args":["abctab\tseparated"],"ok":"abctab\tseparated"}
+{"fn":"normalizeProjectPath","args":["ns:key.pathline1\nline2"],"ok":"ns:key.pathline1\nline2"}
+{"fn":"normalizeProjectPath","args":["a😀b😀ca..b"],"ok":"a😀b😀ca..b"}
+{"fn":"normalizeProjectPath","args":["Hello Worldline1\nline2"],"ok":"Hello Worldline1\nline2"}
+{"fn":"normalizeProjectPath","args":["a..bé"],"ok":"a..bé"}
+{"fn":"normalizeProjectPath","args":["a.b.chello world"],"ok":"a.b.chello world"}
+{"fn":"normalizeProjectPath","args":["﻿bomHELLO"],"ok":"bomHELLO"}
+{"fn":"normalizeProjectPath","args":["Hello WorldHello World"],"ok":"Hello WorldHello World"}
+{"fn":"normalizeProjectPath","args":["😀  padded  "],"ok":"😀  padded"}
+{"fn":"normalizeProjectPath","args":["a😀b😀c😀"],"ok":"a😀b😀c😀"}
+{"fn":"normalizeProjectPath","args":["﻿bomsrc/a/b.ts"],"ok":"bomsrc/a/b.ts"}
+{"fn":"normalizeProjectPath","args":["ns:key.path😀"],"ok":"ns:key.path😀"}
+{"fn":"normalizeProjectPath","args":["日本語のテキストa😀b😀c"],"ok":"日本語のテキストa😀b😀c"}
+{"fn":"normalizeProjectPath","args":["straße  padded  "],"ok":"straße  padded"}
+{"fn":"normalizeProjectPath","args":["ns:key.patha😀b😀c"],"ok":"ns:key.patha😀b😀c"}
+{"fn":"normalizeProjectPath","args":["a.b.c./x/**/*.json"],"ok":"a.b.c./x/**/*.json"}
+{"fn":"normalizeProjectPath","args":["a:b:cé"],"ok":"a:b:cé"}
+{"fn":"normalizeProjectPath","args":["./x/**/*.jsona:b:c"],"ok":"./x/**/*.jsona:b:c"}
+{"fn":"normalizeProjectPath","args":["abab"],"ok":"abab"}
+{"fn":"normalizeProjectPath","args":[":hello world"],"ok":":hello world"}
+{"fn":"normalizeProjectPath","args":["straßea"],"ok":"straßea"}
+{"fn":"normalizeProjectPath","args":["héllo wörld"],"ok":"héllo wörld"}
+{"fn":"normalizeProjectPath","args":["👍🏽 thumbs"],"ok":"👍🏽 thumbs"}
+{"fn":"normalizeProjectPath","args":["日本語"],"ok":"日本語"}
+{"fn":"normalizeProjectPath","args":["ılık ırmak"],"ok":"ılık ırmak"}
+{"fn":"normalizeProjectPath","args":["👨‍👩‍👧 family"],"ok":"👨‍👩‍👧 family"}
+{"fn":"normalizeProjectPath","args":["a b"],"ok":"a b"}
+{"fn":"normalizeProjectPath","args":["a😀b"],"ok":"a😀b"}
+{"fn":"normalizeProjectPath","args":["a²b x½ y①"],"ok":"a²b x½ y①"}
+{"fn":"normalizeProjectPath","args":["aⅠb Ⅻ"],"ok":"aⅠb Ⅻ"}
+{"fn":"normalizeProjectPath","args":["a𐐀b 𝐀bc"],"ok":"a𐐀b 𝐀bc"}
+{"fn":"normalizeProjectPath","args":["कि ٣٤"],"ok":"कि ٣٤"}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],"x"],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[null,{},[]]],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[{"a":"b"},"line1\nline2"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForDirectory","args":[[true,0,{"a":{"b":"c"}}],"HELLO"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[],"ns:key.path"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[]],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[null,["a",1],{"a":{"b":"c"}}]],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":{"b":"c"}}],"日本語のテキスト"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":"b"}],"é"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":{"b":"c"}},0],":"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[],"a:b:c"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":{"b":"c"}},{},0],"straße"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[[],{"a":{"b":"c"}}],"tab\tseparated"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[{},"line1\nline2"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForDirectory","args":[[],"hello worldemoji 👍🏽 mix"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[],"ΣΊΣΥΦΟΣHELLO"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[["x",{"a":"b"},true],"a.b.c"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[true,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],true],"﻿bom"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[[]],"😀"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":{"b":"c"}},{"a":"b"},["a",1]],"straße{name} has {count} items"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[true,".leading"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForDirectory","args":[[true],"ns:key.path"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[],"a..b"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[true,"ahello world"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForDirectory","args":[{"a":{"b":"c"}}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[null,0,"x"],"hello worldabc"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForDirectory","args":[[],"src/a/b.ts"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[],"Hello Worldtab\tseparated"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":{"b":"c"}}],"line1\nline2"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],{}],"  padded  "],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[true,{},"x"],"key_name-1"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[],":  padded  "],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":{"b":"c"}}],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],0,{}],"ab"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[0,{"a":"b"},{"a":"b"}],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[[],{"a":"b"},0],"  padded  "],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[null,null],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{}],"İstanbul"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[["x"],"./x/**/*.jsonhello world"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[["a",1],"İstanbul"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[["x","x"],"{name} has {count} items"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[["a",1],"key_name-1"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[["x",true,["a",1]]],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[],"src/a/b.ts.leading"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],[]],"﻿bom"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{}],"abc"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[],"  padded  trailing."],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":{"b":"c"}},{"a":"b"}],""],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[[]]],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[null],":trailing."],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],{"a":"b"},{"a":{"b":"c"}}],"tab\tseparated"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1]],"a:b:cns:key.path"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[0,0],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":"b"}],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[0,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[0],"﻿bom"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[true,["a",1],true],"./x/**/*.json"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":"b"}],"  padded  "],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":"b"},["a",1]],"./x/**/*.jsontrailing."],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[null,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{},"x",0],"emoji 👍🏽 mix"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1]],"😀"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[["x",[],null],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[0,{},0]],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[null],"./x/**/*.jsonhello"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForDirectory","args":[[{"a":{"b":"c"}},[]],"  padded  "],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":{"b":"c"}},{"a":"b"},[]],"a..b"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[true],"line1\nline2"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[],"line1\nline2a:b:c"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":{"b":"c"}},0,{"a":"b"}],"hello"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[],".leading"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[{},"  padded  "],"error":"projects is not iterable"}
+{"fn":"resolveProjectForDirectory","args":[0,":"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForDirectory","args":[{"a":"b"},""],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[{"a":{"b":"c"}},{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":"b"},{"a":{"b":"c"}}],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":"b"},null,0],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[],"İstanbul"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{},{"a":"b"}],"a.b.c"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[],"a.b.c"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[["x"],"tab\tseparateda..b"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],0],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[[]],"trailing."],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":"b"},[],{"a":{"b":"c"}}],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[true,"a"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForDirectory","args":[[{},null],"{name} has {count} items"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForDirectory","args":[[{"a":"b"},0],"hello"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[["x",{"a":"b"},true]],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[["x",null],""],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],{}],"ünïcödé"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[["x",{},null],"hello world"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForDirectory","args":[[true],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[0]],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":"b"},{"a":"b"},true]],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[[],"x"],"日本語のテキスト"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{}],"ab"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[],"hello world"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],"x",[]],"abc"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[[]],"key_name-1"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[{"a":"b"},"a..b"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForDirectory","args":[[0,0],"trailing."],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[true,"trailing.:"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForDirectory","args":[[{},{"a":"b"},{"a":"b"}],"😀"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{}],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],{"a":{"b":"c"}},{"a":{"b":"c"}}],""],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":"b"}],".leading"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[null,"ab"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForDirectory","args":[["x"],"ünïcödé"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[],"key_name-1"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":{"b":"c"}},true,true],"./x/**/*.json"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":"b"},0,["a",1]],"İstanbul"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":{"b":"c"}},{"a":{"b":"c"}},{"a":{"b":"c"}}],":"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[[],["a",1]],"hello world"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[],"  padded  "],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[null,{"a":{"b":"c"}},[]],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[0,"straße"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForDirectory","args":[[["a",1]],""],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[null,null,{"a":{"b":"c"}}],"tab\tseparateda"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForDirectory","args":[[0,[]],"😀a:b:c"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[],"Hello World"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":"b"}],"HELLO"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[null,{"a":"b"}],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[[],{"a":"b"},{}],"a.b.c"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":["x","a:b:c./x/**/*.json"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[["x",{},"x"],""],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[0,{"a":{"b":"c"}}],"ab"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[["x",true],"HELLO"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{}],"日本語のテキスト"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[[]],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[[],{},null],"straße"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForDirectory","args":[[[],{}]],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[0,0],"abc"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[null,"x",{"a":"b"}],"﻿bom"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForDirectory","args":[[0],"a:b:c"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[],"trailing."],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[null],"./x/**/*.json"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForDirectory","args":[true,"a..b"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForDirectory","args":[[0,{"a":{"b":"c"}}],":"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[true],"a"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[0,"éΣΊΣΥΦΟΣ"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForDirectory","args":[[],"ΣΊΣΥΦΟΣ"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{},"x"],"a.b.chello world"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1]],"./x/**/*.json"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":"b"},{},{}],"line1\nline2HELLO"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":"b"}]],"ok":null}
+{"fn":"resolveProjectForDirectory","args":["x","x"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[0,[]],"😀"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{},"x",true],":"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[{},"İstanbul"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForDirectory","args":[[{"a":{"b":"c"}},0],"abc"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[true,[],null],"a😀b😀c"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForDirectory","args":[[{"a":"b"},true],"src/a/b.ts"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[null,{"a":{"b":"c"}}],"İstanbulHello World"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForDirectory","args":[[{}],"straße"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[true,["a",1]],"éa😀b😀c"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[],"ünïcödé"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":{"b":"c"}},{"a":{"b":"c"}},{}],"./x/**/*.jsonns:key.path"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[null,{"a":"b"},true],"ünïcödé"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForDirectory","args":[[],"日本語のテキスト"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":{"b":"c"}},"x"],"a😀b😀c"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[[],[],"x"],"a.b.c"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[true],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[null],"a.b.c"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForDirectory","args":[[{"a":{"b":"c"}},["a",1]],"😀"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[0,["a",1],{"a":"b"}],"a:b:cHello World"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[["x"],"日本語のテキスト"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":{"b":"c"}},"x",[]],"a..b"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[],"﻿bom"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":"b"},0,true],"ab"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[[]],"straße"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[["x"],"a:b:cHELLO"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":"b"},{}],"a..b{name} has {count} items"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1]]],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[{"a":{"b":"c"}},"ünïcödé"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForDirectory","args":[[],"trailing.line1\nline2"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{},true,[]],"hello world"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[0,true,{}],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{},["a",1],{"a":{"b":"c"}}],"ΣΊΣΥΦΟΣ"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[[],{}],"a:b:c😀"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[true,0,["a",1]],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[null,{"a":"b"},{"a":{"b":"c"}}],"tab\tseparated"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForDirectory","args":[[true],"ab"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":"b"},[]],"key_name-1"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[null],"hello😀"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForDirectory","args":[null,"日本語のテキスト"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForDirectory","args":[0],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[[]],"a:b:c"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[],"a😀b😀c"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":["x","HELLOtrailing."],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":{"b":"c"}},{}]],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[true]],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[{"a":"b"},".leading"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForDirectory","args":[["x",null,["a",1]],"İstanbul"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForDirectory","args":[[{"a":{"b":"c"}}],"a"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[null],"emoji 👍🏽 mix"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForDirectory","args":[[{"a":"b"},["a",1]],"HELLO"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{}],"hello world"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"a":"b"},[]],""],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],"x"],"héllo wörld"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],"x"],"👍🏽 thumbs"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],"x"],"日本語"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],"x"],""],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],"x"],"é"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],"x"],"İstanbul"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],"x"],"straße"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],"x"],"ılık ırmak"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],"x"],"👨‍👩‍👧 family"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],"x"],"a b"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],"x"],"ΣΊΣΥΦΟΣ"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],"x"],"a😀b"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],"x"],"﻿bom"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],"x"],"a²b x½ y①"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],"x"],"aⅠb Ⅻ"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],"x"],"a𐐀b 𝐀bc"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[["a",1],"x"],"कि ٣٤"],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[true,null],0],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":"b"},"x",{"a":"b"}],[],"İstanbul"],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[true,"x"],null,"HELLO"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["x",0,{"a":{"b":"c"}}],{"a":"b"},"日本語のテキスト"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],[],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":{"b":"c"}},{"a":{"b":"c"}},{"a":"b"}],{},"a😀b😀c"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[0,{},true],["a",1],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],["a",1],"  padded  ΣΊΣΥΦΟΣ"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[["a",1],"x",{"a":"b"}],null,"line1\nline2tab\tseparated"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[null,{"a":"b"},":"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[null,{},[]],["a",1],"ünïcödéhello world"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],{"a":{"b":"c"}},"trailing.src/a/b.ts"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],null,"key_name-1"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":{"b":"c"}},"x",0],0,"ns:key.path"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[{},"x","{name} has {count} items"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[0,{"a":{"b":"c"}}],{"a":"b"},{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[[],true,[]],{"a":"b"},"a:b:c"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[0,true,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[0],{"a":{"b":"c"}},{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],"l","hello worldİstanbul"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":{"b":"c"}}],[],"İstanbul{name} has {count} items"],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[0,["a",1],"x"],{"a":{"b":"c"}},"İstanbul"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[0,true,{}],["a",1],"src/a/b.ts"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[0,["a",1],{"a":{"b":"c"}}],["a",1],"ΣΊΣΥΦΟΣİstanbul"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[[],{},["a",1]],0,"straßeHELLO"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["x",{"a":{"b":"c"}}],null,"﻿bom"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[true,{"a":"b"},0],null,":a:b:c"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[["a",1],0,{"a":"b"}],"parate","tab\tseparated"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{},{"a":{"b":"c"}}],{},"emoji 👍🏽 mixab"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":{"b":"c"}},{"a":{"b":"c"}},["a",1]],[],"a.b.c"],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[[]],[],"{name} has {count} items"],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],["a",1],"straße"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[0,null,"x"],true,"emoji 👍🏽 mix"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],["a",1],"ab"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":{"b":"c"}},true],{},"tab\tseparated"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],[],"ΣΊΣΥΦΟΣsrc/a/b.ts"],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],[],"hello world日本語のテキスト"],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["x"],{}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],true],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[true,{"a":"b"}],[],"é"],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[true,{}],null,".leading"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],{"a":{"b":"c"}},"é"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[true,{"a":"b"},null],"x","Hello World"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[["a",1],"x",{"a":{"b":"c"}}],["a",1],"ab"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[[],{"a":{"b":"c"}},null],{"a":"b"},"é"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["x",null],null,"ns:key.path"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{}],null,"key_name-1"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{},{"a":{"b":"c"}}],null,"日本語のテキスト"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["x"],{"a":{"b":"c"}},"a:b:c{name} has {count} items"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],["a",1],"﻿bom"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["x"],null,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":"b"}],["a",1],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["a",1],{},"a..b"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":"b"},{}],{"a":{"b":"c"}},"./x/**/*.json"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],{"a":{"b":"c"}},"日本語のテキスト"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[[],{"a":{"b":"c"}}],0],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[null,{"a":{"b":"c"}}],null,"  padded  "],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["x"],{},"ns:key.path"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["x",[]],true,""],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[["a",1],true],null,"a.b.c"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[null],true],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[[]],0,"  padded  "],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],"x"],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{},{"a":"b"},{"a":{"b":"c"}}],{"a":"b"},"ünïcödé"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[null,null],null,"./x/**/*.json"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["x","x",true],["a",1],"a😀b😀c"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],["a",1]],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{},null,{"a":"b"}],[],"line1\nline2"],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":"b"},"x",0],null,"emoji 👍🏽 mix"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],{},"﻿bom"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":"b"},["a",1],[]],{"a":{"b":"c"}},{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{}],0,"a..babc"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[true],[],"abc"],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["x"],{"a":{"b":"c"}},"trailing."],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[null],true,"abc"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{},0],{},"line1\nline2"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":"b"},[],null],0,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":{"b":"c"}},{},true],0,"trailing."],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{},{"a":"b"},[]],[],"./x/**/*.json"],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[true,null,"x"],{"a":"b"},"é./x/**/*.json"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],{},"{name} has {count} itemsa..b"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[["a",1],[]],{}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["x"],["a",1],"./x/**/*.json"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":"b"},{"a":{"b":"c"}},true],{"a":{"b":"c"}},"a.b.c"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[null,0,"hello world"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":{"b":"c"}},0],0,"./x/**/*.json"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{},0],{"a":{"b":"c"}},"straße"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["x","x"],true,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[true,["a",1]],[],"ünïcödé"],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[null,"x"],"x",{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[0,null,["a",1]],null,"{name} has {count} itemstrailing."],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[true,true,"x"],{"a":"b"},{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[true],[],"hello"],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[true,["a",1],"x"],{},"key_name-1"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":"b"},[]],{"a":{"b":"c"}},"tab\tseparated"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["x",null,{"a":"b"}],{},"a.b.c"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["x",0,{"a":{"b":"c"}}],{},".leading"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[0,{"a":{"b":"c"}},"😀"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[true,{}],{"a":"b"}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],{"a":"b"},"ΣΊΣΥΦΟΣ"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],{"a":{"b":"c"}},"tab\tseparateda.b.c"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":{"b":"c"}},"x",true],[],"line1\nline2"],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],{"a":{"b":"c"}},"a"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[["a",1]],true],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],"x","ünïcödé"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":{"b":"c"}}],true,"straße"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[null,[],{"a":"b"}],["a",1],"a:b:cline1\nline2"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[0,{"a":"b"},["a",1]],{"a":{"b":"c"}},"src/a/b.ts"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[null,"x"],true,"./x/**/*.json"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":["x",["a",1],"a:b:c"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{},{"a":{"b":"c"}},["a",1]],["a",1]],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],"x",{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["x"],null,""],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[0],null],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[0],0,"src/a/b.ts"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[0],{"a":"b"},"abc"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[null,null,{}],{"a":"b"},"ns:key.path"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[{},0,"ΣΊΣΥΦΟΣ"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{},0],{"a":{"b":"c"}},"HELLO"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],{"a":"b"}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[0,"nïcödé","ünïcödé"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[{},["a",1]],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["x"],[],"key_name-1"],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":{"b":"c"}}],{"a":"b"},"ab"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],true,"{name} has {count} items"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[[]],["a",1],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],"x",":"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":{"b":"c"}},{},{"a":{"b":"c"}}],{"a":{"b":"c"}},{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[{"a":"b"},0],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],null,"abc"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],null,"😀"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[true],0,"./x/**/*.json"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["x",["a",1],"x"],0,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":"b"},{"a":"b"}],true,"a"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],0,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[true,"x",{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":{"b":"c"}}],true,"line1\nline2"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],"n","key_name-1"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],0,"./x/**/*.json"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[[]],null,"HELLO"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[0],[],"ΣΊΣΥΦΟΣ"],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":"b"},{"a":{"b":"c"}}],0,"tab\tseparated😀"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[["a",1]],"x","ΣΊΣΥΦΟΣ"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[[]],["a",1],"tab\tseparated"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":"b"},0,{}],["a",1]],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],true,"key_name-1"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["x"],{},{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[null,[]],true,"  padded  "],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[null],{"a":"b"},"ns:key.path"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[[],{"a":{"b":"c"}},0],["a",1],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":{"b":"c"}}],["a",1],"hello"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],0,"trailing."],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],{"a":"b"},"emoji 👍🏽 mix"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{},null,null],{"a":{"b":"c"}},"HELLO"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],"x","a😀b😀c"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[true,{"a":{"b":"c"}}],["a",1],"straßeHELLO"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[null,"x",null],true,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[0,null,null],["a",1],"{name} has {count} items"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[0,[]],{"a":{"b":"c"}},"straßeé"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":{"b":"c"}}],null,"日本語のテキストtab\tseparated"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[{"a":"b"},0,"a.b.cline1\nline2"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[true,{"a":{"b":"c"}},"a.b.ctrailing."],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[0,"x"],{"a":{"b":"c"}},"ns:key.path"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":"b"},true,null],null,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[[],{},[]],["a",1],"a😀b😀c"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":["x",[]],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":"b"}],true,"key_name-1"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],true,"line1\nline2straße"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":"b"},{"a":{"b":"c"}},0],{"a":"b"},"日本語のテキスト"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[["a",1],{"a":{"b":"c"}},{}],null,"tab\tseparated"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":{"b":"c"}}],{"a":{"b":"c"}},"a..b"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["x","x",{}],["a",1],"a.b.c"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],0,"ab﻿bom"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":"b"},{"a":{"b":"c"}},0],{"a":{"b":"c"}},"emoji 👍🏽 mix"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[{"a":"b"},{"a":"b"},"a"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["x",{"a":{"b":"c"}},0],[],"İstanbul"],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[[],{}],"x","x"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[["a",1],true,true],[]],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[0],{"a":{"b":"c"}},"日本語のテキスト"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[0,{"a":{"b":"c"}}],{},"😀a..b"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{},{},0],{"a":{"b":"c"}},"{name} has {count} itemsΣΊΣΥΦΟΣ"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[0,{"a":{"b":"c"}}],"x",".leadingİstanbul"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[true,{"a":{"b":"c"}}],null,"hello world.leading"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[{"a":{"b":"c"}},["a",1]],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[0],{"a":"b"},"  padded  abc"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[null,{}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[null,true,[]],null,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":"b"},["a",1],{}],0,"a😀b😀c"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],null,"  padded  "],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],{"a":{"b":"c"}},"hello"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[0,{"a":{"b":"c"}},["a",1]],0,"abc"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[],["a",1],"aa😀b😀c"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{},{"a":"b"}],0,"line1\nline2"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[{"a":{"b":"c"}},{"a":{"b":"c"}},"line1\nline2"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{}],null,"trailing."],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[["x"],{"a":"b"},":"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"a":{"b":"c"}},["a",1]],[]],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[true,{"a":"b"},0],null,"a"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{},"x",0],{"a":"b"},{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[null],"x","x"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}},"ΣΊΣΥΦΟΣ"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[["a",1]],{"a":{"b":"c"}},"ünïcödé"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[[]],{},"﻿bom"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],null],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":{"b":"c"}}],{"a":{"b":"c"}}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":"b"},"ΣΊΣΥΦΟΣ"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{},{}],0,"key_name-1"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":"b"},"﻿boma..b"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":["x",{"a":"b"},"hello worldsrc/a/b.ts"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[0,true,true],{"a":"b"}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[],null,"😀"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],[]],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}},{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[],"x","straßesrc/a/b.ts"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[0,{"a":"b"},{"a":{"b":"c"}}],0,"trailing."],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[[],true],{"a":"b"},"a.b.c"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[true,["a",1],true],{"a":{"b":"c"}},"ab"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],true,"hello world"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[[]],["a",1],"日本語のテキスト"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],"x",":"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[["a",1],true],0,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[[],{},0],{}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[0,{"a":{"b":"c"}}],true,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[0],true,"😀"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[[]],null,"abc"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectForSessionDirectory","args":["x",{},{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[],["a",1],"HELLO"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],[],"  padded  "],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[{},{"a":{"b":"c"}},"a😀b😀c"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[{"a":"b"},{"a":{"b":"c"}}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[],0,"ab"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{}],["a",1],"src/a/b.ts"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[null],["a",1],"src/a/b.ts"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForSessionDirectory","args":[[0,"x"],true,"ab"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[["a",1],{"a":{"b":"c"}},"é"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[["x",{"a":{"b":"c"}},[]],"x","emoji 👍🏽 mix"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{},null,0],null,"emoji 👍🏽 mix"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForSessionDirectory","args":[true,true,"﻿bom"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[true,{}],"x",""],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{},"a..b"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[["x"],null],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[[]],{},"a..b"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[[]],0,"./x/**/*.json"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[["a",1],null,{}],"x",{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[{"a":{"b":"c"}},null,"emoji 👍🏽 mix"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],0,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[],"x","x"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[null],{"a":"b"}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[true],true,"abc"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[["x",{},[]],null,"emoji 👍🏽 mix"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectForSessionDirectory","args":[[["a",1],{},[]],{},{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":"b"}],0],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[],0,"😀"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":"b"},"日本語のテキスト"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[0],"x","x"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[null],{},"a..b"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForSessionDirectory","args":[[true,{"a":{"b":"c"}}],0,"key_name-1"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[null,{}],true,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[true],true,"hello"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":{"b":"c"}},["a",1]],{"a":"b"},"hello world"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}},"a😀b😀c"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[0,"x",true],"x","HELLOns:key.path"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[{},{"a":"b"},{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":"b"},null,{}],[]],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[["a",1]],["a",1]],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[{"a":"b"},{"a":"b"},"key_name-1é"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":["x",[],"x"],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[true,{"a":"b"}],0],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[true],"x",{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":"b"},{}],null,"é"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{},0],"x","a..b"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],true,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[true],"x","ünïcödéhello"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[[],true,0],{"a":"b"},"tab\tseparated"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],[],":straße"],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[["x",[]],{},{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[null],{"a":{"b":"c"}},"emoji 👍🏽 mix"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":{"b":"c"}}],"x","﻿bom"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{},".leading"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],["a",1],"hello"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[["a",1],["a",1],"tab\tseparated"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[0,0,[]],null,"ΣΊΣΥΦΟΣ"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectForSessionDirectory","args":[[[],null,0],{"a":"b"},":"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":"b"},":"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":"b"},true],{},"a:b:c"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[true],{},".leading"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":"b"}],{"a":{"b":"c"}},"line1\nline2"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[["a",1],["a",1]],[],"./x/**/*.json"],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[["x",true,[]],["a",1],"hello world"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[true],[],"a..b"],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":"b"},"x"],{"a":{"b":"c"}},"ünïcödé"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[0,{},[]],{"a":"b"},"emoji 👍🏽 mix{name} has {count} items"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],null,"{name} has {count} items"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectForSessionDirectory","args":[[[]],0,"Hello World"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[["x"],{"a":"b"},"a.b.c"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}},"abc"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[null,null,{"a":"b"}],true,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[[],null],"x","ns:key.pathtrailing."],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForSessionDirectory","args":[["a",1],true],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[[],{"a":"b"},{"a":"b"}],"x","﻿bom"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[0],{"a":{"b":"c"}},"Hello World"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":{"b":"c"}},{"a":{"b":"c"}},true],true,"./x/**/*.json"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[["a",1],["a",1]],null,"trailing."],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":"b"},0,true],0,"emoji 👍🏽 mix"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":"b"},{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[],null,"﻿bom"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectForSessionDirectory","args":[[0,"x"],0],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[],[],"ab"],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[],"x","Hello World"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[["x",0,null],{"a":"b"},"emoji 👍🏽 mix"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{},["a",1],{"a":"b"}],[],"abc"],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[],[],"  padded  a.b.c"],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":{"b":"c"}},{"a":{"b":"c"}},{}],null,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[[],true],["a",1],"./x/**/*.json"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],null,"key_name-1hello world"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{}],{},"HELLO"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[["a",1]],null],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[["x"],true],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[true,{"a":{"b":"c"}}],0,"hello"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{}],"x","./x/**/*.json"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":{"b":"c"}},[]],"x","line1\nline2"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[null,"x"],["a",1],"HELLO"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{}],true],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":"b"},"İstanbulns:key.path"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[["x",[],0],null],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[["x"],{},"Hello World"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[["x",{},["a",1]],null,"ünïcödéé"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":"b"},0,{"a":{"b":"c"}}],{},"abc"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":{"b":"c"}},{"a":"b"},{"a":{"b":"c"}}],{"a":"b"},"é"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[0,[],{"a":"b"}],true,":"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[["x","x"],["a",1],"hello"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],null,"./x/**/*.json"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{},["a",1]],{"a":{"b":"c"}},"straßeé"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[null],{"a":{"b":"c"}},"a😀b😀c"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForSessionDirectory","args":[true,true,"a:b:cemoji 👍🏽 mix"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],true,"hello"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{},"straße"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":"b"},{"a":"b"},null],null,"trailing."],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForSessionDirectory","args":[[["a",1]],[],"a😀b😀c"],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}},"straße"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":"b"}],{},"İstanbulline1\nline2"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[0],{"a":{"b":"c"}},"a:b:c"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[true,{"a":"b"}],[]],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[{},null,{"a":"b"}],0],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[0],null,"./x/**/*.json"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectForSessionDirectory","args":[["x"],{},".leadinghello"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[[],{},{"a":"b"}],{"a":"b"},"é"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{},{},[]],{}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[0,{}],"x","HELLO"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":"b"}],{},"./x/**/*.json"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[0,null],{"a":{"b":"c"}},"İstanbul"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForSessionDirectory","args":[["x",true,["a",1]],true],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[],null,"{name} has {count} items日本語のテキスト"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectForSessionDirectory","args":[0,null,"ΣΊΣΥΦΟΣ"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],["a",1],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[[]],{"a":{"b":"c"}}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[true,{"a":{"b":"c"}}],0,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[{},"x",0],{},"a.b.c"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[[]],{"a":{"b":"c"}},"emoji 👍🏽 mix"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}},".leading"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":{"b":"c"}},"x"],true],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":"b"},null],{"a":{"b":"c"}},{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[{"a":{"b":"c"}},true,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[{},{"a":{"b":"c"}},["a",1]],null,"./x/**/*.json"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectForSessionDirectory","args":[[null],["a",1]],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[null,{},0],{"a":"b"},"abc"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":"b"},"Hello World"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[true,0],null,"a..b"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectForSessionDirectory","args":[[true,[],["a",1]],{},"trailing."],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],0,"İstanbul"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[true,{"a":{"b":"c"}},"x"],"x","hello"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{}],["a",1],{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[["a",1],["a",1]],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[],true,"abc"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[["x","x"],[],"ab"],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[["a",1],[]],["a",1],"straße"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],0,"ünïcödé"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{}],{"a":{"b":"c"}},"é"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[[]],"x","trailing."],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[true,[]],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[{},"x",[]],{},"日本語のテキスト"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":["x",0,""],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[["x"],{},"helloa..b"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],["a",1],"a"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[["a",1]],[],"hello"],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[{},{}],true],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":{"b":"c"}},{"a":"b"},{}],[]],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":"b"},"a:b:c"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[{"a":"b"},null],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"a":"b"},0,true],null],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[true,{"a":{"b":"c"}},["a",1]],true,"  padded  "],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],null,"hello.leading"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectForSessionDirectory","args":[{"a":{"b":"c"}},"x","line1\nline2﻿bom"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[["x",{"a":{"b":"c"}},{}],null,{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[["x",{},true],true],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[[],{"a":"b"}],{"a":"b"},"ns:key.path"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{},{"$undefined":true}],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[0,null],true,"{name} has {count} items"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForSessionDirectory","args":[{},{"a":"b"},"ΣΊΣΥΦΟΣa.b.c"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}},"héllo wörld"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}},"👍🏽 thumbs"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}},"日本語"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}},""],"ok":null}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}},"é"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}},"İstanbul"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}},"ılık ırmak"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}},"👨‍👩‍👧 family"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}},"a b"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}},"a😀b"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}},"﻿bom"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}},"a²b x½ y①"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}},"aⅠb Ⅻ"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}},"a𐐀b 𝐀bc"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectForSessionDirectory","args":[[],{"a":{"b":"c"}},"कि ٣٤"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"normalizeProjectPath","args":["/a/b/"],"ok":"/a/b"}
+{"fn":"normalizeProjectPath","args":["C:\\a\\"],"ok":"C:/a"}
+{"fn":"normalizeProjectPath","args":["/"],"ok":"/"}
+{"fn":"normalizeProjectPath","args":["//"],"ok":""}
+{"fn":"normalizeProjectPath","args":["  "],"ok":null}
+{"fn":"normalizeProjectPath","args":["x"],"ok":"x"}
+{"fn":"normalizeProjectPath","args":["\\"],"ok":"/"}
+{"fn":"normalizeProjectPath","args":["a//"],"ok":"a"}
+{"fn":"normalizeProjectPath","args":[],"ok":null}
+{"fn":"normalizeProjectPath","args":[5],"ok":null}
+{"fn":"normalizeProjectPath","args":["﻿/é😀/"],"ok":"/é😀/"}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"id":"parent","path":"/repo"},{"id":"child","path":"/repo/packages/child"}],{"$map":[["/repo",[{"path":"/repo/packages","projectDirectory":"/repo"}]]]},"/repo/packages/child/src"],"ok":{"id":"child","path":"/repo/packages/child"}}
+{"fn":"resolveProjectForSessionDirectory","args":[[{"id":"parent","path":"C:\\repo\\"}],{"$map":[["C:\\repo\\",[{"path":"D:\\worktrees\\feature\\","projectDirectory":"C:\\repo\\"}]]]},"D:\\worktrees\\feature\\src"],"ok":{"id":"parent","path":"C:\\repo\\"}}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"id":"parent","path":"C:\\repo\\"}],{"$map":[["C:\\repo\\",[{"path":"D:\\worktrees\\feature\\","projectDirectory":"C:\\repo\\"}]]]},"D:\\worktrees\\feature"],"ok":{"id":"parent","path":"C:\\repo\\"}}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"id":"x","path":"/other"},{"id":"n","path":"/repo"}],{"$map":[["/repo/",[{"path":"/wt","projectDirectory":"/nope"},{"path":"/wt/deep","projectDirectory":null}]]]},"/wt/deep/x"],"ok":{"id":"n","path":"/repo"}}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"id":"x","path":"/repo/sub"}],{"$map":[["/repo",[{"path":"/wt","projectDirectory":"/repo/sub/inner"}]]]},"/wt"],"ok":{"id":"x","path":"/repo/sub"}}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"id":"x","path":"/r"}],[[{"path":"/wt","projectDirectory":"/r"}]],"/wt"],"ok":{"id":"x","path":"/r"}}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"id":"x","path":"/r"}],{"$set":[[{"path":"/wt","projectDirectory":"/r"}]]},"/wt"],"ok":{"id":"x","path":"/r"}}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"id":"x","path":"/r"}],null,"/wt"],"error":"Cannot read properties of null (reading 'entries')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"id":"x","path":"/r"}],{},"/wt"],"error":"availableWorktreesByProject.entries is not a function or its return value is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"id":"x","path":"/r"}],{"$map":[["/r",null]]},"/wt"],"error":"worktrees is not iterable"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"id":"x","path":"/r"}],{"$map":[["/r",[null]]]},"/wt"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"id":"x","path":"/r"}],{"$map":[["/r","ab"]]},"/wt"],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":["str",{"$map":[["/r",[{"path":"/wt","projectDirectory":"/r"}]]]},"/wt"],"error":"projects.find is not a function"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[null,{"$map":[["/r",[{"path":"/wt","projectDirectory":"/r"}]]]},"/wt"],"error":"Cannot read properties of null (reading 'find')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[null],{"$map":[["/r",[{"path":"/wt","projectDirectory":"/r"}]]]},"/wt"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"id":"x","path":"/r"}],{"$map":[["/r",[{"path":"/wt","projectDirectory":"/r"}]]]},"/"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[{"id":"a","path":"/"},{"id":"b","path":"/x"}],"/x/y"],"ok":{"id":"b","path":"/x"}}
+{"fn":"resolveProjectForDirectory","args":[[{"id":"a","path":"/x"},{"id":"b","path":"/x/"}],"/x/y"],"ok":{"id":"a","path":"/x"}}
+{"fn":"resolveProjectForDirectory","args":[[{"id":"a","path":"/é"},{"id":"b","path":"/e1"}],"/é/"],"ok":{"id":"a","path":"/é"}}
+{"fn":"resolveProjectForDirectory","args":[[{"id":"a","path":"/😀"},{"id":"b","path":"/ab"}],"/😀/x"],"ok":{"id":"a","path":"/😀"}}
+{"fn":"resolveProjectForDirectory","args":[[{"id":"a","path":"/ab"},{"id":"b","path":"/😀"}],"/😀/x"],"ok":{"id":"b","path":"/😀"}}
+{"fn":"resolveProjectForDirectory","args":[null,"/x"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForDirectory","args":["abc","/x"],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[[null],"/x"],"error":"Cannot read properties of null (reading 'path')"}
+{"fn":"resolveProjectForDirectory","args":[[null],null],"ok":null}
+{"fn":"resolveProjectForDirectory","args":[5,"/x"],"error":"projects is not iterable"}
+{"fn":"resolveProjectForDirectory","args":[[{"path":5},{"id":1}],"/x"],"ok":null}
+{"fn":"resolveProjectFromWorktreeDirectory","args":[[{"id":"x","path":"/repo"}],{"$map":[["/zzz",[{"path":"/wt","projectDirectory":"/repo/sub"}]]]},"/wt"],"ok":{"id":"x","path":"/repo"}}

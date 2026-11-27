@@ -1,0 +1,23 @@
+{"fn": "getExactProjectBasename", "args": ["/workspace/foo"]}
+{"fn": "getExactProjectBasename", "args": ["/"]}
+{"fn": "getExactProjectBasename", "args": ["", ""]}
+{"fn": "getExactProjectBasename", "args": ["C:\\a\\b\\\\"]}
+{"fn": "getExactProjectBasename", "args": ["//", "X"]}
+{"fn": "getExactProjectBasename", "args": ["a//b//"]}
+{"fn": "getExactProjectBasename", "args": ["/x/é😀/"]}
+{"fn": "resolveProjectDisplayName", "args": [{"path": "/workspace/foo__bar", "label": "Manual_NAME-v2"}]}
+{"fn": "resolveProjectDisplayName", "args": [{"path": "/"}]}
+{"fn": "resolveProjectDisplayName", "args": [{"path": "/a", "label": "  "}]}
+{"fn": "resolveProjectDisplayName", "args": [{"path": "/a", "label": ""}]}
+{"fn": "resolveProjectDisplayName", "args": [{"path": "/a", "label": "﻿"}]}
+{"fn": "resolveProjectDisplayName", "args": [{"path": "/a", "label": 1}]}
+{"fn": "resolveProjectDisplayName", "args": [null]}
+{"fn": "resolveProjectDisplayName", "args": []}
+{"fn": "resolveProjectDisplayName", "args": [{"label": "x"}]}
+{"fn": "resolveProjectDisplayName", "args": [{}]}
+{"fn": "resolveProjectDisplayName", "args": [{"path": null}]}
+{"fn": "resolveProjectDisplayName", "args": [{"path": 5}]}
+{"fn": "resolveProjectDisplayName", "args": ["str"]}
+{"fn": "resolveProjectDisplayName", "args": [{"path": "/", "label": " L "}, "F"]}
+{"fn": "resolveProjectDisplayName", "args": [{"path": "/"}, "F"]}
+{"fn": "resolveProjectDisplayName", "args": [[1]]}

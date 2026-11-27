@@ -1,0 +1,30 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "agentModelSelection.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "agentmodelselection-rs",
+  "exports": [
+    {
+      "name": "parseAgentModelSelections",
+      "file": "agentModelSelection.ts",
+      "line": 7,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "Record<string, {\n  providerId: string;\n  modelId: string;\n  variant?: string;\n}> | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

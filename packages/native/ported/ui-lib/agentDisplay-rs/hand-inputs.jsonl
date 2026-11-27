@@ -1,0 +1,12 @@
+{"fn": "formatAgentDisplayName", "args": ["ßeta-agent"]}
+{"fn": "formatAgentDisplayName", "args": ["𐐨abc def"]}
+{"fn": "formatAgentDisplayName", "args": ["a﻿b"]}
+{"fn": "formatAgentDisplayName", "args": ["ab"]}
+{"fn": "formatAgentDisplayName", "args": ["x　y_z"]}
+{"fn": "formatAgentDisplayName", "args": ["ǆemo"]}
+{"fn": "formatAgentDisplayName", "args": ["ﬀoo bar"]}
+{"fn": "formatAgentDisplayName", "args": ["--__  "]}
+{"fn": "formatAgentDisplayName", "args": ["İstanbul ıi"]}
+{"fn": "formatAgentDisplayName", "args": ["ŉx"]}
+{"fn": "formatAgentDisplayName", "args": ["a b c"]}
+{"fn": "formatAgentDisplayName", "args": ["orchestrator_sub-agent"]}
