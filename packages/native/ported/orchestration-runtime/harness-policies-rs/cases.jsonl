@@ -1,0 +1,44 @@
+{"fn":"resolveHarnessPolicies","args":[[]],"ok":{"readOverlap":false,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveHarnessPolicies","args":[{"$undefined":true}],"ok":{"readOverlap":false,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveHarnessPolicies","args":[{}],"ok":{"readOverlap":false,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveHarnessPolicies","args":[true],"ok":{"readOverlap":false,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveHarnessPolicies","args":["x"],"ok":{"readOverlap":false,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveHarnessPolicies","args":[],"ok":{"readOverlap":false,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveHarnessPolicies","args":[{"a":{"b":"c"}}],"ok":{"readOverlap":false,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveHarnessPolicies","args":[null],"error":"Cannot read properties of null (reading 'DEVRYAN_MANAGED_READ_OVERLAP')"}
+{"fn":"resolveHarnessPolicies","args":[{"a":"b"}],"ok":{"readOverlap":false,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveHarnessPolicies","args":[["a",1]],"ok":{"readOverlap":false,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveHarnessPolicies","args":[0],"ok":{"readOverlap":false,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveNativeHarnessPolicies","args":[[]],"ok":{"readOverlap":true,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveNativeHarnessPolicies","args":[],"ok":{"readOverlap":true,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveNativeHarnessPolicies","args":[0],"ok":{"readOverlap":true,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveNativeHarnessPolicies","args":[{"a":"b"}],"ok":{"readOverlap":true,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveNativeHarnessPolicies","args":[{"a":{"b":"c"}}],"ok":{"readOverlap":true,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveNativeHarnessPolicies","args":[true],"ok":{"readOverlap":true,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveNativeHarnessPolicies","args":[{}],"ok":{"readOverlap":true,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveNativeHarnessPolicies","args":[{"$undefined":true}],"ok":{"readOverlap":true,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveNativeHarnessPolicies","args":[null],"error":"Cannot read properties of null (reading 'DEVRYAN_MANAGED_READ_OVERLAP')"}
+{"fn":"resolveNativeHarnessPolicies","args":["x"],"ok":{"readOverlap":true,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveNativeHarnessPolicies","args":[["a",1]],"ok":{"readOverlap":true,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveHarnessPolicies","args":[{"$undefined":true}],"ok":{"readOverlap":false,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveNativeHarnessPolicies","args":[{"$undefined":true}],"ok":{"readOverlap":true,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveHarnessPolicies","args":[null],"error":"Cannot read properties of null (reading 'DEVRYAN_MANAGED_READ_OVERLAP')"}
+{"fn":"resolveNativeHarnessPolicies","args":[null],"error":"Cannot read properties of null (reading 'DEVRYAN_MANAGED_READ_OVERLAP')"}
+{"fn":"resolveHarnessPolicies","args":[{}],"ok":{"readOverlap":false,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveNativeHarnessPolicies","args":[{}],"ok":{"readOverlap":true,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveHarnessPolicies","args":[{"DEVRYAN_MANAGED_WAIT_ANY":"0","DEVRYAN_COMPACT_MANAGED_RESULTS":"0"}],"ok":{"readOverlap":false,"waitAny":false,"compactResults":false,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveNativeHarnessPolicies","args":[{"DEVRYAN_MANAGED_WAIT_ANY":"0","DEVRYAN_COMPACT_MANAGED_RESULTS":"0"}],"ok":{"readOverlap":true,"waitAny":false,"compactResults":false,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveHarnessPolicies","args":[{"DEVRYAN_MANAGED_READ_OVERLAP":"1","DEVRYAN_TASK_CONTEXT_PROJECTION":"1","DEVRYAN_DUPLICATE_OUTPUTS":"1","DEVRYAN_ADAPTIVE_DELEGATION":"1"}],"ok":{"readOverlap":true,"waitAny":true,"compactResults":true,"contextProjection":true,"duplicateOutputs":true,"adaptiveDelegation":true}}
+{"fn":"resolveNativeHarnessPolicies","args":[{"DEVRYAN_MANAGED_READ_OVERLAP":"1","DEVRYAN_TASK_CONTEXT_PROJECTION":"1","DEVRYAN_DUPLICATE_OUTPUTS":"1","DEVRYAN_ADAPTIVE_DELEGATION":"1"}],"ok":{"readOverlap":true,"waitAny":true,"compactResults":true,"contextProjection":true,"duplicateOutputs":true,"adaptiveDelegation":true}}
+{"fn":"resolveHarnessPolicies","args":[{"DEVRYAN_MANAGED_WAIT_ANY":0,"DEVRYAN_MANAGED_READ_OVERLAP":1}],"ok":{"readOverlap":false,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveNativeHarnessPolicies","args":[{"DEVRYAN_MANAGED_WAIT_ANY":0,"DEVRYAN_MANAGED_READ_OVERLAP":1}],"ok":{"readOverlap":true,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveHarnessPolicies","args":[{"DEVRYAN_MANAGED_WAIT_ANY":"false","DEVRYAN_ADAPTIVE_DELEGATION":"true"}],"ok":{"readOverlap":false,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveNativeHarnessPolicies","args":[{"DEVRYAN_MANAGED_WAIT_ANY":"false","DEVRYAN_ADAPTIVE_DELEGATION":"true"}],"ok":{"readOverlap":true,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveHarnessPolicies","args":["str"],"ok":{"readOverlap":false,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveNativeHarnessPolicies","args":["str"],"ok":{"readOverlap":true,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveHarnessPolicies","args":[5],"ok":{"readOverlap":false,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveNativeHarnessPolicies","args":[5],"ok":{"readOverlap":true,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveHarnessPolicies","args":[[]],"ok":{"readOverlap":false,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveNativeHarnessPolicies","args":[[]],"ok":{"readOverlap":true,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveHarnessPolicies","args":[{"DEVRYAN_MANAGED_READ_OVERLAP":" 1"}],"ok":{"readOverlap":false,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}
+{"fn":"resolveNativeHarnessPolicies","args":[{"DEVRYAN_MANAGED_READ_OVERLAP":" 1"}],"ok":{"readOverlap":true,"waitAny":true,"compactResults":true,"contextProjection":false,"duplicateOutputs":false,"adaptiveDelegation":false}}

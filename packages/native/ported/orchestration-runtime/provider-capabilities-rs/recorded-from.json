@@ -1,0 +1,19 @@
+{
+  "unit": "provider-capabilities.js",
+  "files": 1,
+  "fingerprint": "afc57231f1856329",
+  "cases": 213,
+  "cases_hash": "cda62cb81dfad251",
+  "coverage": {
+    "lines": 26,
+    "reached": 26,
+    "files": [
+      {
+        "file": "provider-capabilities.js",
+        "lines": 26,
+        "reached": 26,
+        "missed": ""
+      }
+    ]
+  }
+}

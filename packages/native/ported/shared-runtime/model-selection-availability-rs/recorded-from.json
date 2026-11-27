@@ -1,0 +1,19 @@
+{
+  "unit": "lib/model-selection-availability.js",
+  "files": 1,
+  "fingerprint": "3827c269700f1b63",
+  "cases": 256,
+  "cases_hash": "7caa59defad8f540",
+  "coverage": {
+    "lines": 27,
+    "reached": 27,
+    "files": [
+      {
+        "file": "lib/model-selection-availability.js",
+        "lines": 27,
+        "reached": 27,
+        "missed": ""
+      }
+    ]
+  }
+}

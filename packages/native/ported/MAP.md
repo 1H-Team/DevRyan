@@ -12,7 +12,8 @@ parameter types). Lines are `wc -l` of the `.ts` file and of `port.rs`.
 
 38 units done (some partly, as noted), 5 skipped, 0 open (of 88); the rest not attempted, listed below.
 
-Units of `packages/shared-runtime` are listed in `shared-runtime/MAP.md`.
+Units of `packages/shared-runtime`, `packages/orchestration-runtime` and `packages/harness-runtime/lib`
+are listed in `shared-runtime/MAP.md`, `orchestration-runtime/MAP.md` and `harness-runtime/MAP.md`.
 
 A `mutation/` crate inside a unit's folder proves exports that only mutate their arguments: a
 test-only wrapper module (`mutation-ts/`, never part of the product) imports the original by

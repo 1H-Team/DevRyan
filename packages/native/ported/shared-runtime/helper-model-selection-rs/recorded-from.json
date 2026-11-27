@@ -1,0 +1,19 @@
+{
+  "unit": "lib/helper-model-selection.js",
+  "files": 1,
+  "fingerprint": "4cc59ea6a256b37d",
+  "cases": 31,
+  "cases_hash": "18998d4d2631bad7",
+  "coverage": {
+    "lines": 13,
+    "reached": 13,
+    "files": [
+      {
+        "file": "lib/helper-model-selection.js",
+        "lines": 13,
+        "reached": 13,
+        "missed": ""
+      }
+    ]
+  }
+}

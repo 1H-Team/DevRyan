@@ -1,0 +1,59 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [
+    {
+      "site": "packages/harness-runtime/lib/objective-progress.js:11",
+      "text": "throw new TypeError('Invalid Builder TODO continuation guard');"
+    },
+    {
+      "site": "packages/harness-runtime/lib/objective-progress.js:19",
+      "text": "|| !Number.isFinite(entry.lastObservedAt))) throw new TypeError('Invalid objective rejection receipts');"
+    },
+    {
+      "site": "packages/harness-runtime/lib/objective-progress.js:26",
+      "text": "|| typeof input.callID !== 'string' || !input.callID || input.callID.length > 256 || !Number.isFinite(input.at)) throw new TypeError('Invalid pre-execution rejection');"
+    },
+    {
+      "site": "packages/harness-runtime/lib/objective-progress.js:42",
+      "text": "|| Object.entries(value.counts).some(([kind, count]) => !progressKinds.has(kind) || !Number.isSafeInteger(count) || count < 0)) throw new TypeError('Invalid objective progress');"
+    },
+    {
+      "site": "packages/harness-runtime/lib/objective-progress.js:47",
+      "text": "if (!progressKinds.has(kind) || !hashPattern.test(fingerprint) || !Number.isFinite(at)) throw new TypeError('Invalid authoritative progress observation');"
+    }
+  ],
+  "product": [
+    {
+      "site": "packages/harness-runtime/lib/objective-progress.js:11",
+      "class": "TypeError",
+      "sample": "Invalid Builder TODO continuation guard"
+    },
+    {
+      "site": "packages/harness-runtime/lib/objective-progress.js:19",
+      "class": "TypeError",
+      "sample": "Invalid objective rejection receipts"
+    },
+    {
+      "site": "packages/harness-runtime/lib/objective-progress.js:26",
+      "class": "TypeError",
+      "sample": "Invalid pre-execution rejection"
+    },
+    {
+      "site": "packages/harness-runtime/lib/objective-progress.js:42",
+      "class": "TypeError",
+      "sample": "Invalid objective progress"
+    },
+    {
+      "site": "packages/harness-runtime/lib/objective-progress.js:47",
+      "class": "TypeError",
+      "sample": "Invalid authoritative progress observation"
+    }
+  ],
+  "engine": [
+    {
+      "site": "packages/harness-runtime/lib/objective-progress.js:45",
+      "class": "TypeError",
+      "sample": "Cannot destructure property 'kind' of 'object null' as it is null."
+    }
+  ]
+}

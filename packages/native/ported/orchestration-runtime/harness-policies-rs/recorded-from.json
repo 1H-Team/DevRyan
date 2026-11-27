@@ -1,0 +1,19 @@
+{
+  "unit": "harness-policies.js",
+  "files": 1,
+  "fingerprint": "bfddd714e41a84bc",
+  "cases": 44,
+  "cases_hash": "b9dab275bb19fa08",
+  "coverage": {
+    "lines": 25,
+    "reached": 25,
+    "files": [
+      {
+        "file": "harness-policies.js",
+        "lines": 25,
+        "reached": 25,
+        "missed": ""
+      }
+    ]
+  }
+}

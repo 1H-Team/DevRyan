@@ -1,0 +1,42 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/shared-runtime",
+  "unit": "lib/model-selection-availability.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "model-selection-availability-rs",
+  "exports": [
+    {
+      "name": "inspectModelSelection",
+      "file": "lib/model-selection-availability.js",
+      "line": 6,
+      "params": [
+        {
+          "name": "selection",
+          "ts_type": "ModelSelection",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "catalog",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "arg2",
+          "ts_type": "{ readonly variantsComplete?: boolean }",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "ModelSelectionAvailability",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

@@ -1,0 +1,19 @@
+{
+  "unit": "lib/upstream-stall.js",
+  "files": 1,
+  "fingerprint": "1056f474ccc766b9",
+  "cases": 73,
+  "cases_hash": "9caf3b5748de7183",
+  "coverage": {
+    "lines": 19,
+    "reached": 19,
+    "files": [
+      {
+        "file": "lib/upstream-stall.js",
+        "lines": 19,
+        "reached": 19,
+        "missed": ""
+      }
+    ]
+  }
+}

@@ -1,0 +1,97 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/orchestration-runtime",
+  "unit": "tool-output-limits.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "tool-output-limits-rs",
+  "exports": [
+    {
+      "name": "nativeToolOutputLimits",
+      "file": "tool-output-limits.js",
+      "line": 14,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "managedToolOutputBudget",
+      "file": "tool-output-limits.js",
+      "line": 22,
+      "params": [
+        {
+          "name": "limits",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "compactManagedTaskToolResult",
+      "file": "tool-output-limits.js",
+      "line": 29,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "assertManagedToolOutputSize",
+      "file": "tool-output-limits.js",
+      "line": 54,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "maxBytes",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "fitManagedToolOutput",
+      "file": "tool-output-limits.js",
+      "line": 61,
+      "reason": "takes a page factory callback"
+    }
+  ]
+}

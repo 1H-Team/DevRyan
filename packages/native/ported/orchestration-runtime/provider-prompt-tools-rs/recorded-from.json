@@ -1,0 +1,19 @@
+{
+  "unit": "provider-prompt-tools.js",
+  "files": 1,
+  "fingerprint": "ced860b7db369359",
+  "cases": 410,
+  "cases_hash": "901923723d6e7ca1",
+  "coverage": {
+    "lines": 51,
+    "reached": 51,
+    "files": [
+      {
+        "file": "provider-prompt-tools.js",
+        "lines": 51,
+        "reached": 51,
+        "missed": ""
+      }
+    ]
+  }
+}

@@ -1,0 +1,31 @@
+{"fn":"parseHelperModelSelection","args":[{}],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":["x"],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[["a",1]],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[0],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[null],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[true],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[[]],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[[3,1,2]],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[{"providerID":"opencode","modelID":"m","revision":"default"}],"ok":{"providerID":"opencode","modelID":"m","revision":"default"}}
+{"fn":"parseHelperModelSelection","args":[{"providerID":"opencode","modelID":"m","revision":"default","variant":"high"}],"ok":{"providerID":"opencode","modelID":"m","variant":"high","revision":"default"}}
+{"fn":"parseHelperModelSelection","args":[{"providerID":"opencode","modelID":"m","revision":"default","variant":{"$undefined":true}}],"ok":{"providerID":"opencode","modelID":"m","revision":"default"}}
+{"fn":"parseHelperModelSelection","args":[{"providerID":"opencode","modelID":"m","revision":"default","variant":""}],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[{"providerID":"opencode","modelID":"m","revision":"default","variant":"a b"}],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[{"providerID":"opencode","modelID":"m","revision":"default","extra":1}],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[{"providerID":"","modelID":"m","revision":"default"}],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[{"providerID":"opencode","modelID":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","revision":"default"}],"ok":{"providerID":"opencode","modelID":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","revision":"default"}}
+{"fn":"parseHelperModelSelection","args":[{"providerID":"opencode","modelID":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","revision":"default"}],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[{"providerID":"opencode","modelID":"m","revision":"r\u0001"}],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[{"providerID":"opencode","modelID":"m","revision":"r"}],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[{"providerID":"opencode","modelID":"m","revision":" "}],"ok":{"providerID":"opencode","modelID":"m","revision":" "}}
+{"fn":"parseHelperModelSelection","args":[{"providerID":5,"modelID":"m","revision":"default"}],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[{}],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[null],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[[]],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":["x"],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[{"$set":[]}],"ok":{"$undefined":true}}
+{"fn":"parseHelperModelSelection","args":[{"providerID":"opencode","modelID":"m","revision":"default","variant":null}],"ok":{"$undefined":true}}

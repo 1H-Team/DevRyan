@@ -1,0 +1,96 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/harness-runtime/lib",
+  "unit": "objective-identity.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "objective-identity-rs",
+  "exports": [
+    {
+      "name": "isNativeCompactionRecord",
+      "file": "objective-identity.js",
+      "line": 4,
+      "params": [
+        {
+          "name": "record",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "currentObjectiveUser",
+      "file": "objective-identity.js",
+      "line": 8,
+      "params": [
+        {
+          "name": "record",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isManagedMaintenancePrompt",
+      "file": "objective-identity.js",
+      "line": 10,
+      "params": [
+        {
+          "name": "body",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "observesNativeContinuation",
+      "file": "objective-identity.js",
+      "line": 21,
+      "params": [
+        {
+          "name": "record",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "observation",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "userMessageID",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

@@ -1,0 +1,36 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/native/ported/orchestration-runtime/terminal-error-registry-rs/scenario-js",
+  "unit": "terminal-error-registry-scenario.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "terminal-error-registry-scenario-rs",
+  "exports": [
+    {
+      "name": "runTerminalErrorRegistry",
+      "file": "terminal-error-registry-scenario.js",
+      "line": 10,
+      "params": [
+        {
+          "name": "options",
+          "ts_type": "{ maximumSessions?: number }",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "steps",
+          "ts_type": "{ op: string, at: number, args: unknown[] }[]",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown[]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

@@ -1,0 +1,27 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [],
+  "product": [],
+  "engine": [
+    {
+      "site": "packages/native/ported/harness-runtime/host-stall-clock-rs/scenario-js/host-stall-clock-scenario.js:12",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'start')"
+    },
+    {
+      "site": "packages/native/ported/harness-runtime/host-stall-clock-rs/scenario-js/host-stall-clock-scenario.js:16",
+      "class": "TypeError",
+      "sample": "steps.map is not a function"
+    },
+    {
+      "site": "packages/native/ported/harness-runtime/host-stall-clock-rs/scenario-js/host-stall-clock-scenario.js:17",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'at')"
+    },
+    {
+      "site": "packages/native/ported/harness-runtime/host-stall-clock-rs/scenario-js/host-stall-clock-scenario.js:21",
+      "class": "TypeError",
+      "sample": "step.args is not iterable (cannot read property undefined)"
+    }
+  ]
+}

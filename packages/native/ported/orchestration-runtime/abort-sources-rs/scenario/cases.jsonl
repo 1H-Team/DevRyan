@@ -1,0 +1,241 @@
+{"fn":"normalizeAbortSourceOf","args":["x"],"ok":"unknown"}
+{"fn":"normalizeAbortSourceOf","args":[[]],"ok":"unknown"}
+{"fn":"normalizeAbortSourceOf","args":[null],"ok":"unknown"}
+{"fn":"normalizeAbortSourceOf","args":[0],"ok":"unknown"}
+{"fn":"normalizeAbortSourceOf","args":[{"a":"b"}],"ok":"unknown"}
+{"fn":"normalizeAbortSourceOf","args":[true],"ok":"unknown"}
+{"fn":"normalizeAbortSourceOf","args":[["a",1]],"ok":"unknown"}
+{"fn":"normalizeAbortSourceOf","args":[{"a":{"b":"c"}}],"ok":"unknown"}
+{"fn":"normalizeAbortSourceOf","args":[{}],"ok":"unknown"}
+{"fn":"normalizeAbortSourceOf","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":"unknown"}
+{"fn":"normalizeAbortSourceOf","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":"unknown"}
+{"fn":"normalizeAbortSourceOf","args":[[3,1,2]],"ok":"unknown"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"NaN"},"maximumSessions":10},[{"op":"tab\tseparated","at":10,"arg":0},{"op":"a😀b😀c","at":1000,"arg":0},{"op":"a😀b😀c","at":-1}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[true,[{"op":"﻿bom","at":{"$num":"Infinity"},"arg":["a",1]},{"op":"é","at":42,"arg":true},{"op":"src/a/b.ts","at":100,"arg":true}]],"ok":[0,0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":2147483648,"maximumSessions":1000000},{"a":"b"}],"error":"steps.map is not a function"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"-0"},"maximumSessions":2},[{"op":"src/a/b.ts","at":{"$num":"NaN"},"arg":{"a":{"b":"c"}}},{"op":"src/a/b.ts","at":42,"arg":[]}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":9007199254740992},[{"op":"abc","at":{"$num":"-Infinity"}},{"op":"a😀b😀c","at":{"$num":"-0"}}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"-0"},"maximumSessions":42},[]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":9007199254740992,"maximumSessions":{"$num":"-0"}},[]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":0,"maximumSessions":{"$num":"-0"}},[{"op":"","at":1,"arg":[]}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":1},[{"op":"ΣΊΣΥΦΟΣ","at":100,"arg":"x"},{"op":"{name} has {count} items","at":3,"arg":"x"},{"op":"{name} has {count} items","at":{"$num":"NaN"},"arg":{"a":{"b":"c"}}}]],"ok":[0,0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":-1,"maximumSessions":{"$num":"-Infinity"}},[{"op":"a..b","at":10,"arg":"x"},{"op":"src/a/b.ts","at":3}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1000000,"maximumSessions":-2.5},[{"op":"İstanbul","at":{"$num":"Infinity"},"arg":0},{"op":"  padded  ","at":1000,"arg":0},{"op":"key_name-1","at":9007199254740992,"arg":null}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":9007199254740992,"maximumSessions":0},[{"op":"hello worlda:b:c","at":0.5,"arg":{"a":"b"}},{"op":"a","at":0,"arg":{}},{"op":".leading","at":42,"arg":null}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1000000,"maximumSessions":{"$num":"Infinity"}},[{"op":"","at":2},{"op":"key_name-1","at":2,"arg":["a",1]},{"op":"hello world","at":2,"arg":null}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"a":{"b":"c"}},[]],"ok":[]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":2,"maximumSessions":{"$num":"NaN"}},[{"op":"a😀b😀c:","at":1000000,"arg":{"a":"b"}},{"op":"key_name-1","at":42,"arg":{"a":{"b":"c"}}},{"op":"HELLO😀","at":{"$num":"Infinity"},"arg":[]}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"Infinity"},"maximumSessions":{"$num":"NaN"}},[{"op":"Hello Worldhello","at":1},{"op":"abc","at":2,"arg":{"a":"b"}},{"op":"a..b","at":3,"arg":{"a":"b"}}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[null,[]],"ok":[]}
+{"fn":"runAbortSourceRegistry","args":[true,{"a":{"b":"c"}}],"error":"steps.map is not a function"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"-Infinity"}},[{"op":".leading","at":2,"arg":null}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"Infinity"},"maximumSessions":-2.5},[{"op":"src/a/b.ts","at":2,"arg":null},{"op":"  padded  ","at":1000000,"arg":{"a":{"b":"c"}}},{"op":"﻿bom","at":42,"arg":0}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":{"$num":"-0"}},true],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"-0"},"maximumSessions":2147483648},[{"op":"HELLO","at":9007199254740992,"arg":{"a":"b"}}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":10,"maximumSessions":42},[]],"ok":[]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":100,"maximumSessions":{"$num":"-0"}},[]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"Infinity"}},true],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1000000},null],"error":"Cannot read properties of null (reading 'map')"}
+{"fn":"runAbortSourceRegistry","args":[{},[{"op":"trailing.😀","at":-1,"arg":null},{"op":"{name} has {count} itemsabc","at":{"$num":"Infinity"},"arg":{}},{"op":"tab\tseparated  padded  ","at":2147483648,"arg":[]}]],"ok":[0,0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1000,"maximumSessions":1},[]],"ok":[]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1000,"maximumSessions":2},[{"op":"abc","at":3,"arg":"x"}]],"ok":[0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"-0"},"maximumSessions":9007199254740992},[{"op":"./x/**/*.json","at":0.5,"arg":[]}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"Infinity"}},[{"op":"é","at":0.5,"arg":true}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1000000},[]],"ok":[]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":100,"maximumSessions":-2.5},[{"op":"abchello","at":-2.5}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1000000,"maximumSessions":100},[]],"ok":[]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":2147483648,"maximumSessions":1000000},["a",1]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[true,[{"op":"ΣΊΣΥΦΟΣ","at":100},{"op":":","at":0.5,"arg":0}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[["a",1],[{"op":"é","at":2147483648},{"op":"emoji 👍🏽 mix","at":0.5}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":{"$num":"NaN"}},[{"op":"emoji 👍🏽 mix","at":{"$num":"-Infinity"},"arg":[]}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":0},["a",1]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":0.5},[{"op":"😀","at":42,"arg":{"a":"b"}},{"op":"trailing.line1\nline2","at":{"$num":"-0"}}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":10},[{"op":"line1\nline2","at":100}]],"ok":[0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":9007199254740992,"maximumSessions":{"$num":"NaN"}},[{"op":"tab\tseparated","at":{"$num":"-0"},"arg":"x"},{"op":"é","at":{"$num":"NaN"}}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":3},[{"op":"abc","at":42},{"op":"abc","at":1000}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[null,[{"op":"  padded  .leading","at":1000000},{"op":"日本語のテキスト","at":{"$num":"NaN"},"arg":{"a":"b"}}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1000000,"maximumSessions":42},[{"op":"  padded  ","at":3},{"op":"a..b","at":100},{"op":"Hello Worlda.b.c","at":{"$num":"-Infinity"},"arg":{}}]],"ok":[0,0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1000},true],"error":"steps.map is not a function"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":10},[]],"ok":[]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":0,"maximumSessions":3},[]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":0,"maximumSessions":0},[]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[[],"x"],"error":"steps.map is not a function"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":0.5},[{"op":"Hello World","at":0.5,"arg":"x"},{"op":"a..b","at":1,"arg":{"a":{"b":"c"}}},{"op":"./x/**/*.json","at":1000000,"arg":["a",1]}]],"ok":[0,0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"a":"b"},null],"error":"Cannot read properties of null (reading 'map')"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":3},[]],"ok":[]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":100,"maximumSessions":{"$num":"-0"}},null],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":100,"maximumSessions":42},[{"op":"trailing.key_name-1","at":3,"arg":["a",1]}]],"ok":[0]}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":0.5},[{"op":"日本語のテキスト","at":1000000,"arg":null},{"op":"ünïcödé","at":-1,"arg":"x"},{"op":"key_name-1","at":{"$num":"Infinity"},"arg":{"a":"b"}}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1,"maximumSessions":2147483648},[]],"ok":[]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":0.5,"maximumSessions":3},[{"op":"{name} has {count} itemskey_name-1","at":-1,"arg":[]},{"op":"./x/**/*.jsona..b","at":-1,"arg":true}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"Infinity"},"maximumSessions":100},[{"op":"﻿bom","at":1000,"arg":["a",1]},{"op":"hello","at":2147483648,"arg":true}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{},[{"op":"é","at":{"$num":"NaN"}}]],"ok":[0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":2147483648},true],"error":"steps.map is not a function"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":-2.5,"maximumSessions":3},[{"op":"hello","at":{"$num":"-0"},"arg":null},{"op":"ab","at":{"$num":"Infinity"},"arg":{"a":"b"}}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"NaN"}},{}],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"a":{"b":"c"}},{"a":{"b":"c"}}],"error":"steps.map is not a function"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":0,"maximumSessions":3},0],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"-0"},"maximumSessions":0},[]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"a":{"b":"c"}},[{"op":":","at":42,"arg":[]},{"op":":","at":{"$num":"-0"}}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":2147483648},{"a":"b"}],"error":"steps.map is not a function"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":0},[{"op":"ünïcödéns:key.path","at":0,"arg":[]},{"op":"ns:key.path./x/**/*.json","at":2},{"op":"key_name-1","at":-1,"arg":"x"}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1000000},[{"op":"","at":42,"arg":{"a":{"b":"c"}}}]],"ok":[0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"-0"},"maximumSessions":2},[{"op":"ünïcödé","at":0,"arg":{"a":"b"}},{"op":"key_name-1","at":0.5,"arg":0}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"a":{"b":"c"}},[{"op":"İstanbul","at":100,"arg":["a",1]},{"op":"trailing.","at":-1}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[true,[{"op":"ΣΊΣΥΦΟΣ","at":100,"arg":[]},{"op":"line1\nline2ΣΊΣΥΦΟΣ","at":10}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":2147483648},{}],"error":"steps.map is not a function"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1,"maximumSessions":{"$num":"-0"}},[{"op":".leading","at":42,"arg":{"a":{"b":"c"}}}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":100,"maximumSessions":3},[{"op":"a😀b😀ckey_name-1","at":1000},{"op":"src/a/b.ts","at":100}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":2,"maximumSessions":1},[{"op":"straße","at":10,"arg":{"a":"b"}},{"op":"./x/**/*.json","at":100,"arg":[]}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":-1,"maximumSessions":0.5},[{"op":"é","at":42},{"op":"./x/**/*.json","at":9007199254740992,"arg":[]}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1000000,"maximumSessions":0.5},[]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":2147483648,"maximumSessions":1000000},[{"op":"trailing.{name} has {count} items","at":1000,"arg":["a",1]},{"op":"tab\tseparated","at":10,"arg":{"a":"b"}},{"op":"  padded  ","at":1}]],"ok":[0,0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"-0"},"maximumSessions":1000000},[{"op":"HELLO","at":0,"arg":0},{"op":"tab\tseparated","at":42},{"op":"./x/**/*.json","at":{"$num":"-0"},"arg":0}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1000000,"maximumSessions":42},null],"error":"Cannot read properties of null (reading 'map')"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":1},"x"],"error":"steps.map is not a function"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":-2.5,"maximumSessions":{"$num":"-0"}},[{"op":"{name} has {count} items","at":{"$num":"-Infinity"},"arg":true},{"op":"a","at":1000,"arg":[]}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":9007199254740992,"maximumSessions":1000},[{"op":"tab\tseparated","at":10},{"op":"a..bstraße","at":{"$num":"-Infinity"}},{"op":"a..b","at":1000000,"arg":{"a":"b"}}]],"ok":[0,0,0]}
+{"fn":"runAbortSourceRegistry","args":[{},["a",1]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":-1,"maximumSessions":-2.5},[{"op":"emoji 👍🏽 mix","at":0.5,"arg":[]}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1000000,"maximumSessions":9007199254740992},[{"op":"a:b:c","at":1000000,"arg":{}},{"op":"a.b.ca","at":0}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":1000},0],"error":"steps.map is not a function"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1000000,"maximumSessions":9007199254740992},[{"op":"trailing.","at":{"$num":"-Infinity"},"arg":0},{"op":"line1\nline2ΣΊΣΥΦΟΣ","at":9007199254740992,"arg":{"a":{"b":"c"}}},{"op":"emoji 👍🏽 mix","at":10,"arg":{"a":"b"}}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":42,"maximumSessions":100},[{"op":"😀","at":10,"arg":{"a":"b"}},{"op":"{name} has {count} items","at":-2.5,"arg":{}},{"op":"ünïcödé﻿bom","at":-1,"arg":null}]],"ok":[0,0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":1},[{"op":"日本語のテキスト","at":1000},{"op":"ab","at":10,"arg":0},{"op":"trailing.","at":-1,"arg":["a",1]}]],"ok":[0,0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"-0"}},[{"op":"","at":{"$num":"-0"}},{"op":"./x/**/*.json","at":10,"arg":"x"}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":2147483648,"maximumSessions":9007199254740992},[]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":100,"maximumSessions":{"$num":"-0"}},[{"op":"","at":3},{"op":"a😀b😀cΣΊΣΥΦΟΣ","at":1000000,"arg":{"a":{"b":"c"}}},{"op":"./x/**/*.json","at":-1,"arg":{"a":"b"}}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":-1,"maximumSessions":0},{"a":{"b":"c"}}],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":0,"maximumSessions":1},true],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":{"$num":"-Infinity"}},"x"],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":10},[{"op":"abc","at":0.5},{"op":"hello world","at":0.5,"arg":["a",1]}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":3},[]],"ok":[]}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":1000000},[{"op":"HELLO","at":-1,"arg":{}},{"op":"a😀b😀c{name} has {count} items","at":1,"arg":{}}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":1000000},[]],"ok":[]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":2},0],"error":"steps.map is not a function"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":2147483648,"maximumSessions":1},{}],"error":"steps.map is not a function"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":3,"maximumSessions":1},{"a":{"b":"c"}}],"error":"steps.map is not a function"}
+{"fn":"runAbortSourceRegistry","args":[0,["a",1]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":2147483648,"maximumSessions":0.5},0],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":2147483648,"maximumSessions":1},null],"error":"Cannot read properties of null (reading 'map')"}
+{"fn":"runAbortSourceRegistry","args":[{},[]],"ok":[]}
+{"fn":"runAbortSourceRegistry","args":[{"a":"b"},[]],"ok":[]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":0.5,"maximumSessions":0},[{"op":"line1\nline2","at":0.5,"arg":{"a":"b"}},{"op":"a:b:c","at":0.5}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":0.5},[{"op":"line1\nline2","at":{"$num":"NaN"},"arg":"x"}]],"ok":[0]}
+{"fn":"runAbortSourceRegistry","args":[{},"x"],"error":"steps.map is not a function"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":-1},[{"op":"abc","at":{"$num":"-Infinity"},"arg":"x"},{"op":".leading","at":-1,"arg":[]},{"op":"  padded  ","at":{"$num":"-Infinity"}}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{},[{"op":"Hello World","at":42,"arg":{}},{"op":"日本語のテキスト:","at":10,"arg":0}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":2},[{"op":"😀","at":0.5,"arg":"x"}]],"ok":[0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"NaN"},"maximumSessions":0},[{"op":"emoji 👍🏽 mix","at":{"$num":"-Infinity"},"arg":{"a":{"b":"c"}}},{"op":".leading","at":{"$num":"NaN"},"arg":{}},{"op":"a:b:c","at":9007199254740992,"arg":"x"}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"-Infinity"},"maximumSessions":42},{"a":{"b":"c"}}],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":9007199254740992},[{"op":":ünïcödé","at":0.5,"arg":"x"},{"op":"abc","at":1000,"arg":{"a":"b"}}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":{"$num":"Infinity"}},[]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":2},[{"op":"a:b:c","at":1000},{"op":"a.b.c","at":1000,"arg":"x"},{"op":"hello","at":0}]],"ok":[0,0,0]}
+{"fn":"runAbortSourceRegistry","args":[{},[{"op":"a..b","at":0.5,"arg":null},{"op":"line1\nline2","at":{"$num":"Infinity"},"arg":{"a":{"b":"c"}}},{"op":"abc","at":{"$num":"-Infinity"}}]],"ok":[0,0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":9007199254740992,"maximumSessions":-2.5},null],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{},[{"op":"😀","at":0,"arg":{"a":"b"}}]],"ok":[0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":10,"maximumSessions":1000000},[{"op":"ünïcödé","at":2,"arg":true}]],"ok":[0]}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":2147483648},[{"op":"./x/**/*.jsona:b:c","at":100,"arg":[]},{"op":"abc","at":{"$num":"-0"},"arg":{"a":{"b":"c"}}}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[["a",1],[]],"ok":[]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":0},[{"op":"a:b:c","at":2},{"op":"trailing.","at":-1}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":10},[{"op":"aba.b.c","at":10,"arg":{"a":"b"}},{"op":":","at":2,"arg":{"a":"b"}}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"-Infinity"},"maximumSessions":-2.5},true],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[null,[{"op":"Hello World","at":42,"arg":true},{"op":"tab\tseparated","at":0},{"op":"Hello World","at":10}]],"ok":[0,0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":-2.5,"maximumSessions":100},[{"op":"src/a/b.tsé","at":100},{"op":"a.b.cab","at":1,"arg":{"a":"b"}}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":42,"maximumSessions":0.5},[{"op":"ΣΊΣΥΦΟΣa","at":10,"arg":{"a":{"b":"c"}}},{"op":"日本語のテキスト","at":1000000}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1000000},{"a":"b"}],"error":"steps.map is not a function"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":2,"maximumSessions":42},{"a":{"b":"c"}}],"error":"steps.map is not a function"}
+{"fn":"runAbortSourceRegistry","args":[{"a":"b"},[{"op":"﻿bom","at":1,"arg":"x"},{"op":"a.b.c","at":1000},{"op":"日本語のテキスト./x/**/*.json","at":10,"arg":0}]],"ok":[0,0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"a":{"b":"c"}},[{"op":"ünïcödé","at":10},{"op":"tab\tseparated","at":42,"arg":[]}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":2147483648,"maximumSessions":2147483648},[{"op":"key_name-1","at":42}]],"ok":[0]}
+{"fn":"runAbortSourceRegistry","args":[true,[{"op":"a.b.ckey_name-1","at":{"$num":"-Infinity"},"arg":{"a":"b"}},{"op":"key_name-1HELLO","at":0}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":-1,"maximumSessions":10},[{"op":"ΣΊΣΥΦΟΣ","at":{"$num":"Infinity"},"arg":["a",1]},{"op":"tab\tseparated","at":100,"arg":true},{"op":"  padded  ","at":2}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":10},[{"op":"key_name-1","at":2,"arg":"x"},{"op":"trailing.","at":9007199254740992,"arg":true}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1,"maximumSessions":-1},[{"op":"","at":{"$num":"-Infinity"},"arg":{"a":{"b":"c"}}},{"op":"{name} has {count} items","at":2147483648,"arg":0},{"op":"emoji 👍🏽 mix","at":9007199254740992}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":{"$num":"Infinity"}},[{"op":"ns:key.pathabc","at":100,"arg":0},{"op":"İstanbul","at":{"$num":"-0"}},{"op":"key_name-1ΣΊΣΥΦΟΣ","at":{"$num":"-Infinity"},"arg":true}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":{"$num":"-Infinity"}},[]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":3,"maximumSessions":100},true],"error":"steps.map is not a function"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":1000},[{"op":"a.b.ca.b.c","at":{"$num":"NaN"},"arg":["a",1]},{"op":"key_name-1  padded  ","at":0.5,"arg":["a",1]},{"op":"a😀b😀c","at":{"$num":"-Infinity"},"arg":{"a":{"b":"c"}}}]],"ok":[0,0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1000000,"maximumSessions":{"$num":"NaN"}},[{"op":"trailing.","at":1000000,"arg":"x"},{"op":"abc","at":2147483648,"arg":{}},{"op":"ΣΊΣΥΦΟΣ","at":2147483648,"arg":0}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":9007199254740992},[{"op":"HELLO","at":1000000}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":2147483648,"maximumSessions":{"$num":"Infinity"}},[{"op":"./x/**/*.json","at":{"$num":"-0"},"arg":["a",1]},{"op":"straße","at":2,"arg":{"a":"b"}}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":10,"maximumSessions":0},[]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1000,"maximumSessions":1000},[{"op":"a..b","at":{"$num":"-Infinity"}}]],"ok":[0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":-1,"maximumSessions":2},[{"op":"HELLO","at":{"$num":"Infinity"},"arg":["a",1]},{"op":"ΣΊΣΥΦΟΣ","at":10,"arg":{"a":{"b":"c"}}}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{},[{"op":"ns:key.path","at":3},{"op":"é","at":{"$num":"-Infinity"},"arg":0},{"op":"éhello","at":100,"arg":{"a":{"b":"c"}}}]],"ok":[0,0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":2147483648,"maximumSessions":100},[{"op":"ΣΊΣΥΦΟΣ","at":1,"arg":true},{"op":"src/a/b.ts","at":1000,"arg":{}}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":0.5,"maximumSessions":100},[{"op":"key_name-1line1\nline2","at":42},{"op":"{name} has {count} items日本語のテキスト","at":2,"arg":[]}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"NaN"},"maximumSessions":-2.5},[{"op":".leading","at":0.5,"arg":{"a":{"b":"c"}}},{"op":"key_name-1","at":1000,"arg":{"a":"b"}},{"op":"HELLO","at":{"$num":"-0"},"arg":null}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1,"maximumSessions":-1},[]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":-1},[{"op":"ab","at":1000000,"arg":["a",1]}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":["x",[{"op":"./x/**/*.jsonİstanbul","at":0},{"op":"{name} has {count} itemsİstanbul","at":100,"arg":[]}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":1000},[]],"ok":[]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":10},[{"op":"tab\tseparated","at":1000000},{"op":"hello  padded  ","at":{"$num":"-Infinity"}},{"op":"😀{name} has {count} items","at":42,"arg":null}]],"ok":[0,0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"Infinity"},"maximumSessions":3},[]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[true,[]],"ok":[]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":2,"maximumSessions":{"$num":"-0"}},[{"op":"src/a/b.ts","at":1000,"arg":[]},{"op":"😀","at":42,"arg":{"a":"b"}},{"op":"HELLO","at":42,"arg":{"a":"b"}}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":0.5,"maximumSessions":1000},[{"op":"ΣΊΣΥΦΟΣ","at":-2.5},{"op":"./x/**/*.jsona😀b😀c","at":1000000,"arg":0}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":-1,"maximumSessions":3},[{"op":"HELLO","at":1,"arg":{"a":"b"}},{"op":"ΣΊΣΥΦΟΣ","at":1000,"arg":{"a":"b"}}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[0,[{"op":"a","at":2147483648,"arg":[]},{"op":"Hello World","at":-1,"arg":"x"},{"op":"﻿bom","at":-2.5,"arg":null}]],"ok":[0,0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":0,"maximumSessions":{"$num":"Infinity"}},[{"op":"line1\nline2İstanbul","at":{"$num":"Infinity"}},{"op":"emoji 👍🏽 mix  padded  ","at":3,"arg":[]}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":-1,"maximumSessions":{"$num":"Infinity"}},[{"op":"İstanbul","at":-1,"arg":{}}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":2,"maximumSessions":{"$num":"-0"}},[{"op":"a.b.c","at":0,"arg":true}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":3,"maximumSessions":0.5},[{"op":"  padded  ","at":1},{"op":"key_name-1a😀b😀c","at":{"$num":"NaN"},"arg":[]}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"a":"b"},[{"op":"İstanbul","at":-1,"arg":0}]],"ok":[0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"-0"},"maximumSessions":0},[{"op":"a😀b😀c","at":2,"arg":{"a":{"b":"c"}}},{"op":"src/a/b.ts  padded  ","at":9007199254740992,"arg":null}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":3},"x"],"error":"steps.map is not a function"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":0,"maximumSessions":{"$num":"-Infinity"}},[{"op":"é","at":2147483648,"arg":{}},{"op":"😀","at":{"$num":"Infinity"},"arg":{}},{"op":"﻿bom","at":3,"arg":"x"}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":-1},[{"op":":","at":9007199254740992,"arg":{}}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":0},[{"op":"straße./x/**/*.json","at":{"$num":"Infinity"},"arg":true},{"op":"key_name-1  padded  ","at":{"$num":"-0"}}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1000,"maximumSessions":0},[{"op":"key_name-1","at":0,"arg":["a",1]}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1000000},[{"op":"a..b","at":-2.5,"arg":{"a":"b"}}]],"ok":[0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":100,"maximumSessions":9007199254740992},{"a":{"b":"c"}}],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":-2.5,"maximumSessions":42},[{"op":"emoji 👍🏽 mix","at":9007199254740992,"arg":0}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":1000000,"maximumSessions":0.5},[{"op":"trailing.hello","at":-2.5,"arg":null},{"op":"a😀b😀c","at":10,"arg":"x"},{"op":"straßeemoji 👍🏽 mix","at":100}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{},[{"op":"ΣΊΣΥΦΟΣ","at":{"$num":"NaN"},"arg":{"a":{"b":"c"}}},{"op":"Hello World","at":1000000},{"op":"HELLO","at":1,"arg":[]}]],"ok":[0,0,0]}
+{"fn":"runAbortSourceRegistry","args":[{},[{"op":"a","at":10}]],"ok":[0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":42,"maximumSessions":0},[]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"NaN"},"maximumSessions":1000},[]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":3,"maximumSessions":{"$num":"-0"}},[{"op":"ab","at":{"$num":"Infinity"},"arg":["a",1]},{"op":"a..b","at":0,"arg":{}}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":10,"maximumSessions":-2.5},[{"op":"日本語のテキスト","at":{"$num":"-Infinity"},"arg":[]},{"op":"{name} has {count} itemsemoji 👍🏽 mix","at":{"$num":"Infinity"},"arg":["a",1]}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[0,[]],"ok":[]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"-0"}},{"a":"b"}],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":2147483648,"maximumSessions":0.5},[]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":0,"maximumSessions":100},[{"op":"a:b:c","at":1000,"arg":{}},{"op":"straße","at":1000,"arg":{"a":"b"}},{"op":"a😀b😀c","at":1000000}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":0.5,"maximumSessions":42},[{"op":"a:b:c","at":1000,"arg":"x"},{"op":"./x/**/*.json","at":1000000,"arg":null},{"op":"a:b:c","at":{"$num":"-Infinity"},"arg":[]}]],"ok":[0,0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":-1,"maximumSessions":3},[]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":42},[{"op":"./x/**/*.json","at":{"$num":"-0"},"arg":{}},{"op":"line1\nline2","at":3}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"NaN"},"maximumSessions":1000},[{"op":"trailing.","at":9007199254740992,"arg":true},{"op":"ΣΊΣΥΦΟΣ","at":-2.5,"arg":["a",1]}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{},[{"op":"日本語のテキスト","at":1,"arg":true},{"op":"tab\tseparated","at":1}]],"ok":[0,0]}
+{"fn":"runAbortSourceRegistry","args":[{},[{"op":"ab","at":42,"arg":{"a":{"b":"c"}}}]],"ok":[0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"Infinity"},"maximumSessions":0.5},[]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":{"$num":"NaN"}},[{"op":":日本語のテキスト","at":-1,"arg":{"a":"b"}}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"normalizeAbortSourceOf","args":["stop_button"],"ok":"stop_button"}
+{"fn":"normalizeAbortSourceOf","args":["status_row"],"ok":"status_row"}
+{"fn":"normalizeAbortSourceOf","args":["x"],"ok":"unknown"}
+{"fn":"normalizeAbortSourceOf","args":[""],"ok":"unknown"}
+{"fn":"normalizeAbortSourceOf","args":[null],"ok":"unknown"}
+{"fn":"normalizeAbortSourceOf","args":[{"$undefined":true}],"ok":"unknown"}
+{"fn":"normalizeAbortSourceOf","args":[5],"ok":"unknown"}
+{"fn":"normalizeAbortSourceOf","args":[" stop_button"],"ok":"unknown"}
+{"fn":"runAbortSourceRegistry","args":[{},[{"op":"record","at":1,"arg":{"sessionId":" a ","source":"revert"}},{"op":"read","at":2,"arg":"a"},{"op":"read","at":60001,"arg":"a"},{"op":"read","at":60002,"arg":"a"},{"op":"size","at":3,"arg":{"$undefined":true}}]],"ok":[{"sessionId":"a","source":"revert","recordedAt":1},"revert","revert",null,0]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":10},[{"op":"record","at":1,"arg":{"sessionId":"a","source":"redo"}},{"op":"record","at":2,"arg":{"sessionId":"a","source":"bogus"}},{"op":"read","at":3,"arg":"a"},{"op":"record","at":4,"arg":{"sessionId":"b","source":"redo"}},{"op":"withdraw","at":5,"arg":{"sessionId":"b","recordedAt":4,"source":"redo"}},{"op":"read","at":6,"arg":"b"}]],"ok":[{"sessionId":"a","source":"redo","recordedAt":1},null,null,{"sessionId":"b","source":"redo","recordedAt":4},true,null]}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":2},[{"op":"record","at":1,"arg":{"sessionId":"a","source":"redo"}},{"op":"record","at":2,"arg":{"sessionId":"b","source":"redo"}},{"op":"record","at":3,"arg":{"sessionId":"c","source":"redo"}},{"op":"read","at":4,"arg":"a"},{"op":"read","at":4,"arg":"b"},{"op":"record","at":5,"arg":{"sessionId":"b","source":"revert"}},{"op":"record","at":6,"arg":{"sessionId":"d","source":"revert"}},{"op":"read","at":7,"arg":"c"},{"op":"size","at":8,"arg":{"$undefined":true}}]],"ok":[{"sessionId":"a","source":"redo","recordedAt":1},{"sessionId":"b","source":"redo","recordedAt":2},{"sessionId":"c","source":"redo","recordedAt":3},null,"redo",{"sessionId":"b","source":"revert","recordedAt":5},{"sessionId":"d","source":"revert","recordedAt":6},null,2]}
+{"fn":"runAbortSourceRegistry","args":[{},[{"op":"record","at":1,"arg":{"sessionId":"a","source":"redo"}},{"op":"withdraw","at":2,"arg":{"sessionId":"a","recordedAt":2,"source":"redo"}},{"op":"withdraw","at":2,"arg":{"sessionId":"a","recordedAt":1,"source":"revert"}},{"op":"withdraw","at":2,"arg":null},{"op":"withdraw","at":2,"arg":{"sessionId":"zz"}},{"op":"clear","at":3,"arg":"a"},{"op":"clear","at":3,"arg":"a"},{"op":"read","at":4,"arg":null}]],"ok":[{"sessionId":"a","source":"redo","recordedAt":1},false,false,false,false,true,false,null]}
+{"fn":"runAbortSourceRegistry","args":[{},[{"op":"record","at":1,"arg":{"$undefined":true}},{"op":"record","at":1,"arg":{"sessionId":"","source":"redo"}},{"op":"record","at":1,"arg":{"sessionId":5,"source":"redo"}},{"op":"record","at":1,"arg":null}]],"error":"Cannot destructure property 'sessionId' of '(intermediate value)(intermediate value)(intermediate value)' as it is null."}
+{"fn":"runAbortSourceRegistry","args":[{},[{"op":"record","at":{"$num":"NaN"},"arg":{"sessionId":"a","source":"redo"}},{"op":"read","at":5,"arg":"a"},{"op":"record","at":{"$undefined":true},"arg":{"sessionId":"b","source":"redo"}},{"op":"read","at":5,"arg":"b"}]],"ok":[{"sessionId":"a","source":"redo","recordedAt":{"$num":"NaN"}},"redo",{"sessionId":"b","source":"redo","recordedAt":{"$undefined":true}},"redo"]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":0},[{"op":"size","at":0,"arg":{"$undefined":true}}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":-1},[{"op":"size","at":0,"arg":{"$undefined":true}}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":{"$num":"Infinity"}},[{"op":"size","at":0,"arg":{"$undefined":true}}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":"5"},[{"op":"size","at":0,"arg":{"$undefined":true}}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":null},[{"op":"size","at":0,"arg":{"$undefined":true}}]],"error":"ttlMs must be a positive number"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":0},[{"op":"size","at":0,"arg":{"$undefined":true}}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":1.5},[{"op":"size","at":0,"arg":{"$undefined":true}}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":9007199254740992},[{"op":"size","at":0,"arg":{"$undefined":true}}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[{"maximumSessions":null},[{"op":"size","at":0,"arg":{"$undefined":true}}]],"error":"maximumSessions must be a positive safe integer"}
+{"fn":"runAbortSourceRegistry","args":[null,[{"op":"size","at":0,"arg":{"$undefined":true}}]],"ok":[0]}
+{"fn":"runAbortSourceRegistry","args":[{"$undefined":true},[{"op":"size","at":0,"arg":{"$undefined":true}}]],"ok":[0]}
+{"fn":"runAbortSourceRegistry","args":[{},[null]],"error":"Cannot read properties of null (reading 'at')"}
+{"fn":"runAbortSourceRegistry","args":[{},[{"op":"read"}]],"ok":[null]}
+{"fn":"runAbortSourceRegistry","args":[{},[]],"ok":[]}
+{"fn":"runAbortSourceRegistry","args":[{"ttlMs":5},[{"op":"record","at":10,"arg":{"sessionId":"a","source":"redo"}},{"op":"read","at":15,"arg":"a"},{"op":"read","at":16,"arg":"a"}]],"ok":[{"sessionId":"a","source":"redo","recordedAt":10},"redo",null]}

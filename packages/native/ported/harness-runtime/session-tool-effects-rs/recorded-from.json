@@ -1,0 +1,19 @@
+{
+  "unit": "session-tool-effects.js",
+  "files": 1,
+  "fingerprint": "8e3125c0d2e6703d",
+  "cases": 35,
+  "cases_hash": "0ccfae3ee099c480",
+  "coverage": {
+    "lines": 27,
+    "reached": 27,
+    "files": [
+      {
+        "file": "session-tool-effects.js",
+        "lines": 27,
+        "reached": 27,
+        "missed": ""
+      }
+    ]
+  }
+}

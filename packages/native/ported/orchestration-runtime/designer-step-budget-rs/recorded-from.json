@@ -1,0 +1,19 @@
+{
+  "unit": "designer-step-budget.js",
+  "files": 1,
+  "fingerprint": "5e9c2ce251be0762",
+  "cases": 153,
+  "cases_hash": "eae06420275f2447",
+  "coverage": {
+    "lines": 30,
+    "reached": 30,
+    "files": [
+      {
+        "file": "designer-step-budget.js",
+        "lines": 30,
+        "reached": 30,
+        "missed": ""
+      }
+    ]
+  }
+}

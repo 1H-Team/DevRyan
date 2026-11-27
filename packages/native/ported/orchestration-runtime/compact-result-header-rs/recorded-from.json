@@ -1,0 +1,97 @@
+{
+  "unit": "compact-result-header.js",
+  "files": 1,
+  "fingerprint": "040db100372102de",
+  "cases": 45,
+  "cases_hash": "a29ea9c6fd638073",
+  "coverage": {
+    "lines": 1523,
+    "reached": 507,
+    "files": [
+      {
+        "file": "approved-plan.js",
+        "lines": 40,
+        "reached": 10,
+        "missed": "5-12, 18-34, 38-42"
+      },
+      {
+        "file": "auto-resume-policy.js",
+        "lines": 264,
+        "reached": 72,
+        "missed": "29, 33, 41-44, 48-53, 57-58, 68-99, 109-125, 129-135, 145-175, 177-182, 184-197, 199-221, 223-233, 235-242, 244-251, 253-258, 268-282"
+      },
+      {
+        "file": "check-correction.js",
+        "lines": 74,
+        "reached": 16,
+        "missed": "8-9, 14-17, 20-22, 25-41, 44-51, 56-68, 71-81"
+      },
+      {
+        "file": "codec-primitives.js",
+        "lines": 120,
+        "reached": 97,
+        "missed": "90-99, 107-110, 119-126, 131"
+      },
+      {
+        "file": "compact-result-header.js",
+        "lines": 51,
+        "reached": 31,
+        "missed": "33-52"
+      },
+      {
+        "file": "contract.js",
+        "lines": 424,
+        "reached": 107,
+        "missed": "70-74, 78-80, 82-102, 106-116, 120-128, 132-133, 137-140, 146-170, 174-189, 195-279, 283-308, 316-325, 329-333, 342-344, 350-362, 366-413, 417-436, 440-450"
+      },
+      {
+        "file": "designer-step-budget.js",
+        "lines": 30,
+        "reached": 7,
+        "missed": "6-26, 30-31"
+      },
+      {
+        "file": "native-job-segments.js",
+        "lines": 35,
+        "reached": 14,
+        "missed": "7-8, 12-25, 29-33"
+      },
+      {
+        "file": "provider-capabilities.js",
+        "lines": 26,
+        "reached": 20,
+        "missed": "2, 5, 18-19, 27-28"
+      },
+      {
+        "file": "provider-retry-policy.js",
+        "lines": 196,
+        "reached": 73,
+        "missed": "4-6, 10, 23-24, 28-46, 61, 73-89, 111-145, 149-176, 180-184, 188, 192, 196, 200-201, 205-211"
+      },
+      {
+        "file": "required-checks.js",
+        "lines": 170,
+        "reached": 24,
+        "missed": "9-32, 36-63, 67-72, 77-78, 82-106, 110-113, 118-119, 123-177"
+      },
+      {
+        "file": "task-prerequisites.js",
+        "lines": 18,
+        "reached": 2,
+        "missed": "4-19"
+      },
+      {
+        "file": "transport-recovery.js",
+        "lines": 56,
+        "reached": 22,
+        "missed": "13-36, 47-51, 56-60"
+      },
+      {
+        "file": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/shared-runtime/lib/upstream-stall.js",
+        "lines": 19,
+        "reached": 12,
+        "missed": "14-20"
+      }
+    ]
+  }
+}

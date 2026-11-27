@@ -1,0 +1,25 @@
+{
+  "unit": "operator-abort-registry-scenario.js",
+  "files": 1,
+  "fingerprint": "a836d1bec836ae6b",
+  "cases": 213,
+  "cases_hash": "c18b0584ef1c3b02",
+  "coverage": {
+    "lines": 88,
+    "reached": 88,
+    "files": [
+      {
+        "file": "operator-abort-registry-scenario.js",
+        "lines": 16,
+        "reached": 16,
+        "missed": ""
+      },
+      {
+        "file": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/orchestration-runtime/operator-abort-registry.js",
+        "lines": 72,
+        "reached": 72,
+        "missed": ""
+      }
+    ]
+  }
+}

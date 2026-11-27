@@ -1,0 +1,45 @@
+{"fn":"readManagedResultReport","args":[true],"error":"preview.trimEnd is not a function"}
+{"fn":"readManagedResultReport","args":[null],"error":"Cannot read properties of null (reading 'trimEnd')"}
+{"fn":"readManagedResultReport","args":[[]],"error":"preview.trimEnd is not a function"}
+{"fn":"readManagedResultReport","args":[{}],"error":"preview.trimEnd is not a function"}
+{"fn":"readManagedResultReport","args":["x"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"missing","routing":null}}
+{"fn":"readManagedResultReport","args":[{"a":{"b":"c"}}],"error":"preview.trimEnd is not a function"}
+{"fn":"readManagedResultReport","args":[["a",1]],"error":"preview.trimEnd is not a function"}
+{"fn":"readManagedResultReport","args":[{"a":"b"}],"error":"preview.trimEnd is not a function"}
+{"fn":"readManagedResultReport","args":[0],"error":"preview.trimEnd is not a function"}
+{"fn":"readManagedResultReport","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"error":"preview.trimEnd is not a function"}
+{"fn":"readManagedResultReport","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"error":"preview.trimEnd is not a function"}
+{"fn":"readManagedResultReport","args":[[3,1,2]],"error":"preview.trimEnd is not a function"}
+{"fn":"readManagedResultReport","args":["Done.\n**Status:** complete"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"complete","routing":null}}
+{"fn":"readManagedResultReport","args":["Done.\n**Status:** complete\n\n  "],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"complete","routing":null}}
+{"fn":"readManagedResultReport","args":["**Status:** blocked"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"blocked","routing":null}}
+{"fn":"readManagedResultReport","args":["x\n**Status:** complete\nmore"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"ambiguous","routing":null}}
+{"fn":"readManagedResultReport","args":["**Status:** complete\n**Status:** complete"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"ambiguous","routing":null}}
+{"fn":"readManagedResultReport","args":["**Status:** done"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"ambiguous","routing":null}}
+{"fn":"readManagedResultReport","args":["**Status:**complete"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"ambiguous","routing":null}}
+{"fn":"readManagedResultReport","args":["no marker"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"missing","routing":null}}
+{"fn":"readManagedResultReport","args":["```\n**Status:** complete\n```\n**Status:** complete"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"complete","routing":null}}
+{"fn":"readManagedResultReport","args":["```\n**Status:** complete"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"missing","routing":null}}
+{"fn":"readManagedResultReport","args":["~~~~\nx\n~~~\n**Status:** complete"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"missing","routing":null}}
+{"fn":"readManagedResultReport","args":["~~~~\nx\n~~~~ \n**Status:** complete"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"complete","routing":null}}
+{"fn":"readManagedResultReport","args":["```js\nx\n``` trailing\n**Status:** complete"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"missing","routing":null}}
+{"fn":"readManagedResultReport","args":["    ```\n**Status:** complete"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"complete","routing":null}}
+{"fn":"readManagedResultReport","args":["   ```\nx\n```\n**Status:** complete"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"complete","routing":null}}
+{"fn":"readManagedResultReport","args":["a\r\n**Routing:** better suited to fixer - r\r\n**Status:** complete"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"complete","routing":"better suited to fixer - r"}}
+{"fn":"readManagedResultReport","args":["**Routing:** x\n**Status:** blocked"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"blocked","routing":"x"}}
+{"fn":"readManagedResultReport","args":["**Routing:** xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n**Status:** complete"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"complete","routing":null}}
+{"fn":"readManagedResultReport","args":["**Routing:** xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n**Status:** complete"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"complete","routing":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}
+{"fn":"readManagedResultReport","args":["**Routing:** a\nb\n**Status:** complete"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"complete","routing":null}}
+{"fn":"readManagedResultReport","args":["**Status:** complete\r"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"complete","routing":null}}
+{"fn":"readManagedResultReport","args":[""],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"missing","routing":null}}
+{"fn":"readManagedResultReport","args":["\n\n"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"missing","routing":null}}
+{"fn":"readManagedResultReport","args":["``\n**Status:** complete"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"complete","routing":null}}
+{"fn":"readManagedResultReport","args":["```\n~~~\n```\n**Status:** complete"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"complete","routing":null}}
+{"fn":"readManagedResultReport","args":["**Status:** complete  "],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"complete","routing":null}}
+{"fn":"readManagedResultReport","args":[{"$utf16":[42,42,82,111,117,116,105,110,103,58,42,42,32,55296,10,42,42,83,116,97,116,117,115,58,42,42,32,99,111,109,112,108,101,116,101]}],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"complete","routing":{"$utf16":[55296]}}}
+{"fn":"readManagedResultReport","args":["**Status:** COMPLETE"],"ok":{"source":"retained-child-preview","authoritative":false,"terminalMarker":"ambiguous","routing":null}}
+{"fn":"readManagedResultReport","args":[null],"error":"Cannot read properties of null (reading 'trimEnd')"}
+{"fn":"readManagedResultReport","args":[{"$undefined":true}],"error":"Cannot read properties of undefined (reading 'trimEnd')"}
+{"fn":"readManagedResultReport","args":[5],"error":"preview.trimEnd is not a function"}
+{"fn":"readManagedResultReport","args":[{}],"error":"preview.trimEnd is not a function"}
+{"fn":"readManagedResultReport","args":[["x"]],"error":"preview.trimEnd is not a function"}

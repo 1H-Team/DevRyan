@@ -1,0 +1,37 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/orchestration-runtime",
+  "unit": "compact-result-header.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "compact-result-header-rs",
+  "exports": [
+    {
+      "name": "readManagedResultReport",
+      "file": "compact-result-header.js",
+      "line": 8,
+      "params": [
+        {
+          "name": "preview",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "createCompactResultHeader",
+      "file": "compact-result-header.js",
+      "line": 32,
+      "reason": "rests on contract.js, required-checks.js, auto-resume-policy.js and provider-retry-policy.js, which packages/native/crates/scheduler-policy already ports"
+    }
+  ]
+}

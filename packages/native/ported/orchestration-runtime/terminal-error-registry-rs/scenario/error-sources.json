@@ -1,0 +1,38 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [],
+  "product": [
+    {
+      "site": "packages/orchestration-runtime/terminal-error-registry.js:35",
+      "class": "RangeError",
+      "sample": "maximumSessions must be a positive safe integer"
+    }
+  ],
+  "engine": [
+    {
+      "site": "packages/native/ported/orchestration-runtime/terminal-error-registry-rs/scenario-js/terminal-error-registry-scenario.js:13",
+      "class": "TypeError",
+      "sample": "steps.map is not a function"
+    },
+    {
+      "site": "packages/native/ported/orchestration-runtime/terminal-error-registry-rs/scenario-js/terminal-error-registry-scenario.js:14",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'at')"
+    },
+    {
+      "site": "packages/native/ported/orchestration-runtime/terminal-error-registry-rs/scenario-js/terminal-error-registry-scenario.js:15",
+      "class": "TypeError",
+      "sample": "Spread syntax requires ...iterable[Symbol.iterator] to be a function"
+    },
+    {
+      "site": "packages/orchestration-runtime/terminal-error-registry.js:48",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'observedAt')"
+    },
+    {
+      "site": "packages/orchestration-runtime/terminal-error-registry.js:70",
+      "class": "TypeError",
+      "sample": "Cannot destructure property 'sessionId' of '(intermediate value)(intermediate value)(intermediate value)' as it is null."
+    }
+  ]
+}

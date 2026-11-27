@@ -1,0 +1,41 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [
+    {
+      "site": "packages/orchestration-runtime/tool-output-limits.js:16",
+      "text": "|| Object.keys(value).some(key => !['max_bytes', 'max_lines'].includes(key))) throw fail('native_tool_output_limits_invalid');"
+    },
+    {
+      "site": "packages/orchestration-runtime/tool-output-limits.js:18",
+      "text": "if (Object.values(limits).some(limit => !Number.isSafeInteger(limit) || limit <= 0)) throw fail('native_tool_output_limits_invalid');"
+    },
+    {
+      "site": "packages/orchestration-runtime/tool-output-limits.js:24",
+      "text": "if (bytes < 1024) throw fail('managed_tool_output_capacity_unavailable');"
+    },
+    {
+      "site": "packages/orchestration-runtime/tool-output-limits.js:55",
+      "text": "if (!Number.isSafeInteger(maxBytes) || maxBytes < 1024 || maxBytes > MANAGED_TOOL_OUTPUT_MAX_BYTES) throw fail('managed_tool_output_capacity_invalid');"
+    },
+    {
+      "site": "packages/orchestration-runtime/tool-output-limits.js:56",
+      "text": "if (bytes(value) > maxBytes) throw fail('managed_tool_output_metadata_too_large');"
+    },
+    {
+      "site": "packages/orchestration-runtime/tool-output-limits.js:63",
+      "text": "if (!Number.isSafeInteger(maxPageBytes) || maxPageBytes < 4 || maxPageBytes > MANAGED_RESULT_V2_PAGE_MAX_BYTES) throw fail('managed_tool_output_capacity_invalid');"
+    },
+    {
+      "site": "packages/orchestration-runtime/tool-output-limits.js:72",
+      "text": "if (!fitted) throw fail('managed_tool_output_metadata_too_large');"
+    }
+  ],
+  "product": [
+    {
+      "site": "packages/orchestration-runtime/tool-output-limits.js:11",
+      "class": "Error",
+      "sample": "managed_tool_output_capacity_invalid"
+    }
+  ],
+  "engine": []
+}

@@ -1,0 +1,25 @@
+{
+  "unit": "terminal-error-registry-scenario.js",
+  "files": 1,
+  "fingerprint": "0720535c72b9abfb",
+  "cases": 240,
+  "cases_hash": "db35012ab266656b",
+  "coverage": {
+    "lines": 97,
+    "reached": 97,
+    "files": [
+      {
+        "file": "terminal-error-registry-scenario.js",
+        "lines": 16,
+        "reached": 16,
+        "missed": ""
+      },
+      {
+        "file": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/orchestration-runtime/terminal-error-registry.js",
+        "lines": 81,
+        "reached": 81,
+        "missed": ""
+      }
+    ]
+  }
+}

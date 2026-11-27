@@ -1,0 +1,19 @@
+{
+  "unit": "agent-contracts.js",
+  "files": 1,
+  "fingerprint": "b05c4b6b346b709f",
+  "cases": 116,
+  "cases_hash": "667394d89f8e3458",
+  "coverage": {
+    "lines": 62,
+    "reached": 62,
+    "files": [
+      {
+        "file": "agent-contracts.js",
+        "lines": 62,
+        "reached": 62,
+        "missed": ""
+      }
+    ]
+  }
+}

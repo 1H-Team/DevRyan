@@ -1,0 +1,32 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [],
+  "product": [],
+  "engine": [
+    {
+      "site": "packages/harness-runtime/lib/objective-identity.js:13",
+      "class": "TypeError",
+      "sample": "part.text?.startsWith is not a function"
+    },
+    {
+      "site": "packages/harness-runtime/lib/objective-identity.js:22",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'sessionID')"
+    },
+    {
+      "site": "packages/harness-runtime/lib/objective-identity.js:23",
+      "class": "TypeError",
+      "sample": "Cannot read properties of undefined (reading 'directory')"
+    },
+    {
+      "site": "packages/harness-runtime/lib/objective-identity.js:25",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'info')"
+    },
+    {
+      "site": "packages/harness-runtime/lib/objective-identity.js:8",
+      "class": "TypeError",
+      "sample": "Cannot read properties of undefined (reading 'activeUserID')"
+    }
+  ]
+}

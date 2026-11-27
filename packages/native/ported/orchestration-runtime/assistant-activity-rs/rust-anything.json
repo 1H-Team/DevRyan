@@ -1,0 +1,37 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/orchestration-runtime",
+  "unit": "assistant-activity.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "assistant-activity-rs",
+  "exports": [
+    {
+      "name": "isManagedAssistantActivityPart",
+      "file": "assistant-activity.js",
+      "line": 2,
+      "params": [
+        {
+          "name": "part",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "createManagedAssistantActivityRegistry",
+      "file": "assistant-activity.js",
+      "line": 10,
+      "reason": "returns closures and calls subscriber callbacks"
+    }
+  ]
+}
