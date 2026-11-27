@@ -1064,7 +1064,7 @@ fn drop_caches(store: &mut Value, ids: &[Value]) -> R<()> {
 }
 
 /// `updateSessionUserActivityFromMessages(draft, sessionID)` (its result unused).
-fn update_activity(draft: &mut Value, sid: &Value) -> R<()> {
+fn update_activity(draft: &mut Value, sid: &Value) -> R<bool> {
     let session = find_in_draft(draft, sid)?;
     let messages = get_by(&get(draft, "message")?, sid)?;
     let latest = get_last_visible_user_message_at(Some(session), messages, Some(draft.clone()))?;
@@ -1085,10 +1085,11 @@ fn update_activity(draft: &mut Value, sid: &Value) -> R<()> {
             Some(next)
         }
     };
+    let changed = next.is_some();
     if let (Some(next), Value::Object(map)) = (next, draft) {
         insert(map, "session_user_activity".into(), Value::Object(next));
     }
-    Ok(())
+    Ok(changed)
 }
 
 /// `stripUntrustedSessionDiffSummary(target)` (`None`: `target` itself back).
@@ -1718,6 +1719,770 @@ fn part_updated(draft: &mut Value, props: &Value) -> R<Value> {
     Ok(done(draft))
 }
 
+// ---- display-session, session-recency, sanitize (after their crates) ----
+
+/// `decodeSessionEventInfo`, the session-recency lifecycle merges and `stripSessionDiffSnapshots`,
+/// as `display-session-rs`, `session-recency-rs` and `sanitize-rs` port them.
+mod recency {
+    use serde_json::{Map, Value};
+
+    use crate::js;
+
+    fn nullish(value: &Value) -> bool {
+        value.is_null() || js::is_undefined(value)
+    }
+
+    /// A bridge marker standing for a primitive (`undefined`, a special number, a string).
+    fn primitive_marker(value: &Value) -> bool {
+        js::is_undefined(value) || js::as_number(value).is_some() || js::string_units(value).is_some()
+    }
+
+    /// `isRecord`.
+    fn is_record(value: Option<&Value>) -> bool {
+        value.is_some_and(|v| v.is_object() && !primitive_marker(v))
+    }
+
+    /// `value[key]`, failing as V8 does on `null` and `undefined`.
+    fn get<'a>(value: &'a Value, key: &str) -> Result<Option<&'a Value>, String> {
+        if nullish(value) {
+            let kind = if value.is_null() { "null" } else { "undefined" };
+            return Err(format!("Cannot read properties of {kind} (reading '{key}')"));
+        }
+        Ok(value.get(key).filter(|v| !js::is_undefined(v)))
+    }
+
+    fn opt<'a>(value: Option<&'a Value>, key: &str) -> Option<&'a Value> {
+        value.filter(|v| !nullish(v)).and_then(|v| v.get(key)).filter(|v| !js::is_undefined(v))
+    }
+
+    fn timestamp(value: Option<&Value>) -> bool {
+        value
+            .filter(|v| v.is_number() || v.get("$num").is_some())
+            .and_then(js::as_number)
+            .is_some_and(|n| n.is_finite() && n >= 0.0)
+    }
+
+    fn outcome(value: Option<&Value>) -> bool {
+        matches!(value.and_then(Value::as_str), Some("succeeded" | "failed" | "interrupted"))
+    }
+
+    fn non_empty_string(value: Option<&Value>) -> bool {
+        value.and_then(js::string_units).is_some_and(|u| !u.is_empty())
+    }
+
+    fn fork(value: Option<&Value>) -> bool {
+        let boundary = opt(value, "boundary");
+        is_record(value)
+            && non_empty_string(opt(value, "sessionID"))
+            && is_record(boundary)
+            && matches!(opt(boundary, "type").and_then(Value::as_str), Some("before" | "through"))
+            && non_empty_string(opt(boundary, "messageID"))
+    }
+
+    /// `a === b` (objects never the same here; lone-surrogate string markers compare by value).
+    fn same(a: Option<&Value>, b: Option<&Value>) -> bool {
+        match (a, b) {
+            (None, None) => true,
+            (Some(x), Some(y)) => match (js::as_number(x), js::as_number(y)) {
+                (Some(m), Some(n)) => m == n,
+                (None, None) => x == y && (!matches!(x, Value::Object(_) | Value::Array(_)) || js::string_units(x).is_some()),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
+    fn read(session: &Value) -> Result<Map<String, Value>, String> {
+        let time = get(session, "time")?;
+        let mut lifecycle = Map::new();
+        for key in ["busy", "idle", "viewed"] {
+            if let Some(value) = opt(time, key).filter(|v| timestamp(Some(v))) {
+                lifecycle.insert(key.to_string(), value.clone());
+            }
+        }
+        for (key, valid) in [("outcome", outcome as fn(Option<&Value>) -> bool), ("fork", fork)] {
+            if let Some(value) = session.get(key).filter(|v| valid(Some(v))) {
+                lifecycle.insert(key.to_string(), value.clone());
+            }
+        }
+        Ok(lifecycle)
+    }
+
+    fn has_invalid(session: &Value) -> Result<bool, String> {
+        let defined = |key: &str| session.get(key).filter(|v| !js::is_undefined(v));
+        if defined("outcome").is_some_and(|v| !outcome(Some(v))) {
+            return Ok(true);
+        }
+        get(session, "outcome")?;
+        if defined("fork").is_some_and(|v| !fork(Some(v))) {
+            return Ok(true);
+        }
+        let time = defined("time");
+        if !is_record(time) {
+            return Ok(false);
+        }
+        Ok(["busy", "idle", "viewed"].iter().any(|key| opt(time, key).is_some_and(|v| !timestamp(Some(v)))))
+    }
+
+    fn same_fork(left: Option<&Value>, right: Option<&Value>) -> Result<bool, String> {
+        if same(left, right) || (left.is_some_and(Value::is_null) && right.is_some_and(Value::is_null)) {
+            return Ok(true);
+        }
+        let (Some(l), Some(r)) = (left, right) else { return Ok(false) };
+        if !same(get(l, "sessionID")?, get(r, "sessionID")?) {
+            return Ok(false);
+        }
+        let (lb, rb) = (
+            get(l, "boundary")?.cloned().unwrap_or_else(js::undefined),
+            get(r, "boundary")?.cloned().unwrap_or_else(js::undefined),
+        );
+        if !same(get(&lb, "type")?, get(&rb, "type")?) {
+            return Ok(false);
+        }
+        Ok(same(get(&lb, "messageID")?, get(&rb, "messageID")?))
+    }
+
+    fn same_lifecycle(left: &Value, right: &Value) -> Result<bool, String> {
+        for key in ["busy", "idle", "viewed", "outcome"] {
+            if !same(get(left, key)?, get(right, key)?) {
+                return Ok(false);
+            }
+        }
+        same_fork(get(left, "fork")?, get(right, "fork")?)
+    }
+
+    /// `{ ...value }`.
+    fn spread(value: Option<&Value>) -> Map<String, Value> {
+        match value {
+            Some(Value::Array(items)) => items.iter().enumerate().map(|(i, v)| (i.to_string(), v.clone())).collect(),
+            Some(Value::String(text)) => text.encode_utf16().enumerate().map(|(i, u)| (i.to_string(), js::utf16_string(&[u]))).collect(),
+            Some(Value::Object(map)) if !primitive_marker(value.unwrap_or(&Value::Null)) => map.clone(),
+            _ => Map::new(),
+        }
+    }
+
+    fn apply(target: &mut Map<String, Value>, key: &str, value: Option<&Value>) {
+        match value {
+            None => {
+                target.shift_remove(key);
+            }
+            Some(value) => {
+                target.insert(key.to_string(), value.clone());
+            }
+        }
+    }
+
+    pub(super) fn with_lifecycle(session: Value, lifecycle: &Value) -> Result<Value, String> {
+        if !has_invalid(&session)? && same_lifecycle(&Value::Object(read(&session)?), lifecycle)? {
+            return Ok(session);
+        }
+        let mut time = spread(session.get("time"));
+        for key in ["busy", "idle", "viewed"] {
+            apply(&mut time, key, get(lifecycle, key)?);
+        }
+        let mut next = spread(Some(&session));
+        next.insert("time".to_string(), Value::Object(time));
+        for key in ["outcome", "fork"] {
+            apply(&mut next, key, get(lifecycle, key)?);
+        }
+        Ok(Value::Object(next))
+    }
+
+    // ---- session-recency ----
+
+    fn finite(value: Option<&Value>) -> Option<f64> {
+        value
+            .filter(|v| v.is_number() || v.get("$num").is_some())
+            .and_then(js::as_number)
+            .filter(|n| n.is_finite())
+    }
+
+    fn recency(session: &Value) -> Result<Option<f64>, String> {
+        let time = get(session, "time")?;
+        Ok(finite(opt(time, "updated")).or_else(|| finite(opt(time, "created"))))
+    }
+
+    pub(super) fn compare(incoming: &Value, current: &Value) -> Result<i32, String> {
+        let (a, b) = (recency(incoming)?, recency(current)?);
+        Ok(match (a, b) {
+            (Some(a), Some(b)) if a != b => {
+                if a < b {
+                    -1
+                } else {
+                    1
+                }
+            }
+            _ => 0,
+        })
+    }
+
+    /// `Math.max` of two defined numbers (`+0` over `-0`).
+    fn max(a: &Value, b: &Value) -> Value {
+        let (x, y) = (js::as_number(a).unwrap_or(f64::NAN), js::as_number(b).unwrap_or(f64::NAN));
+        if x > y || (x == y && x.is_sign_positive()) { a.clone() } else { b.clone() }
+    }
+
+    fn max_defined(left: Option<&Value>, right: Option<&Value>) -> Option<Value> {
+        match (left, right) {
+            (None, r) => r.cloned(),
+            (l, None) => l.cloned(),
+            (Some(l), Some(r)) => Some(max(l, r)),
+        }
+    }
+
+    pub(super) fn resolve(current: &Value, incoming: &Value) -> Result<Value, String> {
+        let (left, right) = (read(current)?, read(incoming)?);
+        let mut lifecycle = Map::new();
+        if let Some(busy) = max_defined(left.get("busy"), right.get("busy")) {
+            lifecycle.insert("busy".into(), busy);
+        }
+        let number = |side: &Map<String, Value>| side.get("idle").and_then(js::as_number);
+        let incoming_wins = number(&right).is_some_and(|r| number(&left).is_none_or(|l| r > l));
+        let pair = if incoming_wins { &right } else { &left };
+        if let Some(idle) = pair.get("idle") {
+            lifecycle.insert("idle".into(), idle.clone());
+        }
+        let outcome = if left.get("idle").is_none() && right.get("idle").is_none() {
+            left.get("outcome").or(right.get("outcome"))
+        } else {
+            pair.get("outcome")
+        };
+        if let Some(outcome) = outcome {
+            lifecycle.insert("outcome".into(), outcome.clone());
+        }
+        if let Some(viewed) = max_defined(left.get("viewed"), right.get("viewed")) {
+            lifecycle.insert("viewed".into(), viewed);
+        }
+        if let Some(fork) = left.get("fork").or(right.get("fork")) {
+            lifecycle.insert("fork".into(), fork.clone());
+        }
+        Ok(Value::Object(lifecycle))
+    }
+
+    fn truthy(value: &Value) -> bool {
+        match value {
+            Value::Null => false,
+            Value::Bool(flag) => *flag,
+            Value::String(text) => !text.is_empty(),
+            _ => !js::is_undefined(value) && js::as_number(value).is_none_or(|n| n != 0.0 && !n.is_nan()),
+        }
+    }
+
+    pub(super) fn merge(current: &Value, incoming: Value) -> Result<Value, String> {
+        if !truthy(current) {
+            return Ok(incoming);
+        }
+        let lifecycle = resolve(current, &incoming)?;
+        with_lifecycle(incoming, &lifecycle)
+    }
+
+    /// `Object.is` for primitives, then the structural walk.
+    pub(super) fn equal(left: &Value, right: &Value) -> bool {
+        if let (Some(x), Some(y)) = (js::as_number(left), js::as_number(right)) {
+            return (x.is_nan() && y.is_nan()) || (x == y && x.is_sign_positive() == y.is_sign_positive());
+        }
+        if js::is_undefined(left) || js::is_undefined(right) {
+            return js::is_undefined(left) && js::is_undefined(right);
+        }
+        if let (Some(x), Some(y)) = (js::string_units(left), js::string_units(right)) {
+            return x == y;
+        }
+        if primitive_marker(left) || primitive_marker(right) {
+            return false;
+        }
+        let keys = |v: &Value| match v {
+            Value::Object(map) if map.len() == 1 && map.get("$set").is_some_and(Value::is_array) => Some(Map::new()),
+            Value::Object(map) => Some(map.clone()),
+            _ => None,
+        };
+        match (left, right) {
+            (Value::Array(l), Value::Array(r)) => l.len() == r.len() && l.iter().zip(r).all(|(a, b)| equal(a, b)),
+            (Value::Array(_), _) | (_, Value::Array(_)) => false,
+            (Value::Object(_), Value::Object(_)) => match (keys(left), keys(right)) {
+                (Some(l), Some(r)) => l.len() == r.len() && l.iter().all(|(k, v)| r.get(k).is_some_and(|w| equal(v, w))),
+                _ => false,
+            },
+            _ => left == right,
+        }
+    }
+
+    pub(super) fn decode(value: Value) -> Result<Value, String> {
+        let is_session = is_record(Some(&value)) && non_empty_string(value.get("id")) && is_record(value.get("time"));
+        if !is_session {
+            return Ok(Value::Null);
+        }
+        if !has_invalid(&value)? {
+            return Ok(value);
+        }
+        let lifecycle = Value::Object(read(&value)?);
+        with_lifecycle(value, &lifecycle)
+    }
+
+    const DIFF_CONTENT_FIELDS: [&str; 5] = ["patch", "before", "after", "from", "to"];
+
+    /// `stripDiffSummary`: patch bodies dropped from `summary.diffs`.
+    pub(super) fn strip_diff_summary(target: Value) -> Result<Value, String> {
+        if target.is_null() || js::is_undefined(&target) {
+            let kind = if target.is_null() { "null" } else { "undefined" };
+            return Err(format!("Cannot read properties of {kind} (reading 'summary')"));
+        }
+        let Some(Value::Object(summary)) = target.get("summary") else {
+            return Ok(target);
+        };
+        let Some(Value::Array(diffs)) = summary.get("diffs") else { return Ok(target) };
+        let mut changed = false;
+        let stripped: Vec<Value> = diffs
+            .iter()
+            .map(|entry| {
+                let Value::Object(fields) = entry else { return entry.clone() };
+                let mut next = fields.clone();
+                for field in DIFF_CONTENT_FIELDS {
+                    // `typeof entry[field] === "string"`, lone-surrogate strings included.
+                    if fields.get(field).and_then(js::string_units).is_some() {
+                        next.shift_remove(field);
+                        changed = true;
+                    }
+                }
+                Value::Object(next)
+            })
+            .collect();
+        if !changed {
+            return Ok(target);
+        }
+        let mut summary = summary.clone();
+        summary.insert("diffs".to_string(), Value::Array(stripped));
+        let mut result = target.as_object().cloned().unwrap_or_default();
+        result.insert("summary".to_string(), Value::Object(summary));
+        Ok(Value::Object(result))
+    }
+}
+
+// ---- sessionTitles (after ui-lib/sessionTitles-rs), orchestration-runtime managed title ----
+
+/// What `session.created`/`.updated` use of `@/lib/sessionTitles` (logic as `ui-lib/sessionTitles-rs`
+/// ports it) and `isManagedTaskPlaceholderSession` of `@devryan/orchestration-runtime`.
+mod titles {
+    use serde_json::Value;
+
+    use crate::js;
+
+    const DEFAULT_SESSION_TITLE: &str = "Untitled Session";
+
+    /// JS `\s`.
+    fn sp(c: char) -> bool {
+        matches!(
+            c,
+            '\t'..='\r' | ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}'
+                | '\u{205f}' | '\u{3000}' | '\u{feff}'
+        )
+    }
+
+    /// Whether `s[at..]` starts with the ASCII literal `lit`, ignoring ASCII case.
+    fn ci_at(s: &[char], at: usize, lit: &str) -> bool {
+        let lit: Vec<char> = lit.chars().collect();
+        s.len() >= at + lit.len() && s[at..at + lit.len()].iter().zip(&lit).all(|(a, b)| a.eq_ignore_ascii_case(b))
+    }
+
+    fn ws_run(s: &[char], at: usize) -> usize {
+        s[at.min(s.len())..].iter().take_while(|c| sp(**c)).count()
+    }
+
+    fn trim(s: &str) -> &str {
+        s.trim_matches(sp)
+    }
+
+    /// `value.replace(/\s+/g, " ").trim()`.
+    fn collapse(value: &str) -> String {
+        let mut out = String::with_capacity(value.len());
+        let mut in_run = false;
+        for c in value.chars() {
+            if sp(c) {
+                if !in_run {
+                    out.push(' ');
+                }
+                in_run = true;
+            } else {
+                out.push(c);
+                in_run = false;
+            }
+        }
+        trim(&out).to_string()
+    }
+
+    fn cursor_error(title: &str) -> bool {
+        let s: Vec<char> = trim(title).chars().collect();
+        if !ci_at(&s, 0, "cursor-acp") {
+            return false;
+        }
+        let a = 10 + ws_run(&s, 10);
+        if a == 10 || !ci_at(&s, a, "error") {
+            return false;
+        }
+        let b = a + 5 + ws_run(&s, a + 5);
+        s.get(b) == Some(&':')
+    }
+
+    fn generated(title: &str) -> bool {
+        let s: Vec<char> = trim(title).chars().collect();
+        if !ci_at(&s, 0, "new session") {
+            return false;
+        }
+        let mut i = 11 + ws_run(&s, 11);
+        if s.get(i) != Some(&'-') {
+            return false;
+        }
+        i += 1 + ws_run(&s, i + 1);
+        let digits = |i: &mut usize, n: usize| {
+            let ok = s.len() >= *i + n && s[*i..*i + n].iter().all(char::is_ascii_digit);
+            *i += n;
+            ok
+        };
+        let lit = |i: &mut usize, c: char| {
+            let ok = s.get(*i).is_some_and(|x| x.eq_ignore_ascii_case(&c));
+            *i += 1;
+            ok
+        };
+        if !(digits(&mut i, 4)
+            && lit(&mut i, '-')
+            && digits(&mut i, 2)
+            && lit(&mut i, '-')
+            && digits(&mut i, 2)
+            && lit(&mut i, 't')
+            && digits(&mut i, 2)
+            && lit(&mut i, ':')
+            && digits(&mut i, 2)
+            && lit(&mut i, ':')
+            && digits(&mut i, 2))
+        {
+            return false;
+        }
+        if s.get(i) == Some(&'.') {
+            let n = s[i + 1..].iter().take_while(|c| c.is_ascii_digit()).count();
+            if n > 0 && s.get(i + 1 + n).is_some_and(|c| c.eq_ignore_ascii_case(&'z')) && i + 2 + n == s.len() {
+                return true;
+            }
+        }
+        s.get(i).is_some_and(|c| c.eq_ignore_ascii_case(&'z')) && i + 1 == s.len()
+    }
+
+    fn plan_control(title: &str) -> bool {
+        let s: Vec<char> = title.chars().filter(|c| !sp(*c)).collect();
+        if s.first() != Some(&'<') || s.last() != Some(&'>') {
+            return false;
+        }
+        let prefix = s[1..].iter().take_while(|c| **c == '!' || **c == '-').count();
+        let marks = &s[1..1 + prefix];
+        let opener = marks.first() == Some(&'!') || marks.starts_with(&['-', '-']);
+        let at = 1 + prefix;
+        if !opener || !ci_at(&s, at, "plan") {
+            return false;
+        }
+        let dashes = &s[at + 4..s.len() - 1];
+        !dashes.is_empty() && dashes.iter().all(|c| *c == '-')
+    }
+
+    /// `isPlaceholderSessionTitle(title)` (a string title as its code units, lone surrogates as U+FFFD).
+    pub(super) fn placeholder(title: &Value) -> bool {
+        let normalized = js::string_units(title).map(|u| collapse(&String::from_utf16_lossy(&u))).unwrap_or_default();
+        normalized.is_empty()
+            || normalized.to_lowercase() == DEFAULT_SESSION_TITLE.to_lowercase()
+            || cursor_error(&normalized)
+            || generated(&normalized)
+            || plan_control(&normalized)
+    }
+
+    /// `formatManagedTaskDisplayName(label)` of `@devryan/orchestration-runtime`.
+    fn format_managed(label: &str) -> String {
+        let dashes: String = label.trim_matches(sp).chars().map(|c| if c == '-' || c == '_' { ' ' } else { c }).collect();
+        let normalized = collapse(&dashes);
+        if normalized.is_empty() {
+            return String::new();
+        }
+        let all: Vec<&str> = normalized.split(' ').collect();
+        let words: Vec<&str> = all
+            .iter()
+            .enumerate()
+            .filter(|(i, w)| *i == 0 || w.to_lowercase() != all[i - 1].to_lowercase())
+            .map(|(_, w)| *w)
+            .collect();
+        let initialisms = [
+            ("api", "API"),
+            ("cli", "CLI"),
+            ("css", "CSS"),
+            ("html", "HTML"),
+            ("http", "HTTP"),
+            ("json", "JSON"),
+            ("mcp", "MCP"),
+            ("pdf", "PDF"),
+            ("pr", "PR"),
+            ("sdk", "SDK"),
+            ("sse", "SSE"),
+            ("ui", "UI"),
+            ("url", "URL"),
+            ("ux", "UX"),
+        ];
+        let internal = [
+            "a", "an", "and", "as", "at", "but", "by", "for", "in", "nor", "of", "on", "or", "per", "the", "to", "via", "vs",
+        ];
+        let count = words.len();
+        let shown: Vec<String> = words
+            .iter()
+            .enumerate()
+            .map(|(index, word)| {
+                let lower = word.to_lowercase();
+                if let Some((_, upper)) = initialisms.iter().find(|(k, _)| *k == lower) {
+                    return (*upper).to_string();
+                }
+                if index > 0 && index < count - 1 && internal.contains(&lower.as_str()) && *word == lower {
+                    return lower;
+                }
+                if *word != lower {
+                    return (*word).to_string();
+                }
+                let units: Vec<u16> = word.encode_utf16().collect();
+                let first = String::from_utf16_lossy(&units[..1.min(units.len())]);
+                format!("{}{}", first.to_uppercase(), String::from_utf16_lossy(&units[1.min(units.len())..]))
+            })
+            .collect();
+        shown.join(" ")
+    }
+
+    /// `isManagedTaskPlaceholderSession(session)` of `@devryan/orchestration-runtime`.
+    pub(super) fn managed_placeholder(session: &Value) -> bool {
+        let Some(map) = session
+            .as_object()
+            .filter(|o| !(o.len() == 1 && ["$undefined", "$num", "$utf16"].iter().any(|k| o.contains_key(*k))))
+        else {
+            return false;
+        };
+        let text = |k: &str| map.get(k).and_then(js::string_units).map(|u| String::from_utf16_lossy(&u));
+        let (Some(parent), Some(agent), Some(title)) = (text("parentID"), text("agent"), text("title")) else {
+            return false;
+        };
+        if trim(&parent).is_empty() || trim(&agent).is_empty() {
+            return false;
+        }
+        let t: Vec<char> = trim(&title).chars().collect();
+        if !ci_at(&t, 0, "managed") || !t.get(7).is_some_and(|c| sp(*c)) {
+            return false;
+        }
+        collapse(&title).to_lowercase() == format_managed(&format!("Managed {agent} task")).to_lowercase()
+    }
+}
+
+// ---- session.created / session.updated ----
+
+/// `mergeSessionPreservingMeaningfulTitle(current, incoming)`.
+fn merge_title(current: &Value, incoming: &Value) -> R<Value> {
+    if !truthy(current)
+        || titles::placeholder(&get(current, "title")?)
+        || titles::managed_placeholder(current)
+        || (!titles::placeholder(&get(incoming, "title")?) && !titles::managed_placeholder(incoming))
+    {
+        return Ok(incoming.clone());
+    }
+    let mut next = spread(incoming);
+    insert(&mut next, "title".into(), prop(current, "title"));
+    Ok(Value::Object(next))
+}
+
+fn retain(retained: Value, rejected: &Value) -> R<Value> {
+    let lifecycle = recency::resolve(&retained, rejected)?;
+    recency::with_lifecycle(retained, &lifecycle)
+}
+
+/// JS `a > b` / `a <= b` of a number and any value (`None` when either side is NaN).
+fn cmp_number(a: f64, b: &Value) -> Option<std::cmp::Ordering> {
+    let b = match primitive(b) {
+        Prim::Num(n) => n,
+        Prim::Text(u) => to_number(&u),
+    };
+    a.partial_cmp(&b)
+}
+
+/// `trimSessions(draft)`.
+fn trim_sessions(draft: &mut Value) -> R<()> {
+    let length = |d: &Value| prop(&prop(d, "session"), "length");
+    let limit = prop(draft, "limit");
+    let len = num(&length(draft)).unwrap_or(f64::NAN);
+    if matches!(cmp_number(len, &limit), Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)) {
+        return Ok(());
+    }
+    let mut protected: Vec<Value> = Vec::new();
+    for (field, check) in [("permission", 0u8), ("question", 0), ("session_status", 1)] {
+        let holder = prop(draft, field);
+        let holder = if nullish(&holder) { Value::Object(Map::new()) } else { holder };
+        for (key, value) in entries(&holder) {
+            let keep = if check == 0 {
+                truthy(&value) && cmp_number(0.0, &prop(&value, "length")) == Some(std::cmp::Ordering::Less)
+            } else {
+                truthy(&value) && !is_str(&prop(&value, "type"), "idle")
+            };
+            if keep {
+                protected.push(key);
+            }
+        }
+    }
+    loop {
+        let len = num(&length(draft)).unwrap_or(f64::NAN);
+        if cmp_number(len, &limit) != Some(std::cmp::Ordering::Greater) {
+            return Ok(());
+        }
+        let Some(Value::Array(list)) = draft.as_object_mut().and_then(|d| d.get_mut("session")) else {
+            return Ok(());
+        };
+        let id = get(&list[0], "id")?;
+        if protected.iter().any(|p| eq(p, &id, true)) {
+            return Ok(());
+        }
+        list.remove(0);
+    }
+}
+
+fn set_session_at(draft: &mut Value, index: f64, value: Value, remove: bool) -> R<()> {
+    let sessions = prop(draft, "session");
+    let Value::Array(list) = &sessions else {
+        return Err("sessions.splice is not a function".into()); // recorded-literal: the V8 TypeError text
+    };
+    let mut list = list.clone();
+    let i = (index.max(0.0) as usize).min(list.len());
+    if remove {
+        if i < list.len() {
+            list.remove(i);
+        }
+    } else {
+        list.insert(i, value);
+    }
+    if let Value::Object(map) = draft {
+        insert(map, "session".into(), Value::Array(list));
+    }
+    Ok(())
+}
+
+fn replace_session_at(draft: &mut Value, index: f64, value: Value) {
+    if let Some(Value::Array(list)) = draft.as_object_mut().and_then(|d| d.get_mut("session"))
+        && let Some(slot) = at(list, index)
+    {
+        *slot = value;
+    }
+}
+
+/// `Math.max(0, draft.sessionTotal - 1)` / `draft.sessionTotal += 1`.
+fn bump_total(draft: &mut Value, up: bool) {
+    let total = prop(draft, "sessionTotal");
+    let next = if up {
+        match primitive(&total) {
+            Prim::Num(n) => js::number(n + 1.0),
+            Prim::Text(u) => js::utf16_string(&[u, vec![u16::from(b'1')]].concat()),
+        }
+    } else {
+        let n = match primitive(&total) {
+            Prim::Num(n) => n,
+            Prim::Text(u) => to_number(&u),
+        } - 1.0;
+        js::number(if n.is_nan() {
+            f64::NAN
+        } else if n > 0.0 {
+            n
+        } else {
+            0.0
+        })
+    };
+    if let Value::Object(map) = draft {
+        insert(map, "sessionTotal".into(), next);
+    }
+}
+
+fn has_own_key(holder: &Value, key: &Value) -> R<bool> {
+    if nullish(holder) {
+        return Err("Cannot convert undefined or null to object".into()); // recorded-literal: the V8 TypeError text
+    }
+    let key = key_of(key);
+    Ok(match holder {
+        Value::Array(items) => key == "length" || index_key(&key).is_some_and(|i| (i as usize) < items.len()),
+        _ if units(holder).is_some() => key == "length" || index_key(&key).is_some_and(|i| (i as usize) < units(holder).map_or(0, |u| u.len())),
+        _ => plain(holder).is_some_and(|o| o.contains_key(&key)),
+    })
+}
+
+/// `session.created` (`updated` false) and `session.updated`.
+fn session_upserted(draft: &mut Value, event: &Value, updated: bool) -> R<Value> {
+    let properties = prop(event, "properties");
+    let decoded = if recency_record(&properties) {
+        recency::decode(prop(&properties, "info"))?
+    } else {
+        Value::Null
+    };
+    if !truthy(&decoded) {
+        return Ok(Value::Bool(false));
+    }
+    let incoming = recency::strip_diff_summary(decoded)?;
+    let sessions = get(draft, "session")?;
+    let id = prop(&incoming, "id");
+    let (found, index) = search(&sessions, &id)?;
+    let stored = if found { prop(&sessions, &js::number_to_string(index)) } else { undef() };
+    if found && recency::compare(&incoming, &stored)? < 0 {
+        let kept = retain(merge_title(&incoming, &stored)?, &incoming)?;
+        if recency::equal(&stored, &kept) {
+            return Ok(Value::Bool(false));
+        }
+        replace_session_at(draft, index, kept);
+        return Ok(Value::Bool(true));
+    }
+    let messages = get_by(&get(draft, "message")?, &id)?;
+    if truthy(&messages) && !(messages.is_array() || record(&messages)) {
+        return Err("Invalid value used as weak map key".into()); // recorded-literal: the V8 TypeError text
+    }
+    let normalized = strip_summary(&incoming)?.unwrap_or_else(|| incoming.clone());
+    let titled = merge_title(&stored, &normalized)?;
+    let info = recency::merge(&if found { stored.clone() } else { Value::Null }, titled)?;
+    let info_id = get(&info, "id")?;
+    if updated && truthy(&get(&get(&info, "time")?, "archived")?) {
+        let had_activity = has_own_key(&get(draft, "session_user_activity")?, &info_id)?;
+        let had_revert = has_own_key(&get(draft, "revert_transaction")?, &info_id)?;
+        if found {
+            set_session_at(draft, index, Value::Null, true)?;
+        }
+        let key = key_of(&info_id);
+        if had_activity {
+            let mut next = spread(&prop(draft, "session_user_activity"));
+            next.shift_remove(&key);
+            if let Value::Object(map) = draft {
+                insert(map, "session_user_activity".into(), Value::Object(next));
+            }
+        }
+        delete_in(draft, "revert_transaction", &key)?;
+        if found && !truthy(&prop(&info, "parentID")) {
+            bump_total(draft, false);
+        }
+        return Ok(Value::Bool(found || had_activity || had_revert));
+    }
+    if found {
+        if recency::equal(&stored, &info) {
+            if updated {
+                return Ok(Value::Bool(update_activity(draft, &info_id)?));
+            }
+            return Ok(Value::Bool(false));
+        }
+        replace_session_at(draft, index, info.clone());
+    } else {
+        set_session_at(draft, index, info.clone(), false)?;
+        trim_sessions(draft)?;
+        if !updated && !truthy(&prop(&info, "parentID")) {
+            bump_total(draft, true);
+        }
+    }
+    if updated {
+        update_activity(draft, &info_id)?;
+    }
+    Ok(Value::Bool(true))
+}
+
+/// `isRecord` of `display-session.ts`.
+fn recency_record(v: &Value) -> bool {
+    plain(v).is_some() || set_items(v).is_some()
+}
+
 // ---- the unit ----
 
 /// `[...value]` (`name` as V8 names the value when it is not iterable).
@@ -2096,6 +2861,8 @@ fn directory_event(draft: &mut Value, event: &Value) -> R<Value> {
         "message.part.removed" => part_removed(draft, &props),
         "message.removed" => message_removed(draft, &props),
         "message.updated" => message_updated(draft, &props),
+        "session.created" => session_upserted(draft, event, false),
+        "session.updated" => session_upserted(draft, event, true),
         "message.part.updated" => part_updated(draft, &props),
         "session.deleted" => session_deleted(draft, &props),
         "message.part.delta" => part_delta(draft, &props),
@@ -2143,11 +2910,6 @@ pub fn apply_global_project_of(state: serde_json::Value, project: serde_json::Va
 
 /// Port of `applyDirectoryEventReturningDraft` (`event-reducer-mutation.ts:30`).
 pub fn apply_directory_event_returning_draft(draft: serde_json::Value, event: serde_json::Value) -> Result<serde_json::Value, String> {
-    let kind = opt(&event, "type");
-    let not_ported = ["session.created", "session.updated"];
-    if let Some(found) = not_ported.iter().find(|t| is_str(&kind, t)) {
-        return Err(format!("outside the ported subset: {found}"));
-    }
     let mut draft = draft;
     let result = directory_event(&mut draft, &event)?;
     Ok(json!({ "result": result, "draft": draft }))

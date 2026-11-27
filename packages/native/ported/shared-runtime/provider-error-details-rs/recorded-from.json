@@ -1,0 +1,19 @@
+{
+  "unit": "lib/provider-error-details.js",
+  "files": 1,
+  "fingerprint": "39212150748f44b8",
+  "cases": 136,
+  "cases_hash": "e2ac621908f7eaa4",
+  "coverage": {
+    "lines": 41,
+    "reached": 41,
+    "files": [
+      {
+        "file": "lib/provider-error-details.js",
+        "lines": 41,
+        "reached": 41,
+        "missed": ""
+      }
+    ]
+  }
+}
