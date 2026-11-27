@@ -205,6 +205,30 @@
       "uses_instanceof": false
     },
     {
+      "name": "getReconnectCandidateSessionIds",
+      "file": "reconnect-recovery.ts",
+      "line": 335,
+      "params": [
+        {
+          "name": "state",
+          "ts_type": "{\n  session: Session[]\n  session_status?: Record<string, SessionStatus>\n  message?: Record<string, Message[]>\n  part?: Record<string, Part[]>\n}",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "options",
+          "ts_type": "({\n  directory?: string\n  viewedSession?: {\n  directory: string\n  sessionId: string\n} | null\n})",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
       "name": "filterUnchangedSessionStatusCandidates",
       "file": "reconnect-recovery.ts",
       "line": 410,
@@ -243,12 +267,6 @@
   ],
   "classes": [],
   "js_only": [
-    {
-      "name": "getReconnectCandidateSessionIds",
-      "file": "reconnect-recovery.ts",
-      "line": 335,
-      "reason": "calls getSessionMaterializationStatus (seven imported modules); not in this batch"
-    },
     {
       "name": "captureSessionStatusBaseline",
       "file": "reconnect-recovery.ts",

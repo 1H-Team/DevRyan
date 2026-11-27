@@ -59,6 +59,7 @@ const specs = {
   haveSamePendingToolInputStallFingerprint: [[1, 1], 'raw', false],
   filterUnchangedSessionStatusCandidates: [[1], 'json', false],
   toAuthoritativeSessionStatus: [[1], 'json', false],
+  getReconnectCandidateSessionIds: [[1, 1], 'json', false],
 }
 const classes = {
 
@@ -663,6 +664,31 @@ return t
 module.exports.toAuthoritativeSessionStatus = function toAuthoritativeSessionStatus (a0) {
   try {
     if (arguments.length <= 1 && encode(a0) && wireCall(call)) return decode()
+    return json(...arguments)
+  } catch (e) {
+    throw jsError(e)
+  }
+}
+}
+
+// `getReconnectCandidateSessionIds`: binary wire; the JSON version handles inputs of other shapes.
+{
+const json = module.exports.getReconnectCandidateSessionIds
+const call = native.getReconnectCandidateSessionIdsWire
+const encode = (a0, a1) => {
+at = 0
+if (!wDyn(a0)) return false
+if (!wDyn(a1)) return false
+return true
+}
+const decode = () => {
+let t
+t = rDyn()
+return t
+}
+module.exports.getReconnectCandidateSessionIds = function getReconnectCandidateSessionIds (a0, a1) {
+  try {
+    if (arguments.length <= 2 && encode(a0, a1) && wireCall(call)) return decode()
     return json(...arguments)
   } catch (e) {
     throw jsError(e)

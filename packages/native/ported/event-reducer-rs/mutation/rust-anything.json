@@ -1,0 +1,78 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/native/ported/event-reducer-rs/mutation-ts",
+  "unit": "event-reducer-mutation.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "event-reducer-mutation-rs",
+  "exports": [
+    {
+      "name": "reduceGlobalEventOf",
+      "file": "event-reducer-mutation.ts",
+      "line": 22,
+      "params": [
+        {
+          "name": "event",
+          "ts_type": "Event",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "GlobalEventResult",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "applyGlobalProjectOf",
+      "file": "event-reducer-mutation.ts",
+      "line": 26,
+      "params": [
+        {
+          "name": "state",
+          "ts_type": "GlobalState",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "project",
+          "ts_type": "Project",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "GlobalState",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "applyDirectoryEventReturningDraft",
+      "file": "event-reducer-mutation.ts",
+      "line": 30,
+      "params": [
+        {
+          "name": "draft",
+          "ts_type": "State",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "event",
+          "ts_type": "Event",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{ result: DirectoryEventResult; draft: State }",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

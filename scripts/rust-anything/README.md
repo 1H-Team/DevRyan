@@ -23,3 +23,18 @@ rust-anything gate "$C" "$ALIAS"
 Set `CARGO_TARGET_DIR` to a folder outside the repository. After every `record`, `git status
 --short -- packages/ui` must print nothing. A recording over a few megabytes is not tracked (the
 crate's `.gitignore` names it); make it again with the `record` line above.
+
+Node's type stripping refuses TypeScript namespaces and constructor parameter properties
+(`binary.ts`, `event-batch.ts`), and the Node this repository uses has no
+`--experimental-transform-types` (`node: bad option`). For a unit that loads such a file, build
+that file as JavaScript with Bun outside the repository and list the pair in `RA_TS_OVERRIDES`;
+the alias loader then loads the JavaScript in its place, for `record`, `fuzz` and `gate` alike:
+
+```sh
+OUT="${TMPDIR%/}/ra-js"; mkdir -p "$OUT"
+(cd packages/ui && bun build src/sync/binary.ts --no-bundle --target=node --format=esm --outfile "$OUT/binary.mjs")
+export RA_TS_OVERRIDES="$PWD/packages/ui/src/sync/binary.ts=$OUT/binary.mjs"   # pairs separated by `;`
+```
+
+A file with relative imports (`event-batch.ts`) is built without `--no-bundle`. Coverage then
+counts the built file, not the TypeScript.

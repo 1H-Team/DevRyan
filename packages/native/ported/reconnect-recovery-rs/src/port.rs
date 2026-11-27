@@ -1,6 +1,7 @@
 //! The Rust port of `reconnect-recovery.ts`, its pure exports, with `isCompactionSummaryInfo` of
-//! `compaction-summary.ts` inlined. Kept in TypeScript: `getReconnectCandidateSessionIds`
-//! (materialization), the two `merge*SessionStatuses` (the abort guard's module state) and
+//! `compaction-summary.ts` inlined. `getReconnectCandidateSessionIds` inlines the
+//! `getSessionMaterializationStatus` it calls (on `{ message, part }`: no revert applies). Kept in
+//! TypeScript: the two `merge*SessionStatuses` (the abort guard's module state) and
 //! `shouldRecoverStaleActiveSession` (`Date.now()`). `captureSessionStatusBaseline` (returns a `Map` the
 //! bindings cannot carry back). A received baseline `Map` arrives as `{"$map": [[id, status], ...]}`.
 
@@ -611,4 +612,109 @@ pub fn to_authoritative_session_status(status: serde_json::Value) -> Result<serd
         return Ok(json!({ "type": "retry", "attempt": map["attempt"], "message": message, "next": map["next"] }));
     }
     Ok(undef())
+}
+
+/// `Object.entries(value ?? {})`.
+fn entries_of(value: &Value) -> Vec<(Value, Value)> {
+    if let Some(u) = units(value) {
+        return u
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (Value::String(i.to_string()), js::utf16_string(&[*c])))
+            .collect();
+    }
+    match value {
+        Value::Array(items) => items.iter().enumerate().map(|(i, v)| (Value::String(i.to_string()), v.clone())).collect(),
+        _ => plain(value)
+            .map(|o| o.iter().map(|(k, v)| (Value::String(k.clone()), v.clone())).collect())
+            .unwrap_or_default(),
+    }
+}
+
+fn add(set: &mut Vec<Value>, value: Value) {
+    if !set.iter().any(|v| eq(v, &value, true)) {
+        set.push(value);
+    }
+}
+
+/// `getSessionMaterializationStatus({ message, part }, sessionID).renderable`.
+fn renderable(messages: &Value, parts: &Value) -> R<bool> {
+    let messages = if nullish(messages) { Value::Array(Vec::new()) } else { messages.clone() };
+    for message in iterate(&messages, "messages")? {
+        if !is_str(&get(&message, "role")?, "assistant") {
+            continue;
+        }
+        let found = get_by(parts, &prop(&message, "id"))?;
+        if !truthy(&found) || eq(&prop(&found, "length"), &js::number(0.0), false) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn has_own(value: &Value, key: &Value) -> bool {
+    let key = key_of(key);
+    if let Some(u) = units(value) {
+        return key == "length" || index_key(&key).is_some_and(|i| (i as usize) < u.len());
+    }
+    match value {
+        Value::Array(items) => key == "length" || index_key(&key).is_some_and(|i| (i as usize) < items.len()),
+        _ => plain(value).is_some_and(|o| o.contains_key(&key)),
+    }
+}
+
+/// Port of `getReconnectCandidateSessionIds` (`reconnect-recovery.ts:335`).
+pub fn get_reconnect_candidate_session_ids(state: serde_json::Value, options: Option<serde_json::Value>) -> Result<serde_json::Value, String> {
+    let or_empty = |v: Value| if nullish(&v) { Value::Object(Map::new()) } else { v };
+    let statuses = or_empty(get(&state, "session_status")?);
+    let mut ids: Vec<Value> = Vec::new();
+    for (id, status) in entries_of(&statuses) {
+        if truthy(&status) && !is_str(&prop(&status, "type"), "idle") {
+            add(&mut ids, id);
+        }
+    }
+    let messages_by_session = or_empty(prop(&state, "message"));
+    let parts = or_empty(prop(&state, "part"));
+    for (id, messages) in entries_of(&messages_by_session) {
+        let length = get(&messages, "length")?;
+        let last_index = match primitive(&length) {
+            Prim::Num(n) => n,
+            Prim::Text(u) => to_number(&u),
+        } - 1.0;
+        let last = prop(&messages, &js::number_to_string(last_index));
+        let open_turn = truthy(&last) && is_str(&prop(&last, "role"), "assistant") && num(&opt(&prop(&last, "time"), "completed")).is_none();
+        if open_turn || !renderable(&get_by(&messages_by_session, &id)?, &parts)? {
+            add(&mut ids, id);
+        }
+    }
+    let sessions = prop(&state, "session");
+    let mut parents: Vec<Value> = Vec::new();
+    for session in iterate(&sessions, "state.session")? {
+        let parent = get(&session, "parentID")?;
+        if truthy(&parent) {
+            add(&mut parents, parent);
+        }
+    }
+    for parent in parents {
+        add(&mut ids, parent);
+    }
+    let options = options.unwrap_or_else(undef);
+    let viewed = opt(&options, "viewedSession");
+    let session_id = opt(&viewed, "sessionId");
+    if truthy(&session_id) && eq(&prop(&viewed, "directory"), &opt(&options, "directory"), false) {
+        let Value::Array(list) = &sessions else {
+            return Err("state.session.some is not a function".into()); // recorded-literal: the V8 TypeError text
+        };
+        let mut exists = false;
+        for session in list {
+            if eq(&get(session, "id")?, &session_id, false) {
+                exists = true;
+                break;
+            }
+        }
+        if exists || has_own(&statuses, &session_id) || has_own(&messages_by_session, &session_id) {
+            add(&mut ids, session_id);
+        }
+    }
+    Ok(Value::Array(ids))
 }

@@ -149,6 +149,17 @@ pub fn to_authoritative_session_status(status: String) -> napi::Result<String> {
     })
 }
 
+/// `getReconnectCandidateSessionIds`.
+#[napi(js_name = "getReconnectCandidateSessionIds")]
+pub fn get_reconnect_candidate_session_ids(state: String, options: String) -> napi::Result<String> {
+    run(move || {
+        let state = crate::js::from_json(&state)?;
+        let options = crate::js::from_json(&options)?;
+        let out = port::get_reconnect_candidate_session_ids(state, options)?;
+        crate::js::to_json(&out)
+    })
+}
+
 // ---- the binary wire ------------------------------------------------------------------------
 
 type WireBuffers = (
@@ -421,6 +432,21 @@ pub fn to_authoritative_session_status_wire() -> napi::Result<f64> {
         let status: serde_json::Value = wire::read_value(r, &S_TO_AUTHORITATIVE_SESSION_STATUS_0)?;
         let out = &port::to_authoritative_session_status(status)?;
         wire::write_value(w, out, &S_TO_AUTHORITATIVE_SESSION_STATUS_OUT)?;
+        Ok(())
+    })
+}
+
+static S_GET_RECONNECT_CANDIDATE_SESSION_IDS_0: wire::Schema = wire::Schema::Dyn;
+static S_GET_RECONNECT_CANDIDATE_SESSION_IDS_OUT: wire::Schema = wire::Schema::Dyn;
+
+/// `getReconnectCandidateSessionIds` over the binary wire.
+#[napi(js_name = "getReconnectCandidateSessionIdsWire")]
+pub fn get_reconnect_candidate_session_ids_wire() -> napi::Result<f64> {
+    wire_io(|r, w| {
+        let state: serde_json::Value = wire::read_value(r, &S_GET_RECONNECT_CANDIDATE_SESSION_IDS_0)?;
+        let options: Option<serde_json::Value> = wire::read_dyn_opt(r)?;
+        let out = &port::get_reconnect_candidate_session_ids(state, options)?;
+        wire::write_value(w, out, &S_GET_RECONNECT_CANDIDATE_SESSION_IDS_OUT)?;
         Ok(())
     })
 }
