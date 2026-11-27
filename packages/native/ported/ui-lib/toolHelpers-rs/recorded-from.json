@@ -1,0 +1,19 @@
+{
+  "unit": "toolHelpers.ts",
+  "files": 1,
+  "fingerprint": "a0c7f1e92a2d497b",
+  "cases": 2028,
+  "cases_hash": "781b45a7db49f0e1",
+  "coverage": {
+    "lines": 697,
+    "reached": 697,
+    "files": [
+      {
+        "file": "toolHelpers.ts",
+        "lines": 697,
+        "reached": 697,
+        "missed": ""
+      }
+    ]
+  }
+}

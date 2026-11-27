@@ -1,0 +1,42 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [],
+  "product": [],
+  "engine": [
+    {
+      "site": "new Map (<anonymous>)",
+      "class": "TypeError",
+      "sample": "Iterator value a is not an entry object"
+    },
+    {
+      "site": "Object.keys (<anonymous>)",
+      "class": "TypeError",
+      "sample": "Cannot convert undefined or null to object"
+    },
+    {
+      "site": "packages/native/ported/directory-disposal-rs/mutation-ts/directory-disposal-mutation.ts:20",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'sessionDirectoryById')"
+    },
+    {
+      "site": "packages/native/ported/directory-disposal-rs/mutation-ts/directory-disposal-mutation.ts:22",
+      "class": "TypeError",
+      "sample": "Cannot read properties of undefined (reading 'map')"
+    },
+    {
+      "site": "packages/ui/src/sync/directory-disposal.ts:102",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'startsWith')"
+    },
+    {
+      "site": "packages/ui/src/sync/directory-disposal.ts:58",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'session')"
+    },
+    {
+      "site": "packages/ui/src/sync/directory-disposal.ts:84",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'directory')"
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [],
+  "product": [],
+  "engine": [
+    {
+      "site": "packages/ui/src/sync/message-order.ts:48",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'id')"
+    },
+    {
+      "site": "packages/ui/src/sync/revert-transactions.ts:67",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'id')"
+    },
+    {
+      "site": "packages/ui/src/sync/revert-transactions.ts:80",
+      "class": "TypeError",
+      "sample": "transaction?.hiddenMessageIDs?.has is not a function"
+    },
+    {
+      "site": "packages/ui/src/sync/session-user-activity.ts:29",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'sessionID')"
+    },
+    {
+      "site": "packages/ui/src/sync/session-user-activity.ts:33",
+      "class": "TypeError",
+      "sample": "Cannot read properties of undefined (reading 'time')"
+    },
+    {
+      "site": "packages/ui/src/sync/session-user-activity.ts:48",
+      "class": "TypeError",
+      "sample": "visibleMessages is not iterable"
+    },
+    {
+      "site": "packages/ui/src/sync/session-user-activity.ts:52",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'role')"
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [],
+  "product": [],
+  "engine": [
+    {
+      "site": "packages/ui/src/lib/sessionDiffStats.ts:100",
+      "class": "TypeError",
+      "sample": "Cannot read properties of undefined (reading 'summary')"
+    },
+    {
+      "site": "packages/ui/src/lib/sessionDiffStats.ts:52",
+      "class": "TypeError",
+      "sample": "number 5 is not iterable (cannot read property Symbol(Symbol.iterator))"
+    },
+    {
+      "site": "packages/ui/src/lib/sessionDiffStats.ts:53",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'additions')"
+    },
+    {
+      "site": "packages/ui/src/lib/sessionDiffStats.ts:65",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'replace')"
+    },
+    {
+      "site": "packages/ui/src/lib/sessionDiffStats.ts:75",
+      "class": "TypeError",
+      "sample": "touchedFiles is not iterable"
+    },
+    {
+      "site": "packages/ui/src/lib/sessionDiffStats.ts:91",
+      "class": "TypeError",
+      "sample": "number 5 is not iterable (cannot read property Symbol(Symbol.iterator))"
+    },
+    {
+      "site": "packages/ui/src/lib/sessionDiffStats.ts:92",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'additions')"
+    }
+  ]
+}

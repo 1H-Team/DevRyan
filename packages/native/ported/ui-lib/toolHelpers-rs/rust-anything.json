@@ -1,0 +1,138 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "toolHelpers.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "toolhelpers-rs",
+  "exports": [
+    {
+      "name": "getToolMetadata",
+      "file": "toolHelpers.ts",
+      "line": 248,
+      "params": [
+        {
+          "name": "toolName",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "ToolMetadata",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "detectToolOutputLanguage",
+      "file": "toolHelpers.ts",
+      "line": 262,
+      "params": [
+        {
+          "name": "toolName",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "output",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "input",
+          "ts_type": "Record<string, unknown>",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getLanguageFromExtension",
+      "file": "toolHelpers.ts",
+      "line": 298,
+      "params": [
+        {
+          "name": "filePath",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isImageFile",
+      "file": "toolHelpers.ts",
+      "line": 710,
+      "params": [
+        {
+          "name": "filePath",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getImageMimeType",
+      "file": "toolHelpers.ts",
+      "line": 715,
+      "params": [
+        {
+          "name": "filePath",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "formatToolInput",
+      "file": "toolHelpers.ts",
+      "line": 731,
+      "params": [
+        {
+          "name": "input",
+          "ts_type": "Record<string, unknown>",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "toolName",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

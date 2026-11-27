@@ -18,7 +18,22 @@ rust-anything record "$C" --from-tests -- node scripts/test-ui.mjs src/sync/<uni
 (cd "$C" && cargo fmt) && rust-anything build "$C" && rust-anything diff "$C"
 rust-anything fuzz "$C" --cases 5000 "$ALIAS"
 rust-anything gate "$C" "$ALIAS"
+node scripts/rust-anything/error-texts.mjs "$C"     # error classes and texts (below)
 ```
+
+`diff`, `fuzz` and `gate` compare only whether a call threw, not what it threw.
+`scripts/rust-anything/error-texts.mjs` replays every recorded case of a crate (no argument: every
+crate under `packages/native/ported/`, wrapper crates included) through the original and through
+the built module, and judges each recorded throw by where the original threw it (decision CD2):
+an error the unit's code constructs (`new Error(...)`, `new TypeError(...)`, a factory doing so)
+must match in class and message, or the run fails; an error V8 throws (`Cannot read properties
+of ...`, `... is not iterable`, `JSON.parse`) is judged by its throw only, and a different text or
+class is reported as information. Each crate keeps its reviewed throw sites in
+`error-sources.json`; a product site not listed there fails the run until the file is reviewed and
+rewritten with `--write`. The bindings `bridge` generates throw a plain `Error` for every Rust
+error, so a V8 `TypeError` always differs in class; a product error of another class than `Error`
+cannot match without changing the bindings. A crate that is not built or has no recording is
+listed and skipped; set `RA_TS_OVERRIDES` (below) for units Node's type stripping refuses.
 
 Set `CARGO_TARGET_DIR` to a folder outside the repository. After every `record`, `git status
 --short -- packages/ui` must print nothing. A recording over a few megabytes is not tracked (the

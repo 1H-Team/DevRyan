@@ -1,0 +1,122 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [],
+  "product": [],
+  "engine": [
+    {
+      "site": "packages/ui/src/lib/providers/chatThinking.ts:10",
+      "class": "TypeError",
+      "sample": "level.toLowerCase is not a function"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/cursorAcp.ts:18",
+      "class": "TypeError",
+      "sample": "modelId.endsWith is not a function"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/cursorAcp.ts:34",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'id')"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/cursorAcp.ts:41",
+      "class": "TypeError",
+      "sample": "modelId?.endsWith is not a function"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/display.ts:14",
+      "class": "TypeError",
+      "sample": "(providerId ?? \"\").trim is not a function"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/display.ts:18",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'id')"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/logoPresentation.ts:11",
+      "class": "TypeError",
+      "sample": "(providerId ?? \"\").toLowerCase is not a function"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/modelAvailability.ts:27",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'find')"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/modelAvailability.ts:28",
+      "class": "TypeError",
+      "sample": "preferredProvider?.models?.find is not a function"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/modelAvailability.ts:29",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'id')"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/modelAvailability.ts:41",
+      "class": "TypeError",
+      "sample": "provider.models?.find is not a function"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/modelIdentity.ts:15",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'name')"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/modelIdentity.ts:9",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'providerID')"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/modelVisibility.ts:95",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'some')"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/modelVisibility.ts:96",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'providerID')"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/variantControls.ts:108",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'length')"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/variantControls.ts:114",
+      "class": "TypeError",
+      "sample": "variants.find is not a function"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/variantControls.ts:119",
+      "class": "TypeError",
+      "sample": "variants.find is not a function"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/variantControls.ts:135",
+      "class": "TypeError",
+      "sample": "modelId.endsWith is not a function"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/variantControls.ts:177",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'id')"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/variantControls.ts:184",
+      "class": "TypeError",
+      "sample": "modelId?.endsWith is not a function"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/variantControls.ts:22",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'id')"
+    },
+    {
+      "site": "packages/ui/src/lib/providers/variantControls.ts:53",
+      "class": "TypeError",
+      "sample": "variant.trim is not a function"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [],
+  "product": [],
+  "engine": [
+    {
+      "site": "packages/ui/src/lib/contextUsagePresentation.ts:12",
+      "class": "TypeError",
+      "sample": "Cannot destructure property 'sessionId' of 'undefined' as it is undefined."
+    },
+    {
+      "site": "packages/ui/src/lib/contextUsagePresentation.ts:16",
+      "class": "TypeError",
+      "sample": "sessionId?.trim is not a function"
+    },
+    {
+      "site": "packages/ui/src/lib/contextUsagePresentation.ts:23",
+      "class": "TypeError",
+      "sample": "Cannot destructure property 'isMobile' of 'undefined' as it is undefined."
+    }
+  ]
+}

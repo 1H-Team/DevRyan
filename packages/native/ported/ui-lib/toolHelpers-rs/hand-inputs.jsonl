@@ -1,0 +1,649 @@
+{"fn": "getToolMetadata", "args": ["read"]}
+{"fn": "getToolMetadata", "args": ["write"]}
+{"fn": "getToolMetadata", "args": ["edit"]}
+{"fn": "getToolMetadata", "args": ["multiedit"]}
+{"fn": "getToolMetadata", "args": ["apply_patch"]}
+{"fn": "getToolMetadata", "args": ["bash"]}
+{"fn": "getToolMetadata", "args": ["grep"]}
+{"fn": "getToolMetadata", "args": ["glob"]}
+{"fn": "getToolMetadata", "args": ["list"]}
+{"fn": "getToolMetadata", "args": ["task"]}
+{"fn": "getToolMetadata", "args": ["webfetch"]}
+{"fn": "getToolMetadata", "args": ["websearch"]}
+{"fn": "getToolMetadata", "args": ["codesearch"]}
+{"fn": "getToolMetadata", "args": ["todowrite"]}
+{"fn": "getToolMetadata", "args": ["todoread"]}
+{"fn": "getToolMetadata", "args": ["skill"]}
+{"fn": "getToolMetadata", "args": ["devryan_browser"]}
+{"fn": "getToolMetadata", "args": ["gpt_imagegen"]}
+{"fn": "getToolMetadata", "args": ["question"]}
+{"fn": "getToolMetadata", "args": ["plan_enter"]}
+{"fn": "getToolMetadata", "args": ["plan_exit"]}
+{"fn": "getToolMetadata", "args": ["StructuredOutput"]}
+{"fn": "getToolMetadata", "args": ["structuredoutput"]}
+{"fn": "getToolMetadata", "args": ["mcp__resend__list_emails"]}
+{"fn": "getToolMetadata", "args": ["mcp__linear__get_issue"]}
+{"fn": "getToolMetadata", "args": ["Linear_get_issue"]}
+{"fn": "getToolMetadata", "args": ["linear_save_issue"]}
+{"fn": "getToolMetadata", "args": ["custom_tool"]}
+{"fn": "getToolMetadata", "args": ["ctx_execute_file"]}
+{"fn": "getToolMetadata", "args": ["ctx_execute"]}
+{"fn": "getToolMetadata", "args": ["ctx_future_action"]}
+{"fn": "getToolMetadata", "args": ["mcp__context-mode__ctx_execute_file"]}
+{"fn": "getToolMetadata", "args": ["mcp__context_mode__ctx_execute"]}
+{"fn": "getToolMetadata", "args": ["MCP__Context-Mode__x"]}
+{"fn": "getToolMetadata", "args": ["ctx_"]}
+{"fn": "getToolMetadata", "args": ["mcp__context-mode__"]}
+{"fn": "getToolMetadata", "args": ["CTX_UP"]}
+{"fn": "getToolMetadata", "args": ["  spaced--name__x  "]}
+{"fn": "getToolMetadata", "args": [""]}
+{"fn": "getToolMetadata", "args": ["constructor"]}
+{"fn": "getToolMetadata", "args": ["toString"]}
+{"fn": "getToolMetadata", "args": ["__proto__"]}
+{"fn": "getToolMetadata", "args": ["valueOf"]}
+{"fn": "getToolMetadata", "args": ["hasOwnProperty"]}
+{"fn": "getToolMetadata", "args": ["élan_ßig"]}
+{"fn": "getToolMetadata", "args": ["😀_x"]}
+{"fn": "getToolMetadata", "args": ["mcp__"]}
+{"fn": "getToolMetadata", "args": ["a b"]}
+{"fn": "getToolMetadata", "args": [5]}
+{"fn": "getToolMetadata", "args": []}
+{"fn": "getToolMetadata", "args": [["read"]]}
+{"fn": "getToolMetadata", "args": [{"x": 1}]}
+{"fn": "getToolMetadata", "args": [true]}
+{"fn": "getToolMetadata", "args": [null]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{\"a\":1}"]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{\"a\":1}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{\"a\":1}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{\"a\":1}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{\"a\":1}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{\"a\":1}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{\"a\":1}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "[1,2"]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "[1,2", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "[1,2", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "[1,2", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "[1,2", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "[1,2", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "[1,2", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", " <html>"]}
+{"fn": "detectToolOutputLanguage", "args": ["read", " <html>", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", " <html>", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", " <html>", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", " <html>", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", " <html>", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", " <html>", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "text ```code```"]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "text ```code```", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "text ```code```", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "text ```code```", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "text ```code```", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "text ```code```", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "text ```code```", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "plain"]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "plain", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "plain", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "plain", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "plain", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "plain", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "plain", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{bad}"]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{bad}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{bad}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{bad}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{bad}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{bad}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{bad}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "[]"]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "[]", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "[]", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "[]", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "[]", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "[]", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "[]", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{\"a\":\"\\ud800\"}"]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{\"a\":\"\\ud800\"}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{\"a\":\"\\ud800\"}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{\"a\":\"\\ud800\"}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{\"a\":\"\\ud800\"}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{\"a\":\"\\ud800\"}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{\"a\":\"\\ud800\"}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "\t{\"x\":[1,{\"y\":null}]}\n"]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "\t{\"x\":[1,{\"y\":null}]}\n", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "\t{\"x\":[1,{\"y\":null}]}\n", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "\t{\"x\":[1,{\"y\":null}]}\n", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "\t{\"x\":[1,{\"y\":null}]}\n", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "\t{\"x\":[1,{\"y\":null}]}\n", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "\t{\"x\":[1,{\"y\":null}]}\n", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{\"a\":01}"]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{\"a\":01}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{\"a\":01}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{\"a\":01}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{\"a\":01}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{\"a\":01}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["read", "{\"a\":01}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{\"a\":1}"]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{\"a\":1}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{\"a\":1}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{\"a\":1}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{\"a\":1}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{\"a\":1}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{\"a\":1}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "[1,2"]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "[1,2", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "[1,2", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "[1,2", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "[1,2", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "[1,2", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "[1,2", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", " <html>"]}
+{"fn": "detectToolOutputLanguage", "args": ["write", " <html>", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", " <html>", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", " <html>", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", " <html>", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", " <html>", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", " <html>", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "text ```code```"]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "text ```code```", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "text ```code```", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "text ```code```", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "text ```code```", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "text ```code```", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "text ```code```", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "plain"]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "plain", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "plain", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "plain", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "plain", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "plain", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "plain", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{bad}"]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{bad}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{bad}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{bad}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{bad}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{bad}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{bad}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "[]"]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "[]", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "[]", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "[]", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "[]", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "[]", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "[]", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{\"a\":\"\\ud800\"}"]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{\"a\":\"\\ud800\"}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{\"a\":\"\\ud800\"}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{\"a\":\"\\ud800\"}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{\"a\":\"\\ud800\"}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{\"a\":\"\\ud800\"}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{\"a\":\"\\ud800\"}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "\t{\"x\":[1,{\"y\":null}]}\n"]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "\t{\"x\":[1,{\"y\":null}]}\n", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "\t{\"x\":[1,{\"y\":null}]}\n", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "\t{\"x\":[1,{\"y\":null}]}\n", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "\t{\"x\":[1,{\"y\":null}]}\n", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "\t{\"x\":[1,{\"y\":null}]}\n", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "\t{\"x\":[1,{\"y\":null}]}\n", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{\"a\":01}"]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{\"a\":01}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{\"a\":01}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{\"a\":01}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{\"a\":01}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{\"a\":01}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["write", "{\"a\":01}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{\"a\":1}"]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{\"a\":1}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{\"a\":1}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{\"a\":1}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{\"a\":1}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{\"a\":1}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{\"a\":1}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "[1,2"]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "[1,2", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "[1,2", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "[1,2", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "[1,2", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "[1,2", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "[1,2", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", " <html>"]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", " <html>", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", " <html>", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", " <html>", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", " <html>", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", " <html>", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", " <html>", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "text ```code```"]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "text ```code```", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "text ```code```", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "text ```code```", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "text ```code```", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "text ```code```", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "text ```code```", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "plain"]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "plain", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "plain", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "plain", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "plain", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "plain", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "plain", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{bad}"]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{bad}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{bad}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{bad}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{bad}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{bad}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{bad}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "[]"]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "[]", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "[]", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "[]", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "[]", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "[]", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "[]", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{\"a\":\"\\ud800\"}"]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{\"a\":\"\\ud800\"}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{\"a\":\"\\ud800\"}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{\"a\":\"\\ud800\"}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{\"a\":\"\\ud800\"}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{\"a\":\"\\ud800\"}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{\"a\":\"\\ud800\"}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "\t{\"x\":[1,{\"y\":null}]}\n"]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "\t{\"x\":[1,{\"y\":null}]}\n", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "\t{\"x\":[1,{\"y\":null}]}\n", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "\t{\"x\":[1,{\"y\":null}]}\n", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "\t{\"x\":[1,{\"y\":null}]}\n", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "\t{\"x\":[1,{\"y\":null}]}\n", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "\t{\"x\":[1,{\"y\":null}]}\n", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{\"a\":01}"]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{\"a\":01}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{\"a\":01}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{\"a\":01}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{\"a\":01}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{\"a\":01}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", "{\"a\":01}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{\"a\":1}"]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{\"a\":1}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{\"a\":1}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{\"a\":1}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{\"a\":1}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{\"a\":1}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{\"a\":1}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "[1,2"]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "[1,2", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "[1,2", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "[1,2", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "[1,2", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "[1,2", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "[1,2", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", " <html>"]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", " <html>", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", " <html>", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", " <html>", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", " <html>", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", " <html>", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", " <html>", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "text ```code```"]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "text ```code```", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "text ```code```", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "text ```code```", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "text ```code```", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "text ```code```", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "text ```code```", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "plain"]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "plain", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "plain", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "plain", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "plain", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "plain", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "plain", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{bad}"]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{bad}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{bad}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{bad}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{bad}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{bad}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{bad}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "[]"]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "[]", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "[]", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "[]", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "[]", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "[]", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "[]", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{\"a\":\"\\ud800\"}"]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{\"a\":\"\\ud800\"}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{\"a\":\"\\ud800\"}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{\"a\":\"\\ud800\"}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{\"a\":\"\\ud800\"}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{\"a\":\"\\ud800\"}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{\"a\":\"\\ud800\"}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "\t{\"x\":[1,{\"y\":null}]}\n"]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "\t{\"x\":[1,{\"y\":null}]}\n", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "\t{\"x\":[1,{\"y\":null}]}\n", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "\t{\"x\":[1,{\"y\":null}]}\n", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "\t{\"x\":[1,{\"y\":null}]}\n", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "\t{\"x\":[1,{\"y\":null}]}\n", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "\t{\"x\":[1,{\"y\":null}]}\n", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{\"a\":01}"]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{\"a\":01}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{\"a\":01}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{\"a\":01}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{\"a\":01}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{\"a\":01}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["bash", "{\"a\":01}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{\"a\":1}"]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{\"a\":1}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{\"a\":1}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{\"a\":1}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{\"a\":1}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{\"a\":1}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{\"a\":1}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "[1,2"]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "[1,2", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "[1,2", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "[1,2", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "[1,2", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "[1,2", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "[1,2", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", " <html>"]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", " <html>", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", " <html>", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", " <html>", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", " <html>", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", " <html>", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", " <html>", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "text ```code```"]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "text ```code```", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "text ```code```", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "text ```code```", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "text ```code```", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "text ```code```", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "text ```code```", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "plain"]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "plain", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "plain", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "plain", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "plain", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "plain", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "plain", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{bad}"]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{bad}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{bad}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{bad}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{bad}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{bad}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{bad}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "[]"]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "[]", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "[]", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "[]", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "[]", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "[]", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "[]", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{\"a\":\"\\ud800\"}"]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{\"a\":\"\\ud800\"}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{\"a\":\"\\ud800\"}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{\"a\":\"\\ud800\"}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{\"a\":\"\\ud800\"}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{\"a\":\"\\ud800\"}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{\"a\":\"\\ud800\"}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "\t{\"x\":[1,{\"y\":null}]}\n"]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "\t{\"x\":[1,{\"y\":null}]}\n", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "\t{\"x\":[1,{\"y\":null}]}\n", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "\t{\"x\":[1,{\"y\":null}]}\n", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "\t{\"x\":[1,{\"y\":null}]}\n", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "\t{\"x\":[1,{\"y\":null}]}\n", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "\t{\"x\":[1,{\"y\":null}]}\n", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{\"a\":01}"]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{\"a\":01}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{\"a\":01}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{\"a\":01}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{\"a\":01}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{\"a\":01}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["grep", "{\"a\":01}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{\"a\":1}"]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{\"a\":1}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{\"a\":1}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{\"a\":1}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{\"a\":1}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{\"a\":1}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{\"a\":1}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "[1,2"]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "[1,2", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "[1,2", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "[1,2", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "[1,2", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "[1,2", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "[1,2", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", " <html>"]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", " <html>", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", " <html>", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", " <html>", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", " <html>", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", " <html>", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", " <html>", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "text ```code```"]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "text ```code```", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "text ```code```", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "text ```code```", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "text ```code```", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "text ```code```", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "text ```code```", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "plain"]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "plain", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "plain", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "plain", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "plain", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "plain", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "plain", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{bad}"]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{bad}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{bad}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{bad}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{bad}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{bad}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{bad}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "[]"]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "[]", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "[]", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "[]", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "[]", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "[]", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "[]", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{\"a\":\"\\ud800\"}"]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{\"a\":\"\\ud800\"}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{\"a\":\"\\ud800\"}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{\"a\":\"\\ud800\"}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{\"a\":\"\\ud800\"}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{\"a\":\"\\ud800\"}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{\"a\":\"\\ud800\"}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "\t{\"x\":[1,{\"y\":null}]}\n"]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "\t{\"x\":[1,{\"y\":null}]}\n", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "\t{\"x\":[1,{\"y\":null}]}\n", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "\t{\"x\":[1,{\"y\":null}]}\n", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "\t{\"x\":[1,{\"y\":null}]}\n", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "\t{\"x\":[1,{\"y\":null}]}\n", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "\t{\"x\":[1,{\"y\":null}]}\n", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{\"a\":01}"]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{\"a\":01}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{\"a\":01}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{\"a\":01}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{\"a\":01}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{\"a\":01}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["constructor", "{\"a\":01}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{\"a\":1}"]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{\"a\":1}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{\"a\":1}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{\"a\":1}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{\"a\":1}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{\"a\":1}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{\"a\":1}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "[1,2"]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "[1,2", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "[1,2", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "[1,2", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "[1,2", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "[1,2", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "[1,2", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", " <html>"]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", " <html>", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", " <html>", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", " <html>", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", " <html>", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", " <html>", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", " <html>", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "text ```code```"]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "text ```code```", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "text ```code```", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "text ```code```", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "text ```code```", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "text ```code```", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "text ```code```", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "plain"]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "plain", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "plain", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "plain", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "plain", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "plain", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "plain", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{bad}"]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{bad}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{bad}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{bad}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{bad}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{bad}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{bad}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "[]"]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "[]", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "[]", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "[]", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "[]", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "[]", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "[]", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{\"a\":\"\\ud800\"}"]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{\"a\":\"\\ud800\"}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{\"a\":\"\\ud800\"}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{\"a\":\"\\ud800\"}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{\"a\":\"\\ud800\"}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{\"a\":\"\\ud800\"}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{\"a\":\"\\ud800\"}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "\t{\"x\":[1,{\"y\":null}]}\n"]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "\t{\"x\":[1,{\"y\":null}]}\n", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "\t{\"x\":[1,{\"y\":null}]}\n", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "\t{\"x\":[1,{\"y\":null}]}\n", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "\t{\"x\":[1,{\"y\":null}]}\n", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "\t{\"x\":[1,{\"y\":null}]}\n", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "\t{\"x\":[1,{\"y\":null}]}\n", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{\"a\":01}"]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{\"a\":01}", {"filePath": "src/a.ts"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{\"a\":01}", {"file_path": "x.unknownext"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{\"a\":01}", {"sourcePath": "Dockerfile"}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{\"a\":01}", {"filePath": ""}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{\"a\":01}", {"filePath": 5}]}
+{"fn": "detectToolOutputLanguage", "args": ["unknown_tool", "{\"a\":01}", {}]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", 5]}
+{"fn": "detectToolOutputLanguage", "args": ["webfetch", null, {}]}
+{"fn": "getLanguageFromExtension", "args": ["a.ts"]}
+{"fn": "isImageFile", "args": ["a.ts"]}
+{"fn": "getImageMimeType", "args": ["a.ts"]}
+{"fn": "getLanguageFromExtension", "args": ["A.TSX"]}
+{"fn": "isImageFile", "args": ["A.TSX"]}
+{"fn": "getImageMimeType", "args": ["A.TSX"]}
+{"fn": "getLanguageFromExtension", "args": ["Dockerfile"]}
+{"fn": "isImageFile", "args": ["Dockerfile"]}
+{"fn": "getImageMimeType", "args": ["Dockerfile"]}
+{"fn": "getLanguageFromExtension", "args": ["path/to/Makefile"]}
+{"fn": "isImageFile", "args": ["path/to/Makefile"]}
+{"fn": "getImageMimeType", "args": ["path/to/Makefile"]}
+{"fn": "getLanguageFromExtension", "args": ["x.json"]}
+{"fn": "isImageFile", "args": ["x.json"]}
+{"fn": "getImageMimeType", "args": ["x.json"]}
+{"fn": "getLanguageFromExtension", "args": ["bun.lock"]}
+{"fn": "isImageFile", "args": ["bun.lock"]}
+{"fn": "getImageMimeType", "args": ["bun.lock"]}
+{"fn": "getLanguageFromExtension", "args": [".gitignore"]}
+{"fn": "isImageFile", "args": [".gitignore"]}
+{"fn": "getImageMimeType", "args": [".gitignore"]}
+{"fn": "getLanguageFromExtension", "args": ["noext"]}
+{"fn": "isImageFile", "args": ["noext"]}
+{"fn": "getImageMimeType", "args": ["noext"]}
+{"fn": "getLanguageFromExtension", "args": ["a.b.c.PY"]}
+{"fn": "isImageFile", "args": ["a.b.c.PY"]}
+{"fn": "getImageMimeType", "args": ["a.b.c.PY"]}
+{"fn": "getLanguageFromExtension", "args": ["dir.d/file"]}
+{"fn": "isImageFile", "args": ["dir.d/file"]}
+{"fn": "getImageMimeType", "args": ["dir.d/file"]}
+{"fn": "getLanguageFromExtension", "args": ["constructor"]}
+{"fn": "isImageFile", "args": ["constructor"]}
+{"fn": "getImageMimeType", "args": ["constructor"]}
+{"fn": "getLanguageFromExtension", "args": ["x.constructor"]}
+{"fn": "isImageFile", "args": ["x.constructor"]}
+{"fn": "getImageMimeType", "args": ["x.constructor"]}
+{"fn": "getLanguageFromExtension", "args": ["x.__proto__"]}
+{"fn": "isImageFile", "args": ["x.__proto__"]}
+{"fn": "getImageMimeType", "args": ["x.__proto__"]}
+{"fn": "getLanguageFromExtension", "args": ["toString"]}
+{"fn": "isImageFile", "args": ["toString"]}
+{"fn": "getImageMimeType", "args": ["toString"]}
+{"fn": "getLanguageFromExtension", "args": ["a."]}
+{"fn": "isImageFile", "args": ["a."]}
+{"fn": "getImageMimeType", "args": ["a."]}
+{"fn": "getLanguageFromExtension", "args": [""]}
+{"fn": "isImageFile", "args": [""]}
+{"fn": "getImageMimeType", "args": [""]}
+{"fn": "getLanguageFromExtension", "args": [".env.local"]}
+{"fn": "isImageFile", "args": [".env.local"]}
+{"fn": "getImageMimeType", "args": [".env.local"]}
+{"fn": "getLanguageFromExtension", "args": ["x.toString"]}
+{"fn": "isImageFile", "args": ["x.toString"]}
+{"fn": "getImageMimeType", "args": ["x.toString"]}
+{"fn": "getLanguageFromExtension", "args": ["dir/hasOwnProperty"]}
+{"fn": "isImageFile", "args": ["dir/hasOwnProperty"]}
+{"fn": "getImageMimeType", "args": ["dir/hasOwnProperty"]}
+{"fn": "getLanguageFromExtension", "args": ["y.valueOf"]}
+{"fn": "isImageFile", "args": ["y.valueOf"]}
+{"fn": "getImageMimeType", "args": ["y.valueOf"]}
+{"fn": "getLanguageFromExtension", "args": ["img.PNG"]}
+{"fn": "isImageFile", "args": ["img.PNG"]}
+{"fn": "getImageMimeType", "args": ["img.PNG"]}
+{"fn": "getLanguageFromExtension", "args": ["pic.jpeg"]}
+{"fn": "isImageFile", "args": ["pic.jpeg"]}
+{"fn": "getImageMimeType", "args": ["pic.jpeg"]}
+{"fn": "getLanguageFromExtension", "args": ["i.svg"]}
+{"fn": "isImageFile", "args": ["i.svg"]}
+{"fn": "getImageMimeType", "args": ["i.svg"]}
+{"fn": "getLanguageFromExtension", "args": ["z.avif"]}
+{"fn": "isImageFile", "args": ["z.avif"]}
+{"fn": "getImageMimeType", "args": ["z.avif"]}
+{"fn": "getLanguageFromExtension", "args": ["q.tiff"]}
+{"fn": "isImageFile", "args": ["q.tiff"]}
+{"fn": "getImageMimeType", "args": ["q.tiff"]}
+{"fn": "getLanguageFromExtension", "args": ["x.Ico"]}
+{"fn": "isImageFile", "args": ["x.Ico"]}
+{"fn": "getImageMimeType", "args": ["x.Ico"]}
+{"fn": "getLanguageFromExtension", "args": [5]}
+{"fn": "getLanguageFromExtension", "args": [null]}
+{"fn": "formatToolInput", "args": [{"command": "ls -la"}, "bash"]}
+{"fn": "formatToolInput", "args": [{"command": ""}, "bash"]}
+{"fn": "formatToolInput", "args": [{"command": 5}, "bash"]}
+{"fn": "formatToolInput", "args": [{"prompt": "do x"}, "task"]}
+{"fn": "formatToolInput", "args": [{"description": "d"}, "task"]}
+{"fn": "formatToolInput", "args": [{"patchText": "p"}, "apply_patch"]}
+{"fn": "formatToolInput", "args": [{"patch": "pp"}, "apply_patch"]}
+{"fn": "formatToolInput", "args": [{"filePath": "/a"}, "edit"]}
+{"fn": "formatToolInput", "args": [{"path": "/b"}, "multiedit"]}
+{"fn": "formatToolInput", "args": [{"content": "c"}, "write"]}
+{"fn": "formatToolInput", "args": [{"oldString": "a", "newString": "b", "replaceAll": true, "camelCaseKey": false, "snake_case_key": 1.5, "nested": {"a": [1, {"b": null}], "u": {"$undefined": true}, "e": {}}, "arr": [], "empty": "", "nul": null, "und": {"$undefined": true}, "big": {"$num": "NaN"}, "ßkey": "x", "😀k": "y", "ÉKey": "z", "str": "line\n\"q\"\\\t\u0001"}, "read"]}
+{"fn": "formatToolInput", "args": [{"a": 1}, "bash"]}
+{"fn": "formatToolInput", "args": ["plain string", "bash"]}
+{"fn": "formatToolInput", "args": [5, "x"]}
+{"fn": "formatToolInput", "args": [true, "x"]}
+{"fn": "formatToolInput", "args": [null, "x"]}
+{"fn": "formatToolInput", "args": ["", "x"]}
+{"fn": "formatToolInput", "args": [0, "x"]}
+{"fn": "formatToolInput", "args": [[1, "two", {"three": 3}], "x"]}
+{"fn": "formatToolInput", "args": [{"$map": [["a", 1]]}, "x"]}
+{"fn": "formatToolInput", "args": [{"x": {"$map": [["a", 1]]}, "y": {"$set": [1]}, "d": {"$date": "2020-01-01T00:00:00.000Z"}, "n": {"$num": "Infinity"}, "m": {"$num": "-0"}}, "x"]}
+{"fn": "formatToolInput", "args": [{"k": [null, {"$undefined": true}, 1]}, "x"]}
+{"fn": "formatToolInput", "args": [{"lone": {"$utf16": [55296, 65]}}, "x"]}

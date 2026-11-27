@@ -13,9 +13,11 @@ means the tool has no generator for the parameter types). Lines are `wc -l` of t
 of `port.rs`. Most `lib` exports are `export const f = (...) =>`, which `--from-tests` cannot
 capture; hand cases cover what the generator misses instead. `diff` and `fuzz` compare only
 whether a call threw, not the error text (a port's wrong V8 message still matches; found in
-`sessionChangeAttribution`): the TypeError texts written in the ports are best effort.
+`sessionChangeAttribution`): the TypeError texts written in the ports are best effort. `scripts/rust-anything/error-texts.mjs`
+now checks them (see the README): product-built messages must match exactly, engine ones are
+information; each crate's `error-sources.json` keeps its classified throw sites.
 
-46 units done, 17 skip rows (of 133 in the plan; 99 `ready`).
+48 units done, 17 skip rows (of 133 in the plan; 99 `ready`).
 
 | Unit | State | Recorded | Fuzz | TS | Rust | Notes |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
@@ -83,4 +85,6 @@ whether a call threw, not the error text (a port's wrong V8 message still matche
 | `client-error-capture.ts` | done | 538/538 | 9810/9810 | 242 | 121 | `shouldIgnoreClientError` and `fingerprintError` (FNV-1a over UTF-16 units with `Math.imul`, base 36; the parts are joined with NUL characters). The queue, timers, `fetch` and `window` readers stay in TS. |
 | `directoryRecovery.ts`, `orchestrationApi.ts` | skipped: not loadable | - | - | - | - | Both import `lib/opencode/client.ts` (TS parameter properties Node's type stripping refuses), and are mostly async. |
 | `messageFreshness.ts`, `apiSecurity.ts` | skipped: class, browser | - | - | - | - | A singleton class over `Date.now`; a `window.fetch` wrapper. |
-Not attempted yet: `toolHelpers.ts` (643 lines of tables plus prototype-lookup quirks; `fileTypeIcons` waits on it), `providers/` (about 40 exports over 885 lines), `shortcuts.ts` (reads `navigator`), `theme/`, `magicPrompts.ts`, `openCodeStatus.ts`, `interactionAnalytics.ts`, `retentionSelection.ts`, `git/`, `gitApi.ts`, `quota/`, `devryanConfig.ts`, `terminal/`, and the async API units (`*Api.ts`, `desktop*.ts`, `passkeys.ts`, `worktreeSessionCreator.ts`, `detectDevServer.ts`).
+| `toolHelpers.ts` | done | 2028/2028 | 13085/13085 | 796 | 863 | All 6 exports; the three lookup tables written out from the source, `TOOL_METADATA` as its JSON. 649 hand cases (the test's tool names). Quirk kept: every table is a plain object, so `constructor`, `toString`, `__proto__`... (as tool name, file name or extension) return the `Object.prototype` member instead of the fallback; a non-string tool name is looked up by `String(name)` (`["read"]` finds `read`). `JSON.stringify(value, null, 2)` and JSON validity written out. |
+| `providers/` | done | 7144/7144 | 79682/79682 | 1023 | 643 | 26 of 40 exports. Kept in TS: `sorting.ts` (ICU collation), `getOrderedThinkingVariants` (sorts unranked variants with `localeCompare`) and the 8 exports built on it, and the two `filter*ProviderModels` (callback). 2216 hand cases. `find(isProviderModelAvailable)` stops at a `null` model (it counts as available), so a provider whose first model is `null` is skipped. |
+Not attempted yet: `fileTypeIcons.ts` (now only the 2088-line `fileTypeIconIds.ts` id set stands in the way), `shortcuts.ts` (reads `navigator`), `theme/`, `magicPrompts.ts`, `openCodeStatus.ts`, `interactionAnalytics.ts`, `retentionSelection.ts`, `git/`, `gitApi.ts`, `quota/`, `devryanConfig.ts`, `terminal/`, and the async API units (`*Api.ts`, `desktop*.ts`, `passkeys.ts`, `worktreeSessionCreator.ts`, `detectDevServer.ts`).

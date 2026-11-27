@@ -1,0 +1,47 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [],
+  "product": [],
+  "engine": [
+    {
+      "site": "packages/ui/src/sync/session-working.ts:109",
+      "class": "TypeError",
+      "sample": "Cannot read properties of undefined (reading 'length')"
+    },
+    {
+      "site": "packages/ui/src/sync/session-working.ts:112",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'type')"
+    },
+    {
+      "site": "packages/ui/src/sync/session-working.ts:120",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'role')"
+    },
+    {
+      "site": "packages/ui/src/sync/session-working.ts:51",
+      "class": "TypeError",
+      "sample": "(parts ?? []) is not iterable"
+    },
+    {
+      "site": "packages/ui/src/sync/session-working.ts:52",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'type')"
+    },
+    {
+      "site": "packages/ui/src/sync/session-working.ts:63",
+      "class": "TypeError",
+      "sample": "(parts ?? []) is not iterable"
+    },
+    {
+      "site": "packages/ui/src/sync/session-working.ts:64",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'type')"
+    },
+    {
+      "site": "packages/ui/src/sync/session-working.ts:96",
+      "class": "TypeError",
+      "sample": "Cannot destructure property 'status' of 'object null' as it is null."
+    }
+  ]
+}
