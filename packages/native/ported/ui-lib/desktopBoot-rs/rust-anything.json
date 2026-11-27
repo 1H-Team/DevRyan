@@ -1,0 +1,79 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "desktopBoot.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "desktopboot-rs",
+  "exports": [
+    {
+      "name": "resolveDesktopBootView",
+      "file": "desktopBoot.ts",
+      "line": 156,
+      "params": [
+        {
+          "name": "input",
+          "ts_type": "({\n  isDesktopShell: boolean;\n  bootOutcome: (| { target: 'local'; status: 'ok' }\n  | { target: 'remote'; status: 'ok'; hostId: string; url: string }\n\n  // First launch - user hasn't made a choice yet\n  | { target: null; status: 'not-configured' }\n\n  // Recovery screens - something is wrong\n  | { target: 'local'; status: 'unreachable' }\n  | { target: 'remote'; status: 'unreachable'; hostId: string; url: string }\n  | { target: 'remote'; status: 'wrong-service'; hostId: string; url: string }\n  | { target: 'remote'; status: 'missing'; hostId: string }) | null;\n})",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "(| { screen: 'main' }\n  | { screen: 'main'; hostId: string; url: string }\n  | { screen: 'chooser' }\n  | { screen: 'recovery'; variant: 'local-unavailable' }\n  | { screen: 'recovery'; variant: 'remote-unreachable'; hostId: string; url: string }\n  | { screen: 'recovery'; variant: 'remote-wrong-service'; hostId: string; url: string }\n  | { screen: 'recovery'; variant: 'remote-missing'; hostId: string }) | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "canDismissInitialLoading",
+      "file": "desktopBoot.ts",
+      "line": 235,
+      "params": [
+        {
+          "name": "state",
+          "ts_type": "{\n  isDesktopShell: boolean;\n  isInitialized: boolean;\n  bootOutcomeKnown: boolean;\n  /**\n   * Whether the resolved boot view is 'main'.\n   * When false (chooser/recovery), splash dismisses on bootOutcomeKnown alone.\n   * When true or absent, splash also requires isInitialized.\n   */\n  bootViewIsMain?: boolean;\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "shouldRestartDesktopBootFlow",
+      "file": "desktopBoot.ts",
+      "line": 257,
+      "params": [
+        {
+          "name": "input",
+          "ts_type": "{\n  isTauriShell: boolean;\n  isDesktopLocalOriginActive: boolean;\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "getInjectedBootOutcome",
+      "file": "desktopBoot.ts",
+      "line": 266,
+      "reason": "reads window"
+    },
+    {
+      "name": "getBootInjectionStatus",
+      "file": "desktopBoot.ts",
+      "line": 287,
+      "reason": "reads window"
+    }
+  ]
+}

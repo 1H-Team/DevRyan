@@ -1,0 +1,79 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "plans/",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "plans-rs",
+  "exports": [
+    {
+      "name": "planSettlementWaitingText",
+      "file": "plans/planSettlement.ts",
+      "line": 30,
+      "params": [
+        {
+          "name": "reason",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "sanitizePlanPathSegment",
+      "file": "plans/sessionPlanFile.ts",
+      "line": 40,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "createPlanRevisionDraft",
+      "file": "plans/planRevisionDraft.ts",
+      "line": 4,
+      "reason": "returns a stateful object of callbacks"
+    },
+    {
+      "name": "planSettlementWait",
+      "file": "plans/planSettlement.ts",
+      "line": 14,
+      "reason": "checks `instanceof`: class identity does not survive the bridge"
+    },
+    {
+      "name": "buildSessionPlanFilePath",
+      "file": "plans/sessionPlanFile.ts",
+      "line": 50,
+      "reason": "async"
+    },
+    {
+      "name": "ensureSessionPlanFile",
+      "file": "plans/sessionPlanFile.ts",
+      "line": 73,
+      "reason": "async, writes files"
+    },
+    {
+      "name": "persistSessionPlanRevision",
+      "file": "plans/sessionPlanPersistence.ts",
+      "line": 47,
+      "reason": "async, drives a store"
+    }
+  ]
+}

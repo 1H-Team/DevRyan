@@ -1,0 +1,19 @@
+{
+  "unit": "fontOptions.ts",
+  "files": 1,
+  "fingerprint": "7bd0292299a3a054",
+  "cases": 72,
+  "cases_hash": "347f5fcee16a18df",
+  "coverage": {
+    "lines": 166,
+    "reached": 166,
+    "files": [
+      {
+        "file": "fontOptions.ts",
+        "lines": 166,
+        "reached": 166,
+        "missed": ""
+      }
+    ]
+  }
+}

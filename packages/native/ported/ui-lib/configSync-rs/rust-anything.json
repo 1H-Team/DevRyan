@@ -1,0 +1,49 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "configSync.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "configsync-rs",
+  "exports": [
+    {
+      "name": "scopeMatches",
+      "file": "configSync.ts",
+      "line": 57,
+      "params": [
+        {
+          "name": "event",
+          "ts_type": "ConfigChangeEvent",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "scope",
+          "ts_type": "(\"agents\" | \"providers\" | \"commands\" | \"skills\" | \"all\")",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "subscribeToConfigChanges",
+      "file": "configSync.ts",
+      "line": 13,
+      "reason": "takes a listener callback"
+    },
+    {
+      "name": "emitConfigChange",
+      "file": "configSync.ts",
+      "line": 22,
+      "reason": "calls the subscribed listeners"
+    }
+  ]
+}

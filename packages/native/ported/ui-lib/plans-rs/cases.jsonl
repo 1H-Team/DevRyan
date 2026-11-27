@@ -1,0 +1,449 @@
+{"fn":"planSettlementWaitingText","args":[],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a..b"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["./x/**/*.json"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ns:key.path"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["日本語のテキスト"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["trailing."],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["﻿bom"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ΣΊΣΥΦΟΣ"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["src/a/b.ts"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a😀b😀c"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["İstanbul"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":[":"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["Hello World"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["abc"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":[{"$undefined":true}],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["é﻿bom"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["é"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["{name} has {count} items"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["key_name-1"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ünïcödé"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["😀"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["日本語のテキスト:"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["straße"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a.b.c"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["./x/**/*.jsona😀b😀c"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ünïcödé😀"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a:b:c"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a😀b😀c😀"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["  padded  "],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["hello"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["./x/**/*.jsonline1\nline2"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a﻿bom"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ab{name} has {count} items"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":[".leading"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["line1\nline2"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a😀b😀ctrailing."],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["﻿bomhello world"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["é.leading"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["hello world"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ns:key.pathünïcödé"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ΣΊΣΥΦΟΣa.b.c"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":[":straße"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":[""],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["emoji 👍🏽 mix"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ns:key.path./x/**/*.json"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["abca.b.c"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a😀b😀c  padded  "],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["abΣΊΣΥΦΟΣ"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ab"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a:b:ctrailing."],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["HELLO"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["{name} has {count} items﻿bom"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["tab\tseparated"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["Hello Worldab"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["éİstanbul"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["hello worldtrailing."],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["key_name-1İstanbul"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["{name} has {count} itemsa😀b😀c"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ns:key.path﻿bom"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["😀tab\tseparated"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["HELLOa.b.c"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["Hello World.leading"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["  padded  a..b"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["😀trailing."],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["Hello Worldsrc/a/b.ts"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a😀b😀cΣΊΣΥΦΟΣ"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ab.leading"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["line1\nline2HELLO"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["  padded  straße"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["İstanbulhello world"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["src/a/b.tsa"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["  padded  😀"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["Hello World./x/**/*.json"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["./x/**/*.jsonİstanbul"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["日本語のテキストünïcödé"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["key_name-1a😀b😀c"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["aΣΊΣΥΦΟΣ"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["😀a.b.c"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["😀src/a/b.ts"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["aHello World"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a:b:c./x/**/*.json"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["hellotab\tseparated"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["./x/**/*.json./x/**/*.json"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["trailing..leading"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["﻿bom{name} has {count} items"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["😀ab"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["  padded  abc"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["aabc"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["﻿bomline1\nline2"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["hellons:key.path"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["﻿boma.b.c"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["./x/**/*.json{name} has {count} items"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a..b:"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ΣΊΣΥΦΟΣabc"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ünïcödé日本語のテキスト"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["éab"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["😀key_name-1"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["İstanbulHello World"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["HELLO😀"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["src/a/b.tsstraße"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ΣΊΣΥΦΟΣ😀"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a..b{name} has {count} items"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ab  padded  "],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a..bkey_name-1"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["./x/**/*.jsonsrc/a/b.ts"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["abc﻿bom"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ünïcödéhello world"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["emoji 👍🏽 mixİstanbul"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["straße{name} has {count} items"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["trailing.key_name-1"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a:b:chello world"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["日本語のテキスト.leading"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a..b😀"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ünïcödéabc"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a.leading"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["tab\tseparatedhello world"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a.b.ca"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["hello worldHello World"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["straßeünïcödé"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["straßeline1\nline2"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["{name} has {count} itemsİstanbul"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a.b.ca.b.c"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["aline1\nline2"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":[".leadingsrc/a/b.ts"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ab./x/**/*.json"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["日本語のテキストa..b"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["日本語のテキスト./x/**/*.json"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["aa"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["{name} has {count} itemsünïcödé"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["trailing../x/**/*.json"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["éstraße"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["éa"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ünïcödé{name} has {count} items"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a😀b😀cabc"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a..b./x/**/*.json"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["{name} has {count} itemsé"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":[".leading日本語のテキスト"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":[":a:b:c"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a..bstraße"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ünïcödékey_name-1"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["﻿bom日本語のテキスト"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["straßeİstanbul"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["HELLOns:key.path"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["hello worldline1\nline2"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["﻿bomHello World"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["./x/**/*.jsona..b"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ünïcödéemoji 👍🏽 mix"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["abemoji 👍🏽 mix"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":[".leadinga😀b😀c"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["éhello"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["Hello Worldtab\tseparated"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ΣΊΣΥΦΟΣHELLO"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a..btrailing."],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["abé"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["./x/**/*.jsonünïcödé"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["emoji 👍🏽 mixab"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["emoji 👍🏽 mixa..b"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["HELLOstraße"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["abhello world"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ünïcödéa:b:c"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["HELLO  padded  "],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ΣΊΣΥΦΟΣemoji 👍🏽 mix"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["key_name-1日本語のテキスト"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["abckey_name-1"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["key_name-1😀"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["helloa"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":[".leadingab"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a😀b😀c:"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["line1\nline2Hello World"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a..ba"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a😀b😀c﻿bom"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ünïcödé:"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["trailing.  padded  "],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["  padded  a😀b😀c"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a.b.cünïcödé"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["hello😀"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["line1\nline2ab"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["./x/**/*.jsontab\tseparated"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["日本語のテキストé"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["emoji 👍🏽 mixé"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["src/a/b.tsab"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["src/a/b.tsline1\nline2"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["src/a/b.ts./x/**/*.json"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["abca:b:c"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["key_name-1hello"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["./x/**/*.json日本語のテキスト"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":[":a"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["line1\nline2ns:key.path"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["tab\tseparatedhello"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["./x/**/*.jsoné"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["src/a/b.ts日本語のテキスト"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["line1\nline2  padded  "],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["a:b:ca😀b😀c"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["hello.leading"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ns:key.pathemoji 👍🏽 mix"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["ns:key.patha.b.c"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["HELLO.leading"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["line1\nline2{name} has {count} items"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["helloİstanbul"],"ok":"Waiting for the run to settle…"}
+{"fn":"sanitizePlanPathSegment","args":["a"],"ok":"a"}
+{"fn":"sanitizePlanPathSegment","args":["key_name-1"],"ok":"key_name-1"}
+{"fn":"sanitizePlanPathSegment","args":["emoji 👍🏽 mix"],"ok":"emoji-mix"}
+{"fn":"sanitizePlanPathSegment","args":["hello worlda😀b😀c"],"ok":"hello-worlda-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["日本語のテキスト"],"ok":""}
+{"fn":"sanitizePlanPathSegment","args":["  padded  "],"ok":"padded"}
+{"fn":"sanitizePlanPathSegment","args":["😀"],"ok":""}
+{"fn":"sanitizePlanPathSegment","args":["HELLO"],"ok":"HELLO"}
+{"fn":"sanitizePlanPathSegment","args":["ab"],"ok":"ab"}
+{"fn":"sanitizePlanPathSegment","args":["trailing."],"ok":"trailing"}
+{"fn":"sanitizePlanPathSegment","args":[""],"ok":""}
+{"fn":"sanitizePlanPathSegment","args":["src/a/b.ts"],"ok":"src-a-b-ts"}
+{"fn":"sanitizePlanPathSegment","args":["{name} has {count} items"],"ok":"name-has-count-items"}
+{"fn":"sanitizePlanPathSegment","args":["hello"],"ok":"hello"}
+{"fn":"sanitizePlanPathSegment","args":["tab\tseparatedabc"],"ok":"tab-separatedabc"}
+{"fn":"sanitizePlanPathSegment","args":["a😀b😀cline1\nline2"],"ok":"a-b-cline1-line2"}
+{"fn":"sanitizePlanPathSegment","args":[":Hello World"],"ok":"Hello-World"}
+{"fn":"sanitizePlanPathSegment","args":["a:b:c"],"ok":"a-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["a.b.c"],"ok":"a-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["ns:key.path"],"ok":"ns-key-path"}
+{"fn":"sanitizePlanPathSegment","args":["a..b"],"ok":"a-b"}
+{"fn":"sanitizePlanPathSegment","args":["ΣΊΣΥΦΟΣ"],"ok":""}
+{"fn":"sanitizePlanPathSegment","args":["éa:b:c"],"ok":"e-a-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["abc"],"ok":"abc"}
+{"fn":"sanitizePlanPathSegment","args":["tab\tseparated"],"ok":"tab-separated"}
+{"fn":"sanitizePlanPathSegment","args":["line1\nline2"],"ok":"line1-line2"}
+{"fn":"sanitizePlanPathSegment","args":["a:b:ca"],"ok":"a-b-ca"}
+{"fn":"sanitizePlanPathSegment","args":["hello world"],"ok":"hello-world"}
+{"fn":"sanitizePlanPathSegment","args":["line1\nline2Hello World"],"ok":"line1-line2Hello-World"}
+{"fn":"sanitizePlanPathSegment","args":["a..bstraße"],"ok":"a-bstra-e"}
+{"fn":"sanitizePlanPathSegment","args":["İstanbul"],"ok":"stanbul"}
+{"fn":"sanitizePlanPathSegment","args":["ünïcödé"],"ok":"n-c-d"}
+{"fn":"sanitizePlanPathSegment","args":["é"],"ok":"e"}
+{"fn":"sanitizePlanPathSegment","args":["./x/**/*.json"],"ok":"x-json"}
+{"fn":"sanitizePlanPathSegment","args":["src/a/b.tsab"],"ok":"src-a-b-tsab"}
+{"fn":"sanitizePlanPathSegment","args":["trailing.  padded  "],"ok":"trailing-padded"}
+{"fn":"sanitizePlanPathSegment","args":[".leadinga:b:c"],"ok":"leadinga-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["straße"],"ok":"stra-e"}
+{"fn":"sanitizePlanPathSegment","args":["﻿bom"],"ok":"bom"}
+{"fn":"sanitizePlanPathSegment","args":["Hello World"],"ok":"Hello-World"}
+{"fn":"sanitizePlanPathSegment","args":[":"],"ok":""}
+{"fn":"sanitizePlanPathSegment","args":["a😀b😀c"],"ok":"a-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["Hello Worlda:b:c"],"ok":"Hello-Worlda-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["  padded  a.b.c"],"ok":"padded-a-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["aba.b.c"],"ok":"aba-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["Hello Worlda..b"],"ok":"Hello-Worlda-b"}
+{"fn":"sanitizePlanPathSegment","args":["éünïcödé"],"ok":"e-n-c-d"}
+{"fn":"sanitizePlanPathSegment","args":["straße  padded  "],"ok":"stra-e-padded"}
+{"fn":"sanitizePlanPathSegment","args":["a..bab"],"ok":"a-bab"}
+{"fn":"sanitizePlanPathSegment","args":["emoji 👍🏽 mixsrc/a/b.ts"],"ok":"emoji-mixsrc-a-b-ts"}
+{"fn":"sanitizePlanPathSegment","args":[".leading"],"ok":"leading"}
+{"fn":"sanitizePlanPathSegment","args":["😀line1\nline2"],"ok":"line1-line2"}
+{"fn":"sanitizePlanPathSegment","args":[".leadingé"],"ok":"leadinge"}
+{"fn":"sanitizePlanPathSegment","args":["abc:"],"ok":"abc"}
+{"fn":"sanitizePlanPathSegment","args":["éstraße"],"ok":"e-stra-e"}
+{"fn":"sanitizePlanPathSegment","args":["😀hello"],"ok":"hello"}
+{"fn":"sanitizePlanPathSegment","args":["éΣΊΣΥΦΟΣ"],"ok":"e"}
+{"fn":"sanitizePlanPathSegment","args":["﻿bomünïcödé"],"ok":"bom-n-c-d"}
+{"fn":"sanitizePlanPathSegment","args":["ΣΊΣΥΦΟΣstraße"],"ok":"stra-e"}
+{"fn":"sanitizePlanPathSegment","args":["key_name-1ab"],"ok":"key_name-1ab"}
+{"fn":"sanitizePlanPathSegment","args":["{name} has {count} itemshello world"],"ok":"name-has-count-itemshello-world"}
+{"fn":"sanitizePlanPathSegment","args":["日本語のテキスト.leading"],"ok":"leading"}
+{"fn":"sanitizePlanPathSegment","args":["İstanbulkey_name-1"],"ok":"stanbulkey_name-1"}
+{"fn":"sanitizePlanPathSegment","args":["a.leading"],"ok":"a-leading"}
+{"fn":"sanitizePlanPathSegment","args":["trailing.trailing."],"ok":"trailing-trailing"}
+{"fn":"sanitizePlanPathSegment","args":["{name} has {count} items:"],"ok":"name-has-count-items"}
+{"fn":"sanitizePlanPathSegment","args":["a:b:cHELLO"],"ok":"a-b-cHELLO"}
+{"fn":"sanitizePlanPathSegment","args":["Hello World:"],"ok":"Hello-World"}
+{"fn":"sanitizePlanPathSegment","args":["hellostraße"],"ok":"hellostra-e"}
+{"fn":"sanitizePlanPathSegment","args":["ünïcödétrailing."],"ok":"n-c-d-trailing"}
+{"fn":"sanitizePlanPathSegment","args":["a﻿bom"],"ok":"a-bom"}
+{"fn":"sanitizePlanPathSegment","args":["İstanbul./x/**/*.json"],"ok":"stanbul-x-json"}
+{"fn":"sanitizePlanPathSegment","args":["﻿bomtab\tseparated"],"ok":"bomtab-separated"}
+{"fn":"sanitizePlanPathSegment","args":["src/a/b.tssrc/a/b.ts"],"ok":"src-a-b-tssrc-a-b-ts"}
+{"fn":"sanitizePlanPathSegment","args":["tab\tseparated.leading"],"ok":"tab-separated-leading"}
+{"fn":"sanitizePlanPathSegment","args":["line1\nline2key_name-1"],"ok":"line1-line2key_name-1"}
+{"fn":"sanitizePlanPathSegment","args":[":😀"],"ok":""}
+{"fn":"sanitizePlanPathSegment","args":["日本語のテキスト  padded  "],"ok":"padded"}
+{"fn":"sanitizePlanPathSegment","args":["a.b.ctrailing."],"ok":"a-b-ctrailing"}
+{"fn":"sanitizePlanPathSegment","args":["﻿bomstraße"],"ok":"bomstra-e"}
+{"fn":"sanitizePlanPathSegment","args":["a:b:ctrailing."],"ok":"a-b-ctrailing"}
+{"fn":"sanitizePlanPathSegment","args":["abé"],"ok":"abe"}
+{"fn":"sanitizePlanPathSegment","args":["{name} has {count} itemsİstanbul"],"ok":"name-has-count-items-stanbul"}
+{"fn":"sanitizePlanPathSegment","args":["hello worldns:key.path"],"ok":"hello-worldns-key-path"}
+{"fn":"sanitizePlanPathSegment","args":["key_name-1line1\nline2"],"ok":"key_name-1line1-line2"}
+{"fn":"sanitizePlanPathSegment","args":["trailing.Hello World"],"ok":"trailing-Hello-World"}
+{"fn":"sanitizePlanPathSegment","args":["日本語のテキストab"],"ok":"ab"}
+{"fn":"sanitizePlanPathSegment","args":["a:b:ca:b:c"],"ok":"a-b-ca-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["😀  padded  "],"ok":"padded"}
+{"fn":"sanitizePlanPathSegment","args":["Hello WorldHELLO"],"ok":"Hello-WorldHELLO"}
+{"fn":"sanitizePlanPathSegment","args":["﻿boma..b"],"ok":"boma-b"}
+{"fn":"sanitizePlanPathSegment","args":["a😀b😀cstraße"],"ok":"a-b-cstra-e"}
+{"fn":"sanitizePlanPathSegment","args":["aba😀b😀c"],"ok":"aba-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["a..bline1\nline2"],"ok":"a-bline1-line2"}
+{"fn":"sanitizePlanPathSegment","args":["﻿bomemoji 👍🏽 mix"],"ok":"bomemoji-mix"}
+{"fn":"sanitizePlanPathSegment","args":["tab\tseparatedline1\nline2"],"ok":"tab-separatedline1-line2"}
+{"fn":"sanitizePlanPathSegment","args":["tab\tseparatedhello world"],"ok":"tab-separatedhello-world"}
+{"fn":"sanitizePlanPathSegment","args":["a.b.c日本語のテキスト"],"ok":"a-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["﻿bom日本語のテキスト"],"ok":"bom"}
+{"fn":"sanitizePlanPathSegment","args":["HELLOabc"],"ok":"HELLOabc"}
+{"fn":"sanitizePlanPathSegment","args":["./x/**/*.jsonHELLO"],"ok":"x-jsonHELLO"}
+{"fn":"sanitizePlanPathSegment","args":["abtrailing."],"ok":"abtrailing"}
+{"fn":"sanitizePlanPathSegment","args":["hellohello"],"ok":"hellohello"}
+{"fn":"sanitizePlanPathSegment","args":[":./x/**/*.json"],"ok":"x-json"}
+{"fn":"sanitizePlanPathSegment","args":["a.b.ca..b"],"ok":"a-b-ca-b"}
+{"fn":"sanitizePlanPathSegment","args":["ΣΊΣΥΦΟΣünïcödé"],"ok":"n-c-d"}
+{"fn":"sanitizePlanPathSegment","args":["abhello world"],"ok":"abhello-world"}
+{"fn":"sanitizePlanPathSegment","args":["aİstanbul"],"ok":"a-stanbul"}
+{"fn":"sanitizePlanPathSegment","args":["HELLOhello"],"ok":"HELLOhello"}
+{"fn":"sanitizePlanPathSegment","args":["emoji 👍🏽 mix﻿bom"],"ok":"emoji-mix-bom"}
+{"fn":"sanitizePlanPathSegment","args":["日本語のテキストns:key.path"],"ok":"ns-key-path"}
+{"fn":"sanitizePlanPathSegment","args":["src/a/b.tstab\tseparated"],"ok":"src-a-b-tstab-separated"}
+{"fn":"sanitizePlanPathSegment","args":["Hello World  padded  "],"ok":"Hello-World-padded"}
+{"fn":"sanitizePlanPathSegment","args":["ünïcödéΣΊΣΥΦΟΣ"],"ok":"n-c-d"}
+{"fn":"sanitizePlanPathSegment","args":["ünïcödéHELLO"],"ok":"n-c-d-HELLO"}
+{"fn":"sanitizePlanPathSegment","args":["abab"],"ok":"abab"}
+{"fn":"sanitizePlanPathSegment","args":["İstanbula.b.c"],"ok":"stanbula-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["./x/**/*.json  padded  "],"ok":"x-json-padded"}
+{"fn":"sanitizePlanPathSegment","args":["İstanbula😀b😀c"],"ok":"stanbula-b-c"}
+{"fn":"sanitizePlanPathSegment","args":[".leading.leading"],"ok":"leading-leading"}
+{"fn":"sanitizePlanPathSegment","args":["a:b:c.leading"],"ok":"a-b-c-leading"}
+{"fn":"sanitizePlanPathSegment","args":["./x/**/*.json:"],"ok":"x-json"}
+{"fn":"sanitizePlanPathSegment","args":["ahello"],"ok":"ahello"}
+{"fn":"sanitizePlanPathSegment","args":["ΣΊΣΥΦΟΣ{name} has {count} items"],"ok":"name-has-count-items"}
+{"fn":"sanitizePlanPathSegment","args":["a..ba"],"ok":"a-ba"}
+{"fn":"sanitizePlanPathSegment","args":["ns:key.pathtab\tseparated"],"ok":"ns-key-pathtab-separated"}
+{"fn":"sanitizePlanPathSegment","args":["aa.b.c"],"ok":"aa-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["ns:key.patha..b"],"ok":"ns-key-patha-b"}
+{"fn":"sanitizePlanPathSegment","args":["{name} has {count} itemstab\tseparated"],"ok":"name-has-count-itemstab-separated"}
+{"fn":"sanitizePlanPathSegment","args":[":HELLO"],"ok":"HELLO"}
+{"fn":"sanitizePlanPathSegment","args":["éns:key.path"],"ok":"e-ns-key-path"}
+{"fn":"sanitizePlanPathSegment","args":["{name} has {count} itemsa:b:c"],"ok":"name-has-count-itemsa-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["hello worldstraße"],"ok":"hello-worldstra-e"}
+{"fn":"sanitizePlanPathSegment","args":["😀abc"],"ok":"abc"}
+{"fn":"sanitizePlanPathSegment","args":["aHello World"],"ok":"aHello-World"}
+{"fn":"sanitizePlanPathSegment","args":["{name} has {count} itemsabc"],"ok":"name-has-count-itemsabc"}
+{"fn":"sanitizePlanPathSegment","args":["éé"],"ok":"e-e"}
+{"fn":"sanitizePlanPathSegment","args":["tab\tseparated日本語のテキスト"],"ok":"tab-separated"}
+{"fn":"sanitizePlanPathSegment","args":["aba:b:c"],"ok":"aba-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["😀a.b.c"],"ok":"a-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["Hello World{name} has {count} items"],"ok":"Hello-World-name-has-count-items"}
+{"fn":"sanitizePlanPathSegment","args":[".leading😀"],"ok":"leading"}
+{"fn":"sanitizePlanPathSegment","args":["日本語のテキストabc"],"ok":"abc"}
+{"fn":"sanitizePlanPathSegment","args":["key_name-1ΣΊΣΥΦΟΣ"],"ok":"key_name-1"}
+{"fn":"sanitizePlanPathSegment","args":["helloa:b:c"],"ok":"helloa-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["hello worldHello World"],"ok":"hello-worldHello-World"}
+{"fn":"sanitizePlanPathSegment","args":["a.b.cemoji 👍🏽 mix"],"ok":"a-b-cemoji-mix"}
+{"fn":"sanitizePlanPathSegment","args":["hellosrc/a/b.ts"],"ok":"hellosrc-a-b-ts"}
+{"fn":"sanitizePlanPathSegment","args":["HELLOhello world"],"ok":"HELLOhello-world"}
+{"fn":"sanitizePlanPathSegment","args":["日本語のテキストHello World"],"ok":"Hello-World"}
+{"fn":"sanitizePlanPathSegment","args":["ns:key.pathhello world"],"ok":"ns-key-pathhello-world"}
+{"fn":"sanitizePlanPathSegment","args":["abkey_name-1"],"ok":"abkey_name-1"}
+{"fn":"sanitizePlanPathSegment","args":["﻿bomhello world"],"ok":"bomhello-world"}
+{"fn":"sanitizePlanPathSegment","args":["ΣΊΣΥΦΟΣ日本語のテキスト"],"ok":""}
+{"fn":"sanitizePlanPathSegment","args":["{name} has {count} itemsé"],"ok":"name-has-count-itemse"}
+{"fn":"sanitizePlanPathSegment","args":[":src/a/b.ts"],"ok":"src-a-b-ts"}
+{"fn":"sanitizePlanPathSegment","args":["HELLOkey_name-1"],"ok":"HELLOkey_name-1"}
+{"fn":"sanitizePlanPathSegment","args":["straßeünïcödé"],"ok":"stra-e-n-c-d"}
+{"fn":"sanitizePlanPathSegment","args":["a😀b😀ckey_name-1"],"ok":"a-b-ckey_name-1"}
+{"fn":"sanitizePlanPathSegment","args":["aé"],"ok":"ae"}
+{"fn":"sanitizePlanPathSegment","args":["日本語のテキストhello world"],"ok":"hello-world"}
+{"fn":"sanitizePlanPathSegment","args":["  padded  key_name-1"],"ok":"padded-key_name-1"}
+{"fn":"sanitizePlanPathSegment","args":["a😀b😀c:"],"ok":"a-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["helloé"],"ok":"helloe"}
+{"fn":"sanitizePlanPathSegment","args":["line1\nline2日本語のテキスト"],"ok":"line1-line2"}
+{"fn":"sanitizePlanPathSegment","args":["﻿boma.b.c"],"ok":"boma-b-c"}
+{"fn":"sanitizePlanPathSegment","args":[".leadingline1\nline2"],"ok":"leadingline1-line2"}
+{"fn":"sanitizePlanPathSegment","args":["aabc"],"ok":"aabc"}
+{"fn":"sanitizePlanPathSegment","args":["a.b.csrc/a/b.ts"],"ok":"a-b-csrc-a-b-ts"}
+{"fn":"sanitizePlanPathSegment","args":["éa.b.c"],"ok":"e-a-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["ünïcödéa"],"ok":"n-c-d-a"}
+{"fn":"sanitizePlanPathSegment","args":["./x/**/*.jsona😀b😀c"],"ok":"x-jsona-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["ünïcödéemoji 👍🏽 mix"],"ok":"n-c-d-emoji-mix"}
+{"fn":"sanitizePlanPathSegment","args":["./x/**/*.jsonstraße"],"ok":"x-jsonstra-e"}
+{"fn":"sanitizePlanPathSegment","args":["key_name-1hello world"],"ok":"key_name-1hello-world"}
+{"fn":"sanitizePlanPathSegment","args":["ΣΊΣΥΦΟΣtrailing."],"ok":"trailing"}
+{"fn":"sanitizePlanPathSegment","args":["src/a/b.tsHELLO"],"ok":"src-a-b-tsHELLO"}
+{"fn":"sanitizePlanPathSegment","args":["tab\tseparatedİstanbul"],"ok":"tab-separated-stanbul"}
+{"fn":"sanitizePlanPathSegment","args":["日本語のテキストa..b"],"ok":"a-b"}
+{"fn":"sanitizePlanPathSegment","args":[".leadingns:key.path"],"ok":"leadingns-key-path"}
+{"fn":"sanitizePlanPathSegment","args":["HELLOΣΊΣΥΦΟΣ"],"ok":"HELLO"}
+{"fn":"sanitizePlanPathSegment","args":["hello worldline1\nline2"],"ok":"hello-worldline1-line2"}
+{"fn":"sanitizePlanPathSegment","args":["trailing..leading"],"ok":"trailing-leading"}
+{"fn":"sanitizePlanPathSegment","args":["é﻿bom"],"ok":"e-bom"}
+{"fn":"sanitizePlanPathSegment","args":["HELLO.leading"],"ok":"HELLO-leading"}
+{"fn":"sanitizePlanPathSegment","args":["  padded  ﻿bom"],"ok":"padded-bom"}
+{"fn":"sanitizePlanPathSegment","args":["./x/**/*.jsonline1\nline2"],"ok":"x-jsonline1-line2"}
+{"fn":"sanitizePlanPathSegment","args":["key_name-1hello"],"ok":"key_name-1hello"}
+{"fn":"sanitizePlanPathSegment","args":["  padded  :"],"ok":"padded"}
+{"fn":"sanitizePlanPathSegment","args":["HELLOHello World"],"ok":"HELLOHello-World"}
+{"fn":"sanitizePlanPathSegment","args":["a:b:ckey_name-1"],"ok":"a-b-ckey_name-1"}
+{"fn":"sanitizePlanPathSegment","args":["ΣΊΣΥΦΟΣabc"],"ok":"abc"}
+{"fn":"sanitizePlanPathSegment","args":["{name} has {count} itemsünïcödé"],"ok":"name-has-count-items-n-c-d"}
+{"fn":"sanitizePlanPathSegment","args":["hello worldemoji 👍🏽 mix"],"ok":"hello-worldemoji-mix"}
+{"fn":"sanitizePlanPathSegment","args":["abcemoji 👍🏽 mix"],"ok":"abcemoji-mix"}
+{"fn":"sanitizePlanPathSegment","args":["a😀b😀cΣΊΣΥΦΟΣ"],"ok":"a-b-c"}
+{"fn":"sanitizePlanPathSegment","args":["key_name-1a"],"ok":"key_name-1a"}
+{"fn":"sanitizePlanPathSegment","args":["straße.leading"],"ok":"stra-e-leading"}
+{"fn":"sanitizePlanPathSegment","args":["ns:key.pathtrailing."],"ok":"ns-key-pathtrailing"}
+{"fn":"sanitizePlanPathSegment","args":["straßetrailing."],"ok":"stra-etrailing"}
+{"fn":"sanitizePlanPathSegment","args":["héllo wörld"],"ok":"h-llo-w-rld"}
+{"fn":"sanitizePlanPathSegment","args":["👍🏽 thumbs"],"ok":"thumbs"}
+{"fn":"sanitizePlanPathSegment","args":["日本語"],"ok":""}
+{"fn":"sanitizePlanPathSegment","args":["ılık ırmak"],"ok":"l-k-rmak"}
+{"fn":"sanitizePlanPathSegment","args":["👨‍👩‍👧 family"],"ok":"family"}
+{"fn":"sanitizePlanPathSegment","args":["a b"],"ok":"a-b"}
+{"fn":"sanitizePlanPathSegment","args":["a😀b"],"ok":"a-b"}
+{"fn":"sanitizePlanPathSegment","args":["a²b x½ y①"],"ok":"a-b-x-y"}
+{"fn":"sanitizePlanPathSegment","args":["aⅠb Ⅻ"],"ok":"a-b"}
+{"fn":"sanitizePlanPathSegment","args":["a𐐀b 𝐀bc"],"ok":"a-b-bc"}
+{"fn":"sanitizePlanPathSegment","args":["कि ٣٤"],"ok":""}
+{"fn":"sanitizePlanPathSegment","args":["Iı İi"],"ok":"I-i"}
+{"fn":"sanitizePlanPathSegment","args":["K K k"],"ok":"K-k"}
+{"fn":"sanitizePlanPathSegment","args":["ſ s S"],"ok":"s-S"}
+{"fn":"sanitizePlanPathSegment","args":["x‍y 👨‍👩‍👧"],"ok":"x-y"}
+{"fn":"sanitizePlanPathSegment","args":["a b c　d"],"ok":"a-b-c-d"}
+{"fn":"sanitizePlanPathSegment","args":["١٢٣ ٤٥"],"ok":""}
+{"fn":"sanitizePlanPathSegment","args":["𝟘𝟙 ²³"],"ok":""}
+{"fn":"sanitizePlanPathSegment","args":["snake_case foo-bar o'neil"],"ok":"snake_case-foo-bar-o-neil"}
+{"fn":"sanitizePlanPathSegment","args":["ǅungla Ǆ"],"ok":"ungla"}
+{"fn":"sanitizePlanPathSegment","args":["one\r\ntwo threefour"],"ok":"one-two-three-four"}
+{"fn":"sanitizePlanPathSegment","args":["café café"],"ok":"cafe-caf"}
+{"fn":"sanitizePlanPathSegment","args":["ΣΑΣ σας ς"],"ok":""}
+{"fn":"planSettlementWaitingText","args":["tasks_active"],"ok":"Waiting for subagents to finish…"}
+{"fn":"planSettlementWaitingText","args":["sessions_busy"],"ok":"Waiting for subagents to finish…"}
+{"fn":"planSettlementWaitingText","args":["leases_active"],"ok":"Waiting for running commands to finish…"}
+{"fn":"planSettlementWaitingText","args":["other"],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":[""],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":[],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":["constructor"],"ok":{"$function":"Object"}}
+{"fn":"planSettlementWaitingText","args":["toString"],"ok":{"$function":"toString"}}
+{"fn":"planSettlementWaitingText","args":["__proto__"],"ok":{}}
+{"fn":"planSettlementWaitingText","args":["hasOwnProperty"],"ok":{"$function":"hasOwnProperty"}}
+{"fn":"planSettlementWaitingText","args":["valueOf"],"ok":{"$function":"valueOf"}}
+{"fn":"planSettlementWaitingText","args":["__lookupGetter__"],"ok":{"$function":"__lookupGetter__"}}
+{"fn":"planSettlementWaitingText","args":[5],"ok":"Waiting for the run to settle…"}
+{"fn":"planSettlementWaitingText","args":[null],"ok":"Waiting for the run to settle…"}
+{"fn":"sanitizePlanPathSegment","args":["  My Plan.v2 / draft  "],"ok":"My-Plan-v2-draft"}
+{"fn":"sanitizePlanPathSegment","args":["a..b"],"ok":"a-b"}
+{"fn":"sanitizePlanPathSegment","args":["--x--"],"ok":"x"}
+{"fn":"sanitizePlanPathSegment","args":["é/ü"],"ok":""}
+{"fn":"sanitizePlanPathSegment","args":["😀"],"ok":""}
+{"fn":"sanitizePlanPathSegment","args":["a_b-c"],"ok":"a_b-c"}
+{"fn":"sanitizePlanPathSegment","args":[""],"ok":""}
+{"fn":"sanitizePlanPathSegment","args":["  "],"ok":""}
+{"fn":"sanitizePlanPathSegment","args":["x\\\\y"],"ok":"x-y"}
+{"fn":"sanitizePlanPathSegment","args":[".."],"ok":""}
+{"fn":"sanitizePlanPathSegment","args":["a  b"],"ok":"a-b"}
+{"fn":"sanitizePlanPathSegment","args":["A-_-B"],"ok":"A-_-B"}

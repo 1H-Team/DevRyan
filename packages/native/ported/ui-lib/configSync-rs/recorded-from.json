@@ -1,0 +1,19 @@
+{
+  "unit": "configSync.ts",
+  "files": 1,
+  "fingerprint": "b25f028fe32e8472",
+  "cases": 315,
+  "cases_hash": "d0f766193b56ff10",
+  "coverage": {
+    "lines": 52,
+    "reached": 16,
+    "files": [
+      {
+        "file": "configSync.ts",
+        "lines": 52,
+        "reached": 16,
+        "missed": "14-20, 23-27, 29-31, 33-35, 37-41, 43-55"
+      }
+    ]
+  }
+}

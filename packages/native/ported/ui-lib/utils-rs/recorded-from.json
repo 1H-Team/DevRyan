@@ -1,0 +1,19 @@
+{
+  "unit": "utils.ts",
+  "files": 1,
+  "fingerprint": "4cf95a8e47559517",
+  "cases": 1003,
+  "cases_hash": "b4d1929784a31129",
+  "coverage": {
+    "lines": 127,
+    "reached": 114,
+    "files": [
+      {
+        "file": "utils.ts",
+        "lines": 127,
+        "reached": 114,
+        "missed": "8-9, 16-17, 21-22, 26-28, 37, 46, 150-151"
+      }
+    ]
+  }
+}

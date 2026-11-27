@@ -1,0 +1,19 @@
+{
+  "unit": "jsonTreeUtils.ts",
+  "files": 1,
+  "fingerprint": "5c0632d2f6eee955",
+  "cases": 1367,
+  "cases_hash": "2f9cdde4332f59ac",
+  "coverage": {
+    "lines": 150,
+    "reached": 149,
+    "files": [
+      {
+        "file": "jsonTreeUtils.ts",
+        "lines": 150,
+        "reached": 149,
+        "missed": "44"
+      }
+    ]
+  }
+}

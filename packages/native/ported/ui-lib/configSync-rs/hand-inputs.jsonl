@@ -1,0 +1,98 @@
+{"fn": "scopeMatches", "args": [{"scopes": ["all"]}, "agents"]}
+{"fn": "scopeMatches", "args": [{"scopes": ["all"]}, "providers"]}
+{"fn": "scopeMatches", "args": [{"scopes": ["all"]}, "all"]}
+{"fn": "scopeMatches", "args": [{"scopes": ["all"]}, ""]}
+{"fn": "scopeMatches", "args": [{"scopes": ["all"]}]}
+{"fn": "scopeMatches", "args": [{"scopes": ["all"]}, {"$num": "NaN"}]}
+{"fn": "scopeMatches", "args": [{"scopes": ["all"]}, "agents,providers"]}
+{"fn": "scopeMatches", "args": [{"scopes": ["agents", "skills"]}, "agents"]}
+{"fn": "scopeMatches", "args": [{"scopes": ["agents", "skills"]}, "providers"]}
+{"fn": "scopeMatches", "args": [{"scopes": ["agents", "skills"]}, "all"]}
+{"fn": "scopeMatches", "args": [{"scopes": ["agents", "skills"]}, ""]}
+{"fn": "scopeMatches", "args": [{"scopes": ["agents", "skills"]}]}
+{"fn": "scopeMatches", "args": [{"scopes": ["agents", "skills"]}, {"$num": "NaN"}]}
+{"fn": "scopeMatches", "args": [{"scopes": ["agents", "skills"]}, "agents,providers"]}
+{"fn": "scopeMatches", "args": [{"scopes": []}, "agents"]}
+{"fn": "scopeMatches", "args": [{"scopes": []}, "providers"]}
+{"fn": "scopeMatches", "args": [{"scopes": []}, "all"]}
+{"fn": "scopeMatches", "args": [{"scopes": []}, ""]}
+{"fn": "scopeMatches", "args": [{"scopes": []}]}
+{"fn": "scopeMatches", "args": [{"scopes": []}, {"$num": "NaN"}]}
+{"fn": "scopeMatches", "args": [{"scopes": []}, "agents,providers"]}
+{"fn": "scopeMatches", "args": [{"scopes": "all"}, "agents"]}
+{"fn": "scopeMatches", "args": [{"scopes": "all"}, "providers"]}
+{"fn": "scopeMatches", "args": [{"scopes": "all"}, "all"]}
+{"fn": "scopeMatches", "args": [{"scopes": "all"}, ""]}
+{"fn": "scopeMatches", "args": [{"scopes": "all"}]}
+{"fn": "scopeMatches", "args": [{"scopes": "all"}, {"$num": "NaN"}]}
+{"fn": "scopeMatches", "args": [{"scopes": "all"}, "agents,providers"]}
+{"fn": "scopeMatches", "args": [{"scopes": "agents,providers"}, "agents"]}
+{"fn": "scopeMatches", "args": [{"scopes": "agents,providers"}, "providers"]}
+{"fn": "scopeMatches", "args": [{"scopes": "agents,providers"}, "all"]}
+{"fn": "scopeMatches", "args": [{"scopes": "agents,providers"}, ""]}
+{"fn": "scopeMatches", "args": [{"scopes": "agents,providers"}]}
+{"fn": "scopeMatches", "args": [{"scopes": "agents,providers"}, {"$num": "NaN"}]}
+{"fn": "scopeMatches", "args": [{"scopes": "agents,providers"}, "agents,providers"]}
+{"fn": "scopeMatches", "args": [{"scopes": "smallest"}, "agents"]}
+{"fn": "scopeMatches", "args": [{"scopes": "smallest"}, "providers"]}
+{"fn": "scopeMatches", "args": [{"scopes": "smallest"}, "all"]}
+{"fn": "scopeMatches", "args": [{"scopes": "smallest"}, ""]}
+{"fn": "scopeMatches", "args": [{"scopes": "smallest"}]}
+{"fn": "scopeMatches", "args": [{"scopes": "smallest"}, {"$num": "NaN"}]}
+{"fn": "scopeMatches", "args": [{"scopes": "smallest"}, "agents,providers"]}
+{"fn": "scopeMatches", "args": [{"scopes": ""}, "agents"]}
+{"fn": "scopeMatches", "args": [{"scopes": ""}, "providers"]}
+{"fn": "scopeMatches", "args": [{"scopes": ""}, "all"]}
+{"fn": "scopeMatches", "args": [{"scopes": ""}, ""]}
+{"fn": "scopeMatches", "args": [{"scopes": ""}]}
+{"fn": "scopeMatches", "args": [{"scopes": ""}, {"$num": "NaN"}]}
+{"fn": "scopeMatches", "args": [{"scopes": ""}, "agents,providers"]}
+{"fn": "scopeMatches", "args": [{"scopes": null}, "agents"]}
+{"fn": "scopeMatches", "args": [{"scopes": null}, "providers"]}
+{"fn": "scopeMatches", "args": [{"scopes": null}, "all"]}
+{"fn": "scopeMatches", "args": [{"scopes": null}, ""]}
+{"fn": "scopeMatches", "args": [{"scopes": null}]}
+{"fn": "scopeMatches", "args": [{"scopes": null}, {"$num": "NaN"}]}
+{"fn": "scopeMatches", "args": [{"scopes": null}, "agents,providers"]}
+{"fn": "scopeMatches", "args": [{}, "agents"]}
+{"fn": "scopeMatches", "args": [{}, "providers"]}
+{"fn": "scopeMatches", "args": [{}, "all"]}
+{"fn": "scopeMatches", "args": [{}, ""]}
+{"fn": "scopeMatches", "args": [{}]}
+{"fn": "scopeMatches", "args": [{}, {"$num": "NaN"}]}
+{"fn": "scopeMatches", "args": [{}, "agents,providers"]}
+{"fn": "scopeMatches", "args": [null, "agents"]}
+{"fn": "scopeMatches", "args": [null, "providers"]}
+{"fn": "scopeMatches", "args": [null, "all"]}
+{"fn": "scopeMatches", "args": [null, ""]}
+{"fn": "scopeMatches", "args": [null]}
+{"fn": "scopeMatches", "args": [null, {"$num": "NaN"}]}
+{"fn": "scopeMatches", "args": [null, "agents,providers"]}
+{"fn": "scopeMatches", "args": ["str", "agents"]}
+{"fn": "scopeMatches", "args": ["str", "providers"]}
+{"fn": "scopeMatches", "args": ["str", "all"]}
+{"fn": "scopeMatches", "args": ["str", ""]}
+{"fn": "scopeMatches", "args": ["str"]}
+{"fn": "scopeMatches", "args": ["str", {"$num": "NaN"}]}
+{"fn": "scopeMatches", "args": ["str", "agents,providers"]}
+{"fn": "scopeMatches", "args": [{"scopes": 5}, "agents"]}
+{"fn": "scopeMatches", "args": [{"scopes": 5}, "providers"]}
+{"fn": "scopeMatches", "args": [{"scopes": 5}, "all"]}
+{"fn": "scopeMatches", "args": [{"scopes": 5}, ""]}
+{"fn": "scopeMatches", "args": [{"scopes": 5}]}
+{"fn": "scopeMatches", "args": [{"scopes": 5}, {"$num": "NaN"}]}
+{"fn": "scopeMatches", "args": [{"scopes": 5}, "agents,providers"]}
+{"fn": "scopeMatches", "args": [{"scopes": {"$set": ["all"]}}, "agents"]}
+{"fn": "scopeMatches", "args": [{"scopes": {"$set": ["all"]}}, "providers"]}
+{"fn": "scopeMatches", "args": [{"scopes": {"$set": ["all"]}}, "all"]}
+{"fn": "scopeMatches", "args": [{"scopes": {"$set": ["all"]}}, ""]}
+{"fn": "scopeMatches", "args": [{"scopes": {"$set": ["all"]}}]}
+{"fn": "scopeMatches", "args": [{"scopes": {"$set": ["all"]}}, {"$num": "NaN"}]}
+{"fn": "scopeMatches", "args": [{"scopes": {"$set": ["all"]}}, "agents,providers"]}
+{"fn": "scopeMatches", "args": [{"scopes": [{"$num": "NaN"}]}, "agents"]}
+{"fn": "scopeMatches", "args": [{"scopes": [{"$num": "NaN"}]}, "providers"]}
+{"fn": "scopeMatches", "args": [{"scopes": [{"$num": "NaN"}]}, "all"]}
+{"fn": "scopeMatches", "args": [{"scopes": [{"$num": "NaN"}]}, ""]}
+{"fn": "scopeMatches", "args": [{"scopes": [{"$num": "NaN"}]}]}
+{"fn": "scopeMatches", "args": [{"scopes": [{"$num": "NaN"}]}, {"$num": "NaN"}]}
+{"fn": "scopeMatches", "args": [{"scopes": [{"$num": "NaN"}]}, "agents,providers"]}

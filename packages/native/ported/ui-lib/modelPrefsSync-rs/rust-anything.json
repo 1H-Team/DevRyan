@@ -1,0 +1,120 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "modelPrefsSync.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "modelprefssync-rs",
+  "exports": [
+    {
+      "name": "modelRefsEqual",
+      "file": "modelPrefsSync.ts",
+      "line": 17,
+      "params": [
+        {
+          "name": "a",
+          "ts_type": "{ providerID: string; modelID: string }[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "b",
+          "ts_type": "{ providerID: string; modelID: string }[]",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "createModelPrefsBaseline",
+      "file": "modelPrefsSync.ts",
+      "line": 27,
+      "params": [
+        {
+          "name": "snapshot",
+          "ts_type": "{\n  favoriteModels: { providerID: string; modelID: string }[];\n  favoriteModelsUpdatedAt: number;\n  hiddenModels: { providerID: string; modelID: string }[];\n  hiddenModelsUpdatedAt: number;\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{\n  favoriteModels: { providerID: string; modelID: string }[];\n  favoriteModelsUpdatedAt: number;\n  hiddenModels: { providerID: string; modelID: string }[];\n  hiddenModelsUpdatedAt: number;\n}",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getChangedModelPrefsKeys",
+      "file": "modelPrefsSync.ts",
+      "line": 34,
+      "params": [
+        {
+          "name": "baseline",
+          "ts_type": "{\n  favoriteModels: { providerID: string; modelID: string }[];\n  favoriteModelsUpdatedAt: number;\n  hiddenModels: { providerID: string; modelID: string }[];\n  hiddenModelsUpdatedAt: number;\n}",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "current",
+          "ts_type": "{\n  favoriteModels: { providerID: string; modelID: string }[];\n  favoriteModelsUpdatedAt: number;\n  hiddenModels: { providerID: string; modelID: string }[];\n  hiddenModelsUpdatedAt: number;\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "('favoriteModels' | 'hiddenModels')[]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "modelPrefsEqual",
+      "file": "modelPrefsSync.ts",
+      "line": 48,
+      "params": [
+        {
+          "name": "a",
+          "ts_type": "{\n  favoriteModels: { providerID: string; modelID: string }[];\n  favoriteModelsUpdatedAt: number;\n  hiddenModels: { providerID: string; modelID: string }[];\n  hiddenModelsUpdatedAt: number;\n}",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "b",
+          "ts_type": "{\n  favoriteModels: { providerID: string; modelID: string }[];\n  favoriteModelsUpdatedAt: number;\n  hiddenModels: { providerID: string; modelID: string }[];\n  hiddenModelsUpdatedAt: number;\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "resolveModelPrefsFromSettingsSnapshot",
+      "file": "modelPrefsSync.ts",
+      "line": 53,
+      "params": [
+        {
+          "name": "arg0",
+          "ts_type": "{\n  baseline: {\n  favoriteModels: { providerID: string; modelID: string }[];\n  favoriteModelsUpdatedAt: number;\n  hiddenModels: { providerID: string; modelID: string }[];\n  hiddenModelsUpdatedAt: number;\n};\n  current: {\n  favoriteModels: { providerID: string; modelID: string }[];\n  favoriteModelsUpdatedAt: number;\n  hiddenModels: { providerID: string; modelID: string }[];\n  hiddenModelsUpdatedAt: number;\n};\n  incoming: {\n  favoriteModels: { providerID: string; modelID: string }[];\n  favoriteModelsUpdatedAt: number;\n  hiddenModels: { providerID: string; modelID: string }[];\n  hiddenModelsUpdatedAt: number;\n};\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{\n  favoriteModels: { providerID: string; modelID: string }[];\n  favoriteModelsUpdatedAt: number;\n  hiddenModels: { providerID: string; modelID: string }[];\n  hiddenModelsUpdatedAt: number;\n}",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

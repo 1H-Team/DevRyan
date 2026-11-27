@@ -1,0 +1,199 @@
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p1", "iconImage": {"mime": "image/png", "updatedAt": 123, "source": "custom"}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p1", "iconImage": {"mime": "image/png", "updatedAt": 123, "source": "custom"}}, {}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p1", "iconImage": {"mime": "image/png", "updatedAt": 123, "source": "custom"}}, {"iconColor": "  #ff0000 "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p1", "iconImage": {"mime": "image/png", "updatedAt": 123, "source": "custom"}}, {"iconColor": "a b+c&d=é"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p1", "iconImage": {"mime": "image/png", "updatedAt": 123, "source": "custom"}}, {"iconColor": "   "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p1", "iconImage": {"mime": "image/png", "updatedAt": 123, "source": "custom"}}, {"iconColor": 5}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p1", "iconImage": {"mime": "image/png", "updatedAt": 123, "source": "custom"}}, {"themeVariant": "light"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p1", "iconImage": {"mime": "image/png", "updatedAt": 123, "source": "custom"}}, {"themeVariant": "dark", "iconColor": "x"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p1", "iconImage": {"mime": "image/png", "updatedAt": 123, "source": "custom"}}, {"themeVariant": "Dark"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p1", "iconImage": {"mime": "image/png", "updatedAt": 123, "source": "custom"}}, {"iconColor": {"$utf16": [32, 56320, 65]}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p1", "iconImage": {"mime": "image/png", "updatedAt": 123, "source": "custom"}}, "str"]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "a b/é😀", "iconImage": {"mime": "image/png", "updatedAt": 1.5, "source": "custom"}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "a b/é😀", "iconImage": {"mime": "image/png", "updatedAt": 1.5, "source": "custom"}}, {}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "a b/é😀", "iconImage": {"mime": "image/png", "updatedAt": 1.5, "source": "custom"}}, {"iconColor": "  #ff0000 "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "a b/é😀", "iconImage": {"mime": "image/png", "updatedAt": 1.5, "source": "custom"}}, {"iconColor": "a b+c&d=é"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "a b/é😀", "iconImage": {"mime": "image/png", "updatedAt": 1.5, "source": "custom"}}, {"iconColor": "   "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "a b/é😀", "iconImage": {"mime": "image/png", "updatedAt": 1.5, "source": "custom"}}, {"iconColor": 5}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "a b/é😀", "iconImage": {"mime": "image/png", "updatedAt": 1.5, "source": "custom"}}, {"themeVariant": "light"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "a b/é😀", "iconImage": {"mime": "image/png", "updatedAt": 1.5, "source": "custom"}}, {"themeVariant": "dark", "iconColor": "x"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "a b/é😀", "iconImage": {"mime": "image/png", "updatedAt": 1.5, "source": "custom"}}, {"themeVariant": "Dark"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "a b/é😀", "iconImage": {"mime": "image/png", "updatedAt": 1.5, "source": "custom"}}, {"iconColor": {"$utf16": [32, 56320, 65]}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "a b/é😀", "iconImage": {"mime": "image/png", "updatedAt": 1.5, "source": "custom"}}, "str"]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 0, "source": "custom"}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 0, "source": "custom"}}, {}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 0, "source": "custom"}}, {"iconColor": "  #ff0000 "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 0, "source": "custom"}}, {"iconColor": "a b+c&d=é"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 0, "source": "custom"}}, {"iconColor": "   "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 0, "source": "custom"}}, {"iconColor": 5}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 0, "source": "custom"}}, {"themeVariant": "light"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 0, "source": "custom"}}, {"themeVariant": "dark", "iconColor": "x"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 0, "source": "custom"}}, {"themeVariant": "Dark"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 0, "source": "custom"}}, {"iconColor": {"$utf16": [32, 56320, 65]}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 0, "source": "custom"}}, "str"]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": -1, "source": "custom"}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": -1, "source": "custom"}}, {}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": -1, "source": "custom"}}, {"iconColor": "  #ff0000 "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": -1, "source": "custom"}}, {"iconColor": "a b+c&d=é"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": -1, "source": "custom"}}, {"iconColor": "   "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": -1, "source": "custom"}}, {"iconColor": 5}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": -1, "source": "custom"}}, {"themeVariant": "light"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": -1, "source": "custom"}}, {"themeVariant": "dark", "iconColor": "x"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": -1, "source": "custom"}}, {"themeVariant": "Dark"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": -1, "source": "custom"}}, {"iconColor": {"$utf16": [32, 56320, 65]}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": -1, "source": "custom"}}, "str"]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "NaN"}, "source": "custom"}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "NaN"}, "source": "custom"}}, {}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "NaN"}, "source": "custom"}}, {"iconColor": "  #ff0000 "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "NaN"}, "source": "custom"}}, {"iconColor": "a b+c&d=é"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "NaN"}, "source": "custom"}}, {"iconColor": "   "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "NaN"}, "source": "custom"}}, {"iconColor": 5}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "NaN"}, "source": "custom"}}, {"themeVariant": "light"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "NaN"}, "source": "custom"}}, {"themeVariant": "dark", "iconColor": "x"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "NaN"}, "source": "custom"}}, {"themeVariant": "Dark"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "NaN"}, "source": "custom"}}, {"iconColor": {"$utf16": [32, 56320, 65]}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "NaN"}, "source": "custom"}}, "str"]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "Infinity"}, "source": "custom"}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "Infinity"}, "source": "custom"}}, {}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "Infinity"}, "source": "custom"}}, {"iconColor": "  #ff0000 "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "Infinity"}, "source": "custom"}}, {"iconColor": "a b+c&d=é"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "Infinity"}, "source": "custom"}}, {"iconColor": "   "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "Infinity"}, "source": "custom"}}, {"iconColor": 5}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "Infinity"}, "source": "custom"}}, {"themeVariant": "light"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "Infinity"}, "source": "custom"}}, {"themeVariant": "dark", "iconColor": "x"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "Infinity"}, "source": "custom"}}, {"themeVariant": "Dark"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "Infinity"}, "source": "custom"}}, {"iconColor": {"$utf16": [32, 56320, 65]}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": {"$num": "Infinity"}, "source": "custom"}}, "str"]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": "5", "source": "custom"}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": "5", "source": "custom"}}, {}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": "5", "source": "custom"}}, {"iconColor": "  #ff0000 "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": "5", "source": "custom"}}, {"iconColor": "a b+c&d=é"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": "5", "source": "custom"}}, {"iconColor": "   "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": "5", "source": "custom"}}, {"iconColor": 5}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": "5", "source": "custom"}}, {"themeVariant": "light"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": "5", "source": "custom"}}, {"themeVariant": "dark", "iconColor": "x"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": "5", "source": "custom"}}, {"themeVariant": "Dark"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": "5", "source": "custom"}}, {"iconColor": {"$utf16": [32, 56320, 65]}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": "5", "source": "custom"}}, "str"]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": null}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": null}, {}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": null}, {"iconColor": "  #ff0000 "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": null}, {"iconColor": "a b+c&d=é"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": null}, {"iconColor": "   "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": null}, {"iconColor": 5}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": null}, {"themeVariant": "light"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": null}, {"themeVariant": "dark", "iconColor": "x"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": null}, {"themeVariant": "Dark"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": null}, {"iconColor": {"$utf16": [32, 56320, 65]}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": null}, "str"]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p"}, {}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p"}, {"iconColor": "  #ff0000 "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p"}, {"iconColor": "a b+c&d=é"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p"}, {"iconColor": "   "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p"}, {"iconColor": 5}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p"}, {"themeVariant": "light"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p"}, {"themeVariant": "dark", "iconColor": "x"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p"}, {"themeVariant": "Dark"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p"}, {"iconColor": {"$utf16": [32, 56320, 65]}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p"}, "str"]}
+{"fn": "getProjectIconImageUrl", "args": [{"iconImage": {"mime": "image/png", "updatedAt": 7, "source": "custom"}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"iconImage": {"mime": "image/png", "updatedAt": 7, "source": "custom"}}, {}]}
+{"fn": "getProjectIconImageUrl", "args": [{"iconImage": {"mime": "image/png", "updatedAt": 7, "source": "custom"}}, {"iconColor": "  #ff0000 "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"iconImage": {"mime": "image/png", "updatedAt": 7, "source": "custom"}}, {"iconColor": "a b+c&d=é"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"iconImage": {"mime": "image/png", "updatedAt": 7, "source": "custom"}}, {"iconColor": "   "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"iconImage": {"mime": "image/png", "updatedAt": 7, "source": "custom"}}, {"iconColor": 5}]}
+{"fn": "getProjectIconImageUrl", "args": [{"iconImage": {"mime": "image/png", "updatedAt": 7, "source": "custom"}}, {"themeVariant": "light"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"iconImage": {"mime": "image/png", "updatedAt": 7, "source": "custom"}}, {"themeVariant": "dark", "iconColor": "x"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"iconImage": {"mime": "image/png", "updatedAt": 7, "source": "custom"}}, {"themeVariant": "Dark"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"iconImage": {"mime": "image/png", "updatedAt": 7, "source": "custom"}}, {"iconColor": {"$utf16": [32, 56320, 65]}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"iconImage": {"mime": "image/png", "updatedAt": 7, "source": "custom"}}, "str"]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": 5, "iconImage": {"mime": "image/png", "updatedAt": 1e+21, "source": "custom"}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": 5, "iconImage": {"mime": "image/png", "updatedAt": 1e+21, "source": "custom"}}, {}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": 5, "iconImage": {"mime": "image/png", "updatedAt": 1e+21, "source": "custom"}}, {"iconColor": "  #ff0000 "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": 5, "iconImage": {"mime": "image/png", "updatedAt": 1e+21, "source": "custom"}}, {"iconColor": "a b+c&d=é"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": 5, "iconImage": {"mime": "image/png", "updatedAt": 1e+21, "source": "custom"}}, {"iconColor": "   "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": 5, "iconImage": {"mime": "image/png", "updatedAt": 1e+21, "source": "custom"}}, {"iconColor": 5}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": 5, "iconImage": {"mime": "image/png", "updatedAt": 1e+21, "source": "custom"}}, {"themeVariant": "light"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": 5, "iconImage": {"mime": "image/png", "updatedAt": 1e+21, "source": "custom"}}, {"themeVariant": "dark", "iconColor": "x"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": 5, "iconImage": {"mime": "image/png", "updatedAt": 1e+21, "source": "custom"}}, {"themeVariant": "Dark"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": 5, "iconImage": {"mime": "image/png", "updatedAt": 1e+21, "source": "custom"}}, {"iconColor": {"$utf16": [32, 56320, 65]}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": 5, "iconImage": {"mime": "image/png", "updatedAt": 1e+21, "source": "custom"}}, "str"]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": {"$utf16": [55296]}, "iconImage": {"mime": "image/png", "updatedAt": 1, "source": "custom"}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": {"$utf16": [55296]}, "iconImage": {"mime": "image/png", "updatedAt": 1, "source": "custom"}}, {}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": {"$utf16": [55296]}, "iconImage": {"mime": "image/png", "updatedAt": 1, "source": "custom"}}, {"iconColor": "  #ff0000 "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": {"$utf16": [55296]}, "iconImage": {"mime": "image/png", "updatedAt": 1, "source": "custom"}}, {"iconColor": "a b+c&d=é"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": {"$utf16": [55296]}, "iconImage": {"mime": "image/png", "updatedAt": 1, "source": "custom"}}, {"iconColor": "   "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": {"$utf16": [55296]}, "iconImage": {"mime": "image/png", "updatedAt": 1, "source": "custom"}}, {"iconColor": 5}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": {"$utf16": [55296]}, "iconImage": {"mime": "image/png", "updatedAt": 1, "source": "custom"}}, {"themeVariant": "light"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": {"$utf16": [55296]}, "iconImage": {"mime": "image/png", "updatedAt": 1, "source": "custom"}}, {"themeVariant": "dark", "iconColor": "x"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": {"$utf16": [55296]}, "iconImage": {"mime": "image/png", "updatedAt": 1, "source": "custom"}}, {"themeVariant": "Dark"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": {"$utf16": [55296]}, "iconImage": {"mime": "image/png", "updatedAt": 1, "source": "custom"}}, {"iconColor": {"$utf16": [32, 56320, 65]}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": {"$utf16": [55296]}, "iconImage": {"mime": "image/png", "updatedAt": 1, "source": "custom"}}, "str"]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": ["x", {"a": 1}], "iconImage": {"mime": "image/png", "updatedAt": 2, "source": "custom"}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": ["x", {"a": 1}], "iconImage": {"mime": "image/png", "updatedAt": 2, "source": "custom"}}, {}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": ["x", {"a": 1}], "iconImage": {"mime": "image/png", "updatedAt": 2, "source": "custom"}}, {"iconColor": "  #ff0000 "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": ["x", {"a": 1}], "iconImage": {"mime": "image/png", "updatedAt": 2, "source": "custom"}}, {"iconColor": "a b+c&d=é"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": ["x", {"a": 1}], "iconImage": {"mime": "image/png", "updatedAt": 2, "source": "custom"}}, {"iconColor": "   "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": ["x", {"a": 1}], "iconImage": {"mime": "image/png", "updatedAt": 2, "source": "custom"}}, {"iconColor": 5}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": ["x", {"a": 1}], "iconImage": {"mime": "image/png", "updatedAt": 2, "source": "custom"}}, {"themeVariant": "light"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": ["x", {"a": 1}], "iconImage": {"mime": "image/png", "updatedAt": 2, "source": "custom"}}, {"themeVariant": "dark", "iconColor": "x"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": ["x", {"a": 1}], "iconImage": {"mime": "image/png", "updatedAt": 2, "source": "custom"}}, {"themeVariant": "Dark"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": ["x", {"a": 1}], "iconImage": {"mime": "image/png", "updatedAt": 2, "source": "custom"}}, {"iconColor": {"$utf16": [32, 56320, 65]}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": ["x", {"a": 1}], "iconImage": {"mime": "image/png", "updatedAt": 2, "source": "custom"}}, "str"]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "!*'()~-_.", "iconImage": {"mime": "image/png", "updatedAt": 3, "source": "custom"}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "!*'()~-_.", "iconImage": {"mime": "image/png", "updatedAt": 3, "source": "custom"}}, {}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "!*'()~-_.", "iconImage": {"mime": "image/png", "updatedAt": 3, "source": "custom"}}, {"iconColor": "  #ff0000 "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "!*'()~-_.", "iconImage": {"mime": "image/png", "updatedAt": 3, "source": "custom"}}, {"iconColor": "a b+c&d=é"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "!*'()~-_.", "iconImage": {"mime": "image/png", "updatedAt": 3, "source": "custom"}}, {"iconColor": "   "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "!*'()~-_.", "iconImage": {"mime": "image/png", "updatedAt": 3, "source": "custom"}}, {"iconColor": 5}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "!*'()~-_.", "iconImage": {"mime": "image/png", "updatedAt": 3, "source": "custom"}}, {"themeVariant": "light"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "!*'()~-_.", "iconImage": {"mime": "image/png", "updatedAt": 3, "source": "custom"}}, {"themeVariant": "dark", "iconColor": "x"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "!*'()~-_.", "iconImage": {"mime": "image/png", "updatedAt": 3, "source": "custom"}}, {"themeVariant": "Dark"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "!*'()~-_.", "iconImage": {"mime": "image/png", "updatedAt": 3, "source": "custom"}}, {"iconColor": {"$utf16": [32, 56320, 65]}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "!*'()~-_.", "iconImage": {"mime": "image/png", "updatedAt": 3, "source": "custom"}}, "str"]}
+{"fn": "getProjectIconImageUrl", "args": [null]}
+{"fn": "getProjectIconImageUrl", "args": [null, {}]}
+{"fn": "getProjectIconImageUrl", "args": [null, {"iconColor": "  #ff0000 "}]}
+{"fn": "getProjectIconImageUrl", "args": [null, {"iconColor": "a b+c&d=é"}]}
+{"fn": "getProjectIconImageUrl", "args": [null, {"iconColor": "   "}]}
+{"fn": "getProjectIconImageUrl", "args": [null, {"iconColor": 5}]}
+{"fn": "getProjectIconImageUrl", "args": [null, {"themeVariant": "light"}]}
+{"fn": "getProjectIconImageUrl", "args": [null, {"themeVariant": "dark", "iconColor": "x"}]}
+{"fn": "getProjectIconImageUrl", "args": [null, {"themeVariant": "Dark"}]}
+{"fn": "getProjectIconImageUrl", "args": [null, {"iconColor": {"$utf16": [32, 56320, 65]}}]}
+{"fn": "getProjectIconImageUrl", "args": [null, "str"]}
+{"fn": "getProjectIconImageUrl", "args": ["str"]}
+{"fn": "getProjectIconImageUrl", "args": ["str", {}]}
+{"fn": "getProjectIconImageUrl", "args": ["str", {"iconColor": "  #ff0000 "}]}
+{"fn": "getProjectIconImageUrl", "args": ["str", {"iconColor": "a b+c&d=é"}]}
+{"fn": "getProjectIconImageUrl", "args": ["str", {"iconColor": "   "}]}
+{"fn": "getProjectIconImageUrl", "args": ["str", {"iconColor": 5}]}
+{"fn": "getProjectIconImageUrl", "args": ["str", {"themeVariant": "light"}]}
+{"fn": "getProjectIconImageUrl", "args": ["str", {"themeVariant": "dark", "iconColor": "x"}]}
+{"fn": "getProjectIconImageUrl", "args": ["str", {"themeVariant": "Dark"}]}
+{"fn": "getProjectIconImageUrl", "args": ["str", {"iconColor": {"$utf16": [32, 56320, 65]}}]}
+{"fn": "getProjectIconImageUrl", "args": ["str", "str"]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": "x"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": "x"}, {}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": "x"}, {"iconColor": "  #ff0000 "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": "x"}, {"iconColor": "a b+c&d=é"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": "x"}, {"iconColor": "   "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": "x"}, {"iconColor": 5}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": "x"}, {"themeVariant": "light"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": "x"}, {"themeVariant": "dark", "iconColor": "x"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": "x"}, {"themeVariant": "Dark"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": "x"}, {"iconColor": {"$utf16": [32, 56320, 65]}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": "x"}, "str"]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 1e-07, "source": "custom"}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 1e-07, "source": "custom"}}, {}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 1e-07, "source": "custom"}}, {"iconColor": "  #ff0000 "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 1e-07, "source": "custom"}}, {"iconColor": "a b+c&d=é"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 1e-07, "source": "custom"}}, {"iconColor": "   "}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 1e-07, "source": "custom"}}, {"iconColor": 5}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 1e-07, "source": "custom"}}, {"themeVariant": "light"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 1e-07, "source": "custom"}}, {"themeVariant": "dark", "iconColor": "x"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 1e-07, "source": "custom"}}, {"themeVariant": "Dark"}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 1e-07, "source": "custom"}}, {"iconColor": {"$utf16": [32, 56320, 65]}}]}
+{"fn": "getProjectIconImageUrl", "args": [{"id": "p", "iconImage": {"mime": "image/png", "updatedAt": 1e-07, "source": "custom"}}, "str"]}
+{"fn": "getProjectIconImageUrl", "args": []}

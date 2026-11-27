@@ -1,0 +1,597 @@
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"src/a/b.ts","url":"line1\nline2"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"src/a/b.ts","url":"line1\nline2"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"abcünïcödé","url":"./x/**/*.json"}}],"ok":{"screen":"recovery","variant":"remote-wrong-service","hostId":"abcünïcödé","url":"./x/**/*.json"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":null}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"a":"b"}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":null,"status":"not-configured"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"local","status":"ok"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":null}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[[]],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"HELLO","url":":"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"local","status":"unreachable"}}],"ok":{"screen":"recovery","variant":"local-unavailable"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"日本語のテキスト:"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"missing","hostId":"hello"}}],"ok":{"screen":"recovery","variant":"remote-missing","hostId":"hello"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"local","status":"ok"}}],"ok":{"screen":"main"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":null,"status":"not-configured"}}],"ok":{"screen":"chooser"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"a😀b😀ctab\tseparated"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"local","status":"unreachable"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"missing","hostId":"key_name-1"}}],"ok":{"screen":"recovery","variant":"remote-missing","hostId":"key_name-1"}}
+{"fn":"resolveDesktopBootView","args":[true],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"line1\nline2"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"﻿bomHELLO","url":"HELLO"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"﻿bomHELLO","url":"HELLO"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"missing","hostId":"tab\tseparated"}}],"ok":{"screen":"recovery","variant":"remote-missing","hostId":"tab\tseparated"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"line1\nline2","url":""}}],"ok":{"screen":"main","hostId":"line1\nline2","url":""}}
+{"fn":"resolveDesktopBootView","args":[{"a":{"b":"c"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[0],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"missing","hostId":":"}}],"ok":{"screen":"recovery","variant":"remote-missing","hostId":":"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"a..b"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"Hello Worldünïcödé"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"  padded  ","url":"src/a/b.ts"}}],"ok":{"screen":"recovery","variant":"remote-wrong-service","hostId":"  padded  ","url":"src/a/b.ts"}}
+{"fn":"resolveDesktopBootView","args":[["a",1]],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"é"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":["x"],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"HELLO","url":"src/a/b.ts"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"helloHELLO"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[null],"error":"Cannot read properties of null (reading 'isDesktopShell')"}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"hellostraße","url":"Hello World"}}],"ok":{"screen":"recovery","variant":"remote-wrong-service","hostId":"hellostraße","url":"Hello World"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"straße{name} has {count} items","url":"  padded  "}}],"ok":{"screen":"recovery","variant":"remote-wrong-service","hostId":"straße{name} has {count} items","url":"  padded  "}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"Hello World","url":"tab\tseparated"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"😀","url":"ab"}}],"ok":{"screen":"recovery","variant":"remote-wrong-service","hostId":"😀","url":"ab"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"missing","hostId":"hello world"}}],"ok":{"screen":"recovery","variant":"remote-missing","hostId":"hello world"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"ünïcödékey_name-1","url":"src/a/b.ts"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"missing","hostId":"src/a/b.ts"}}],"ok":{"screen":"recovery","variant":"remote-missing","hostId":"src/a/b.ts"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"é","url":"straße"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"é","url":"straße"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"tab\tseparatedİstanbul","url":"straße😀"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"😀","url":"line1\nline2"}}],"ok":{"screen":"main","hostId":"😀","url":"line1\nline2"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"emoji 👍🏽 mix","url":"  padded  "}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"straße","url":"a😀b😀ca.b.c"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"straße","url":"a😀b😀ca.b.c"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"","url":"ünïcödé"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"./x/**/*.json","url":".leading"}}],"ok":{"screen":"main","hostId":"./x/**/*.json","url":".leading"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"  padded  "}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"a:b:c","url":"ünïcödé"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"src/a/b.tshello","url":".leadingns:key.path"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"hello world","url":"a"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"a","url":"😀trailing."}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"ok","hostId":".leading","url":"hello"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":".leading"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"ok","hostId":"{name} has {count} items","url":"a.b.c"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"trailing.","url":"ΣΊΣΥΦΟΣ"}}],"ok":{"screen":"main","hostId":"trailing.","url":"ΣΊΣΥΦΟΣ"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"ok","hostId":".leading","url":"ns:key.path"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"ab","url":"İstanbul"}}],"ok":{"screen":"main","hostId":"ab","url":"İstanbul"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"a:b:c","url":"ΣΊΣΥΦΟΣ"}}],"ok":{"screen":"main","hostId":"a:b:c","url":"ΣΊΣΥΦΟΣ"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"ok","hostId":"ab","url":"﻿bom"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"a:b:c","url":"src/a/b.tsa😀b😀c"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"tab\tseparated"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"line1\nline2","url":"abc"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"line1\nline2","url":"abc"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"{name} has {count} items"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"ok","hostId":"","url":"a:b:c"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"./x/**/*.json"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"ab"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"","url":"hello"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"","url":"hello"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"😀","url":"ns:key.pathtrailing."}}],"ok":{"screen":"recovery","variant":"remote-wrong-service","hostId":"😀","url":"ns:key.pathtrailing."}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"ok","hostId":"straße","url":"a😀b😀chello"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"tab\tseparatedab","url":"{name} has {count} itemsline1\nline2"}}],"ok":{"screen":"main","hostId":"tab\tseparatedab","url":"{name} has {count} itemsline1\nline2"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":":"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"ok","hostId":"ΣΊΣΥΦΟΣ","url":"HELLO"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"trailing.","url":"{name} has {count} items"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"ünïcödéemoji 👍🏽 mix","url":"straße"}}],"ok":{"screen":"main","hostId":"ünïcödéemoji 👍🏽 mix","url":"straße"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"straße","url":"line1\nline2"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"straße","url":"line1\nline2"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"abc","url":"İstanbul"}}],"ok":{"screen":"main","hostId":"abc","url":"İstanbul"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"İstanbul"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"key_name-1","url":"line1\nline2"}}],"ok":{"screen":"main","hostId":"key_name-1","url":"line1\nline2"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"😀hello","url":"{name} has {count} itemsstraße"}}],"ok":{"screen":"recovery","variant":"remote-wrong-service","hostId":"😀hello","url":"{name} has {count} itemsstraße"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"ok","hostId":"a..b","url":"emoji 👍🏽 mix"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"a:b:c","url":"ünïcödéab"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"İstanbul./x/**/*.json","url":"tab\tseparated"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"ünïcödé","url":"key_name-1"}}],"ok":{"screen":"main","hostId":"ünïcödé","url":"key_name-1"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"ok","hostId":"a","url":"hello"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":":","url":"  padded  {name} has {count} items"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"a.b.c"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"HELLO","url":"HELLO"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"é","url":"line1\nline2"}}],"ok":{"screen":"main","hostId":"é","url":"line1\nline2"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"ünïcödé","url":"ns:key.path"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":".leading","url":"hello"}}],"ok":{"screen":"recovery","variant":"remote-wrong-service","hostId":".leading","url":"hello"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"ΣΊΣΥΦΟΣ","url":"İstanbul"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"ünïcödé{name} has {count} items","url":"é"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"😀","url":"straße"}}],"ok":{"screen":"main","hostId":"😀","url":"straße"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"ok","hostId":"abc","url":"ab"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"straße","url":"abc"}}],"ok":{"screen":"recovery","variant":"remote-wrong-service","hostId":"straße","url":"abc"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":".leading﻿bom","url":"./x/**/*.json"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":".leading﻿bom","url":"./x/**/*.json"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"ns:key.path","url":"hello world"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"ok","hostId":"trailing.﻿bom","url":"tab\tseparated"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"hello","url":"日本語のテキスト"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"hello","url":"日本語のテキスト"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"ünïcödéhello","url":"abc"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"a😀b😀c","url":"hello"}}],"ok":{"screen":"main","hostId":"a😀b😀c","url":"hello"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"line1\nline2./x/**/*.json","url":"straße"}}],"ok":{"screen":"main","hostId":"line1\nline2./x/**/*.json","url":"straße"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"a..b","url":"ab"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"","url":"straße  padded  "}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"a..bsrc/a/b.ts","url":"ab"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"ns:key.path","url":"a:b:c"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"ünïcödé  padded  ","url":"a.b.c{name} has {count} items"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"emoji 👍🏽 mix{name} has {count} items","url":"hello world"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"emoji 👍🏽 mix{name} has {count} items","url":"hello world"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"  padded  ","url":"a"}}],"ok":{"screen":"main","hostId":"  padded  ","url":"a"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"","url":"./x/**/*.json"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"hello","url":"ünïcödé"}}],"ok":{"screen":"main","hostId":"hello","url":"ünïcödé"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"ΣΊΣΥΦΟΣ"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"abc","url":"ab"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"abc","url":"ab"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"./x/**/*.json","url":"日本語のテキスト"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"./x/**/*.json","url":"日本語のテキスト"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"  padded  ","url":"a..b"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"ok","hostId":"./x/**/*.json","url":"{name} has {count} items"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"é","url":"abc"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"","url":"abc"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"","url":"abc"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"hello","url":"﻿bom"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"😀straße","url":"é"}}],"ok":{"screen":"main","hostId":"😀straße","url":"é"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"日本語のテキスト","url":"日本語のテキストΣΊΣΥΦΟΣ"}}],"ok":{"screen":"main","hostId":"日本語のテキスト","url":"日本語のテキストΣΊΣΥΦΟΣ"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"  padded  ﻿bom","url":""}}],"ok":{"screen":"main","hostId":"  padded  ﻿bom","url":""}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"é./x/**/*.json","url":"straße"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"abc","url":"a..b"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"﻿bom","url":"line1\nline2"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"a:b:cΣΊΣΥΦΟΣ","url":"trailing."}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"a:b:cΣΊΣΥΦΟΣ","url":"trailing."}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"a..b","url":"日本語のテキスト"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":":{name} has {count} items","url":"trailing."}}],"ok":{"screen":"recovery","variant":"remote-wrong-service","hostId":":{name} has {count} items","url":"trailing."}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"key_name-1","url":"./x/**/*.json"}}],"ok":{"screen":"recovery","variant":"remote-wrong-service","hostId":"key_name-1","url":"./x/**/*.json"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"line1\nline2","url":"a😀b😀c"}}],"ok":{"screen":"main","hostId":"line1\nline2","url":"a😀b😀c"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"missing","hostId":"ünïcödé"}}],"ok":{"screen":"recovery","variant":"remote-missing","hostId":"ünïcödé"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"HELLO","url":"tab\tseparated"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"HELLO","url":"tab\tseparated"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"ok","hostId":"hello","url":"a..b"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"日本語のテキスト","url":"a.b.c"}}],"ok":{"screen":"main","hostId":"日本語のテキスト","url":"a.b.c"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"","url":"Hello Worlda.b.c"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"./x/**/*.json","url":"HELLO"}}],"ok":{"screen":"main","hostId":"./x/**/*.json","url":"HELLO"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"a.b.c","url":"ns:key.path"}}],"ok":{"screen":"main","hostId":"a.b.c","url":"ns:key.path"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"missing","hostId":"line1\nline2"}}],"ok":{"screen":"recovery","variant":"remote-missing","hostId":"line1\nline2"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"a..bünïcödé","url":"HELLO:"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"straße","url":"emoji 👍🏽 mix"}}],"ok":{"screen":"main","hostId":"straße","url":"emoji 👍🏽 mix"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":".leading","url":"./x/**/*.json"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"straße","url":"a😀b😀c"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"straße","url":"a😀b😀c"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"Hello Worldİstanbul","url":"{name} has {count} itemsHELLO"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"Hello Worldİstanbul","url":"{name} has {count} itemsHELLO"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"key_name-1","url":"key_name-1"}}],"ok":{"screen":"main","hostId":"key_name-1","url":"key_name-1"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"  padded  ","url":"emoji 👍🏽 mix"}}],"ok":{"screen":"main","hostId":"  padded  ","url":"emoji 👍🏽 mix"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"emoji 👍🏽 mixkey_name-1","url":"﻿bom"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"emoji 👍🏽 mixkey_name-1","url":"﻿bom"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"😀"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":":","url":"a.b.c"}}],"ok":{"screen":"recovery","variant":"remote-wrong-service","hostId":":","url":"a.b.c"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"HELLO"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":":","url":"  padded  line1\nline2"}}],"ok":{"screen":"main","hostId":":","url":"  padded  line1\nline2"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"trailing.a..b"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"ok","hostId":"😀","url":"{name} has {count} items"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"ΣΊΣΥΦΟΣ","url":"ns:key.path"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"emoji 👍🏽 mixé","url":"a..b"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"﻿bom","url":"abc"}}],"ok":{"screen":"main","hostId":"﻿bom","url":"abc"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"missing","hostId":"é"}}],"ok":{"screen":"recovery","variant":"remote-missing","hostId":"é"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"HELLO{name} has {count} items"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"😀","url":"hello﻿bom"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"😀","url":"hello﻿bom"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"Hello World","url":"abc"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"hello","url":"{name} has {count} itemsé"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"  padded  ","url":"a:b:c"}}],"ok":{"screen":"recovery","variant":"remote-wrong-service","hostId":"  padded  ","url":"a:b:c"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"src/a/b.ts","url":"a..b"}}],"ok":{"screen":"recovery","variant":"remote-wrong-service","hostId":"src/a/b.ts","url":"a..b"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"a.b.cemoji 👍🏽 mix","url":"key_name-1"}}],"ok":{"screen":"main","hostId":"a.b.cemoji 👍🏽 mix","url":"key_name-1"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"trailing.é","url":"ΣΊΣΥΦΟΣ"}}],"ok":{"screen":"main","hostId":"trailing.é","url":"ΣΊΣΥΦΟΣ"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"日本語のテキスト","url":"ünïcödé"}}],"ok":{"screen":"main","hostId":"日本語のテキスト","url":"ünïcödé"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"ok","hostId":"  padded  ","url":"src/a/b.ts"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"Hello Worldemoji 👍🏽 mix"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"a😀b😀c","url":"Hello World"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"a..b","url":"trailing."}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"a..b","url":"trailing."}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"trailing.","url":":"}}],"ok":{"screen":"main","hostId":"trailing.","url":":"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"HELLO","url":"hello"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"ok","hostId":"line1\nline2","url":"a:b:c"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"missing","hostId":"😀"}}],"ok":{"screen":"recovery","variant":"remote-missing","hostId":"😀"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"tab\tseparatedns:key.path","url":"﻿bom"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"trailing.","url":""}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":":","url":".leading"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"日本語のテキスト","url":"hello world"}}],"ok":{"screen":"recovery","variant":"remote-wrong-service","hostId":"日本語のテキスト","url":"hello world"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"trailing."}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"tab\tseparated","url":"trailing.ΣΊΣΥΦΟΣ"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"tab\tseparated","url":"trailing.ΣΊΣΥΦΟΣ"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"a","url":"key_name-1"}}],"ok":{"screen":"main","hostId":"a","url":"key_name-1"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"","url":""}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"a..bline1\nline2"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"emoji 👍🏽 mix","url":"hello"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"emoji 👍🏽 mix","url":"hello"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"a😀b😀c","url":"emoji 👍🏽 mix"}}],"ok":{"screen":"main","hostId":"a😀b😀c","url":"emoji 👍🏽 mix"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":":","url":".leading"}}],"ok":{"screen":"main","hostId":":","url":".leading"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":":a.b.c","url":"ΣΊΣΥΦΟΣ"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"straße","url":"İstanbul"}}],"ok":{"screen":"main","hostId":"straße","url":"İstanbul"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"ünïcödé","url":"İstanbul"}}],"ok":{"screen":"main","hostId":"ünïcödé","url":"İstanbul"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"missing","hostId":"emoji 👍🏽 mix"}}],"ok":{"screen":"recovery","variant":"remote-missing","hostId":"emoji 👍🏽 mix"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"HELLO","url":"a😀b😀c"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"HELLO","url":"a😀b😀c"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"line1\nline2","url":"ΣΊΣΥΦΟΣ"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"","url":"Hello World"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"😀日本語のテキスト","url":"  padded  "}}],"ok":{"screen":"main","hostId":"😀日本語のテキスト","url":"  padded  "}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"{name} has {count} items","url":"./x/**/*.json"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"{name} has {count} items","url":"./x/**/*.json"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"日本語のテキスト","url":"a.b.chello"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"é","url":".leading"}}],"ok":{"screen":"recovery","variant":"remote-wrong-service","hostId":"é","url":".leading"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"  padded  ","url":"ünïcödé"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"  padded  ","url":"ünïcödé"}}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":true,"bootOutcomeKnown":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[true],"ok":{"$undefined":true}}
+{"fn":"canDismissInitialLoading","args":[0],"ok":{"$undefined":true}}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":true,"bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":false,"bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":true,"bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{}],"ok":{"$undefined":true}}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":true,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":false,"bootOutcomeKnown":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":true,"bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":false,"bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":true,"bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":false,"bootOutcomeKnown":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[[]],"ok":{"$undefined":true}}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":true,"bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":true,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":false,"bootOutcomeKnown":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":false,"bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":true,"bootOutcomeKnown":true}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[["a",1]],"ok":{"$undefined":true}}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":true,"bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[null],"error":"Cannot read properties of null (reading 'isDesktopShell')"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":false,"bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"canDismissInitialLoading","args":[{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":true,"bootOutcomeKnown":true}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":false,"bootOutcomeKnown":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":true,"bootOutcomeKnown":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":["x"],"ok":{"$undefined":true}}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":false,"isDesktopLocalOriginActive":true}],"ok":false}
+{"fn":"shouldRestartDesktopBootFlow","args":[{}],"ok":{"$undefined":true}}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":true,"isDesktopLocalOriginActive":true}],"ok":false}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":false,"isDesktopLocalOriginActive":false}],"ok":false}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":true,"isDesktopLocalOriginActive":false}],"ok":true}
+{"fn":"shouldRestartDesktopBootFlow","args":[true],"ok":{"$undefined":true}}
+{"fn":"shouldRestartDesktopBootFlow","args":[["a",1]],"ok":{"$undefined":true}}
+{"fn":"shouldRestartDesktopBootFlow","args":[[]],"ok":{"$undefined":true}}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"shouldRestartDesktopBootFlow","args":[null],"error":"Cannot read properties of null (reading 'isTauriShell')"}
+{"fn":"shouldRestartDesktopBootFlow","args":["x"],"ok":{"$undefined":true}}
+{"fn":"shouldRestartDesktopBootFlow","args":[0],"ok":{"$undefined":true}}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"local","status":"ok"}}],"ok":{"screen":"main"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"local","status":"ok"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":1,"bootOutcome":{"target":"local","status":"ok"}}],"ok":{"screen":"main"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":"","bootOutcome":{"target":"local","status":"ok"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"h","url":"u"}}],"ok":{"screen":"main","hostId":"h","url":"u"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"ok","hostId":"h","url":"u"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":1,"bootOutcome":{"target":"remote","status":"ok","hostId":"h","url":"u"}}],"ok":{"screen":"main","hostId":"h","url":"u"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":"","bootOutcome":{"target":"remote","status":"ok","hostId":"h","url":"u"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok"}}],"ok":{"screen":"main","hostId":{"$undefined":true},"url":{"$undefined":true}}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"ok"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":1,"bootOutcome":{"target":"remote","status":"ok"}}],"ok":{"screen":"main","hostId":{"$undefined":true},"url":{"$undefined":true}}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":"","bootOutcome":{"target":"remote","status":"ok"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":null,"status":"not-configured"}}],"ok":{"screen":"chooser"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":null,"status":"not-configured"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":1,"bootOutcome":{"target":null,"status":"not-configured"}}],"ok":{"screen":"chooser"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":"","bootOutcome":{"target":null,"status":"not-configured"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"status":"not-configured"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"status":"not-configured"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":1,"bootOutcome":{"status":"not-configured"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":"","bootOutcome":{"status":"not-configured"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"local","status":"unreachable"}}],"ok":{"screen":"recovery","variant":"local-unavailable"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"local","status":"unreachable"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":1,"bootOutcome":{"target":"local","status":"unreachable"}}],"ok":{"screen":"recovery","variant":"local-unavailable"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":"","bootOutcome":{"target":"local","status":"unreachable"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"h","url":"u"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"h","url":"u"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"h","url":"u"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":1,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"h","url":"u"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"h","url":"u"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":"","bootOutcome":{"target":"remote","status":"unreachable","hostId":"h","url":"u"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":5,"url":null}}],"ok":{"screen":"recovery","variant":"remote-wrong-service","hostId":5,"url":null}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":5,"url":null}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":1,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":5,"url":null}}],"ok":{"screen":"recovery","variant":"remote-wrong-service","hostId":5,"url":null}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":"","bootOutcome":{"target":"remote","status":"wrong-service","hostId":5,"url":null}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"missing","hostId":"h","url":"u"}}],"ok":{"screen":"recovery","variant":"remote-missing","hostId":"h"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"missing","hostId":"h","url":"u"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":1,"bootOutcome":{"target":"remote","status":"missing","hostId":"h","url":"u"}}],"ok":{"screen":"recovery","variant":"remote-missing","hostId":"h"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":"","bootOutcome":{"target":"remote","status":"missing","hostId":"h","url":"u"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"local","status":"missing"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"local","status":"missing"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":1,"bootOutcome":{"target":"local","status":"missing"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":"","bootOutcome":{"target":"local","status":"missing"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":null,"status":"ok"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":null,"status":"ok"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":1,"bootOutcome":{"target":null,"status":"ok"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":"","bootOutcome":{"target":null,"status":"ok"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":"str"}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":"str"}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":1,"bootOutcome":"str"}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":"","bootOutcome":"str"}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":0}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":0}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":1,"bootOutcome":0}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":"","bootOutcome":0}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":null}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":null}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":1,"bootOutcome":null}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":"","bootOutcome":null}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":1,"bootOutcome":{}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":"","bootOutcome":{}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"other"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"remote","status":"other"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":1,"bootOutcome":{"target":"remote","status":"other"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":"","bootOutcome":{"target":"remote","status":"other"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[null],"error":"Cannot read properties of null (reading 'isDesktopShell')"}
+{"fn":"resolveDesktopBootView","args":[],"error":"Cannot read properties of undefined (reading 'isDesktopShell')"}
+{"fn":"resolveDesktopBootView","args":["x"],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":true,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":true,"bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":true,"bootOutcomeKnown":true,"bootViewIsMain":null}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":true,"bootOutcomeKnown":true,"bootViewIsMain":0}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":true,"bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":true,"bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":true,"bootOutcomeKnown":false,"bootViewIsMain":null}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":true,"bootOutcomeKnown":false,"bootViewIsMain":0}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":true,"bootOutcomeKnown":1,"bootViewIsMain":true}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":true,"bootOutcomeKnown":1,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":true,"bootOutcomeKnown":1,"bootViewIsMain":null}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":true,"bootOutcomeKnown":1,"bootViewIsMain":0}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":null}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":0}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":false,"bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":false,"bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":false,"bootOutcomeKnown":false,"bootViewIsMain":null}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":false,"bootOutcomeKnown":false,"bootViewIsMain":0}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":false,"bootOutcomeKnown":1,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":false,"bootOutcomeKnown":1,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":false,"bootOutcomeKnown":1,"bootViewIsMain":null}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":false,"bootOutcomeKnown":1,"bootViewIsMain":0}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":"y","bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":"y","bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":"y","bootOutcomeKnown":true,"bootViewIsMain":null}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":"y","bootOutcomeKnown":true,"bootViewIsMain":0}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":"y","bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":"y","bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":"y","bootOutcomeKnown":false,"bootViewIsMain":null}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":"y","bootOutcomeKnown":false,"bootViewIsMain":0}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":"y","bootOutcomeKnown":1,"bootViewIsMain":true}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":"y","bootOutcomeKnown":1,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":"y","bootOutcomeKnown":1,"bootViewIsMain":null}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":"y","bootOutcomeKnown":1,"bootViewIsMain":0}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":0,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":0,"bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":0,"bootOutcomeKnown":true,"bootViewIsMain":null}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":0,"bootOutcomeKnown":true,"bootViewIsMain":0}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":0,"bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":0,"bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":0,"bootOutcomeKnown":false,"bootViewIsMain":null}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":0,"bootOutcomeKnown":false,"bootViewIsMain":0}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":0,"bootOutcomeKnown":1,"bootViewIsMain":true}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":0,"bootOutcomeKnown":1,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":0,"bootOutcomeKnown":1,"bootViewIsMain":null}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":0,"bootOutcomeKnown":1,"bootViewIsMain":0}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":null,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":null,"bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":null,"bootOutcomeKnown":true,"bootViewIsMain":null}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":null,"bootOutcomeKnown":true,"bootViewIsMain":0}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":null,"bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":null,"bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":null,"bootOutcomeKnown":false,"bootViewIsMain":null}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":null,"bootOutcomeKnown":false,"bootViewIsMain":0}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":null,"bootOutcomeKnown":1,"bootViewIsMain":true}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":null,"bootOutcomeKnown":1,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":null,"bootOutcomeKnown":1,"bootViewIsMain":null}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":null,"bootOutcomeKnown":1,"bootViewIsMain":0}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":true,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":true,"bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":true,"bootOutcomeKnown":true,"bootViewIsMain":null}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":true,"bootOutcomeKnown":true,"bootViewIsMain":0}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":true,"bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":true,"bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":true,"bootOutcomeKnown":false,"bootViewIsMain":null}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":true,"bootOutcomeKnown":false,"bootViewIsMain":0}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":true,"bootOutcomeKnown":1,"bootViewIsMain":true}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":true,"bootOutcomeKnown":1,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":true,"bootOutcomeKnown":1,"bootViewIsMain":null}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":true,"bootOutcomeKnown":1,"bootViewIsMain":0}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":null}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":0}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":false,"bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":false,"bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":false,"bootOutcomeKnown":false,"bootViewIsMain":null}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":false,"bootOutcomeKnown":false,"bootViewIsMain":0}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":false,"bootOutcomeKnown":1,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":false,"bootOutcomeKnown":1,"bootViewIsMain":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":false,"bootOutcomeKnown":1,"bootViewIsMain":null}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":false,"bootOutcomeKnown":1,"bootViewIsMain":0}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":"y","bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":"y","bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":"y","bootOutcomeKnown":true,"bootViewIsMain":null}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":"y","bootOutcomeKnown":true,"bootViewIsMain":0}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":"y","bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":"y","bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":"y","bootOutcomeKnown":false,"bootViewIsMain":null}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":"y","bootOutcomeKnown":false,"bootViewIsMain":0}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":"y","bootOutcomeKnown":1,"bootViewIsMain":true}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":"y","bootOutcomeKnown":1,"bootViewIsMain":false}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":"y","bootOutcomeKnown":1,"bootViewIsMain":null}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":"y","bootOutcomeKnown":1,"bootViewIsMain":0}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":0,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":0,"bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":0,"bootOutcomeKnown":true,"bootViewIsMain":null}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":0,"bootOutcomeKnown":true,"bootViewIsMain":0}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":0,"bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":0,"bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":0,"bootOutcomeKnown":false,"bootViewIsMain":null}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":0,"bootOutcomeKnown":false,"bootViewIsMain":0}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":0,"bootOutcomeKnown":1,"bootViewIsMain":true}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":0,"bootOutcomeKnown":1,"bootViewIsMain":false}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":0,"bootOutcomeKnown":1,"bootViewIsMain":null}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":0,"bootOutcomeKnown":1,"bootViewIsMain":0}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":null,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":null,"bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":null,"bootOutcomeKnown":true,"bootViewIsMain":null}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":null,"bootOutcomeKnown":true,"bootViewIsMain":0}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":null,"bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":null,"bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":null,"bootOutcomeKnown":false,"bootViewIsMain":null}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":null,"bootOutcomeKnown":false,"bootViewIsMain":0}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":null,"bootOutcomeKnown":1,"bootViewIsMain":true}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":null,"bootOutcomeKnown":1,"bootViewIsMain":false}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":null,"bootOutcomeKnown":1,"bootViewIsMain":null}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":null,"bootOutcomeKnown":1,"bootViewIsMain":0}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":true,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":true,"bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":true,"bootOutcomeKnown":true,"bootViewIsMain":null}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":true,"bootOutcomeKnown":true,"bootViewIsMain":0}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":true,"bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":true,"bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":true,"bootOutcomeKnown":false,"bootViewIsMain":null}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":true,"bootOutcomeKnown":false,"bootViewIsMain":0}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":true,"bootOutcomeKnown":1,"bootViewIsMain":true}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":true,"bootOutcomeKnown":1,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":true,"bootOutcomeKnown":1,"bootViewIsMain":null}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":true,"bootOutcomeKnown":1,"bootViewIsMain":0}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":null}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":0}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":false,"bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":false,"bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":false,"bootOutcomeKnown":false,"bootViewIsMain":null}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":false,"bootOutcomeKnown":false,"bootViewIsMain":0}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":false,"bootOutcomeKnown":1,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":false,"bootOutcomeKnown":1,"bootViewIsMain":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":false,"bootOutcomeKnown":1,"bootViewIsMain":null}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":false,"bootOutcomeKnown":1,"bootViewIsMain":0}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":"y","bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":"y","bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":"y","bootOutcomeKnown":true,"bootViewIsMain":null}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":"y","bootOutcomeKnown":true,"bootViewIsMain":0}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":"y","bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":"y","bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":"y","bootOutcomeKnown":false,"bootViewIsMain":null}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":"y","bootOutcomeKnown":false,"bootViewIsMain":0}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":"y","bootOutcomeKnown":1,"bootViewIsMain":true}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":"y","bootOutcomeKnown":1,"bootViewIsMain":false}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":"y","bootOutcomeKnown":1,"bootViewIsMain":null}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":"y","bootOutcomeKnown":1,"bootViewIsMain":0}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":0,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":0,"bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":0,"bootOutcomeKnown":true,"bootViewIsMain":null}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":0,"bootOutcomeKnown":true,"bootViewIsMain":0}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":0,"bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":0,"bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":0,"bootOutcomeKnown":false,"bootViewIsMain":null}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":0,"bootOutcomeKnown":false,"bootViewIsMain":0}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":0,"bootOutcomeKnown":1,"bootViewIsMain":true}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":0,"bootOutcomeKnown":1,"bootViewIsMain":false}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":0,"bootOutcomeKnown":1,"bootViewIsMain":null}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":0,"bootOutcomeKnown":1,"bootViewIsMain":0}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":null,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":null,"bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":null,"bootOutcomeKnown":true,"bootViewIsMain":null}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":null,"bootOutcomeKnown":true,"bootViewIsMain":0}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":null,"bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":null,"bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":null,"bootOutcomeKnown":false,"bootViewIsMain":null}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":null,"bootOutcomeKnown":false,"bootViewIsMain":0}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":null,"bootOutcomeKnown":1,"bootViewIsMain":true}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":null,"bootOutcomeKnown":1,"bootViewIsMain":false}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":null,"bootOutcomeKnown":1,"bootViewIsMain":null}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":null,"isInitialized":null,"bootOutcomeKnown":1,"bootViewIsMain":0}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":true,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":true,"bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":true,"bootOutcomeKnown":true,"bootViewIsMain":null}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":true,"bootOutcomeKnown":true,"bootViewIsMain":0}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":true,"bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":true,"bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":true,"bootOutcomeKnown":false,"bootViewIsMain":null}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":true,"bootOutcomeKnown":false,"bootViewIsMain":0}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":true,"bootOutcomeKnown":1,"bootViewIsMain":true}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":true,"bootOutcomeKnown":1,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":true,"bootOutcomeKnown":1,"bootViewIsMain":null}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":true,"bootOutcomeKnown":1,"bootViewIsMain":0}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":null}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":0}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":false,"bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":false,"bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":false,"bootOutcomeKnown":false,"bootViewIsMain":null}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":false,"bootOutcomeKnown":false,"bootViewIsMain":0}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":false,"bootOutcomeKnown":1,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":false,"bootOutcomeKnown":1,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":false,"bootOutcomeKnown":1,"bootViewIsMain":null}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":false,"bootOutcomeKnown":1,"bootViewIsMain":0}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":"y","bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":"y","bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":"y","bootOutcomeKnown":true,"bootViewIsMain":null}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":"y","bootOutcomeKnown":true,"bootViewIsMain":0}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":"y","bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":"y","bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":"y","bootOutcomeKnown":false,"bootViewIsMain":null}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":"y","bootOutcomeKnown":false,"bootViewIsMain":0}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":"y","bootOutcomeKnown":1,"bootViewIsMain":true}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":"y","bootOutcomeKnown":1,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":"y","bootOutcomeKnown":1,"bootViewIsMain":null}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":"y","bootOutcomeKnown":1,"bootViewIsMain":0}],"ok":"y"}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":0,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":0,"bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":0,"bootOutcomeKnown":true,"bootViewIsMain":null}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":0,"bootOutcomeKnown":true,"bootViewIsMain":0}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":0,"bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":0,"bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":0,"bootOutcomeKnown":false,"bootViewIsMain":null}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":0,"bootOutcomeKnown":false,"bootViewIsMain":0}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":0,"bootOutcomeKnown":1,"bootViewIsMain":true}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":0,"bootOutcomeKnown":1,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":0,"bootOutcomeKnown":1,"bootViewIsMain":null}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":0,"bootOutcomeKnown":1,"bootViewIsMain":0}],"ok":0}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":null,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":null,"bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":null,"bootOutcomeKnown":true,"bootViewIsMain":null}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":null,"bootOutcomeKnown":true,"bootViewIsMain":0}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":null,"bootOutcomeKnown":false,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":null,"bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":null,"bootOutcomeKnown":false,"bootViewIsMain":null}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":null,"bootOutcomeKnown":false,"bootViewIsMain":0}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":null,"bootOutcomeKnown":1,"bootViewIsMain":true}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":null,"bootOutcomeKnown":1,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":null,"bootOutcomeKnown":1,"bootViewIsMain":null}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":"x","isInitialized":null,"bootOutcomeKnown":1,"bootViewIsMain":0}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{}],"ok":{"$undefined":true}}
+{"fn":"canDismissInitialLoading","args":[null],"error":"Cannot read properties of null (reading 'isDesktopShell')"}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":true,"isDesktopLocalOriginActive":true}],"ok":false}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":true,"isDesktopLocalOriginActive":false}],"ok":true}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":true,"isDesktopLocalOriginActive":""}],"ok":true}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":true,"isDesktopLocalOriginActive":1}],"ok":false}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":false,"isDesktopLocalOriginActive":true}],"ok":false}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":false,"isDesktopLocalOriginActive":false}],"ok":false}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":false,"isDesktopLocalOriginActive":""}],"ok":false}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":false,"isDesktopLocalOriginActive":1}],"ok":false}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":"x","isDesktopLocalOriginActive":true}],"ok":false}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":"x","isDesktopLocalOriginActive":false}],"ok":true}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":"x","isDesktopLocalOriginActive":""}],"ok":true}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":"x","isDesktopLocalOriginActive":1}],"ok":false}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":0,"isDesktopLocalOriginActive":true}],"ok":0}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":0,"isDesktopLocalOriginActive":false}],"ok":0}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":0,"isDesktopLocalOriginActive":""}],"ok":0}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":0,"isDesktopLocalOriginActive":1}],"ok":0}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":null,"isDesktopLocalOriginActive":true}],"ok":null}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":null,"isDesktopLocalOriginActive":false}],"ok":null}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":null,"isDesktopLocalOriginActive":""}],"ok":null}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":null,"isDesktopLocalOriginActive":1}],"ok":null}
+{"fn":"shouldRestartDesktopBootFlow","args":[null],"error":"Cannot read properties of null (reading 'isTauriShell')"}
+{"fn":"shouldRestartDesktopBootFlow","args":[{}],"ok":{"$undefined":true}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":null,"status":"not-configured"}}],"ok":{"screen":"chooser"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"unreachable","hostId":"remote-a","url":"https://x.test"}}],"ok":{"screen":"recovery","variant":"remote-unreachable","hostId":"remote-a","url":"https://x.test"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"local","status":"ok"}}],"ok":{"screen":"main"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"ok","hostId":"remote-1","url":"https://example.com"}}],"ok":{"screen":"main","hostId":"remote-1","url":"https://example.com"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"wrong-service","hostId":"bad-host","url":"https://bad.test"}}],"ok":{"screen":"recovery","variant":"remote-wrong-service","hostId":"bad-host","url":"https://bad.test"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"local","status":"unreachable"}}],"ok":{"screen":"recovery","variant":"local-unavailable"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"target":"remote","status":"missing","hostId":"gone-1"}}],"ok":{"screen":"recovery","variant":"remote-missing","hostId":"gone-1"}}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":false,"bootOutcome":{"target":"local","status":"ok"}}],"ok":null}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":null}],"ok":null}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":true,"bootOutcomeKnown":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":true,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":true}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":false,"bootOutcomeKnown":true,"bootViewIsMain":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":true,"isInitialized":true,"bootOutcomeKnown":false,"bootViewIsMain":false}],"ok":false}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":true,"bootOutcomeKnown":false}],"ok":true}
+{"fn":"canDismissInitialLoading","args":[{"isDesktopShell":false,"isInitialized":false,"bootOutcomeKnown":false}],"ok":false}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":true,"isDesktopLocalOriginActive":false}],"ok":true}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":true,"isDesktopLocalOriginActive":true}],"ok":false}
+{"fn":"shouldRestartDesktopBootFlow","args":[{"isTauriShell":false,"isDesktopLocalOriginActive":false}],"ok":false}
+{"fn":"resolveDesktopBootView","args":[{"isDesktopShell":true,"bootOutcome":{"kind":"totally-unknown"}}],"ok":null}

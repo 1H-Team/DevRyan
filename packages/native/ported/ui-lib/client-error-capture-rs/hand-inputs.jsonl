@@ -1,0 +1,37 @@
+{"fn": "shouldIgnoreClientError", "args": ["ResizeObserver loop completed with undelivered notifications", "window_error"]}
+{"fn": "shouldIgnoreClientError", "args": ["ResizeObserver loop completed with undelivered notifications", "unhandled_rejection"]}
+{"fn": "shouldIgnoreClientError", "args": ["ResizeObserver loop completed with undelivered notifications", "error_boundary"]}
+{"fn": "shouldIgnoreClientError", "args": ["ResizeObserver loop completed with undelivered notifications.", "window_error"]}
+{"fn": "shouldIgnoreClientError", "args": ["ResizeObserver loop completed with undelivered notifications.", "unhandled_rejection"]}
+{"fn": "shouldIgnoreClientError", "args": ["ResizeObserver loop completed with undelivered notifications.", "error_boundary"]}
+{"fn": "shouldIgnoreClientError", "args": ["  resizeobserver LOOP completed with undelivered notifications. ", "window_error"]}
+{"fn": "shouldIgnoreClientError", "args": ["  resizeobserver LOOP completed with undelivered notifications. ", "unhandled_rejection"]}
+{"fn": "shouldIgnoreClientError", "args": ["  resizeobserver LOOP completed with undelivered notifications. ", "error_boundary"]}
+{"fn": "shouldIgnoreClientError", "args": ["ResizeObserver loop completed with undelivered notifications..", "window_error"]}
+{"fn": "shouldIgnoreClientError", "args": ["ResizeObserver loop completed with undelivered notifications..", "unhandled_rejection"]}
+{"fn": "shouldIgnoreClientError", "args": ["ResizeObserver loop completed with undelivered notifications..", "error_boundary"]}
+{"fn": "shouldIgnoreClientError", "args": ["ResizeObserver loop limit exceeded", "window_error"]}
+{"fn": "shouldIgnoreClientError", "args": ["ResizeObserver loop limit exceeded", "unhandled_rejection"]}
+{"fn": "shouldIgnoreClientError", "args": ["ResizeObserver loop limit exceeded", "error_boundary"]}
+{"fn": "shouldIgnoreClientError", "args": ["", "window_error"]}
+{"fn": "shouldIgnoreClientError", "args": ["", "unhandled_rejection"]}
+{"fn": "shouldIgnoreClientError", "args": ["", "error_boundary"]}
+{"fn": "shouldIgnoreClientError", "args": [5, "window_error"]}
+{"fn": "shouldIgnoreClientError", "args": [5, "unhandled_rejection"]}
+{"fn": "shouldIgnoreClientError", "args": [5, "error_boundary"]}
+{"fn": "shouldIgnoreClientError", "args": [null, "window_error"]}
+{"fn": "shouldIgnoreClientError", "args": [null, "unhandled_rejection"]}
+{"fn": "shouldIgnoreClientError", "args": [null, "error_boundary"]}
+{"fn": "shouldIgnoreClientError", "args": ["ſResizeObserver", "window_error"]}
+{"fn": "shouldIgnoreClientError", "args": ["ſResizeObserver", "unhandled_rejection"]}
+{"fn": "shouldIgnoreClientError", "args": ["ſResizeObserver", "error_boundary"]}
+{"fn": "fingerprintError", "args": ["Error", "boom"]}
+{"fn": "fingerprintError", "args": ["TypeError", "x is undefined", "TypeError: x\n    at a (f.js:1)\n  at b (g.js:2) \n at c\n at d"]}
+{"fn": "fingerprintError", "args": ["E", "m", ""]}
+{"fn": "fingerprintError", "args": ["E", "m", null]}
+{"fn": "fingerprintError", "args": ["", "", ""]}
+{"fn": "fingerprintError", "args": ["é😀", "\u0000", " \nonly"]}
+{"fn": "fingerprintError", "args": ["E", "m", 5]}
+{"fn": "fingerprintError", "args": ["E", "m", ["a"]]}
+{"fn": "fingerprintError", "args": [null, 5, "x\ny"]}
+{"fn": "fingerprintError", "args": [{"$utf16": [55296]}, "m"]}

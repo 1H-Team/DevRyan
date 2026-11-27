@@ -1,0 +1,26 @@
+{"fn": "planSettlementWaitingText", "args": ["tasks_active"]}
+{"fn": "planSettlementWaitingText", "args": ["sessions_busy"]}
+{"fn": "planSettlementWaitingText", "args": ["leases_active"]}
+{"fn": "planSettlementWaitingText", "args": ["other"]}
+{"fn": "planSettlementWaitingText", "args": [""]}
+{"fn": "planSettlementWaitingText", "args": []}
+{"fn": "planSettlementWaitingText", "args": ["constructor"]}
+{"fn": "planSettlementWaitingText", "args": ["toString"]}
+{"fn": "planSettlementWaitingText", "args": ["__proto__"]}
+{"fn": "planSettlementWaitingText", "args": ["hasOwnProperty"]}
+{"fn": "planSettlementWaitingText", "args": ["valueOf"]}
+{"fn": "planSettlementWaitingText", "args": ["__lookupGetter__"]}
+{"fn": "planSettlementWaitingText", "args": [5]}
+{"fn": "planSettlementWaitingText", "args": [null]}
+{"fn": "sanitizePlanPathSegment", "args": ["  My Plan.v2 / draft  "]}
+{"fn": "sanitizePlanPathSegment", "args": ["a..b"]}
+{"fn": "sanitizePlanPathSegment", "args": ["--x--"]}
+{"fn": "sanitizePlanPathSegment", "args": ["é/ü"]}
+{"fn": "sanitizePlanPathSegment", "args": ["😀"]}
+{"fn": "sanitizePlanPathSegment", "args": ["a_b-c"]}
+{"fn": "sanitizePlanPathSegment", "args": [""]}
+{"fn": "sanitizePlanPathSegment", "args": ["  "]}
+{"fn": "sanitizePlanPathSegment", "args": ["x\\\\y"]}
+{"fn": "sanitizePlanPathSegment", "args": [".."]}
+{"fn": "sanitizePlanPathSegment", "args": ["a  b"]}
+{"fn": "sanitizePlanPathSegment", "args": ["A-_-B"]}

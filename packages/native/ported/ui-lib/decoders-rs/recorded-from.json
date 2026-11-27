@@ -1,0 +1,37 @@
+{
+  "unit": "decoders/",
+  "files": 6,
+  "fingerprint": "751fc439988fce2c",
+  "cases": 479,
+  "cases_hash": "474913c79b28806c",
+  "coverage": {
+    "lines": 157,
+    "reached": 155,
+    "files": [
+      {
+        "file": "decoders/assistantMessageError.ts",
+        "lines": 31,
+        "reached": 31,
+        "missed": ""
+      },
+      {
+        "file": "decoders/guards.ts",
+        "lines": 38,
+        "reached": 36,
+        "missed": "43-44"
+      },
+      {
+        "file": "decoders/managedTaskToolPart.ts",
+        "lines": 60,
+        "reached": 60,
+        "missed": ""
+      },
+      {
+        "file": "decoders/messageInfo.ts",
+        "lines": 28,
+        "reached": 28,
+        "missed": ""
+      }
+    ]
+  }
+}

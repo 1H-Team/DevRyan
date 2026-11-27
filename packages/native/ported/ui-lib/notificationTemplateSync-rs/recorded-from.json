@@ -1,0 +1,19 @@
+{
+  "unit": "notificationTemplateSync.ts",
+  "files": 1,
+  "fingerprint": "a64fa2bfdd5cdd28",
+  "cases": 323,
+  "cases_hash": "ca2350a35dcf96e0",
+  "coverage": {
+    "lines": 14,
+    "reached": 14,
+    "files": [
+      {
+        "file": "notificationTemplateSync.ts",
+        "lines": 14,
+        "reached": 14,
+        "missed": ""
+      }
+    ]
+  }
+}

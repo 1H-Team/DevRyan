@@ -1,0 +1,278 @@
+{"fn": "decodeAssistantMessageError", "args": [{"name": "APIError", "message": "outer", "data": {"message": "inner"}}]}
+{"fn": "readAssistantMessageError", "args": [{"error": {"name": "APIError", "message": "outer", "data": {"message": "inner"}}}]}
+{"fn": "decodeAssistantMessageError", "args": [{"name": "APIError", "message": "outer", "data": {"message": ""}}]}
+{"fn": "readAssistantMessageError", "args": [{"error": {"name": "APIError", "message": "outer", "data": {"message": ""}}}]}
+{"fn": "decodeAssistantMessageError", "args": [{"name": "APIError", "data": {"message": 42}}]}
+{"fn": "readAssistantMessageError", "args": [{"error": {"name": "APIError", "data": {"message": 42}}}]}
+{"fn": "decodeAssistantMessageError", "args": [{"name": 7}]}
+{"fn": "readAssistantMessageError", "args": [{"error": {"name": 7}}]}
+{"fn": "decodeAssistantMessageError", "args": ["boom"]}
+{"fn": "readAssistantMessageError", "args": [{"error": "boom"}]}
+{"fn": "decodeAssistantMessageError", "args": [["boom"]]}
+{"fn": "readAssistantMessageError", "args": [{"error": ["boom"]}]}
+{"fn": "decodeAssistantMessageError", "args": [null]}
+{"fn": "readAssistantMessageError", "args": [{"error": null}]}
+{"fn": "decodeAssistantMessageError", "args": [{}]}
+{"fn": "readAssistantMessageError", "args": [{"error": {}}]}
+{"fn": "decodeAssistantMessageError", "args": [{"name": "MessageAbortedError", "data": {"message": "Aborted", "source": "provider_retry"}}]}
+{"fn": "readAssistantMessageError", "args": [{"error": {"name": "MessageAbortedError", "data": {"message": "Aborted", "source": "provider_retry"}}}]}
+{"fn": "decodeAssistantMessageError", "args": [{"name": "MessageAbortedError", "data": {"message": "Aborted", "source": "forged"}}]}
+{"fn": "readAssistantMessageError", "args": [{"error": {"name": "MessageAbortedError", "data": {"message": "Aborted", "source": "forged"}}}]}
+{"fn": "decodeAssistantMessageError", "args": [{"name": "APIError", "data": {"message": "boom", "source": "provider_retry"}}]}
+{"fn": "readAssistantMessageError", "args": [{"error": {"name": "APIError", "data": {"message": "boom", "source": "provider_retry"}}}]}
+{"fn": "decodeAssistantMessageError", "args": [{"name": "MessageAbortedError", "data": {"source": "stop_button"}}]}
+{"fn": "readAssistantMessageError", "args": [{"error": {"name": "MessageAbortedError", "data": {"source": "stop_button"}}}]}
+{"fn": "decodeAssistantMessageError", "args": [{"name": "MessageAbortedError", "data": ["x"]}]}
+{"fn": "readAssistantMessageError", "args": [{"error": {"name": "MessageAbortedError", "data": ["x"]}}]}
+{"fn": "decodeAssistantMessageError", "args": [{"name": "MessageAbortedError", "data": {"$map": [["source", "revert"]]}}]}
+{"fn": "readAssistantMessageError", "args": [{"error": {"name": "MessageAbortedError", "data": {"$map": [["source", "revert"]]}}}]}
+{"fn": "decodeAssistantMessageError", "args": [{"$map": [["name", "x"]]}]}
+{"fn": "readAssistantMessageError", "args": [{"error": {"$map": [["name", "x"]]}}]}
+{"fn": "decodeAssistantMessageError", "args": [{"name": "", "message": "", "data": {"message": ""}}]}
+{"fn": "readAssistantMessageError", "args": [{"error": {"name": "", "message": "", "data": {"message": ""}}}]}
+{"fn": "decodeAssistantMessageError", "args": [{"name": "MessageAbortedError", "data": {"source": "unknown"}}]}
+{"fn": "readAssistantMessageError", "args": [{"error": {"name": "MessageAbortedError", "data": {"source": "unknown"}}}]}
+{"fn": "readAssistantMessageError", "args": [{"id": "msg_1"}]}
+{"fn": "readAssistantMessageError", "args": [null]}
+{"fn": "readAssistantMessageError", "args": ["x"]}
+{"fn": "readAssistantMessageError", "args": [[{"error": {}}]]}
+{"fn": "isRecord", "args": [{}]}
+{"fn": "isRecord", "args": [[]]}
+{"fn": "isRecord", "args": [null]}
+{"fn": "isRecord", "args": ["x"]}
+{"fn": "isRecord", "args": [5]}
+{"fn": "isRecord", "args": [{"$map": []}]}
+{"fn": "isRecord", "args": [{"$set": [1]}]}
+{"fn": "isRecord", "args": [{"$num": "NaN"}]}
+{"fn": "isRecord", "args": [true]}
+{"fn": "readString", "args": [null]}
+{"fn": "isNullableString", "args": [null]}
+{"fn": "isOptionalNullableString", "args": [null]}
+{"fn": "isTimestamp", "args": [null]}
+{"fn": "isNullableTimestamp", "args": [null]}
+{"fn": "isOptionalNullableTimestamp", "args": [null]}
+{"fn": "isCount", "args": [null]}
+{"fn": "readString", "args": [""]}
+{"fn": "isNullableString", "args": [""]}
+{"fn": "isOptionalNullableString", "args": [""]}
+{"fn": "isTimestamp", "args": [""]}
+{"fn": "isNullableTimestamp", "args": [""]}
+{"fn": "isOptionalNullableTimestamp", "args": [""]}
+{"fn": "isCount", "args": [""]}
+{"fn": "readString", "args": ["x"]}
+{"fn": "isNullableString", "args": ["x"]}
+{"fn": "isOptionalNullableString", "args": ["x"]}
+{"fn": "isTimestamp", "args": ["x"]}
+{"fn": "isNullableTimestamp", "args": ["x"]}
+{"fn": "isOptionalNullableTimestamp", "args": ["x"]}
+{"fn": "isCount", "args": ["x"]}
+{"fn": "readString", "args": [5]}
+{"fn": "isNullableString", "args": [5]}
+{"fn": "isOptionalNullableString", "args": [5]}
+{"fn": "isTimestamp", "args": [5]}
+{"fn": "isNullableTimestamp", "args": [5]}
+{"fn": "isOptionalNullableTimestamp", "args": [5]}
+{"fn": "isCount", "args": [5]}
+{"fn": "readString", "args": [{"$num": "-0"}]}
+{"fn": "isNullableString", "args": [{"$num": "-0"}]}
+{"fn": "isOptionalNullableString", "args": [{"$num": "-0"}]}
+{"fn": "isTimestamp", "args": [{"$num": "-0"}]}
+{"fn": "isNullableTimestamp", "args": [{"$num": "-0"}]}
+{"fn": "isOptionalNullableTimestamp", "args": [{"$num": "-0"}]}
+{"fn": "isCount", "args": [{"$num": "-0"}]}
+{"fn": "readString", "args": [-1]}
+{"fn": "isNullableString", "args": [-1]}
+{"fn": "isOptionalNullableString", "args": [-1]}
+{"fn": "isTimestamp", "args": [-1]}
+{"fn": "isNullableTimestamp", "args": [-1]}
+{"fn": "isOptionalNullableTimestamp", "args": [-1]}
+{"fn": "isCount", "args": [-1]}
+{"fn": "readString", "args": [0]}
+{"fn": "isNullableString", "args": [0]}
+{"fn": "isOptionalNullableString", "args": [0]}
+{"fn": "isTimestamp", "args": [0]}
+{"fn": "isNullableTimestamp", "args": [0]}
+{"fn": "isOptionalNullableTimestamp", "args": [0]}
+{"fn": "isCount", "args": [0]}
+{"fn": "readString", "args": [1.5]}
+{"fn": "isNullableString", "args": [1.5]}
+{"fn": "isOptionalNullableString", "args": [1.5]}
+{"fn": "isTimestamp", "args": [1.5]}
+{"fn": "isNullableTimestamp", "args": [1.5]}
+{"fn": "isOptionalNullableTimestamp", "args": [1.5]}
+{"fn": "isCount", "args": [1.5]}
+{"fn": "readString", "args": [9007199254740991]}
+{"fn": "isNullableString", "args": [9007199254740991]}
+{"fn": "isOptionalNullableString", "args": [9007199254740991]}
+{"fn": "isTimestamp", "args": [9007199254740991]}
+{"fn": "isNullableTimestamp", "args": [9007199254740991]}
+{"fn": "isOptionalNullableTimestamp", "args": [9007199254740991]}
+{"fn": "isCount", "args": [9007199254740991]}
+{"fn": "readString", "args": [9007199254740992]}
+{"fn": "isNullableString", "args": [9007199254740992]}
+{"fn": "isOptionalNullableString", "args": [9007199254740992]}
+{"fn": "isTimestamp", "args": [9007199254740992]}
+{"fn": "isNullableTimestamp", "args": [9007199254740992]}
+{"fn": "isOptionalNullableTimestamp", "args": [9007199254740992]}
+{"fn": "isCount", "args": [9007199254740992]}
+{"fn": "readString", "args": [{"$num": "Infinity"}]}
+{"fn": "isNullableString", "args": [{"$num": "Infinity"}]}
+{"fn": "isOptionalNullableString", "args": [{"$num": "Infinity"}]}
+{"fn": "isTimestamp", "args": [{"$num": "Infinity"}]}
+{"fn": "isNullableTimestamp", "args": [{"$num": "Infinity"}]}
+{"fn": "isOptionalNullableTimestamp", "args": [{"$num": "Infinity"}]}
+{"fn": "isCount", "args": [{"$num": "Infinity"}]}
+{"fn": "readString", "args": [{"$num": "NaN"}]}
+{"fn": "isNullableString", "args": [{"$num": "NaN"}]}
+{"fn": "isOptionalNullableString", "args": [{"$num": "NaN"}]}
+{"fn": "isTimestamp", "args": [{"$num": "NaN"}]}
+{"fn": "isNullableTimestamp", "args": [{"$num": "NaN"}]}
+{"fn": "isOptionalNullableTimestamp", "args": [{"$num": "NaN"}]}
+{"fn": "isCount", "args": [{"$num": "NaN"}]}
+{"fn": "readString", "args": ["5"]}
+{"fn": "isNullableString", "args": ["5"]}
+{"fn": "isOptionalNullableString", "args": ["5"]}
+{"fn": "isTimestamp", "args": ["5"]}
+{"fn": "isNullableTimestamp", "args": ["5"]}
+{"fn": "isOptionalNullableTimestamp", "args": ["5"]}
+{"fn": "isCount", "args": ["5"]}
+{"fn": "readString", "args": [true]}
+{"fn": "isNullableString", "args": [true]}
+{"fn": "isOptionalNullableString", "args": [true]}
+{"fn": "isTimestamp", "args": [true]}
+{"fn": "isNullableTimestamp", "args": [true]}
+{"fn": "isOptionalNullableTimestamp", "args": [true]}
+{"fn": "isCount", "args": [true]}
+{"fn": "readString", "args": [[]]}
+{"fn": "isNullableString", "args": [[]]}
+{"fn": "isOptionalNullableString", "args": [[]]}
+{"fn": "isTimestamp", "args": [[]]}
+{"fn": "isNullableTimestamp", "args": [[]]}
+{"fn": "isOptionalNullableTimestamp", "args": [[]]}
+{"fn": "isCount", "args": [[]]}
+{"fn": "readString", "args": []}
+{"fn": "isOptionalNullableString", "args": []}
+{"fn": "isOptionalNullableTimestamp", "args": []}
+{"fn": "isCount", "args": []}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": "{\"task\": {\"taskId\": \"dvr_task_a\"}, \"followUpTask\": {\"task\": {\"taskId\": \"dvr_task_b\"}}}", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": "{bad", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": "[1]", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": "{\"task\": [1]}", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": "  ", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": "{\"b\":1,\"2\":2,\"a\":{\"10\":1,\"1\":2},\"b\":3}", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": "{\"x\":\"\\ud800\\u00e9\"}", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": "{\"n\":1e400,\"m\":-0,\"k\":-1.5e-3}", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": " {\"a\":1} ", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": "{\"a\":1} x", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": "{\"a\":01}", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": "{\"a\":\"\t\"}", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": "{\"a\":true,\"b\":null,\"c\":[false,{}]}", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": "{\"a\":1,}", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": "{\"followUpTask\":[1]}", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": "{\"followUpTask\":{\"task\":\"s\"}}", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": "{\"a\":\"\\/\\b\\f\\n\\r\\t\\\"\\\\\"}", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": "{\"a\":\"\\x\"}", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": "{\"a\":1.}", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": "{\"a\":.5}", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": "{\"a\":1e}", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": "{\"a\":-}", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": " {\"a\":1}", "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": {"task": {"t": 1}}, "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": ["arr"], "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": 5, "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"status": " completed ", "input": {"action": " retry ", "agent": "fixer", "label": "Fix", "task_id": " dvr_task_a "}, "output": null, "error": "e"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": null}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": "str"}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"input": "x", "status": 5}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"state": {"status": "x"}}]}
+{"fn": "decodeManagedTaskToolPart", "args": [null]}
+{"fn": "decodeManagedTaskToolPart", "args": []}
+{"fn": "decodeManagedTaskToolPart", "args": ["str"]}
+{"fn": "decodeManagedTaskToolPart", "args": [5]}
+{"fn": "decodeManagedTaskToolPart", "args": [[1]]}
+{"fn": "decodeManagedTaskToolPart", "args": [{}]}
+{"fn": "decodeManagedTaskToolPart", "args": [{"id": "prt_1", "type": "tool", "tool": "devryan_task", "state": {"input": {"$map": [["action", "x"]]}}}]}
+{"fn": "readMessageRole", "args": [{"role": "system", "clientRole": "assistant"}]}
+{"fn": "readMessageId", "args": [{"role": "system", "clientRole": "assistant"}]}
+{"fn": "readMessageParentId", "args": [{"role": "system", "clientRole": "assistant"}]}
+{"fn": "readMessageSessionId", "args": [{"role": "system", "clientRole": "assistant"}]}
+{"fn": "readMessageClientRole", "args": [{"role": "system", "clientRole": "assistant"}]}
+{"fn": "readMessageCreatedAt", "args": [{"role": "system", "clientRole": "assistant"}]}
+{"fn": "readMessageRole", "args": [{"role": "user"}]}
+{"fn": "readMessageId", "args": [{"role": "user"}]}
+{"fn": "readMessageParentId", "args": [{"role": "user"}]}
+{"fn": "readMessageSessionId", "args": [{"role": "user"}]}
+{"fn": "readMessageClientRole", "args": [{"role": "user"}]}
+{"fn": "readMessageCreatedAt", "args": [{"role": "user"}]}
+{"fn": "readMessageRole", "args": [{"role": 3}]}
+{"fn": "readMessageId", "args": [{"role": 3}]}
+{"fn": "readMessageParentId", "args": [{"role": 3}]}
+{"fn": "readMessageSessionId", "args": [{"role": 3}]}
+{"fn": "readMessageClientRole", "args": [{"role": 3}]}
+{"fn": "readMessageCreatedAt", "args": [{"role": 3}]}
+{"fn": "readMessageRole", "args": [{"id": "  "}]}
+{"fn": "readMessageId", "args": [{"id": "  "}]}
+{"fn": "readMessageParentId", "args": [{"id": "  "}]}
+{"fn": "readMessageSessionId", "args": [{"id": "  "}]}
+{"fn": "readMessageClientRole", "args": [{"id": "  "}]}
+{"fn": "readMessageCreatedAt", "args": [{"id": "  "}]}
+{"fn": "readMessageRole", "args": [{"parentID": "msg_1"}]}
+{"fn": "readMessageId", "args": [{"parentID": "msg_1"}]}
+{"fn": "readMessageParentId", "args": [{"parentID": "msg_1"}]}
+{"fn": "readMessageSessionId", "args": [{"parentID": "msg_1"}]}
+{"fn": "readMessageClientRole", "args": [{"parentID": "msg_1"}]}
+{"fn": "readMessageCreatedAt", "args": [{"parentID": "msg_1"}]}
+{"fn": "readMessageRole", "args": [null]}
+{"fn": "readMessageId", "args": [null]}
+{"fn": "readMessageParentId", "args": [null]}
+{"fn": "readMessageSessionId", "args": [null]}
+{"fn": "readMessageClientRole", "args": [null]}
+{"fn": "readMessageCreatedAt", "args": [null]}
+{"fn": "readMessageRole", "args": [{"time": {"created": 5}}]}
+{"fn": "readMessageId", "args": [{"time": {"created": 5}}]}
+{"fn": "readMessageParentId", "args": [{"time": {"created": 5}}]}
+{"fn": "readMessageSessionId", "args": [{"time": {"created": 5}}]}
+{"fn": "readMessageClientRole", "args": [{"time": {"created": 5}}]}
+{"fn": "readMessageCreatedAt", "args": [{"time": {"created": 5}}]}
+{"fn": "readMessageRole", "args": [{"time": {"created": {"$num": "NaN"}}}]}
+{"fn": "readMessageId", "args": [{"time": {"created": {"$num": "NaN"}}}]}
+{"fn": "readMessageParentId", "args": [{"time": {"created": {"$num": "NaN"}}}]}
+{"fn": "readMessageSessionId", "args": [{"time": {"created": {"$num": "NaN"}}}]}
+{"fn": "readMessageClientRole", "args": [{"time": {"created": {"$num": "NaN"}}}]}
+{"fn": "readMessageCreatedAt", "args": [{"time": {"created": {"$num": "NaN"}}}]}
+{"fn": "readMessageRole", "args": [{"time": {"created": "5"}}]}
+{"fn": "readMessageId", "args": [{"time": {"created": "5"}}]}
+{"fn": "readMessageParentId", "args": [{"time": {"created": "5"}}]}
+{"fn": "readMessageSessionId", "args": [{"time": {"created": "5"}}]}
+{"fn": "readMessageClientRole", "args": [{"time": {"created": "5"}}]}
+{"fn": "readMessageCreatedAt", "args": [{"time": {"created": "5"}}]}
+{"fn": "readMessageRole", "args": [{"time": [1]}]}
+{"fn": "readMessageId", "args": [{"time": [1]}]}
+{"fn": "readMessageParentId", "args": [{"time": [1]}]}
+{"fn": "readMessageSessionId", "args": [{"time": [1]}]}
+{"fn": "readMessageClientRole", "args": [{"time": [1]}]}
+{"fn": "readMessageCreatedAt", "args": [{"time": [1]}]}
+{"fn": "readMessageRole", "args": [{"id": " x ", "sessionID": "s", "clientRole": 5, "role": "r"}]}
+{"fn": "readMessageId", "args": [{"id": " x ", "sessionID": "s", "clientRole": 5, "role": "r"}]}
+{"fn": "readMessageParentId", "args": [{"id": " x ", "sessionID": "s", "clientRole": 5, "role": "r"}]}
+{"fn": "readMessageSessionId", "args": [{"id": " x ", "sessionID": "s", "clientRole": 5, "role": "r"}]}
+{"fn": "readMessageClientRole", "args": [{"id": " x ", "sessionID": "s", "clientRole": 5, "role": "r"}]}
+{"fn": "readMessageCreatedAt", "args": [{"id": " x ", "sessionID": "s", "clientRole": 5, "role": "r"}]}
+{"fn": "readMessageRole", "args": ["str"]}
+{"fn": "readMessageId", "args": ["str"]}
+{"fn": "readMessageParentId", "args": ["str"]}
+{"fn": "readMessageSessionId", "args": ["str"]}
+{"fn": "readMessageClientRole", "args": ["str"]}
+{"fn": "readMessageCreatedAt", "args": ["str"]}
+{"fn": "readMessageRole", "args": [[{"id": "a"}]]}
+{"fn": "readMessageId", "args": [[{"id": "a"}]]}
+{"fn": "readMessageParentId", "args": [[{"id": "a"}]]}
+{"fn": "readMessageSessionId", "args": [[{"id": "a"}]]}
+{"fn": "readMessageClientRole", "args": [[{"id": "a"}]]}
+{"fn": "readMessageCreatedAt", "args": [[{"id": "a"}]]}
+{"fn": "readMessageRole", "args": [{"time": {"created": {"$num": "-0"}}}]}
+{"fn": "readMessageId", "args": [{"time": {"created": {"$num": "-0"}}}]}
+{"fn": "readMessageParentId", "args": [{"time": {"created": {"$num": "-0"}}}]}
+{"fn": "readMessageSessionId", "args": [{"time": {"created": {"$num": "-0"}}}]}
+{"fn": "readMessageClientRole", "args": [{"time": {"created": {"$num": "-0"}}}]}
+{"fn": "readMessageCreatedAt", "args": [{"time": {"created": {"$num": "-0"}}}]}

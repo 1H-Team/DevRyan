@@ -1,0 +1,19 @@
+{
+  "unit": "modelPrefsSync.ts",
+  "files": 1,
+  "fingerprint": "3f07617271343190",
+  "cases": 1346,
+  "cases_hash": "0c9103979c7e1a65",
+  "coverage": {
+    "lines": 89,
+    "reached": 89,
+    "files": [
+      {
+        "file": "modelPrefsSync.ts",
+        "lines": 89,
+        "reached": 89,
+        "missed": ""
+      }
+    ]
+  }
+}

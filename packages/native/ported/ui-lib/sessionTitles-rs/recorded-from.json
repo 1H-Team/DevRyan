@@ -1,0 +1,19 @@
+{
+  "unit": "sessionTitles.ts",
+  "files": 1,
+  "fingerprint": "217888127227b075",
+  "cases": 1670,
+  "cases_hash": "f229b4aa9cc569ca",
+  "coverage": {
+    "lines": 181,
+    "reached": 168,
+    "files": [
+      {
+        "file": "sessionTitles.ts",
+        "lines": 181,
+        "reached": 168,
+        "missed": "167-179"
+      }
+    ]
+  }
+}
