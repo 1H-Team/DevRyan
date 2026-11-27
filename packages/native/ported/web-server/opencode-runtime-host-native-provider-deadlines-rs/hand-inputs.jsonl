@@ -1,0 +1,261 @@
+{"fn": "nativeProviderDeadlines", "args": ["opencode", {"$undefined": true}]}
+{"fn": "nativeProviderDeadlines", "args": ["openai", {"baseURL": "x"}]}
+{"fn": "nativeProviderDeadlines", "args": ["openai", {"chunkTimeout": false}]}
+{"fn": "nativeProviderDeadlines", "args": ["claude-agent", {"$undefined": true}]}
+{"fn": "nativeProviderDeadlines", "args": ["claude-agent", {"timeout": 600000}]}
+{"fn": "nativeProviderDeadlines", "args": ["anthropic", {"$undefined": true}]}
+{"fn": "withNativeProviderDeadlines", "args": ["claude-agent", {"name": "Claude"}]}
+{"fn": "withNativeProviderDeadlines", "args": ["claude-agent", {"settings": {"timeout": 600000}}]}
+{"fn": "withNativeProviderDeadlines", "args": ["opencode", {"name": "Zen"}]}
+{"fn": "withNativeProviderDeadlines", "args": ["anthropic", {"name": "Anthropic"}]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["opencode", {"$undefined": true}, 300000]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["opencode", 300000, 300000]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["opencode", 60000, 300000]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["opencode", false, 300000]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["claude-agent", {"$undefined": true}, 300000]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["anthropic", {"$undefined": true}, 300000]}
+{"fn": "nativeProviderDeadlines", "args": ["constructor", {"$undefined": true}]}
+{"fn": "nativeProviderDeadlines", "args": ["constructor", null]}
+{"fn": "nativeProviderDeadlines", "args": ["constructor", "ab"]}
+{"fn": "nativeProviderDeadlines", "args": ["constructor", "\ud83d\ude00"]}
+{"fn": "nativeProviderDeadlines", "args": ["constructor", [1, 2]]}
+{"fn": "nativeProviderDeadlines", "args": ["constructor", {"2": "x", "b": 1, "1": "y", "headerTimeout": 3}]}
+{"fn": "nativeProviderDeadlines", "args": ["constructor", 5]}
+{"fn": "nativeProviderDeadlines", "args": ["constructor", true]}
+{"fn": "nativeProviderDeadlines", "args": ["constructor", {"$map": [["a", 1]]}]}
+{"fn": "nativeProviderDeadlines", "args": ["constructor", {"$set": [1]}]}
+{"fn": "nativeProviderDeadlines", "args": ["constructor", {"$bytes": [7, 8]}]}
+{"fn": "nativeProviderDeadlines", "args": ["constructor", {"$date": "2020-01-01T00:00:00.000Z"}]}
+{"fn": "nativeProviderDeadlines", "args": ["constructor", {"$num": "NaN"}]}
+{"fn": "nativeProviderDeadlines", "args": ["constructor", {"headerTimeout": {"$undefined": true}}]}
+{"fn": "nativeProviderDeadlines", "args": ["constructor", {"chunkTimeout": null, "x": {"y": 1}}]}
+{"fn": "nativeProviderDeadlines", "args": ["constructor", {"4294967295": 1, "4294967294": 2, "01": 3}]}
+{"fn": "nativeProviderDeadlines", "args": ["__proto__", {"$undefined": true}]}
+{"fn": "nativeProviderDeadlines", "args": ["__proto__", null]}
+{"fn": "nativeProviderDeadlines", "args": ["__proto__", "ab"]}
+{"fn": "nativeProviderDeadlines", "args": ["__proto__", "\ud83d\ude00"]}
+{"fn": "nativeProviderDeadlines", "args": ["__proto__", [1, 2]]}
+{"fn": "nativeProviderDeadlines", "args": ["__proto__", {"2": "x", "b": 1, "1": "y", "headerTimeout": 3}]}
+{"fn": "nativeProviderDeadlines", "args": ["__proto__", 5]}
+{"fn": "nativeProviderDeadlines", "args": ["__proto__", true]}
+{"fn": "nativeProviderDeadlines", "args": ["__proto__", {"$map": [["a", 1]]}]}
+{"fn": "nativeProviderDeadlines", "args": ["__proto__", {"$set": [1]}]}
+{"fn": "nativeProviderDeadlines", "args": ["__proto__", {"$bytes": [7, 8]}]}
+{"fn": "nativeProviderDeadlines", "args": ["__proto__", {"$date": "2020-01-01T00:00:00.000Z"}]}
+{"fn": "nativeProviderDeadlines", "args": ["__proto__", {"$num": "NaN"}]}
+{"fn": "nativeProviderDeadlines", "args": ["__proto__", {"headerTimeout": {"$undefined": true}}]}
+{"fn": "nativeProviderDeadlines", "args": ["__proto__", {"chunkTimeout": null, "x": {"y": 1}}]}
+{"fn": "nativeProviderDeadlines", "args": ["__proto__", {"4294967295": 1, "4294967294": 2, "01": 3}]}
+{"fn": "nativeProviderDeadlines", "args": ["toString", {"$undefined": true}]}
+{"fn": "nativeProviderDeadlines", "args": ["toString", null]}
+{"fn": "nativeProviderDeadlines", "args": ["toString", "ab"]}
+{"fn": "nativeProviderDeadlines", "args": ["toString", "\ud83d\ude00"]}
+{"fn": "nativeProviderDeadlines", "args": ["toString", [1, 2]]}
+{"fn": "nativeProviderDeadlines", "args": ["toString", {"2": "x", "b": 1, "1": "y", "headerTimeout": 3}]}
+{"fn": "nativeProviderDeadlines", "args": ["toString", 5]}
+{"fn": "nativeProviderDeadlines", "args": ["toString", true]}
+{"fn": "nativeProviderDeadlines", "args": ["toString", {"$map": [["a", 1]]}]}
+{"fn": "nativeProviderDeadlines", "args": ["toString", {"$set": [1]}]}
+{"fn": "nativeProviderDeadlines", "args": ["toString", {"$bytes": [7, 8]}]}
+{"fn": "nativeProviderDeadlines", "args": ["toString", {"$date": "2020-01-01T00:00:00.000Z"}]}
+{"fn": "nativeProviderDeadlines", "args": ["toString", {"$num": "NaN"}]}
+{"fn": "nativeProviderDeadlines", "args": ["toString", {"headerTimeout": {"$undefined": true}}]}
+{"fn": "nativeProviderDeadlines", "args": ["toString", {"chunkTimeout": null, "x": {"y": 1}}]}
+{"fn": "nativeProviderDeadlines", "args": ["toString", {"4294967295": 1, "4294967294": 2, "01": 3}]}
+{"fn": "nativeProviderDeadlines", "args": ["claude-agent", {"$undefined": true}]}
+{"fn": "nativeProviderDeadlines", "args": ["claude-agent", null]}
+{"fn": "nativeProviderDeadlines", "args": ["claude-agent", "ab"]}
+{"fn": "nativeProviderDeadlines", "args": ["claude-agent", "\ud83d\ude00"]}
+{"fn": "nativeProviderDeadlines", "args": ["claude-agent", [1, 2]]}
+{"fn": "nativeProviderDeadlines", "args": ["claude-agent", {"2": "x", "b": 1, "1": "y", "headerTimeout": 3}]}
+{"fn": "nativeProviderDeadlines", "args": ["claude-agent", 5]}
+{"fn": "nativeProviderDeadlines", "args": ["claude-agent", true]}
+{"fn": "nativeProviderDeadlines", "args": ["claude-agent", {"$map": [["a", 1]]}]}
+{"fn": "nativeProviderDeadlines", "args": ["claude-agent", {"$set": [1]}]}
+{"fn": "nativeProviderDeadlines", "args": ["claude-agent", {"$bytes": [7, 8]}]}
+{"fn": "nativeProviderDeadlines", "args": ["claude-agent", {"$date": "2020-01-01T00:00:00.000Z"}]}
+{"fn": "nativeProviderDeadlines", "args": ["claude-agent", {"$num": "NaN"}]}
+{"fn": "nativeProviderDeadlines", "args": ["claude-agent", {"headerTimeout": {"$undefined": true}}]}
+{"fn": "nativeProviderDeadlines", "args": ["claude-agent", {"chunkTimeout": null, "x": {"y": 1}}]}
+{"fn": "nativeProviderDeadlines", "args": ["claude-agent", {"4294967295": 1, "4294967294": 2, "01": 3}]}
+{"fn": "nativeProviderDeadlines", "args": ["Claude-Agent", {"$undefined": true}]}
+{"fn": "nativeProviderDeadlines", "args": ["Claude-Agent", null]}
+{"fn": "nativeProviderDeadlines", "args": ["Claude-Agent", "ab"]}
+{"fn": "nativeProviderDeadlines", "args": ["Claude-Agent", "\ud83d\ude00"]}
+{"fn": "nativeProviderDeadlines", "args": ["Claude-Agent", [1, 2]]}
+{"fn": "nativeProviderDeadlines", "args": ["Claude-Agent", {"2": "x", "b": 1, "1": "y", "headerTimeout": 3}]}
+{"fn": "nativeProviderDeadlines", "args": ["Claude-Agent", 5]}
+{"fn": "nativeProviderDeadlines", "args": ["Claude-Agent", true]}
+{"fn": "nativeProviderDeadlines", "args": ["Claude-Agent", {"$map": [["a", 1]]}]}
+{"fn": "nativeProviderDeadlines", "args": ["Claude-Agent", {"$set": [1]}]}
+{"fn": "nativeProviderDeadlines", "args": ["Claude-Agent", {"$bytes": [7, 8]}]}
+{"fn": "nativeProviderDeadlines", "args": ["Claude-Agent", {"$date": "2020-01-01T00:00:00.000Z"}]}
+{"fn": "nativeProviderDeadlines", "args": ["Claude-Agent", {"$num": "NaN"}]}
+{"fn": "nativeProviderDeadlines", "args": ["Claude-Agent", {"headerTimeout": {"$undefined": true}}]}
+{"fn": "nativeProviderDeadlines", "args": ["Claude-Agent", {"chunkTimeout": null, "x": {"y": 1}}]}
+{"fn": "nativeProviderDeadlines", "args": ["Claude-Agent", {"4294967295": 1, "4294967294": 2, "01": 3}]}
+{"fn": "nativeProviderDeadlines", "args": [null, {"$undefined": true}]}
+{"fn": "nativeProviderDeadlines", "args": [null, null]}
+{"fn": "nativeProviderDeadlines", "args": [null, "ab"]}
+{"fn": "nativeProviderDeadlines", "args": [null, "\ud83d\ude00"]}
+{"fn": "nativeProviderDeadlines", "args": [null, [1, 2]]}
+{"fn": "nativeProviderDeadlines", "args": [null, {"2": "x", "b": 1, "1": "y", "headerTimeout": 3}]}
+{"fn": "nativeProviderDeadlines", "args": [null, 5]}
+{"fn": "nativeProviderDeadlines", "args": [null, true]}
+{"fn": "nativeProviderDeadlines", "args": [null, {"$map": [["a", 1]]}]}
+{"fn": "nativeProviderDeadlines", "args": [null, {"$set": [1]}]}
+{"fn": "nativeProviderDeadlines", "args": [null, {"$bytes": [7, 8]}]}
+{"fn": "nativeProviderDeadlines", "args": [null, {"$date": "2020-01-01T00:00:00.000Z"}]}
+{"fn": "nativeProviderDeadlines", "args": [null, {"$num": "NaN"}]}
+{"fn": "nativeProviderDeadlines", "args": [null, {"headerTimeout": {"$undefined": true}}]}
+{"fn": "nativeProviderDeadlines", "args": [null, {"chunkTimeout": null, "x": {"y": 1}}]}
+{"fn": "nativeProviderDeadlines", "args": [null, {"4294967295": 1, "4294967294": 2, "01": 3}]}
+{"fn": "nativeProviderDeadlines", "args": [{"$undefined": true}, {"$undefined": true}]}
+{"fn": "nativeProviderDeadlines", "args": [{"$undefined": true}, null]}
+{"fn": "nativeProviderDeadlines", "args": [{"$undefined": true}, "ab"]}
+{"fn": "nativeProviderDeadlines", "args": [{"$undefined": true}, "\ud83d\ude00"]}
+{"fn": "nativeProviderDeadlines", "args": [{"$undefined": true}, [1, 2]]}
+{"fn": "nativeProviderDeadlines", "args": [{"$undefined": true}, {"2": "x", "b": 1, "1": "y", "headerTimeout": 3}]}
+{"fn": "nativeProviderDeadlines", "args": [{"$undefined": true}, 5]}
+{"fn": "nativeProviderDeadlines", "args": [{"$undefined": true}, true]}
+{"fn": "nativeProviderDeadlines", "args": [{"$undefined": true}, {"$map": [["a", 1]]}]}
+{"fn": "nativeProviderDeadlines", "args": [{"$undefined": true}, {"$set": [1]}]}
+{"fn": "nativeProviderDeadlines", "args": [{"$undefined": true}, {"$bytes": [7, 8]}]}
+{"fn": "nativeProviderDeadlines", "args": [{"$undefined": true}, {"$date": "2020-01-01T00:00:00.000Z"}]}
+{"fn": "nativeProviderDeadlines", "args": [{"$undefined": true}, {"$num": "NaN"}]}
+{"fn": "nativeProviderDeadlines", "args": [{"$undefined": true}, {"headerTimeout": {"$undefined": true}}]}
+{"fn": "nativeProviderDeadlines", "args": [{"$undefined": true}, {"chunkTimeout": null, "x": {"y": 1}}]}
+{"fn": "nativeProviderDeadlines", "args": [{"$undefined": true}, {"4294967295": 1, "4294967294": 2, "01": 3}]}
+{"fn": "nativeProviderDeadlines", "args": [5, {"$undefined": true}]}
+{"fn": "nativeProviderDeadlines", "args": [5, null]}
+{"fn": "nativeProviderDeadlines", "args": [5, "ab"]}
+{"fn": "nativeProviderDeadlines", "args": [5, "\ud83d\ude00"]}
+{"fn": "nativeProviderDeadlines", "args": [5, [1, 2]]}
+{"fn": "nativeProviderDeadlines", "args": [5, {"2": "x", "b": 1, "1": "y", "headerTimeout": 3}]}
+{"fn": "nativeProviderDeadlines", "args": [5, 5]}
+{"fn": "nativeProviderDeadlines", "args": [5, true]}
+{"fn": "nativeProviderDeadlines", "args": [5, {"$map": [["a", 1]]}]}
+{"fn": "nativeProviderDeadlines", "args": [5, {"$set": [1]}]}
+{"fn": "nativeProviderDeadlines", "args": [5, {"$bytes": [7, 8]}]}
+{"fn": "nativeProviderDeadlines", "args": [5, {"$date": "2020-01-01T00:00:00.000Z"}]}
+{"fn": "nativeProviderDeadlines", "args": [5, {"$num": "NaN"}]}
+{"fn": "nativeProviderDeadlines", "args": [5, {"headerTimeout": {"$undefined": true}}]}
+{"fn": "nativeProviderDeadlines", "args": [5, {"chunkTimeout": null, "x": {"y": 1}}]}
+{"fn": "nativeProviderDeadlines", "args": [5, {"4294967295": 1, "4294967294": 2, "01": 3}]}
+{"fn": "nativeProviderDeadlines", "args": [["claude-agent"], {"$undefined": true}]}
+{"fn": "nativeProviderDeadlines", "args": [["claude-agent"], null]}
+{"fn": "nativeProviderDeadlines", "args": [["claude-agent"], "ab"]}
+{"fn": "nativeProviderDeadlines", "args": [["claude-agent"], "\ud83d\ude00"]}
+{"fn": "nativeProviderDeadlines", "args": [["claude-agent"], [1, 2]]}
+{"fn": "nativeProviderDeadlines", "args": [["claude-agent"], {"2": "x", "b": 1, "1": "y", "headerTimeout": 3}]}
+{"fn": "nativeProviderDeadlines", "args": [["claude-agent"], 5]}
+{"fn": "nativeProviderDeadlines", "args": [["claude-agent"], true]}
+{"fn": "nativeProviderDeadlines", "args": [["claude-agent"], {"$map": [["a", 1]]}]}
+{"fn": "nativeProviderDeadlines", "args": [["claude-agent"], {"$set": [1]}]}
+{"fn": "nativeProviderDeadlines", "args": [["claude-agent"], {"$bytes": [7, 8]}]}
+{"fn": "nativeProviderDeadlines", "args": [["claude-agent"], {"$date": "2020-01-01T00:00:00.000Z"}]}
+{"fn": "nativeProviderDeadlines", "args": [["claude-agent"], {"$num": "NaN"}]}
+{"fn": "nativeProviderDeadlines", "args": [["claude-agent"], {"headerTimeout": {"$undefined": true}}]}
+{"fn": "nativeProviderDeadlines", "args": [["claude-agent"], {"chunkTimeout": null, "x": {"y": 1}}]}
+{"fn": "nativeProviderDeadlines", "args": [["claude-agent"], {"4294967295": 1, "4294967294": 2, "01": 3}]}
+{"fn": "nativeProviderDeadlines", "args": ["hasOwnProperty", {"$undefined": true}]}
+{"fn": "nativeProviderDeadlines", "args": ["hasOwnProperty", null]}
+{"fn": "nativeProviderDeadlines", "args": ["hasOwnProperty", "ab"]}
+{"fn": "nativeProviderDeadlines", "args": ["hasOwnProperty", "\ud83d\ude00"]}
+{"fn": "nativeProviderDeadlines", "args": ["hasOwnProperty", [1, 2]]}
+{"fn": "nativeProviderDeadlines", "args": ["hasOwnProperty", {"2": "x", "b": 1, "1": "y", "headerTimeout": 3}]}
+{"fn": "nativeProviderDeadlines", "args": ["hasOwnProperty", 5]}
+{"fn": "nativeProviderDeadlines", "args": ["hasOwnProperty", true]}
+{"fn": "nativeProviderDeadlines", "args": ["hasOwnProperty", {"$map": [["a", 1]]}]}
+{"fn": "nativeProviderDeadlines", "args": ["hasOwnProperty", {"$set": [1]}]}
+{"fn": "nativeProviderDeadlines", "args": ["hasOwnProperty", {"$bytes": [7, 8]}]}
+{"fn": "nativeProviderDeadlines", "args": ["hasOwnProperty", {"$date": "2020-01-01T00:00:00.000Z"}]}
+{"fn": "nativeProviderDeadlines", "args": ["hasOwnProperty", {"$num": "NaN"}]}
+{"fn": "nativeProviderDeadlines", "args": ["hasOwnProperty", {"headerTimeout": {"$undefined": true}}]}
+{"fn": "nativeProviderDeadlines", "args": ["hasOwnProperty", {"chunkTimeout": null, "x": {"y": 1}}]}
+{"fn": "nativeProviderDeadlines", "args": ["hasOwnProperty", {"4294967295": 1, "4294967294": 2, "01": 3}]}
+{"fn": "nativeProviderDeadlines", "args": ["", {"$undefined": true}]}
+{"fn": "nativeProviderDeadlines", "args": ["", null]}
+{"fn": "nativeProviderDeadlines", "args": ["", "ab"]}
+{"fn": "nativeProviderDeadlines", "args": ["", "\ud83d\ude00"]}
+{"fn": "nativeProviderDeadlines", "args": ["", [1, 2]]}
+{"fn": "nativeProviderDeadlines", "args": ["", {"2": "x", "b": 1, "1": "y", "headerTimeout": 3}]}
+{"fn": "nativeProviderDeadlines", "args": ["", 5]}
+{"fn": "nativeProviderDeadlines", "args": ["", true]}
+{"fn": "nativeProviderDeadlines", "args": ["", {"$map": [["a", 1]]}]}
+{"fn": "nativeProviderDeadlines", "args": ["", {"$set": [1]}]}
+{"fn": "nativeProviderDeadlines", "args": ["", {"$bytes": [7, 8]}]}
+{"fn": "nativeProviderDeadlines", "args": ["", {"$date": "2020-01-01T00:00:00.000Z"}]}
+{"fn": "nativeProviderDeadlines", "args": ["", {"$num": "NaN"}]}
+{"fn": "nativeProviderDeadlines", "args": ["", {"headerTimeout": {"$undefined": true}}]}
+{"fn": "nativeProviderDeadlines", "args": ["", {"chunkTimeout": null, "x": {"y": 1}}]}
+{"fn": "nativeProviderDeadlines", "args": ["", {"4294967295": 1, "4294967294": 2, "01": 3}]}
+{"fn": "withNativeProviderDeadlines", "args": ["opencode", {"$undefined": true}]}
+{"fn": "withNativeProviderDeadlines", "args": ["opencode", null]}
+{"fn": "withNativeProviderDeadlines", "args": ["opencode", {}]}
+{"fn": "withNativeProviderDeadlines", "args": ["opencode", "zz"]}
+{"fn": "withNativeProviderDeadlines", "args": ["opencode", [9]]}
+{"fn": "withNativeProviderDeadlines", "args": ["opencode", 5]}
+{"fn": "withNativeProviderDeadlines", "args": ["opencode", {"settings": "q"}]}
+{"fn": "withNativeProviderDeadlines", "args": ["opencode", {"settings": null}]}
+{"fn": "withNativeProviderDeadlines", "args": ["opencode", {"settings": {"$undefined": true}}]}
+{"fn": "withNativeProviderDeadlines", "args": ["opencode", {"settings": {"a": 1}, "z": 2, "0": 0}]}
+{"fn": "withNativeProviderDeadlines", "args": ["opencode", {"$map": []}]}
+{"fn": "withNativeProviderDeadlines", "args": ["opencode", {"name": "x", "settings": [1]}]}
+{"fn": "withNativeProviderDeadlines", "args": ["opencode", true]}
+{"fn": "withNativeProviderDeadlines", "args": ["claude-agent", {"$undefined": true}]}
+{"fn": "withNativeProviderDeadlines", "args": ["claude-agent", null]}
+{"fn": "withNativeProviderDeadlines", "args": ["claude-agent", {}]}
+{"fn": "withNativeProviderDeadlines", "args": ["claude-agent", "zz"]}
+{"fn": "withNativeProviderDeadlines", "args": ["claude-agent", [9]]}
+{"fn": "withNativeProviderDeadlines", "args": ["claude-agent", 5]}
+{"fn": "withNativeProviderDeadlines", "args": ["claude-agent", {"settings": "q"}]}
+{"fn": "withNativeProviderDeadlines", "args": ["claude-agent", {"settings": null}]}
+{"fn": "withNativeProviderDeadlines", "args": ["claude-agent", {"settings": {"$undefined": true}}]}
+{"fn": "withNativeProviderDeadlines", "args": ["claude-agent", {"settings": {"a": 1}, "z": 2, "0": 0}]}
+{"fn": "withNativeProviderDeadlines", "args": ["claude-agent", {"$map": []}]}
+{"fn": "withNativeProviderDeadlines", "args": ["claude-agent", {"name": "x", "settings": [1]}]}
+{"fn": "withNativeProviderDeadlines", "args": ["claude-agent", true]}
+{"fn": "withNativeProviderDeadlines", "args": [{"$undefined": true}, {"$undefined": true}]}
+{"fn": "withNativeProviderDeadlines", "args": [{"$undefined": true}, null]}
+{"fn": "withNativeProviderDeadlines", "args": [{"$undefined": true}, {}]}
+{"fn": "withNativeProviderDeadlines", "args": [{"$undefined": true}, "zz"]}
+{"fn": "withNativeProviderDeadlines", "args": [{"$undefined": true}, [9]]}
+{"fn": "withNativeProviderDeadlines", "args": [{"$undefined": true}, 5]}
+{"fn": "withNativeProviderDeadlines", "args": [{"$undefined": true}, {"settings": "q"}]}
+{"fn": "withNativeProviderDeadlines", "args": [{"$undefined": true}, {"settings": null}]}
+{"fn": "withNativeProviderDeadlines", "args": [{"$undefined": true}, {"settings": {"$undefined": true}}]}
+{"fn": "withNativeProviderDeadlines", "args": [{"$undefined": true}, {"settings": {"a": 1}, "z": 2, "0": 0}]}
+{"fn": "withNativeProviderDeadlines", "args": [{"$undefined": true}, {"$map": []}]}
+{"fn": "withNativeProviderDeadlines", "args": [{"$undefined": true}, {"name": "x", "settings": [1]}]}
+{"fn": "withNativeProviderDeadlines", "args": [{"$undefined": true}, true]}
+{"fn": "nativeProviderDeadlines", "args": []}
+{"fn": "withNativeProviderDeadlines", "args": []}
+{"fn": "nativeRequestHeaderDeadline", "args": []}
+{"fn": "nativeRequestHeaderDeadline", "args": ["opencode", {"$num": "NaN"}, {"$num": "NaN"}]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["opencode", 0, {"$num": "-0"}]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["opencode", null, null]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["opencode", null, {"$undefined": true}]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["opencode", "1", 1]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["opencode", {}, {}]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["opencode", [], []]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["opencode", true, true]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["opencode", "a", "a"]}
+{"fn": "nativeRequestHeaderDeadline", "args": [null, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["opencode", {"$num": "Infinity"}, {"$num": "Infinity"}]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["opencode", 300000]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["opencode", {"$undefined": true}]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["claude-agent", 5, 6]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["x", 5]}
+{"fn": "nativeProviderDeadlines", "args": ["x", {"a": {"$num": "NaN"}, "b": [{"$num": "-0"}, {"$undefined": true}], "c": {"$map": [["k", 1]]}}]}
+{"fn": "nativeProviderDeadlines", "args": ["claude-agent", {"$num": "-0"}]}
+{"fn": "nativeProviderDeadlines", "args": ["claude-agent", {"$map": [["k", 1]]}]}
+{"fn": "withNativeProviderDeadlines", "args": ["claude-agent", {"$num": "NaN"}]}
+{"fn": "withNativeProviderDeadlines", "args": ["claude-agent", {"$set": [1]}]}
+{"fn": "withNativeProviderDeadlines", "args": ["claude-agent", {"$date": "2020-01-01T00:00:00.000Z"}]}
+{"fn": "withNativeProviderDeadlines", "args": ["x", {"$set": [1]}]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["opencode", {"$map": []}, {"$map": []}]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["opencode", {"$set": []}, {"$set": []}]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["opencode", {"$utf16": [55296]}, {"$utf16": [55296]}]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["opencode", {"$date": "2020-01-01T00:00:00.000Z"}, {"$date": "2020-01-01T00:00:00.000Z"}]}
+{"fn": "nativeRequestHeaderDeadline", "args": ["opencode", {"$bytes": [1]}, {"$bytes": [1]}]}

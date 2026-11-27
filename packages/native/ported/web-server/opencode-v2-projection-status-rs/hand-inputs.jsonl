@@ -1,0 +1,188 @@
+{"fn": "toV1RetryStatus", "args": [{"attempt": 2, "at": 100, "error": {"message": "m"}}]}
+{"fn": "toV1RetryStatus", "args": [{"attempt": 2, "at": 100}]}
+{"fn": "toV1RetryStatus", "args": [{"attempt": 1.5, "at": 1}]}
+{"fn": "toV1RetryStatus", "args": [{"attempt": 2, "at": {"$num": "Infinity"}}]}
+{"fn": "toV1RetryStatus", "args": [{"attempt": "2", "at": 1}]}
+{"fn": "toV1RetryStatus", "args": [{"attempt": {"$num": "-0"}, "at": 0, "error": {"message": 5}}]}
+{"fn": "toV1RetryStatus", "args": [null]}
+{"fn": "toV1RetryStatus", "args": [[1]]}
+{"fn": "toV1RetryStatus", "args": ["s"]}
+{"fn": "statusForEvent", "args": ["session.execution.started", {"attempt": 2, "at": 100, "error": {"message": "m"}}]}
+{"fn": "statusForEvent", "args": ["session.execution.started", {"attempt": 1.5, "at": 1}]}
+{"fn": "statusForEvent", "args": ["session.execution.started", null]}
+{"fn": "statusForEvent", "args": ["session.retry.scheduled", {"attempt": 2, "at": 100, "error": {"message": "m"}}]}
+{"fn": "statusForEvent", "args": ["session.retry.scheduled", {"attempt": 1.5, "at": 1}]}
+{"fn": "statusForEvent", "args": ["session.retry.scheduled", null]}
+{"fn": "statusForEvent", "args": ["session.execution.succeeded", {"attempt": 2, "at": 100, "error": {"message": "m"}}]}
+{"fn": "statusForEvent", "args": ["session.execution.succeeded", {"attempt": 1.5, "at": 1}]}
+{"fn": "statusForEvent", "args": ["session.execution.succeeded", null]}
+{"fn": "statusForEvent", "args": ["session.execution.failed", {"attempt": 2, "at": 100, "error": {"message": "m"}}]}
+{"fn": "statusForEvent", "args": ["session.execution.failed", {"attempt": 1.5, "at": 1}]}
+{"fn": "statusForEvent", "args": ["session.execution.failed", null]}
+{"fn": "statusForEvent", "args": ["session.execution.interrupted", {"attempt": 2, "at": 100, "error": {"message": "m"}}]}
+{"fn": "statusForEvent", "args": ["session.execution.interrupted", {"attempt": 1.5, "at": 1}]}
+{"fn": "statusForEvent", "args": ["session.execution.interrupted", null]}
+{"fn": "statusForEvent", "args": ["other", {"attempt": 2, "at": 100, "error": {"message": "m"}}]}
+{"fn": "statusForEvent", "args": ["other", {"attempt": 1.5, "at": 1}]}
+{"fn": "statusForEvent", "args": ["other", null]}
+{"fn": "statusForEvent", "args": [null, {"attempt": 2, "at": 100, "error": {"message": "m"}}]}
+{"fn": "statusForEvent", "args": [null, {"attempt": 1.5, "at": 1}]}
+{"fn": "statusForEvent", "args": [null, null]}
+{"fn": "statusForEvent", "args": [5, {"attempt": 2, "at": 100, "error": {"message": "m"}}]}
+{"fn": "statusForEvent", "args": [5, {"attempt": 1.5, "at": 1}]}
+{"fn": "statusForEvent", "args": [5, null]}
+{"fn": "isSameStatus", "args": [null, null]}
+{"fn": "isSameStatus", "args": [null, {"type": "idle"}]}
+{"fn": "isSameStatus", "args": [null, {"type": "busy"}]}
+{"fn": "isSameStatus", "args": [null, {"type": "retry", "attempt": 1, "message": "m", "next": 5}]}
+{"fn": "isSameStatus", "args": [null, {"type": "retry", "attempt": 1, "message": "m", "next": 6}]}
+{"fn": "isSameStatus", "args": [null, {"type": null}]}
+{"fn": "isSameStatus", "args": [null, {"type": "retry", "attempt": {"a": 1}, "message": "m", "next": 5}]}
+{"fn": "isSameStatus", "args": [null, "s"]}
+{"fn": "isSameStatus", "args": [null, {}]}
+{"fn": "isSameStatus", "args": [{"type": "idle"}, null]}
+{"fn": "isSameStatus", "args": [{"type": "idle"}, {"type": "idle"}]}
+{"fn": "isSameStatus", "args": [{"type": "idle"}, {"type": "busy"}]}
+{"fn": "isSameStatus", "args": [{"type": "idle"}, {"type": "retry", "attempt": 1, "message": "m", "next": 5}]}
+{"fn": "isSameStatus", "args": [{"type": "idle"}, {"type": "retry", "attempt": 1, "message": "m", "next": 6}]}
+{"fn": "isSameStatus", "args": [{"type": "idle"}, {"type": null}]}
+{"fn": "isSameStatus", "args": [{"type": "idle"}, {"type": "retry", "attempt": {"a": 1}, "message": "m", "next": 5}]}
+{"fn": "isSameStatus", "args": [{"type": "idle"}, "s"]}
+{"fn": "isSameStatus", "args": [{"type": "idle"}, {}]}
+{"fn": "isSameStatus", "args": [{"type": "busy"}, null]}
+{"fn": "isSameStatus", "args": [{"type": "busy"}, {"type": "idle"}]}
+{"fn": "isSameStatus", "args": [{"type": "busy"}, {"type": "busy"}]}
+{"fn": "isSameStatus", "args": [{"type": "busy"}, {"type": "retry", "attempt": 1, "message": "m", "next": 5}]}
+{"fn": "isSameStatus", "args": [{"type": "busy"}, {"type": "retry", "attempt": 1, "message": "m", "next": 6}]}
+{"fn": "isSameStatus", "args": [{"type": "busy"}, {"type": null}]}
+{"fn": "isSameStatus", "args": [{"type": "busy"}, {"type": "retry", "attempt": {"a": 1}, "message": "m", "next": 5}]}
+{"fn": "isSameStatus", "args": [{"type": "busy"}, "s"]}
+{"fn": "isSameStatus", "args": [{"type": "busy"}, {}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": 1, "message": "m", "next": 5}, null]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": 1, "message": "m", "next": 5}, {"type": "idle"}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": 1, "message": "m", "next": 5}, {"type": "busy"}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": 1, "message": "m", "next": 5}, {"type": "retry", "attempt": 1, "message": "m", "next": 5}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": 1, "message": "m", "next": 5}, {"type": "retry", "attempt": 1, "message": "m", "next": 6}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": 1, "message": "m", "next": 5}, {"type": null}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": 1, "message": "m", "next": 5}, {"type": "retry", "attempt": {"a": 1}, "message": "m", "next": 5}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": 1, "message": "m", "next": 5}, "s"]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": 1, "message": "m", "next": 5}, {}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": 1, "message": "m", "next": 6}, null]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": 1, "message": "m", "next": 6}, {"type": "idle"}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": 1, "message": "m", "next": 6}, {"type": "busy"}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": 1, "message": "m", "next": 6}, {"type": "retry", "attempt": 1, "message": "m", "next": 5}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": 1, "message": "m", "next": 6}, {"type": "retry", "attempt": 1, "message": "m", "next": 6}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": 1, "message": "m", "next": 6}, {"type": null}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": 1, "message": "m", "next": 6}, {"type": "retry", "attempt": {"a": 1}, "message": "m", "next": 5}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": 1, "message": "m", "next": 6}, "s"]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": 1, "message": "m", "next": 6}, {}]}
+{"fn": "isSameStatus", "args": [{"type": null}, null]}
+{"fn": "isSameStatus", "args": [{"type": null}, {"type": "idle"}]}
+{"fn": "isSameStatus", "args": [{"type": null}, {"type": "busy"}]}
+{"fn": "isSameStatus", "args": [{"type": null}, {"type": "retry", "attempt": 1, "message": "m", "next": 5}]}
+{"fn": "isSameStatus", "args": [{"type": null}, {"type": "retry", "attempt": 1, "message": "m", "next": 6}]}
+{"fn": "isSameStatus", "args": [{"type": null}, {"type": null}]}
+{"fn": "isSameStatus", "args": [{"type": null}, {"type": "retry", "attempt": {"a": 1}, "message": "m", "next": 5}]}
+{"fn": "isSameStatus", "args": [{"type": null}, "s"]}
+{"fn": "isSameStatus", "args": [{"type": null}, {}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": {"a": 1}, "message": "m", "next": 5}, null]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": {"a": 1}, "message": "m", "next": 5}, {"type": "idle"}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": {"a": 1}, "message": "m", "next": 5}, {"type": "busy"}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": {"a": 1}, "message": "m", "next": 5}, {"type": "retry", "attempt": 1, "message": "m", "next": 5}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": {"a": 1}, "message": "m", "next": 5}, {"type": "retry", "attempt": 1, "message": "m", "next": 6}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": {"a": 1}, "message": "m", "next": 5}, {"type": null}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": {"a": 1}, "message": "m", "next": 5}, {"type": "retry", "attempt": {"a": 1}, "message": "m", "next": 5}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": {"a": 1}, "message": "m", "next": 5}, "s"]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": {"a": 1}, "message": "m", "next": 5}, {}]}
+{"fn": "isSameStatus", "args": ["s", null]}
+{"fn": "isSameStatus", "args": ["s", {"type": "idle"}]}
+{"fn": "isSameStatus", "args": ["s", {"type": "busy"}]}
+{"fn": "isSameStatus", "args": ["s", {"type": "retry", "attempt": 1, "message": "m", "next": 5}]}
+{"fn": "isSameStatus", "args": ["s", {"type": "retry", "attempt": 1, "message": "m", "next": 6}]}
+{"fn": "isSameStatus", "args": ["s", {"type": null}]}
+{"fn": "isSameStatus", "args": ["s", {"type": "retry", "attempt": {"a": 1}, "message": "m", "next": 5}]}
+{"fn": "isSameStatus", "args": ["s", "s"]}
+{"fn": "isSameStatus", "args": ["s", {}]}
+{"fn": "isSameStatus", "args": [{}, null]}
+{"fn": "isSameStatus", "args": [{}, {"type": "idle"}]}
+{"fn": "isSameStatus", "args": [{}, {"type": "busy"}]}
+{"fn": "isSameStatus", "args": [{}, {"type": "retry", "attempt": 1, "message": "m", "next": 5}]}
+{"fn": "isSameStatus", "args": [{}, {"type": "retry", "attempt": 1, "message": "m", "next": 6}]}
+{"fn": "isSameStatus", "args": [{}, {"type": null}]}
+{"fn": "isSameStatus", "args": [{}, {"type": "retry", "attempt": {"a": 1}, "message": "m", "next": 5}]}
+{"fn": "isSameStatus", "args": [{}, "s"]}
+{"fn": "isSameStatus", "args": [{}, {}]}
+{"fn": "retryStatusFromMessages", "args": [[{"type": "assistant", "retry": {"attempt": 2, "at": 100, "error": {"message": "m"}}}]]}
+{"fn": "retryStatusFromMessages", "args": [[{"type": "assistant", "retry": {"attempt": 2, "at": 100, "error": {"message": "m"}}}, {"type": "idle"}]]}
+{"fn": "retryStatusFromMessages", "args": [[{"type": "idle"}, {"type": "assistant", "retry": {"attempt": 2, "at": 100}}]]}
+{"fn": "retryStatusFromMessages", "args": [[null, "x", {"type": "user"}]]}
+{"fn": "retryStatusFromMessages", "args": [[]]}
+{"fn": "retryStatusFromMessages", "args": [null]}
+{"fn": "retryStatusFromMessages", "args": ["s"]}
+{"fn": "retryStatusFromMessages", "args": [[{"type": "assistant"}]]}
+{"fn": "activeSessionIDs", "args": [{"data": {"s1": {}, "s2": {"a": 1}, "": {}, "s3": null, "s4": [1], "2": {}}}]}
+{"fn": "statusesFromActive", "args": [{"data": {"s1": {}, "s2": {"a": 1}, "": {}, "s3": null, "s4": [1], "2": {}}}]}
+{"fn": "statusesFromActive", "args": [{"data": {"s1": {}, "s2": {"a": 1}, "": {}, "s3": null, "s4": [1], "2": {}}}, null]}
+{"fn": "statusesFromActive", "args": [{"data": {"s1": {}, "s2": {"a": 1}, "": {}, "s3": null, "s4": [1], "2": {}}}, {}]}
+{"fn": "statusesFromActive", "args": [{"data": {"s1": {}, "s2": {"a": 1}, "": {}, "s3": null, "s4": [1], "2": {}}}, {"retryBySession": {"$map": [["s1", {"type": "retry", "attempt": 1}], ["s2", {"type": "busy"}]]}}]}
+{"fn": "statusesFromActive", "args": [{"data": {"s1": {}, "s2": {"a": 1}, "": {}, "s3": null, "s4": [1], "2": {}}}, {"retryBySession": {"get": 1}}]}
+{"fn": "statusesFromActive", "args": [{"data": {"s1": {}, "s2": {"a": 1}, "": {}, "s3": null, "s4": [1], "2": {}}}, {"retryBySession": null}]}
+{"fn": "statusesFromActive", "args": [{"data": {"s1": {}, "s2": {"a": 1}, "": {}, "s3": null, "s4": [1], "2": {}}}, "s"]}
+{"fn": "activeSessionIDs", "args": [{"data": [1]}]}
+{"fn": "statusesFromActive", "args": [{"data": [1]}]}
+{"fn": "statusesFromActive", "args": [{"data": [1]}, null]}
+{"fn": "statusesFromActive", "args": [{"data": [1]}, {}]}
+{"fn": "statusesFromActive", "args": [{"data": [1]}, {"retryBySession": {"$map": [["s1", {"type": "retry", "attempt": 1}], ["s2", {"type": "busy"}]]}}]}
+{"fn": "statusesFromActive", "args": [{"data": [1]}, {"retryBySession": {"get": 1}}]}
+{"fn": "statusesFromActive", "args": [{"data": [1]}, {"retryBySession": null}]}
+{"fn": "statusesFromActive", "args": [{"data": [1]}, "s"]}
+{"fn": "activeSessionIDs", "args": [null]}
+{"fn": "statusesFromActive", "args": [null]}
+{"fn": "statusesFromActive", "args": [null, null]}
+{"fn": "statusesFromActive", "args": [null, {}]}
+{"fn": "statusesFromActive", "args": [null, {"retryBySession": {"$map": [["s1", {"type": "retry", "attempt": 1}], ["s2", {"type": "busy"}]]}}]}
+{"fn": "statusesFromActive", "args": [null, {"retryBySession": {"get": 1}}]}
+{"fn": "statusesFromActive", "args": [null, {"retryBySession": null}]}
+{"fn": "statusesFromActive", "args": [null, "s"]}
+{"fn": "activeSessionIDs", "args": [{"data": "x"}]}
+{"fn": "statusesFromActive", "args": [{"data": "x"}]}
+{"fn": "statusesFromActive", "args": [{"data": "x"}, null]}
+{"fn": "statusesFromActive", "args": [{"data": "x"}, {}]}
+{"fn": "statusesFromActive", "args": [{"data": "x"}, {"retryBySession": {"$map": [["s1", {"type": "retry", "attempt": 1}], ["s2", {"type": "busy"}]]}}]}
+{"fn": "statusesFromActive", "args": [{"data": "x"}, {"retryBySession": {"get": 1}}]}
+{"fn": "statusesFromActive", "args": [{"data": "x"}, {"retryBySession": null}]}
+{"fn": "statusesFromActive", "args": [{"data": "x"}, "s"]}
+{"fn": "activeSessionIDs", "args": [{}]}
+{"fn": "statusesFromActive", "args": [{}]}
+{"fn": "statusesFromActive", "args": [{}, null]}
+{"fn": "statusesFromActive", "args": [{}, {}]}
+{"fn": "statusesFromActive", "args": [{}, {"retryBySession": {"$map": [["s1", {"type": "retry", "attempt": 1}], ["s2", {"type": "busy"}]]}}]}
+{"fn": "statusesFromActive", "args": [{}, {"retryBySession": {"get": 1}}]}
+{"fn": "statusesFromActive", "args": [{}, {"retryBySession": null}]}
+{"fn": "statusesFromActive", "args": [{}, "s"]}
+{"fn": "activeSessionIDs", "args": [{"data": {"$map": []}}]}
+{"fn": "statusesFromActive", "args": [{"data": {"$map": []}}]}
+{"fn": "statusesFromActive", "args": [{"data": {"$map": []}}, null]}
+{"fn": "statusesFromActive", "args": [{"data": {"$map": []}}, {}]}
+{"fn": "statusesFromActive", "args": [{"data": {"$map": []}}, {"retryBySession": {"$map": [["s1", {"type": "retry", "attempt": 1}], ["s2", {"type": "busy"}]]}}]}
+{"fn": "statusesFromActive", "args": [{"data": {"$map": []}}, {"retryBySession": {"get": 1}}]}
+{"fn": "statusesFromActive", "args": [{"data": {"$map": []}}, {"retryBySession": null}]}
+{"fn": "statusesFromActive", "args": [{"data": {"$map": []}}, "s"]}
+{"fn": "statusForEvent", "args": ["session.status", {"status": {"type": "idle"}}]}
+{"fn": "statusForEvent", "args": ["session.idle", {}]}
+{"fn": "statusForEvent", "args": ["session.text.delta", {}]}
+{"fn": "statusForEvent", "args": ["session.retry.scheduled", {"attempt": "x"}]}
+{"fn": "toV1RetryStatus", "args": [{"attempt": 3, "at": 1767225609000}]}
+{"fn": "toV1RetryStatus", "args": [{"attempt": 1.5, "at": 1}]}
+{"fn": "toV1RetryStatus", "args": [null]}
+{"fn": "isSameStatus", "args": [{"$undefined": true}, {"type": "idle"}]}
+{"fn": "isSameStatus", "args": [{"type": "busy"}, {"type": "busy"}]}
+{"fn": "isSameStatus", "args": [{"type": "busy"}, {"type": "idle"}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": 2, "message": "overloaded", "next": 1767225609000}, {"type": "retry", "attempt": 2, "message": "overloaded", "next": 1767225609000}]}
+{"fn": "isSameStatus", "args": [{"type": "retry", "attempt": 2, "message": "overloaded", "next": 1767225609000}, {"type": "retry", "attempt": 3, "message": "overloaded", "next": 1767225609000}]}
+{"fn": "retryStatusFromMessages", "args": [[{"type": "assistant", "retry": {"attempt": 2, "at": 5}}, {"type": "idle"}]]}
+{"fn": "retryStatusFromMessages", "args": []}
+{"fn": "activeSessionIDs", "args": [{"data": {"ses_1": {"type": "busy"}}}]}
+{"fn": "statusesFromActive", "args": [{"data": {"ses_1": {}}}]}
+{"fn": "statusesFromActive", "args": [{"data": {"ses_1": {}}}, {"retryBySession": {"$map": [["ses_1", {"type": "retry", "attempt": 2, "message": "overloaded", "next": 1767225609000}]]}}]}
+{"fn": "statusesFromActive", "args": []}

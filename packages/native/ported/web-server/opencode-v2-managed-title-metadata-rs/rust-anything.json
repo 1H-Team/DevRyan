@@ -1,0 +1,30 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode/v2",
+  "unit": "managed-title-metadata.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "managed-title-metadata-rs",
+  "exports": [
+    {
+      "name": "isCanonicalManagedTitleMetadata",
+      "file": "managed-title-metadata.js",
+      "line": 11,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

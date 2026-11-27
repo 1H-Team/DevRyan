@@ -1,0 +1,91 @@
+{"fn":"isVerificationCommand","args":[{"a":{"b":"c"}}],"ok":false}
+{"fn":"isVerificationCommand","args":["x"],"ok":false}
+{"fn":"isVerificationCommand","args":[true],"ok":false}
+{"fn":"isVerificationCommand","args":[{}],"ok":false}
+{"fn":"isVerificationCommand","args":[["a",1]],"ok":false}
+{"fn":"isVerificationCommand","args":[{"a":"b"}],"ok":false}
+{"fn":"isVerificationCommand","args":[[]],"ok":false}
+{"fn":"isVerificationCommand","args":[null],"ok":false}
+{"fn":"isVerificationCommand","args":[0],"ok":false}
+{"fn":"isVerificationCommand","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":false}
+{"fn":"isVerificationCommand","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":false}
+{"fn":"isVerificationCommand","args":[[3,1,2]],"ok":false}
+{"fn":"isVerificationCommand","args":["bun test a.test.ts"],"ok":true}
+{"fn":"isVerificationCommand","args":["npm run build"],"ok":true}
+{"fn":"isVerificationCommand","args":["PW_EXTERNAL_SERVER=1 npx playwright test"],"ok":true}
+{"fn":"isVerificationCommand","args":["sleep 3; bunx vitest run"],"ok":true}
+{"fn":"isVerificationCommand","args":["tsc --noEmit"],"ok":true}
+{"fn":"isVerificationCommand","args":["bun run validate"],"ok":true}
+{"fn":"isVerificationCommand","args":["npm run typecheck"],"ok":true}
+{"fn":"isVerificationCommand","args":["rg name src"],"ok":false}
+{"fn":"isVerificationCommand","args":["bun test"],"ok":true}
+{"fn":"isVerificationCommand","args":[{"$undefined":true}],"ok":false}
+{"fn":"isVerificationCommand","args":[null],"ok":false}
+{"fn":"isVerificationCommand","args":[5],"ok":false}
+{"fn":"isVerificationCommand","args":[[]],"ok":false}
+{"fn":"isVerificationCommand","args":[""],"ok":false}
+{"fn":"isVerificationCommand","args":["vitest"],"ok":true}
+{"fn":"isVerificationCommand","args":["xvitest"],"ok":false}
+{"fn":"isVerificationCommand","args":["a/vitest"],"ok":true}
+{"fn":"isVerificationCommand","args":["a|jest"],"ok":true}
+{"fn":"isVerificationCommand","args":["a&tsc"],"ok":true}
+{"fn":"isVerificationCommand","args":["a;pytest"],"ok":true}
+{"fn":"isVerificationCommand","args":["a:vitest"],"ok":false}
+{"fn":"isVerificationCommand","args":["a\tjest"],"ok":true}
+{"fn":"isVerificationCommand","args":["a jest"],"ok":true}
+{"fn":"isVerificationCommand","args":["a jest"],"ok":true}
+{"fn":"isVerificationCommand","args":["a﻿jest"],"ok":true}
+{"fn":"isVerificationCommand","args":["tscx"],"ok":true}
+{"fn":"isVerificationCommand","args":["jester"],"ok":true}
+{"fn":"isVerificationCommand","args":["cargo test"],"ok":true}
+{"fn":"isVerificationCommand","args":["cargo  \t test"],"ok":true}
+{"fn":"isVerificationCommand","args":["cargotest"],"ok":false}
+{"fn":"isVerificationCommand","args":["cargo\ntest"],"ok":true}
+{"fn":"isVerificationCommand","args":["go test"],"ok":true}
+{"fn":"isVerificationCommand","args":["gotest"],"ok":false}
+{"fn":"isVerificationCommand","args":["ago test"],"ok":false}
+{"fn":"isVerificationCommand","args":["a/go test"],"ok":true}
+{"fn":"isVerificationCommand","args":["go testing"],"ok":true}
+{"fn":"isVerificationCommand","args":["npm test"],"ok":true}
+{"fn":"isVerificationCommand","args":["npm test:unit"],"ok":true}
+{"fn":"isVerificationCommand","args":["npm testx"],"ok":false}
+{"fn":"isVerificationCommand","args":["npm test;"],"ok":true}
+{"fn":"isVerificationCommand","args":["npm test&"],"ok":true}
+{"fn":"isVerificationCommand","args":["npm test|x"],"ok":true}
+{"fn":"isVerificationCommand","args":["npm test\n"],"ok":true}
+{"fn":"isVerificationCommand","args":["npm run test"],"ok":true}
+{"fn":"isVerificationCommand","args":["npm run  test"],"ok":true}
+{"fn":"isVerificationCommand","args":["npm runtest"],"ok":false}
+{"fn":"isVerificationCommand","args":["npm run run test"],"ok":false}
+{"fn":"isVerificationCommand","args":["npm  run\ttest:ci"],"ok":true}
+{"fn":"isVerificationCommand","args":["pnpm build"],"ok":true}
+{"fn":"isVerificationCommand","args":["xnpm build"],"ok":false}
+{"fn":"isVerificationCommand","args":["yarn lint"],"ok":true}
+{"fn":"isVerificationCommand","args":["yarn check"],"ok":true}
+{"fn":"isVerificationCommand","args":["yarn type-check"],"ok":true}
+{"fn":"isVerificationCommand","args":["yarn type-check:x"],"ok":true}
+{"fn":"isVerificationCommand","args":["yarn typecheck"],"ok":true}
+{"fn":"isVerificationCommand","args":["bun validate"],"ok":true}
+{"fn":"isVerificationCommand","args":["bun validate."],"ok":false}
+{"fn":"isVerificationCommand","args":["bun run"],"ok":false}
+{"fn":"isVerificationCommand","args":["bun run "],"ok":false}
+{"fn":"isVerificationCommand","args":["npm run lint　"],"ok":true}
+{"fn":"isVerificationCommand","args":["npm test"],"ok":true}
+{"fn":"isVerificationCommand","args":["/usr/bin/npm test"],"ok":true}
+{"fn":"isVerificationCommand","args":["npm run testcheck"],"ok":false}
+{"fn":"isVerificationCommand","args":["npm ci && npm test"],"ok":true}
+{"fn":"isVerificationCommand","args":["echo 'npm test'"],"ok":false}
+{"fn":"isVerificationCommand","args":["NPM test"],"ok":false}
+{"fn":"isVerificationCommand","args":["Vitest"],"ok":false}
+{"fn":"isVerificationCommand","args":["bun x vitest"],"ok":true}
+{"fn":"isVerificationCommand","args":["npmtest"],"ok":false}
+{"fn":"isVerificationCommand","args":["npm"],"ok":false}
+{"fn":"isVerificationCommand","args":["pnpm run type-check | tee"],"ok":true}
+{"fn":"isVerificationCommand","args":[{"$utf16":[55296,32,106,101,115,116]}],"ok":true}
+{"fn":"isVerificationCommand","args":["😀 jest"],"ok":true}
+{"fn":"isVerificationCommand","args":["yarn  run  validate:all"],"ok":true}
+{"fn":"isVerificationCommand","args":["bun run build:prod"],"ok":true}
+{"fn":"isVerificationCommand","args":["go test"],"ok":true}
+{"fn":"isVerificationCommand","args":["cargo test"],"ok":true}
+{"fn":"isVerificationCommand","args":["npm run test"],"ok":true}
+{"fn":"isVerificationCommand","args":[],"ok":false}

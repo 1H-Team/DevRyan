@@ -1,0 +1,135 @@
+{"fn": "isReviewedControllerGitArgs", "args": [{"$undefined": true}]}
+{"fn": "isReviewedControllerGitArgs", "args": [null]}
+{"fn": "isReviewedControllerGitArgs", "args": ["rev-parse"]}
+{"fn": "isReviewedControllerGitArgs", "args": [5]}
+{"fn": "isReviewedControllerGitArgs", "args": [{}]}
+{"fn": "isReviewedControllerGitArgs", "args": [[]]}
+{"fn": "isReviewedControllerGitArgs", "args": [[5]]}
+{"fn": "isReviewedControllerGitArgs", "args": [[null]]}
+{"fn": "isReviewedControllerGitArgs", "args": [{"0": "remote", "length": 1}]}
+{"fn": "isReviewedControllerGitArgs", "args": [{"$set": ["remote"]}]}
+{"fn": "isReviewedControllerGitArgs", "args": [["rev-parse", "--git-dir", "--git-common-dir", "--show-toplevel"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["remote", "get-url", "origin"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["rev-list", "--max-parents=0", "HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["rev-parse", "-q", "--verify", "HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["worktree", "list", "--porcelain"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "--quiet", "--short", "HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["remote"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["for-each-ref", "--format=%(refname:short)", "refs/heads"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["for-each-ref", "--format=%(refname:lstrip=2)", "refs/heads"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["config", "init.defaultBranch"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "--quiet", "--short", "HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "remote"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "for-each-ref", "--format=%(refname:short)", "refs/heads"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "for-each-ref", "--format=%(refname:lstrip=2)", "refs/heads"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "config", "init.defaultBranch"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "rev-parse", "--git-dir", "--git-common-dir", "--show-toplevel"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "remote", "get-url", "origin"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "rev-list", "--max-parents=0", "HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "rev-parse", "-q", "--verify", "HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "worktree", "list", "--porcelain"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["-c", "core.sshCommand=evil", "rev-parse", "--git-dir", "--git-common-dir", "--show-toplevel"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["rev-parse", "--git-dir", "--git-common-dir", "--show-toplevel", "--exec=evil"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["remote", "get-url", "origin", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["remote", "get-url"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["Remote", "get-url", "origin"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["remote", "get-url", "origin\u0000"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["remote", "get-url", " origin"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=true", "remote"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "remote", "-v"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "-c", "x=y", "remote"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "config", "core.hooksPath"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "config", "init.defaultBranch", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["core.quotepath=false", "-c", "core.symlinks=true", "-c", "core.longpaths=true", "-c", "core.fsmonitor=false", "-c", "core.autocrlf=false", "-c", "--no-optional-locks", "remote"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "remote"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "remote"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", ["remote"]]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "remote", 5]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["remote", {"$utf16": [55296]}]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", {"$utf16": [55296]}]]}
+{"fn": "isReviewedControllerGitArgs", "args": [[{"$utf16": [55296]}, "get-url", "origin"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/origin/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/origin/HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/origin/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/o/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/o/HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/o/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes//HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes//HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes//HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/-x/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/-x/HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/-x/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/.x/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/.x/HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/.x/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a..b/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a..b/HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/a..b/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a//b/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a//b/HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/a//b/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a/b/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a/b/HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/a/b/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a/HEAD/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a/HEAD/HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/a/HEAD/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a/HEAD\n"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a/HEAD\n", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/a/HEAD\n"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a/HEADx"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a/HEADx", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/a/HEADx"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a b/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a b/HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/a b/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a;rm/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a;rm/HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/a;rm/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a$/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a$/HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/a$/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a/../HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a/../HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/a/../HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "Refs/remotes/a/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "Refs/remotes/a/HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "Refs/remotes/a/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/\u00e4/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/\u00e4/HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/\u00e4/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a\u00e4/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a\u00e4/HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/a\u00e4/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a\u212a/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a\u212a/HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/a\u212a/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a/HEAD "]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a/HEAD ", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/a/HEAD "]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "\nrefs/remotes/a/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "\nrefs/remotes/a/HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "\nrefs/remotes/a/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a.b_c-d/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a.b_c-d/HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/a.b_c-d/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/0/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/0/HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/0/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a./HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a./HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/a./HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a/.HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref", "refs/remotes/a/.HEAD", "x"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["symbolic-ref", "refs/remotes/a/.HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-ref"]]}
+{"fn": "isReviewedControllerGitArgs", "args": [["--no-optional-locks", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "core.symlinks=true", "-c", "core.quotepath=false", "symbolic-reff", "refs/remotes/a/HEAD"]]}
+{"fn": "isReviewedControllerGitArgs", "args": []}

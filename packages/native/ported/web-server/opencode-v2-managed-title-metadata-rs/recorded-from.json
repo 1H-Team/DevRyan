@@ -1,0 +1,19 @@
+{
+  "unit": "managed-title-metadata.js",
+  "files": 1,
+  "fingerprint": "b8d66bdd8823955f",
+  "cases": 43,
+  "cases_hash": "0e1784c766d1d562",
+  "coverage": {
+    "lines": 20,
+    "reached": 20,
+    "files": [
+      {
+        "file": "managed-title-metadata.js",
+        "lines": 20,
+        "reached": 20,
+        "missed": ""
+      }
+    ]
+  }
+}

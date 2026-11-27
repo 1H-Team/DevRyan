@@ -1,0 +1,90 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode/runtime-host",
+  "unit": "native-provider-deadlines.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "native-provider-deadlines-rs",
+  "exports": [
+    {
+      "name": "nativeProviderDeadlines",
+      "file": "native-provider-deadlines.js",
+      "line": 22,
+      "params": [
+        {
+          "name": "id",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "settings",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "withNativeProviderDeadlines",
+      "file": "native-provider-deadlines.js",
+      "line": 26,
+      "params": [
+        {
+          "name": "id",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "provider",
+          "ts_type": "Provider",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "Provider",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "nativeRequestHeaderDeadline",
+      "file": "native-provider-deadlines.js",
+      "line": 41,
+      "params": [
+        {
+          "name": "providerID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "configured",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "coreDefault",
+          "ts_type": "number",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "number | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

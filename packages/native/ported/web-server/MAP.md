@@ -18,7 +18,7 @@ random numbers. Functions that act on `req`/`res`, take callbacks or return clos
 JavaScript. Every crate also passes `scripts/rust-anything/error-texts.mjs` (product-built
 errors match class and message; `error-sources.json` keeps the throw sites).
 
-25 units done.
+46 units done.
 
 | Unit | State | Recorded | Fuzz | JS | Rust | Notes |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
@@ -44,13 +44,33 @@ errors match class and message; `error-sources.json` keeps the throw sites).
 | `event-stream/payload-serialization.js` | done | 293/293 | 1/1 | 44 | 131 | All 3 exports; `JSON.stringify` written out (NaN, `-0`, `undefined`, `Map`/`Set`, `Date`, lone surrogates, BigInt throws); the identity-keyed cache cannot be hit by a recorded call. Tests: arrow exports; the test's 8 payloads x options copied in (64 calls). |
 | `multi-user/session-visibility.js` | done | 34/34 | 0/0 | 85 | 87 | `normalizeSessionPageLimit`; the page walker is async over callbacks and the ownership pick sorts with `localeCompare` (kept). Full JS `Number()`. Tests: arrow export; the test's 3 calls copied in. |
 | `terminal/terminal-ws-protocol.js` | done | 382/382 | 577/577 | 66 | 106 | The two rebind-rate helpers; the URL and Buffer helpers stay in JavaScript. JS numeric comparisons (`ToNumber`, NaN false). Tests: arrow exports; the test's 5 calls copied in. |
-
 | `opencode/v2/projection/ids.js` | done | 3782/3782 | 60551/60551 | 250 | 329 | All 18 exports (JSDoc types give fuzz generators). 407 hand cases, the test's calls included (arrow exports). Template ids print with `String()` (arrays joined, lone surrogates kept); per-kind ordinals; Cursor part ids only on marked rows and at most 256 units; descriptor `length` must be a safe integer (`-0` passes). |
 | `opencode/notification-settings.js` | done | 172/172 | 0/0 | 63 | 91 | 68 hand cases (the test's 2 calls included). The two legacy completion templates count as unset. |
 | `multi-user/session-folders.js` | done | 56/56 | 0/0 | 90 | 286 | Both exports; 43 product refusals matched by message (`statusCode` does not cross). Checks in the source's order; `Number(null)` and `Number("")` are 0, so a `null`/empty `createdAt` passes; duplicate collapsed ids dedupe in order. The test's 3 calls copied in. |
-Skipped (reason): `http-compression-policy.js` (returns closures), `indexing-policy.js` (registers routes on an app), `security/direct-local-request.js` (WHATWG URL parsing of `Origin`), `tunnels/managed-token.js` (throws a custom `Error` subclass the bindings cannot reproduce), `opencode/session-tree.js` (async client reads), `multi-user/session-visibility.js`'s and `terminal/terminal-ws-protocol.js`'s kept exports as noted, `skills-catalog/curated-sources.js` (constant data copy, nothing to port). Not taken: every file whose import closure reaches `fs`, `child_process`, `net`, `http(s)`, `os`, `ws`, `express`, sqlite or a pty, or that uses `fetch`, timers, `process.env`, the clock or random numbers (most of `opencode/`, `git/`, `fs/`, `multi-user/policy.js`...).
+| `opencode/opencode-update-runtime.js` | done | 229/229 | 795/795 | 1 | 21 | 18 hand cases (the test's 3 calls included). |
+| `opencode/runtime-host/native-managed-job-contract.js` | done | 209/209 | 4916/4916 | 3 | 23 | 9 hand cases. |
+| `opencode/runtime-host/native-compaction-policy.js` | done | 74/74 | 0/0 | 7 | 43 | Its test run (10 calls captured); `-0` is a non-negative safe integer. |
+| `opencode/runtime-host/native-provider-integrations.js` | done | 57/57 | 0/0 | 8 | 32 | Both validators; 33 hand cases (ID charset, MCP id shape, 1–16 form fields, 1–2048-unit values, NUL). |
+| `opencode/v2/managed-title-metadata.js` | done | 43/43 | 0/0 | 19 | 72 | 31 hand cases (each of the 25 fields broken once, extra or missing key, non-canonical directories). |
+| `opencode/runtime-host/runtime-bundle-root.js` | done | 326/326 | 4899/4899 | 17 | 74 | `resolveRuntimeBundleRoot`; 277 product refusals (`bundle_recovery_owner_required`) match. Node's POSIX `path.normalize`/`join`; a trailing slash is canonical for an explicit root, `home` is checked only when `XDG_STATE_HOME` is unset. |
+| `opencode/opencode-client/envelope.js` | done | 129/129 | 0/0 | 81 | 60 | 4 of 6 (`readResponseBody` is async; `isNoContent` compares with a module sentinel by identity, which no JSON argument can be). 28 product refusals match. |
+| `opencode/v2/projection/status.js` | done | 810/810 | 632/632 | 87 | 131 | 6 of 8 (`filterStatusesByDirectory` calls a callback; `reconcileActiveStatuses` tests `instanceof Map` and was not bridged). The test's calls copied in. `activeSessionIDs` returns a `Set`. |
+| `terminal/output-replay-buffer.js` | done | 273/273 | 0/0 | 57 | 110 | Create and list; `appendTerminalOutputReplayChunk` mutates its argument (kept). `id > lastSeenId` is the JS relational comparison (`"10" > "9"` is false). |
+| `opencode/runtime-helper-agents.js` | done | 2/2 | 0/0 | 43 | 6 | The constant helper-agent definitions. |
+| `multi-user/dotenv-visibility.js` | done | 106/106 | 0/0 | 130 | 147 | 3 of 4 (the middleware works on `req`/`res`). Security: 47 threat-model paths plus the test's calls (arrow exports). `decodeURIComponent` written out (strict UTF-8). Reproduced, reported, not changed: single `%2e` encodings, `..%2f.env`, `%00`, NUL, backslash, case and trailing slashes are caught; a double encoding (`%252eenv`), an overlong UTF-8 escape (`%c0%ae`), a fullwidth `．env`, or a `?`/`#` suffix (`.env?x=1`) is not protected, and one malformed escape anywhere (`%zz`, a trailing `%`) leaves the whole path undecoded. A `Map`, `Set` or `Date` value filters to `{}`. |
+| `multi-user/managed-agent-defaults.js` | done | 663/663 | 1/1 | 119 | 275 | All 6 exports; 438 hand cases (names with control characters, slashes, 80/81 units; provider/model/variant charsets and lengths, unknown fields including an own `__proto__`, a 1 KiB payload). 348 product refusals match by message. |
+| `git/commit-message-context.js` | done | 46/46 | 0/0 | 193 | 54 | `validateCommitMessageSelectedFiles` (the others read Git). 34 product refusals matched by message; path-traversal hand cases (`..`, absolute, backslash, NUL, duplicates). Tests: arrow export; the test's calls copied in. |
+| `event-stream/protocol.js` | done | 321/321 | 1/1 | 192 | 354 | 3 of 7: `parseSseEventEnvelope`, `toUpstreamV2SseEvent`, `serializeMessageStreamWsEvent`. The gap-control pair recognizes payloads by `WeakSet` identity and the two senders call socket methods (kept); a recorded (copied) gap payload is an ordinary event, as in JS. `JSON.parse` and `JSON.stringify` written out. 182 hand cases. Tests: `protocol.test.js` run (fake sockets only), 139 calls captured. |
+| `opencode/runtime-host/native-provider-deadlines.js` | done | 920/920 | 14632/14632 | 14 | 63 | All 3. Object spread written out (strings by UTF-16 unit, index keys first). The `.d.ts` types `settings` as a record: `rust-anything.json` widens it to `unknown` so an off-type value returned unchanged crosses back as itself. Tests: arrow exports; the test's 16 calls copied in. |
+| `opencode/v2/projection/errors.js` | done | 836/836 | 0/0 | 124 | 101 | 3 of 5 (`toV1InterruptError`, `withAbortSource`, `toV2Error`); `v1ErrorNameForV2Type` and `toV1Error` call the optional `isContextOverflow` callback (kept). A `Map` is a record with no fields. Tests: arrow exports; the test's calls copied in, `toV1Error` results written out. |
+| `multi-user/branch-previews.js` | done | 53/53 | 0/0 | 283 | 37 | `publicBranchPreview` (security: only the four non-secret fields; rows with secret fields included). `normalizeBranchPreviewUrl` parses a WHATWG URL and the service is a closure over Supabase, vault and `fetch` (kept). Tests: arrow export; the test's call copied in. |
+| `opencode/managed-plugins.js` | done | 429/429 | 1/1 | 337 | 189 | 6 of 7; `inspectDevRyanManagedPluginInstallation` reads the caller's `fs` (kept). 266 cases: the test's specs and reconcile lists (extracted from the test as literals) plus spelling variants (backslashes, `file://`, case, NBSP/BOM, lone surrogates, arrays). |
+| `opencode/default-plugins.js` | done | 288/288 | 4885/4885 | 396 | 209 | All 3; the managed-plugin lookups as in `managed-plugins-rs`. Quirks kept: an array, `Map` or `Set` options object inherits `entries()` and throws; `findLast` throws on a `null` item it passes. Tests: arrow exports; the test's 3 inventories and 14 lookups extracted as literals, plus 30 hand cases. |
+| `opencode/execution-helper-policy.js` | done | 147/147 | 0/0 | 26 | 37 | `isReviewedControllerGitArgs` (security: the controller's Git allowlist). Threat cases: injected `-c`, extra or reordered flags, NUL, lone surrogates, and 27 `refs/remotes/<name>/HEAD` shapes (`..`, `//`, 256/257-unit names, trailing newline, non-ASCII). Tests: none. |
+| `opencode/native-verification-order.js` | matches, gate fails | 91/91 | 0/0 | 30 | 38 | `isVerificationCommand`, the regex matched by hand (lookahead on the package-manager branch); 82 hand cases plus the test's 9 commands. `awaitVerificationPublications` awaits callbacks (kept). Gate fails only on `error cases`: it assigns the kept function's `throw` (line 32) to `isVerificationCommand`, which cannot throw (tool problem). |
+Skipped (reason): `http-compression-policy.js` (returns closures), `indexing-policy.js` (registers routes on an app), `security/direct-local-request.js` (WHATWG URL parsing of `Origin`), `tunnels/managed-token.js` (throws a custom `Error` subclass the bindings cannot reproduce), `opencode/session-tree.js` (async client reads), `multi-user/session-visibility.js`'s and `terminal/terminal-ws-protocol.js`'s kept exports as noted, `skills-catalog/curated-sources.js` (constant data copy, nothing to port), `opencode/native-mutation-result.js` (20 dense lines needing Node's `path.resolve`/`relative`: over the 3x size bound), `opencode/startup-timing.js` and `opencode/selection-timing.js` (log to the console, time, `req`/`res`), `opencode/runtime-host/native-retention.js`, `native-owned-requests.js`, `opencode/session-activity-gate.js`, `tunnels/registry.js`, `opencode/native-search-output.js`, `event-stream/canonical-ingestion.js`, `notifications/emitter-runtime.js` (factories returning closures), `opencode/opencode-client/{errors,location}.js` (custom `Error` subclass), `opencode/opencode-generation.js` (calls a client method), `opencode/env-config.js` (WHATWG URL parsing and a logger), `opencode/standard-preview/capabilities.js` and `opencode/runtime-host/native-plan-denial-owner.js` (return `Error` objects; async owners), `opencode/runtime-host/native-shell-completion.js` (SHA-256, no crate). Not taken: every file whose import closure reaches `fs`, `child_process`, `net`, `http(s)`, `os`, `ws`, `express`, sqlite or a pty, or that uses `fetch`, timers, `process.env`, the clock or random numbers (most of `opencode/`, `git/`, `fs/`, `multi-user/policy.js`...).
 
-Not attempted yet among the screened-pure files: `opencode/opencode-client/{envelope,errors,location}.js`, `opencode/v2/projection/{status,errors,sessions,tools,catalog,messages}.js`, `event-stream/protocol.js`, `git/commit-message-context.js`, `multi-user/{dotenv-visibility,managed-agent-defaults,branch-previews}.js`, `opencode/managed-plugins.js`, `terminal/output-replay-buffer.js`.
+Not attempted yet among the screened-pure files: `opencode/v2/projection/{sessions,tools,catalog,messages}.js`, `opencode/runtime-host/native-observation-contract.js` (structuredClone, re-exports), `opencode/runtime-host/claude-agent-protocol.js`, `opencode/runtime-host/reviewed-document-transform.js`, `terminal/project-environment.js`, `quota/native-credentials.js`, and the remaining small `opencode/runtime-host/native-*` owners (most are factories).
 
 ## Security units: threat-model cases
 
@@ -73,3 +93,21 @@ infinities, `-0`, `true`, `[3001]`, `{valueOf}`, `' 3001'`, hex text, 2^53) with
 never do. Cookie attribute and encoding cases do not apply here: the unit only builds the name;
 parsing the `Cookie` header lives in `security/request-security.js` (not ported: its closure
 reaches the clock and crypto).
+
+`multi-user/dotenv-visibility.js`: 47 threat-model paths plus the test's calls. Reproduced as is
+(reported, not fixed): double encoding (`%252eenv`), overlong UTF-8 (`%c0%ae`), a fullwidth dot
+(`．env`) and a `?`/`#` suffix (`.env?x`) are not protected; one malformed escape leaves the whole
+path undecoded.
+
+`git/commit-message-context.js` (`validateCommitMessageSelectedFiles`): `..` segments, absolute
+and drive paths, backslashes, NUL, empty and duplicate entries; every refusal's message matches.
+
+`opencode/execution-helper-policy.js` (`isReviewedControllerGitArgs`): an injected `-c` before or
+after the pinned flags, extra, missing or reordered flags, near-miss subcommands, NUL and lone
+surrogates, and 27 remote-HEAD refs. Only the listed argument vectors pass; a remote name of 1 to
+256 units from `[A-Za-z0-9._/-]` starting alphanumeric, without `..` or `//`, passes
+`symbolic-ref`. No bypass found.
+
+`multi-user/branch-previews.js` (`publicBranchPreview`): rows carrying client secrets, vault
+references and user ids project only `previewUrl`, `serviceTokenConfigured` (a boolean),
+`createdAt` and `updatedAt`.

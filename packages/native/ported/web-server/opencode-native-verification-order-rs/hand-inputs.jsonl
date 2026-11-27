@@ -1,0 +1,79 @@
+{"fn": "isVerificationCommand", "args": ["bun test a.test.ts"]}
+{"fn": "isVerificationCommand", "args": ["npm run build"]}
+{"fn": "isVerificationCommand", "args": ["PW_EXTERNAL_SERVER=1 npx playwright test"]}
+{"fn": "isVerificationCommand", "args": ["sleep 3; bunx vitest run"]}
+{"fn": "isVerificationCommand", "args": ["tsc --noEmit"]}
+{"fn": "isVerificationCommand", "args": ["bun run validate"]}
+{"fn": "isVerificationCommand", "args": ["npm run typecheck"]}
+{"fn": "isVerificationCommand", "args": ["rg name src"]}
+{"fn": "isVerificationCommand", "args": ["bun test"]}
+{"fn": "isVerificationCommand", "args": [{"$undefined": true}]}
+{"fn": "isVerificationCommand", "args": [null]}
+{"fn": "isVerificationCommand", "args": [5]}
+{"fn": "isVerificationCommand", "args": [[]]}
+{"fn": "isVerificationCommand", "args": [""]}
+{"fn": "isVerificationCommand", "args": ["vitest"]}
+{"fn": "isVerificationCommand", "args": ["xvitest"]}
+{"fn": "isVerificationCommand", "args": ["a/vitest"]}
+{"fn": "isVerificationCommand", "args": ["a|jest"]}
+{"fn": "isVerificationCommand", "args": ["a&tsc"]}
+{"fn": "isVerificationCommand", "args": ["a;pytest"]}
+{"fn": "isVerificationCommand", "args": ["a:vitest"]}
+{"fn": "isVerificationCommand", "args": ["a\tjest"]}
+{"fn": "isVerificationCommand", "args": ["a\u00a0jest"]}
+{"fn": "isVerificationCommand", "args": ["a\u2028jest"]}
+{"fn": "isVerificationCommand", "args": ["a\ufeffjest"]}
+{"fn": "isVerificationCommand", "args": ["tscx"]}
+{"fn": "isVerificationCommand", "args": ["jester"]}
+{"fn": "isVerificationCommand", "args": ["cargo test"]}
+{"fn": "isVerificationCommand", "args": ["cargo  \t test"]}
+{"fn": "isVerificationCommand", "args": ["cargotest"]}
+{"fn": "isVerificationCommand", "args": ["cargo\ntest"]}
+{"fn": "isVerificationCommand", "args": ["go test"]}
+{"fn": "isVerificationCommand", "args": ["gotest"]}
+{"fn": "isVerificationCommand", "args": ["ago test"]}
+{"fn": "isVerificationCommand", "args": ["a/go test"]}
+{"fn": "isVerificationCommand", "args": ["go testing"]}
+{"fn": "isVerificationCommand", "args": ["npm test"]}
+{"fn": "isVerificationCommand", "args": ["npm test:unit"]}
+{"fn": "isVerificationCommand", "args": ["npm testx"]}
+{"fn": "isVerificationCommand", "args": ["npm test;"]}
+{"fn": "isVerificationCommand", "args": ["npm test&"]}
+{"fn": "isVerificationCommand", "args": ["npm test|x"]}
+{"fn": "isVerificationCommand", "args": ["npm test\n"]}
+{"fn": "isVerificationCommand", "args": ["npm run test"]}
+{"fn": "isVerificationCommand", "args": ["npm run  test"]}
+{"fn": "isVerificationCommand", "args": ["npm runtest"]}
+{"fn": "isVerificationCommand", "args": ["npm run run test"]}
+{"fn": "isVerificationCommand", "args": ["npm  run\ttest:ci"]}
+{"fn": "isVerificationCommand", "args": ["pnpm build"]}
+{"fn": "isVerificationCommand", "args": ["xnpm build"]}
+{"fn": "isVerificationCommand", "args": ["yarn lint"]}
+{"fn": "isVerificationCommand", "args": ["yarn check"]}
+{"fn": "isVerificationCommand", "args": ["yarn type-check"]}
+{"fn": "isVerificationCommand", "args": ["yarn type-check:x"]}
+{"fn": "isVerificationCommand", "args": ["yarn typecheck"]}
+{"fn": "isVerificationCommand", "args": ["bun validate"]}
+{"fn": "isVerificationCommand", "args": ["bun validate."]}
+{"fn": "isVerificationCommand", "args": ["bun run"]}
+{"fn": "isVerificationCommand", "args": ["bun run "]}
+{"fn": "isVerificationCommand", "args": ["npm run lint\u3000"]}
+{"fn": "isVerificationCommand", "args": ["npm\u2029test"]}
+{"fn": "isVerificationCommand", "args": ["/usr/bin/npm test"]}
+{"fn": "isVerificationCommand", "args": ["npm run testcheck"]}
+{"fn": "isVerificationCommand", "args": ["npm ci && npm test"]}
+{"fn": "isVerificationCommand", "args": ["echo 'npm test'"]}
+{"fn": "isVerificationCommand", "args": ["NPM test"]}
+{"fn": "isVerificationCommand", "args": ["Vitest"]}
+{"fn": "isVerificationCommand", "args": ["bun x vitest"]}
+{"fn": "isVerificationCommand", "args": ["npmtest"]}
+{"fn": "isVerificationCommand", "args": ["npm"]}
+{"fn": "isVerificationCommand", "args": ["pnpm run type-check | tee"]}
+{"fn": "isVerificationCommand", "args": [{"$utf16": [55296, 32, 106, 101, 115, 116]}]}
+{"fn": "isVerificationCommand", "args": ["\ud83d\ude00 jest"]}
+{"fn": "isVerificationCommand", "args": ["yarn  run  validate:all"]}
+{"fn": "isVerificationCommand", "args": ["bun run build:prod"]}
+{"fn": "isVerificationCommand", "args": ["go\u00a0test"]}
+{"fn": "isVerificationCommand", "args": ["cargo\u1680test"]}
+{"fn": "isVerificationCommand", "args": ["npm run\u205ftest"]}
+{"fn": "isVerificationCommand", "args": []}

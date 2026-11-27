@@ -1,0 +1,54 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/terminal",
+  "unit": "output-replay-buffer.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "output-replay-buffer-rs",
+  "exports": [
+    {
+      "name": "createTerminalOutputReplayBuffer",
+      "file": "output-replay-buffer.js",
+      "line": 31,
+      "params": [],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "listTerminalOutputReplayChunksSince",
+      "file": "output-replay-buffer.js",
+      "line": 66,
+      "params": [
+        {
+          "name": "bufferState",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "lastSeenId",
+          "ts_type": "number",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "appendTerminalOutputReplayChunk",
+      "file": "output-replay-buffer.js",
+      "line": 37,
+      "reason": "mutates its buffer argument (not observable in a recording)"
+    }
+  ]
+}

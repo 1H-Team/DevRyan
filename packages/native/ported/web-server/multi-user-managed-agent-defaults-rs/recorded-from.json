@@ -1,0 +1,19 @@
+{
+  "unit": "managed-agent-defaults.js",
+  "files": 1,
+  "fingerprint": "05f11eeac670d96f",
+  "cases": 663,
+  "cases_hash": "5ac8d8cb02ced7c3",
+  "coverage": {
+    "lines": 124,
+    "reached": 124,
+    "files": [
+      {
+        "file": "managed-agent-defaults.js",
+        "lines": 124,
+        "reached": 124,
+        "missed": ""
+      }
+    ]
+  }
+}

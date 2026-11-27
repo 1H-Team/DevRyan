@@ -1,0 +1,66 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode",
+  "unit": "default-plugins.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "default-plugins-rs",
+  "exports": [
+    {
+      "name": "getDevRyanDefaultPluginIdForSpec",
+      "file": "default-plugins.js",
+      "line": 33,
+      "params": [
+        {
+          "name": "spec",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "DevRyanDefaultPluginId | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getDevRyanDefaultPluginIdForFile",
+      "file": "default-plugins.js",
+      "line": 37,
+      "params": [
+        {
+          "name": "fileName",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "DevRyanDefaultPluginId | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "buildDevRyanDefaultPluginInventory",
+      "file": "default-plugins.js",
+      "line": 41,
+      "params": [
+        {
+          "name": "arg0",
+          "ts_type": "{ entries?: TEntry[]; files?: TFile[] }",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "{\n  defaults: DevRyanDefaultPlugin[];\n  entries: Array<TEntry & { defaultPluginId?: DevRyanDefaultPluginId }>;\n  files: Array<TFile & { defaultPluginId?: DevRyanDefaultPluginId }>;\n}",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

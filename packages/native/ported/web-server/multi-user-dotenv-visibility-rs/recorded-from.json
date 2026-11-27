@@ -1,0 +1,19 @@
+{
+  "unit": "dotenv-visibility.js",
+  "files": 1,
+  "fingerprint": "b9c908391fc6827e",
+  "cases": 106,
+  "cases_hash": "ba37ecaa9c281e29",
+  "coverage": {
+    "lines": 134,
+    "reached": 76,
+    "files": [
+      {
+        "file": "dotenv-visibility.js",
+        "lines": 134,
+        "reached": 76,
+        "missed": "4-16, 77-85, 105-114, 118-133, 137, 139-143, 145-148"
+      }
+    ]
+  }
+}

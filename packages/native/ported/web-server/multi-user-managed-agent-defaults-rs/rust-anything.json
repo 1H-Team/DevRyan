@@ -1,0 +1,132 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/multi-user",
+  "unit": "managed-agent-defaults.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "managed-agent-defaults-rs",
+  "exports": [
+    {
+      "name": "findManagedAgent",
+      "file": "managed-agent-defaults.js",
+      "line": 26,
+      "params": [
+        {
+          "name": "agents",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "agentName",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "backupExecutionFromManagedAgent",
+      "file": "managed-agent-defaults.js",
+      "line": 50,
+      "params": [
+        {
+          "name": "agent",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isSingleModelManagedAgent",
+      "file": "managed-agent-defaults.js",
+      "line": 63,
+      "params": [
+        {
+          "name": "agent",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getPersonalAgentDefault",
+      "file": "managed-agent-defaults.js",
+      "line": 70,
+      "params": [
+        {
+          "name": "settingsOverrides",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "agentName",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "validatePersonalAgentDefault",
+      "file": "managed-agent-defaults.js",
+      "line": 87,
+      "params": [
+        {
+          "name": "arg0",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "resolveManagedAgentExecution",
+      "file": "managed-agent-defaults.js",
+      "line": 126,
+      "params": [
+        {
+          "name": "arg0",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

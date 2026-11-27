@@ -1,0 +1,634 @@
+{"fn": "toV1InterruptError", "args": ["user"]}
+{"fn": "toV1InterruptError", "args": [{"$undefined": true}]}
+{"fn": "toV1InterruptError", "args": ["user", "provider_retry"]}
+{"fn": "toV1InterruptError", "args": ["user", ""]}
+{"fn": "toV1InterruptError", "args": ["user", null]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": {"message": "Step interrupted", "v2Type": "aborted"}}, "stall_watchdog"]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": {"message": "Step interrupted", "v2Type": "aborted"}}, {"$undefined": true}]}
+{"fn": "withAbortSource", "args": [{"name": "APIError", "data": {"message": "boom"}}, "provider_retry"]}
+{"fn": "withAbortSource", "args": [{"$undefined": true}, "provider_retry"]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"message": "slow down", "statusCode": 429, "v2Type": "provider.rate-limit"}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"message": "stop", "v2Type": "aborted"}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"providerID": "x", "message": "no"}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"message": "too long"}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"message": "x", "statusCode": 503, "isRetryable": true}}]}
+{"fn": "toV2Error", "args": [{"name": "SomethingElse", "data": {}}]}
+{"fn": "toV2Error", "args": [{"$undefined": true}]}
+{"fn": "toV1InterruptError", "args": [{"$undefined": true}]}
+{"fn": "toV1InterruptError", "args": [{"$undefined": true}, "src"]}
+{"fn": "toV1InterruptError", "args": ["r", {"$undefined": true}]}
+{"fn": "toV1InterruptError", "args": [null]}
+{"fn": "toV1InterruptError", "args": [null, "src"]}
+{"fn": "toV1InterruptError", "args": ["r", null]}
+{"fn": "toV1InterruptError", "args": [0]}
+{"fn": "toV1InterruptError", "args": [0, "src"]}
+{"fn": "toV1InterruptError", "args": ["r", 0]}
+{"fn": "toV1InterruptError", "args": [""]}
+{"fn": "toV1InterruptError", "args": ["", "src"]}
+{"fn": "toV1InterruptError", "args": ["r", ""]}
+{"fn": "toV1InterruptError", "args": [5]}
+{"fn": "toV1InterruptError", "args": [5, "src"]}
+{"fn": "toV1InterruptError", "args": ["r", 5]}
+{"fn": "toV1InterruptError", "args": ["x"]}
+{"fn": "toV1InterruptError", "args": ["x", "src"]}
+{"fn": "toV1InterruptError", "args": ["r", "x"]}
+{"fn": "toV1InterruptError", "args": [{"$num": "NaN"}]}
+{"fn": "toV1InterruptError", "args": [{"$num": "NaN"}, "src"]}
+{"fn": "toV1InterruptError", "args": ["r", {"$num": "NaN"}]}
+{"fn": "toV1InterruptError", "args": [[]]}
+{"fn": "toV1InterruptError", "args": [[], "src"]}
+{"fn": "toV1InterruptError", "args": ["r", []]}
+{"fn": "toV1InterruptError", "args": [["user"]]}
+{"fn": "toV1InterruptError", "args": [["user"], "src"]}
+{"fn": "toV1InterruptError", "args": ["r", ["user"]]}
+{"fn": "toV1InterruptError", "args": [{}]}
+{"fn": "toV1InterruptError", "args": [{}, "src"]}
+{"fn": "toV1InterruptError", "args": ["r", {}]}
+{"fn": "toV1InterruptError", "args": [{"$map": []}]}
+{"fn": "toV1InterruptError", "args": [{"$map": []}, "src"]}
+{"fn": "toV1InterruptError", "args": ["r", {"$map": []}]}
+{"fn": "toV1InterruptError", "args": [{"$utf16": [55296]}]}
+{"fn": "toV1InterruptError", "args": [{"$utf16": [55296]}, "src"]}
+{"fn": "toV1InterruptError", "args": ["r", {"$utf16": [55296]}]}
+{"fn": "toV1InterruptError", "args": [true]}
+{"fn": "toV1InterruptError", "args": [true, "src"]}
+{"fn": "toV1InterruptError", "args": ["r", true]}
+{"fn": "toV1InterruptError", "args": [{"a": 1}]}
+{"fn": "toV1InterruptError", "args": [{"a": 1}, "src"]}
+{"fn": "toV1InterruptError", "args": ["r", {"a": 1}]}
+{"fn": "withAbortSource", "args": [{"$undefined": true}, "s"]}
+{"fn": "withAbortSource", "args": [{"$undefined": true}, {"$undefined": true}]}
+{"fn": "withAbortSource", "args": [{"$undefined": true}, ""]}
+{"fn": "withAbortSource", "args": [{"$undefined": true}, 5]}
+{"fn": "withAbortSource", "args": [{"$undefined": true}, null]}
+{"fn": "withAbortSource", "args": [{"$undefined": true}, {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": [{"$undefined": true}, ["s"]]}
+{"fn": "withAbortSource", "args": [null, "s"]}
+{"fn": "withAbortSource", "args": [null, {"$undefined": true}]}
+{"fn": "withAbortSource", "args": [null, ""]}
+{"fn": "withAbortSource", "args": [null, 5]}
+{"fn": "withAbortSource", "args": [null, null]}
+{"fn": "withAbortSource", "args": [null, {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": [null, ["s"]]}
+{"fn": "withAbortSource", "args": [0, "s"]}
+{"fn": "withAbortSource", "args": [0, {"$undefined": true}]}
+{"fn": "withAbortSource", "args": [0, ""]}
+{"fn": "withAbortSource", "args": [0, 5]}
+{"fn": "withAbortSource", "args": [0, null]}
+{"fn": "withAbortSource", "args": [0, {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": [0, ["s"]]}
+{"fn": "withAbortSource", "args": ["", "s"]}
+{"fn": "withAbortSource", "args": ["", {"$undefined": true}]}
+{"fn": "withAbortSource", "args": ["", ""]}
+{"fn": "withAbortSource", "args": ["", 5]}
+{"fn": "withAbortSource", "args": ["", null]}
+{"fn": "withAbortSource", "args": ["", {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": ["", ["s"]]}
+{"fn": "withAbortSource", "args": [5, "s"]}
+{"fn": "withAbortSource", "args": [5, {"$undefined": true}]}
+{"fn": "withAbortSource", "args": [5, ""]}
+{"fn": "withAbortSource", "args": [5, 5]}
+{"fn": "withAbortSource", "args": [5, null]}
+{"fn": "withAbortSource", "args": [5, {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": [5, ["s"]]}
+{"fn": "withAbortSource", "args": ["x", "s"]}
+{"fn": "withAbortSource", "args": ["x", {"$undefined": true}]}
+{"fn": "withAbortSource", "args": ["x", ""]}
+{"fn": "withAbortSource", "args": ["x", 5]}
+{"fn": "withAbortSource", "args": ["x", null]}
+{"fn": "withAbortSource", "args": ["x", {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": ["x", ["s"]]}
+{"fn": "withAbortSource", "args": [{"$num": "NaN"}, "s"]}
+{"fn": "withAbortSource", "args": [{"$num": "NaN"}, {"$undefined": true}]}
+{"fn": "withAbortSource", "args": [{"$num": "NaN"}, ""]}
+{"fn": "withAbortSource", "args": [{"$num": "NaN"}, 5]}
+{"fn": "withAbortSource", "args": [{"$num": "NaN"}, null]}
+{"fn": "withAbortSource", "args": [{"$num": "NaN"}, {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": [{"$num": "NaN"}, ["s"]]}
+{"fn": "withAbortSource", "args": [[], "s"]}
+{"fn": "withAbortSource", "args": [[], {"$undefined": true}]}
+{"fn": "withAbortSource", "args": [[], ""]}
+{"fn": "withAbortSource", "args": [[], 5]}
+{"fn": "withAbortSource", "args": [[], null]}
+{"fn": "withAbortSource", "args": [[], {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": [[], ["s"]]}
+{"fn": "withAbortSource", "args": [["user"], "s"]}
+{"fn": "withAbortSource", "args": [["user"], {"$undefined": true}]}
+{"fn": "withAbortSource", "args": [["user"], ""]}
+{"fn": "withAbortSource", "args": [["user"], 5]}
+{"fn": "withAbortSource", "args": [["user"], null]}
+{"fn": "withAbortSource", "args": [["user"], {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": [["user"], ["s"]]}
+{"fn": "withAbortSource", "args": [{}, "s"]}
+{"fn": "withAbortSource", "args": [{}, {"$undefined": true}]}
+{"fn": "withAbortSource", "args": [{}, ""]}
+{"fn": "withAbortSource", "args": [{}, 5]}
+{"fn": "withAbortSource", "args": [{}, null]}
+{"fn": "withAbortSource", "args": [{}, {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": [{}, ["s"]]}
+{"fn": "withAbortSource", "args": [{"$map": []}, "s"]}
+{"fn": "withAbortSource", "args": [{"$map": []}, {"$undefined": true}]}
+{"fn": "withAbortSource", "args": [{"$map": []}, ""]}
+{"fn": "withAbortSource", "args": [{"$map": []}, 5]}
+{"fn": "withAbortSource", "args": [{"$map": []}, null]}
+{"fn": "withAbortSource", "args": [{"$map": []}, {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": [{"$map": []}, ["s"]]}
+{"fn": "withAbortSource", "args": [{"$utf16": [55296]}, "s"]}
+{"fn": "withAbortSource", "args": [{"$utf16": [55296]}, {"$undefined": true}]}
+{"fn": "withAbortSource", "args": [{"$utf16": [55296]}, ""]}
+{"fn": "withAbortSource", "args": [{"$utf16": [55296]}, 5]}
+{"fn": "withAbortSource", "args": [{"$utf16": [55296]}, null]}
+{"fn": "withAbortSource", "args": [{"$utf16": [55296]}, {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": [{"$utf16": [55296]}, ["s"]]}
+{"fn": "withAbortSource", "args": [true, "s"]}
+{"fn": "withAbortSource", "args": [true, {"$undefined": true}]}
+{"fn": "withAbortSource", "args": [true, ""]}
+{"fn": "withAbortSource", "args": [true, 5]}
+{"fn": "withAbortSource", "args": [true, null]}
+{"fn": "withAbortSource", "args": [true, {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": [true, ["s"]]}
+{"fn": "withAbortSource", "args": [{"a": 1}, "s"]}
+{"fn": "withAbortSource", "args": [{"a": 1}, {"$undefined": true}]}
+{"fn": "withAbortSource", "args": [{"a": 1}, ""]}
+{"fn": "withAbortSource", "args": [{"a": 1}, 5]}
+{"fn": "withAbortSource", "args": [{"a": 1}, null]}
+{"fn": "withAbortSource", "args": [{"a": 1}, {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": [{"a": 1}, ["s"]]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": {"message": "Step interrupted", "v2Type": "aborted"}}, "s"]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": {"message": "Step interrupted", "v2Type": "aborted"}}, {"$undefined": true}]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": {"message": "Step interrupted", "v2Type": "aborted"}}, ""]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": {"message": "Step interrupted", "v2Type": "aborted"}}, 5]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": {"message": "Step interrupted", "v2Type": "aborted"}}, null]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": {"message": "Step interrupted", "v2Type": "aborted"}}, {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": {"message": "Step interrupted", "v2Type": "aborted"}}, ["s"]]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": []}, "s"]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": []}, {"$undefined": true}]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": []}, ""]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": []}, 5]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": []}, null]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": []}, {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": []}, ["s"]]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": null}, "s"]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": null}, {"$undefined": true}]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": null}, ""]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": null}, 5]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": null}, null]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": null}, {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": null}, ["s"]]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError"}, "s"]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError"}, {"$undefined": true}]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError"}, ""]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError"}, 5]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError"}, null]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError"}, {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError"}, ["s"]]}
+{"fn": "withAbortSource", "args": [{"2": 1, "name": "MessageAbortedError", "data": {"source": "old", "1": "x", "message": "m"}, "z": 0}, "s"]}
+{"fn": "withAbortSource", "args": [{"2": 1, "name": "MessageAbortedError", "data": {"source": "old", "1": "x", "message": "m"}, "z": 0}, {"$undefined": true}]}
+{"fn": "withAbortSource", "args": [{"2": 1, "name": "MessageAbortedError", "data": {"source": "old", "1": "x", "message": "m"}, "z": 0}, ""]}
+{"fn": "withAbortSource", "args": [{"2": 1, "name": "MessageAbortedError", "data": {"source": "old", "1": "x", "message": "m"}, "z": 0}, 5]}
+{"fn": "withAbortSource", "args": [{"2": 1, "name": "MessageAbortedError", "data": {"source": "old", "1": "x", "message": "m"}, "z": 0}, null]}
+{"fn": "withAbortSource", "args": [{"2": 1, "name": "MessageAbortedError", "data": {"source": "old", "1": "x", "message": "m"}, "z": 0}, {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": [{"2": 1, "name": "MessageAbortedError", "data": {"source": "old", "1": "x", "message": "m"}, "z": 0}, ["s"]]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": {"$map": []}}, "s"]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": {"$map": []}}, {"$undefined": true}]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": {"$map": []}}, ""]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": {"$map": []}}, 5]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": {"$map": []}}, null]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": {"$map": []}}, {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": {"$map": []}}, ["s"]]}
+{"fn": "withAbortSource", "args": [{"name": ["MessageAbortedError"], "data": {}}, "s"]}
+{"fn": "withAbortSource", "args": [{"name": ["MessageAbortedError"], "data": {}}, {"$undefined": true}]}
+{"fn": "withAbortSource", "args": [{"name": ["MessageAbortedError"], "data": {}}, ""]}
+{"fn": "withAbortSource", "args": [{"name": ["MessageAbortedError"], "data": {}}, 5]}
+{"fn": "withAbortSource", "args": [{"name": ["MessageAbortedError"], "data": {}}, null]}
+{"fn": "withAbortSource", "args": [{"name": ["MessageAbortedError"], "data": {}}, {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": [{"name": ["MessageAbortedError"], "data": {}}, ["s"]]}
+{"fn": "withAbortSource", "args": [{"$date": "2020-01-01T00:00:00.000Z"}, "s"]}
+{"fn": "withAbortSource", "args": [{"$date": "2020-01-01T00:00:00.000Z"}, {"$undefined": true}]}
+{"fn": "withAbortSource", "args": [{"$date": "2020-01-01T00:00:00.000Z"}, ""]}
+{"fn": "withAbortSource", "args": [{"$date": "2020-01-01T00:00:00.000Z"}, 5]}
+{"fn": "withAbortSource", "args": [{"$date": "2020-01-01T00:00:00.000Z"}, null]}
+{"fn": "withAbortSource", "args": [{"$date": "2020-01-01T00:00:00.000Z"}, {"$utf16": [56320]}]}
+{"fn": "withAbortSource", "args": [{"$date": "2020-01-01T00:00:00.000Z"}, ["s"]]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"$undefined": true}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": null}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": []}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"message": 5}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"message": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"message": {"$utf16": [55296]}}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"v2Type": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"v2Type": "custom"}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"v2Type": 7}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"statusCode": 100}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"statusCode": 599}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"statusCode": 600}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"statusCode": 99}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"statusCode": 200.5}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"statusCode": "200"}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"statusCode": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"statusCode": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"retryAfterMs": 0}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"retryAfterMs": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"retryAfterMs": -1}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"retryAfterMs": 1.5}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"retryAfterMs": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"retryAfterMs": "5"}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"retryAfterMs": {"$num": "NaN"}}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"message": "m", "statusCode": 404, "retryAfterMs": 1000, "v2Type": "provider.quota"}}]}
+{"fn": "toV2Error", "args": [{"name": "ProviderAuthError", "data": {"$map": [["message", "m"]]}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"$undefined": true}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": null}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": []}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"message": 5}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"message": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"message": {"$utf16": [55296]}}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"v2Type": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"v2Type": "custom"}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"v2Type": 7}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"statusCode": 100}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"statusCode": 599}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"statusCode": 600}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"statusCode": 99}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"statusCode": 200.5}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"statusCode": "200"}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"statusCode": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"statusCode": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"retryAfterMs": 0}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"retryAfterMs": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"retryAfterMs": -1}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"retryAfterMs": 1.5}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"retryAfterMs": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"retryAfterMs": "5"}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"retryAfterMs": {"$num": "NaN"}}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"message": "m", "statusCode": 404, "retryAfterMs": 1000, "v2Type": "provider.quota"}}]}
+{"fn": "toV2Error", "args": [{"name": "ContentFilterError", "data": {"$map": [["message", "m"]]}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"$undefined": true}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": null}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": []}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"message": 5}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"message": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"message": {"$utf16": [55296]}}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"v2Type": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"v2Type": "custom"}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"v2Type": 7}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"statusCode": 100}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"statusCode": 599}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"statusCode": 600}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"statusCode": 99}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"statusCode": 200.5}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"statusCode": "200"}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"statusCode": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"statusCode": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"retryAfterMs": 0}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"retryAfterMs": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"retryAfterMs": -1}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"retryAfterMs": 1.5}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"retryAfterMs": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"retryAfterMs": "5"}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"retryAfterMs": {"$num": "NaN"}}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"message": "m", "statusCode": 404, "retryAfterMs": 1000, "v2Type": "provider.quota"}}]}
+{"fn": "toV2Error", "args": [{"name": "ContextOverflowError", "data": {"$map": [["message", "m"]]}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"$undefined": true}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": null}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": []}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"message": 5}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"message": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"message": {"$utf16": [55296]}}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"v2Type": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"v2Type": "custom"}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"v2Type": 7}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"statusCode": 100}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"statusCode": 599}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"statusCode": 600}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"statusCode": 99}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"statusCode": 200.5}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"statusCode": "200"}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"statusCode": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"statusCode": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"retryAfterMs": 0}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"retryAfterMs": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"retryAfterMs": -1}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"retryAfterMs": 1.5}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"retryAfterMs": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"retryAfterMs": "5"}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"retryAfterMs": {"$num": "NaN"}}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"message": "m", "statusCode": 404, "retryAfterMs": 1000, "v2Type": "provider.quota"}}]}
+{"fn": "toV2Error", "args": [{"name": "StructuredOutputError", "data": {"$map": [["message", "m"]]}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"$undefined": true}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": null}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": []}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"message": 5}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"message": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"message": {"$utf16": [55296]}}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"v2Type": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"v2Type": "custom"}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"v2Type": 7}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"statusCode": 100}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"statusCode": 599}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"statusCode": 600}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"statusCode": 99}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"statusCode": 200.5}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"statusCode": "200"}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"statusCode": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"statusCode": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"retryAfterMs": 0}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"retryAfterMs": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"retryAfterMs": -1}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"retryAfterMs": 1.5}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"retryAfterMs": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"retryAfterMs": "5"}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"retryAfterMs": {"$num": "NaN"}}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"message": "m", "statusCode": 404, "retryAfterMs": 1000, "v2Type": "provider.quota"}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageOutputLengthError", "data": {"$map": [["message", "m"]]}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"$undefined": true}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": null}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": []}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"message": 5}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"message": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"message": {"$utf16": [55296]}}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"v2Type": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"v2Type": "custom"}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"v2Type": 7}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"statusCode": 100}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"statusCode": 599}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"statusCode": 600}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"statusCode": 99}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"statusCode": 200.5}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"statusCode": "200"}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"statusCode": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"statusCode": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"retryAfterMs": 0}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"retryAfterMs": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"retryAfterMs": -1}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"retryAfterMs": 1.5}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"retryAfterMs": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"retryAfterMs": "5"}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"retryAfterMs": {"$num": "NaN"}}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"message": "m", "statusCode": 404, "retryAfterMs": 1000, "v2Type": "provider.quota"}}]}
+{"fn": "toV2Error", "args": [{"name": "MessageAbortedError", "data": {"$map": [["message", "m"]]}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"$undefined": true}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": null}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": []}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"message": 5}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"message": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"message": {"$utf16": [55296]}}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"v2Type": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"v2Type": "custom"}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"v2Type": 7}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"statusCode": 100}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"statusCode": 599}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"statusCode": 600}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"statusCode": 99}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"statusCode": 200.5}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"statusCode": "200"}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"statusCode": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"statusCode": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"retryAfterMs": 0}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"retryAfterMs": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"retryAfterMs": -1}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"retryAfterMs": 1.5}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"retryAfterMs": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"retryAfterMs": "5"}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"retryAfterMs": {"$num": "NaN"}}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"message": "m", "statusCode": 404, "retryAfterMs": 1000, "v2Type": "provider.quota"}}]}
+{"fn": "toV2Error", "args": [{"name": "APIError", "data": {"$map": [["message", "m"]]}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"$undefined": true}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": null}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": []}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"message": 5}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"message": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"message": {"$utf16": [55296]}}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"v2Type": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"v2Type": "custom"}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"v2Type": 7}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"statusCode": 100}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"statusCode": 599}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"statusCode": 600}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"statusCode": 99}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"statusCode": 200.5}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"statusCode": "200"}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"statusCode": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"statusCode": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"retryAfterMs": 0}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"retryAfterMs": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"retryAfterMs": -1}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"retryAfterMs": 1.5}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"retryAfterMs": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"retryAfterMs": "5"}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"retryAfterMs": {"$num": "NaN"}}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"message": "m", "statusCode": 404, "retryAfterMs": 1000, "v2Type": "provider.quota"}}]}
+{"fn": "toV2Error", "args": [{"name": "X", "data": {"$map": [["message", "m"]]}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"$undefined": true}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": null}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": []}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"message": 5}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"message": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"message": {"$utf16": [55296]}}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"v2Type": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"v2Type": "custom"}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"v2Type": 7}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"statusCode": 100}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"statusCode": 599}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"statusCode": 600}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"statusCode": 99}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"statusCode": 200.5}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"statusCode": "200"}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"statusCode": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"statusCode": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"retryAfterMs": 0}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"retryAfterMs": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"retryAfterMs": -1}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"retryAfterMs": 1.5}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"retryAfterMs": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"retryAfterMs": "5"}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"retryAfterMs": {"$num": "NaN"}}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"message": "m", "statusCode": 404, "retryAfterMs": 1000, "v2Type": "provider.quota"}}]}
+{"fn": "toV2Error", "args": [{"name": "", "data": {"$map": [["message", "m"]]}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"$undefined": true}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": null}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": []}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"message": 5}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"message": ""}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"message": {"$utf16": [55296]}}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"v2Type": ""}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"v2Type": "custom"}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"v2Type": 7}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"statusCode": 100}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"statusCode": 599}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"statusCode": 600}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"statusCode": 99}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"statusCode": 200.5}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"statusCode": "200"}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"statusCode": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"statusCode": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"retryAfterMs": 0}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"retryAfterMs": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"retryAfterMs": -1}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"retryAfterMs": 1.5}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"retryAfterMs": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"retryAfterMs": "5"}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"retryAfterMs": {"$num": "NaN"}}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"message": "m", "statusCode": 404, "retryAfterMs": 1000, "v2Type": "provider.quota"}}]}
+{"fn": "toV2Error", "args": [{"name": 5, "data": {"$map": [["message", "m"]]}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"$undefined": true}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": null}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": []}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"message": 5}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"message": ""}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"message": {"$utf16": [55296]}}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"v2Type": ""}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"v2Type": "custom"}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"v2Type": 7}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"statusCode": 100}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"statusCode": 599}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"statusCode": 600}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"statusCode": 99}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"statusCode": 200.5}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"statusCode": "200"}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"statusCode": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"statusCode": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"retryAfterMs": 0}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"retryAfterMs": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"retryAfterMs": -1}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"retryAfterMs": 1.5}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"retryAfterMs": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"retryAfterMs": "5"}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"retryAfterMs": {"$num": "NaN"}}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"message": "m", "statusCode": 404, "retryAfterMs": 1000, "v2Type": "provider.quota"}}]}
+{"fn": "toV2Error", "args": [{"name": null, "data": {"$map": [["message", "m"]]}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"$undefined": true}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": null}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": []}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"message": 5}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"message": ""}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"message": {"$utf16": [55296]}}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"v2Type": ""}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"v2Type": "custom"}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"v2Type": 7}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"statusCode": 100}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"statusCode": 599}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"statusCode": 600}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"statusCode": 99}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"statusCode": 200.5}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"statusCode": "200"}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"statusCode": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"statusCode": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"retryAfterMs": 0}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"retryAfterMs": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"retryAfterMs": -1}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"retryAfterMs": 1.5}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"retryAfterMs": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"retryAfterMs": "5"}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"retryAfterMs": {"$num": "NaN"}}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"message": "m", "statusCode": 404, "retryAfterMs": 1000, "v2Type": "provider.quota"}}]}
+{"fn": "toV2Error", "args": [{"name": {"$undefined": true}, "data": {"$map": [["message", "m"]]}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"$undefined": true}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": null}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": []}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"message": 5}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"message": ""}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"message": {"$utf16": [55296]}}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"v2Type": ""}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"v2Type": "custom"}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"v2Type": 7}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"statusCode": 100}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"statusCode": 599}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"statusCode": 600}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"statusCode": 99}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"statusCode": 200.5}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"statusCode": "200"}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"statusCode": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"statusCode": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"retryAfterMs": 0}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"retryAfterMs": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"retryAfterMs": -1}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"retryAfterMs": 1.5}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"retryAfterMs": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"retryAfterMs": "5"}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"retryAfterMs": {"$num": "NaN"}}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"message": "m", "statusCode": 404, "retryAfterMs": 1000, "v2Type": "provider.quota"}}]}
+{"fn": "toV2Error", "args": [{"name": {"$utf16": [55296]}, "data": {"$map": [["message", "m"]]}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"$undefined": true}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": null}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": []}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"message": 5}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"message": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"message": {"$utf16": [55296]}}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"v2Type": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"v2Type": "custom"}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"v2Type": 7}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"statusCode": 100}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"statusCode": 599}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"statusCode": 600}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"statusCode": 99}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"statusCode": 200.5}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"statusCode": "200"}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"statusCode": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"statusCode": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"retryAfterMs": 0}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"retryAfterMs": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"retryAfterMs": -1}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"retryAfterMs": 1.5}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"retryAfterMs": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"retryAfterMs": "5"}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"retryAfterMs": {"$num": "NaN"}}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"message": "m", "statusCode": 404, "retryAfterMs": 1000, "v2Type": "provider.quota"}}]}
+{"fn": "toV2Error", "args": [{"name": "constructor", "data": {"$map": [["message", "m"]]}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"$undefined": true}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": null}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": []}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"message": 5}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"message": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"message": {"$utf16": [55296]}}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"v2Type": ""}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"v2Type": "custom"}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"v2Type": 7}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"statusCode": 100}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"statusCode": 599}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"statusCode": 600}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"statusCode": 99}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"statusCode": 200.5}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"statusCode": "200"}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"statusCode": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"statusCode": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"retryAfterMs": 0}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"retryAfterMs": {"$num": "-0"}}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"retryAfterMs": -1}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"retryAfterMs": 1.5}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"retryAfterMs": {"$num": "Infinity"}}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"retryAfterMs": "5"}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"retryAfterMs": {"$num": "NaN"}}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"message": "m", "statusCode": 404, "retryAfterMs": 1000, "v2Type": "provider.quota"}}]}
+{"fn": "toV2Error", "args": [{"name": "__proto__x", "data": {"$map": [["message", "m"]]}}]}
+{"fn": "toV2Error", "args": [{}]}
+{"fn": "toV2Error", "args": [{"data": {"message": "x"}}]}
+{"fn": "toV2Error", "args": [[{"name": "APIError"}]]}
+{"fn": "toV2Error", "args": [{"$map": []}]}
+{"fn": "toV2Error", "args": [{"$set": []}]}
+{"fn": "toV2Error", "args": [{"$date": "2020-01-01T00:00:00.000Z"}]}
+{"fn": "toV2Error", "args": [{"$bytes": [1]}]}
+{"fn": "toV2Error", "args": ["s"]}
+{"fn": "toV2Error", "args": [3]}
+{"fn": "toV2Error", "args": [true]}
+{"fn": "toV2Error", "args": [null]}
+{"fn": "toV2Error", "args": []}
+{"fn": "withAbortSource", "args": []}
+{"fn": "toV1InterruptError", "args": []}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": {"$bytes": [4, 5]}}, "s"]}
+{"fn": "withAbortSource", "args": [{"name": "MessageAbortedError", "data": {"$date": "2020-01-01T00:00:00.000Z"}}, "s"]}

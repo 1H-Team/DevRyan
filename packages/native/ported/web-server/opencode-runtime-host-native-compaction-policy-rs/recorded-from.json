@@ -1,0 +1,19 @@
+{
+  "unit": "native-compaction-policy.js",
+  "files": 1,
+  "fingerprint": "d3f4f367f5efdee1",
+  "cases": 74,
+  "cases_hash": "af47857f91d186e8",
+  "coverage": {
+    "lines": 9,
+    "reached": 9,
+    "files": [
+      {
+        "file": "native-compaction-policy.js",
+        "lines": 9,
+        "reached": 9,
+        "missed": ""
+      }
+    ]
+  }
+}

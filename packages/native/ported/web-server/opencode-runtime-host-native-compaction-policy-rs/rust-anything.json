@@ -1,0 +1,30 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode/runtime-host",
+  "unit": "native-compaction-policy.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "native-compaction-policy-rs",
+  "exports": [
+    {
+      "name": "nativeCompactionReserve",
+      "file": "native-compaction-policy.js",
+      "line": 4,
+      "params": [
+        {
+          "name": "location",
+          "ts_type": "Pick<NativeConfigurationLocation, 'configuration' | 'compatibility'> | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "number | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

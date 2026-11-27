@@ -1,0 +1,37 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/git",
+  "unit": "commit-message-context.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "commit-message-context-rs",
+  "exports": [
+    {
+      "name": "validateCommitMessageSelectedFiles",
+      "file": "commit-message-context.js",
+      "line": 19,
+      "params": [
+        {
+          "name": "selectedFiles",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "collectCommitMessageContext",
+      "file": "commit-message-context.js",
+      "line": 135,
+      "reason": "async, calls git through callbacks"
+    }
+  ]
+}

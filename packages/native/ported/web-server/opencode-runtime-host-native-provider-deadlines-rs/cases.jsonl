@@ -1,0 +1,920 @@
+{"fn":"nativeProviderDeadlines","args":["./x/**/*.json",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["  padded  ",null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[":",true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ΣΊΣΥΦΟΣ",{"a":"b"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":"b"}}
+{"fn":"nativeProviderDeadlines","args":["a:b:c",true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["abca😀b😀c",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["src/a/b.ts","x"],"ok":{"0":"x","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["tab\tseparated",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["Hello World"],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ΣΊΣΥΦΟΣ",{"a":{"b":"c"}}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":{"b":"c"}}}
+{"fn":"nativeProviderDeadlines","args":["a",0],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["src/a/b.ts",0],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a😀b😀c",{"a":"b"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":"b"}}
+{"fn":"nativeProviderDeadlines","args":["tab\tseparated",{}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ns:key.patha😀b😀c",["a",1]],"ok":{"0":"a","1":1,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["İstanbulstraße",{"a":"b"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":"b"}}
+{"fn":"nativeProviderDeadlines","args":["abc",{}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hello world",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ünïcödé:",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ns:key.path",null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ab./x/**/*.json",{}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[":"],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["line1\nline2",{"a":"b"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":"b"}}
+{"fn":"nativeProviderDeadlines","args":["ns:key.patha:b:c",{"a":{"b":"c"}}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":{"b":"c"}}}
+{"fn":"nativeProviderDeadlines","args":["emoji 👍🏽 mix"],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["abca..b",["a",1]],"ok":{"0":"a","1":1,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["日本語のテキスト",true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["İstanbul",0],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ns:key.pathstraße",true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["trailing.",{}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[".leading","x"],"ok":{"0":"x","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["İstanbul{name} has {count} items",true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a.b.c",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["trailing.straße",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["Hello World  padded  ",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["日本語のテキスト./x/**/*.json",{"a":{"b":"c"}}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":{"b":"c"}}}
+{"fn":"nativeProviderDeadlines","args":["tab\tseparated"],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["abc",["a",1]],"ok":{"0":"a","1":1,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ünïcödéa.b.c"],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["./x/**/*.json",null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["  padded  ﻿bom","d"],"ok":{"0":"d","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["key_name-1",null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["HELLO",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["😀",{"a":{"b":"c"}}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":{"b":"c"}}}
+{"fn":"nativeProviderDeadlines","args":["{name} has {count} items",null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ünïcödéemoji 👍🏽 mix",{"a":{"b":"c"}}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":{"b":"c"}}}
+{"fn":"nativeProviderDeadlines","args":["﻿bom",["a",1]],"ok":{"0":"a","1":1,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["HELLO",{"a":"b"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":"b"}}
+{"fn":"nativeProviderDeadlines","args":["a..b","a"],"ok":{"0":"a","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["{name} has {count} items",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["key_name-1",{"a":"b"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":"b"}}
+{"fn":"nativeProviderDeadlines","args":["{name} has {count} items",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a:b:c",["a",1]],"ok":{"0":"a","1":1,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a😀b😀c",true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["line1\nline2",{}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["{name} has {count} items",["a",1]],"ok":{"0":"a","1":1,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["日本語のテキスト","x"],"ok":{"0":"x","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["﻿bom",{"a":"b"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":"b"}}
+{"fn":"nativeProviderDeadlines","args":["abctab\tseparated","x"],"ok":{"0":"x","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a😀b😀c",0],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["tab\tseparatedHELLO",{}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["emoji 👍🏽 mix","x"],"ok":{"0":"x","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["straße",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[":",["a",1]],"ok":{"0":"a","1":1,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ab",{"a":{"b":"c"}}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":{"b":"c"}}}
+{"fn":"nativeProviderDeadlines","args":["emoji 👍🏽 mix",["a",1]],"ok":{"0":"a","1":1,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ns:key.path","x"],"ok":{"0":"x","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ab",["a",1]],"ok":{"0":"a","1":1,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["key_name-1",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["HELLOa:b:c",true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["trailing.ünïcödé",0],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["./x/**/*.json",["a",1]],"ok":{"0":"a","1":1,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a:b:c",{"a":"b"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":"b"}}
+{"fn":"nativeProviderDeadlines","args":["straße","x"],"ok":{"0":"x","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ünïcödé",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[".leadingΣΊΣΥΦΟΣ",0],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["src/a/b.ts",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hello world",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["straße",{}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["trailing.",null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["./x/**/*.jsonHELLO",{"a":"b"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":"b"}}
+{"fn":"nativeProviderDeadlines","args":["emoji 👍🏽 mix",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ns:key.path",{"a":{"b":"c"}}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":{"b":"c"}}}
+{"fn":"nativeProviderDeadlines","args":["Hello World",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["straße",0],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[":",null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[".leading",{"a":"b"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":"b"}}
+{"fn":"nativeProviderDeadlines","args":["trailing.",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["straße",{"a":"b"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":"b"}}
+{"fn":"nativeProviderDeadlines","args":["trailing.hello",0],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ab","x"],"ok":{"0":"x","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["HELLO",{}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hello world",{"a":"b"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":"b"}}
+{"fn":"nativeProviderDeadlines","args":["ΣΊΣΥΦΟΣ",{}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[":abc"],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ünïcödé",true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["",{}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["abtab\tseparated",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[":",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ünïcödé",["a",1]],"ok":{"0":"a","1":1,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ünïcödé  padded  ",["a",1]],"ok":{"0":"a","1":1,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["trailing.a:b:c",{}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["straße",null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["src/a/b.ts",{"a":{"b":"c"}}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":{"b":"c"}}}
+{"fn":"nativeProviderDeadlines","args":["ns:key.path﻿bom",{"a":{"b":"c"}}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":{"b":"c"}}}
+{"fn":"nativeProviderDeadlines","args":["  padded  ",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["Hello World",["a",1]],"ok":{"0":"a","1":1,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["HELLO"],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[".leadinga😀b😀c",{}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["./x/**/*.json",{"a":"b"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":"b"}}
+{"fn":"nativeProviderDeadlines","args":["straße",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a😀b😀c",null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["é",0],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["İstanbul",true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["😀",true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ns:key.path",{"a":"b"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":"b"}}
+{"fn":"nativeProviderDeadlines","args":["hello",0],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["abc",{"a":{"b":"c"}}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":{"b":"c"}}}
+{"fn":"nativeProviderDeadlines","args":["./x/**/*.json",{}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["日本語のテキスト"],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["İstanbul",{"a":{"b":"c"}}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":{"b":"c"}}}
+{"fn":"nativeProviderDeadlines","args":["a",null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[".leadingHello World",{"a":"b"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":"b"}}
+{"fn":"nativeProviderDeadlines","args":["key_name-1",["a",1]],"ok":{"0":"a","1":1,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["HELLOhello","lo"],"ok":{"0":"l","1":"o","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["straße",["a",1]],"ok":{"0":"a","1":1,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a.b.cİstanbul",{}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hello worldstraße"],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hello world",0],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ünïcödéİstanbul",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a.b.c",0],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[":",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hello world"],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["😀line1\nline2",{"a":{"b":"c"}}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":{"b":"c"}}}
+{"fn":"nativeProviderDeadlines","args":["abc",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["  padded  tab\tseparated",["a",1]],"ok":{"0":"a","1":1,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hello"],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["日本語のテキストé",null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["",0],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ab"],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["abca..b",null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["😀",{"a":"b"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":"b"}}
+{"fn":"nativeProviderDeadlines","args":["ΣΊΣΥΦΟΣ",["a",1]],"ok":{"0":"a","1":1,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a:b:c",null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["  padded  ",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["x","x"],"ok":{"0":"x","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a.b.c",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hello",{"a":{"b":"c"}}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":{"b":"c"}}}
+{"fn":"nativeProviderDeadlines","args":["helloa:b:c",{}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a",{"a":"b"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":"b"}}
+{"fn":"nativeProviderDeadlines","args":["Hello World","x"],"ok":{"0":"x","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["abünïcödé",{}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a..b",{"a":{"b":"c"}}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":{"b":"c"}}}
+{"fn":"nativeProviderDeadlines","args":["akey_name-1",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["Hello World","llo W"],"ok":{"0":"l","1":"l","2":"o","3":" ","4":"W","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ΣΊΣΥΦΟΣ日本語のテキスト",["a",1]],"ok":{"0":"a","1":1,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["straße"],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["key_name-1",{}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a😀b😀c  padded  ",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["tab\tseparated",true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["﻿bom",null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["tab\tseparated",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["{name} has {count} itemsünïcödé"],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["  padded  "],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["trailing."],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ünïcödé","x"],"ok":{"0":"x","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["﻿bom",0],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a..b",0],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["é",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["{name} has {count} items"],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ab日本語のテキスト",true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["日本語のテキスト",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["abc"],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["{name} has {count} items",{"a":"b"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":"b"}}
+{"fn":"nativeProviderDeadlines","args":["İstanbul","x"],"ok":{"0":"x","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["line1\nline2",{"a":{"b":"c"}}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":{"b":"c"}}}
+{"fn":"nativeProviderDeadlines","args":["./x/**/*.jsonline1\nline2",true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hello",{}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["é"],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["trailing.",{"a":{"b":"c"}}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":{"b":"c"}}}
+{"fn":"nativeProviderDeadlines","args":[".leading",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["straße",true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["日本語のテキスト  padded  ",{}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a:b:c",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["😀hello",["a",1]],"ok":{"0":"a","1":1,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a",{}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["line1\nline2",null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a..b","x"],"ok":{"0":"x","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["key_name-1./x/**/*.json",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a😀b😀c",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["",{"a":{"b":"c"}}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":{"b":"c"}}}
+{"fn":"nativeProviderDeadlines","args":["{name} has {count} items{name} has {count} items",{"a":"b"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":"b"}}
+{"fn":"nativeProviderDeadlines","args":["emoji 👍🏽 mix",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["{name} has {count} items",{}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["é",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["emoji 👍🏽 mix",true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["straße{name} has {count} items"],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["héllo wörld",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["👍🏽 thumbs",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["日本語",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["İstanbul",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ılık ırmak",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["👨‍👩‍👧 family",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a b",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["ΣΊΣΥΦΟΣ",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a😀b",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["﻿bom",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a²b x½ y①",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["aⅠb Ⅻ",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["a𐐀b 𝐀bc",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["कि ٣٤",[]],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"withNativeProviderDeadlines","args":["Hello World",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["x","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a😀b😀c",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a😀b😀c","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["hello","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[":",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["a","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["ns:key.path",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["hello world","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["  padded  ",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["./x/**/*.json",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["a:b:ca😀b😀c",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a.b.c:",0],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a..ba..b",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["ΣΊΣΥΦΟΣ",{"a":{"b":"c"}}],"ok":{"a":{"b":"c"},"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a:b:c😀",0],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["😀ΣΊΣΥΦΟΣ",{"a":{"b":"c"}}],"ok":{"a":{"b":"c"},"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["trailing.",0],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["hello",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["tab\tseparatedHello World",{"a":"b"}],"ok":{"a":"b","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["ünïcödéHello World",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["line1\nline2","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["HELLO",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["emoji 👍🏽 mixkey_name-1",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["abc",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a..b",[]],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["  padded  {name} has {count} items",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["ab",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["ns:key.path",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["straße",{"a":"b"}],"ok":{"a":"b","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["./x/**/*.json",0],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["abc",{"a":"b"}],"ok":{"a":"b","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["hello world",{"a":{"b":"c"}}],"ok":{"a":{"b":"c"},"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["straße:",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["./x/**/*.json",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[".leading",[]],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["😀",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["",0],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["é:",{"a":"b"}],"ok":{"a":"b","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["hello",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["  padded  ",0],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["tab\tseparated",{"a":{"b":"c"}}],"ok":{"a":{"b":"c"},"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a.b.c",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["src/a/b.ts﻿bom",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["tab\tseparated",{"a":"b"}],"ok":{"a":"b","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[".leading",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["tab\tseparated",0],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["İstanbul",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["emoji 👍🏽 mix",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["tab\tseparated",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["hello",[]],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["HELLO","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["ab",0],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[".leadingHello World",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a..b",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["Hello World","orl"],"ok":{"0":"o","1":"r","2":"l","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["日本語のテキストab",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["日本語のテキスト",[]],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["trailing.",[]],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["",{"a":"b"}],"ok":{"a":"b","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["./x/**/*.json",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["Hello World",[]],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["{name} has {count} items",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["ab","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a😀b😀c",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["ünïcödé",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["İstanbul","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a..b","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["ünïcödé","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["abc",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["emoji 👍🏽 mix",[]],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a..bHELLO",{"a":"b"}],"ok":{"a":"b","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["İstanbula.b.c","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["日本語のテキスト",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[":",":"],"ok":{"0":":","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["{name} has {count} items",[]],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["  padded  ",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["X","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["é",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["﻿bom./x/**/*.json",{"a":{"b":"c"}}],"ok":{"a":{"b":"c"},"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a.b.cünïcödé",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["﻿bom",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["é",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["ab",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[":",{"a":"b"}],"ok":{"a":"b","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a😀b😀c",0],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a",0],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["ΣΊΣΥΦΟΣ",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["hello world",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["﻿bomsrc/a/b.ts",{"a":{"b":"c"}}],"ok":{"a":{"b":"c"},"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a:b:c",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["{name} has {count} itemsabc",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["./x/**/*.json",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["abc",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["Hello World",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a..b",0],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["HELLO",{"a":"b"}],"ok":{"a":"b","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["tab\tseparated",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[".leadingHELLO",{"a":{"b":"c"}}],"ok":{"a":{"b":"c"},"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["é",{"a":"b"}],"ok":{"a":"b","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["trailing.",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["日本語のテキスト",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[".leading",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":[":",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[":","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["abtab\tseparated",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["key_name-1",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["  padded  ",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["  padded  ",[]],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["key_name-1",{"a":{"b":"c"}}],"ok":{"a":{"b":"c"},"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["hello world",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["HELLO",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["日本語のテキスト",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["Hello World",{"a":"b"}],"ok":{"a":"b","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["src/a/b.ts",{"a":"b"}],"ok":{"a":"b","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["{name} has {count} items",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["Hello World",0],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["line1\nline2",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["Hello Worldns:key.path",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["İstanbul",{"a":"b"}],"ok":{"a":"b","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["﻿bom",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["emoji 👍🏽 mix","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a..bHello World",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["tab\tseparated",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["İstanbul:",0],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[".leading﻿bom",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["日本語のテキスト",0],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["ab",[]],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["",[]],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["ünïcödé",{"a":{"b":"c"}}],"ok":{"a":{"b":"c"},"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["ab😀",[]],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["ünïcödéa.b.c",0],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[":",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["ΣΊΣΥΦΟΣ{name} has {count} items",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["a.b.cline1\nline2",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["﻿bom",{"a":"b"}],"ok":{"a":"b","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[".leading日本語のテキスト","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a😀b😀c",[]],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[".leadinga..b",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["astraße",{"a":{"b":"c"}}],"ok":{"a":{"b":"c"},"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["tab\tseparated日本語のテキスト",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a:b:c",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a..bhello",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["hello world",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["hello worldHello World",0],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[".leading",0],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["İstanbulab","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["src/a/b.ts",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["日本語のテキスト",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["tab\tseparatedHELLO",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[".leading",{"a":"b"}],"ok":{"a":"b","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["emoji 👍🏽 mix",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["hello",{"a":"b"}],"ok":{"a":"b","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["HELLO",0],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["trailing.",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["ΣΊΣΥΦΟΣ",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["a..b",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["Hello World./x/**/*.json",0],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a..bline1\nline2",{"a":{"b":"c"}}],"ok":{"a":{"b":"c"},"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["trailing.",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["ns:key.patha.b.c",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a..bemoji 👍🏽 mix","i 👍🏽"],"ok":{"0":"i","1":" ","2":{"$utf16":[55357]},"3":{"$utf16":[56397]},"4":{"$utf16":[55356]},"5":{"$utf16":[57341]},"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[":",{"a":{"b":"c"}}],"ok":{"a":{"b":"c"},"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["😀",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["Hello Worldkey_name-1",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a:b:c",{"a":{"b":"c"}}],"ok":{"a":{"b":"c"},"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a",{"a":"b"}],"ok":{"a":"b","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["tab\tseparated",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["line1\nline2",0],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["abc",{"a":{"b":"c"}}],"ok":{"a":{"b":"c"},"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["hellotrailing.",{"a":"b"}],"ok":{"a":"b","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["./x/**/*.json","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a..b",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["éHELLO",{"a":"b"}],"ok":{"a":"b","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["hello",{"a":{"b":"c"}}],"ok":{"a":{"b":"c"},"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["helloΣΊΣΥΦΟΣ",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["😀","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["  padded  ./x/**/*.json",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["{name} has {count} items",{"a":{"b":"c"}}],"ok":{"a":{"b":"c"},"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[".leading:",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["日本語のテキスト",{"a":"b"}],"ok":{"a":"b","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["abc:",{"a":"b"}],"ok":{"a":"b","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a.b.c",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["😀",0],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["﻿bom","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a:b:cab","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["é{name} has {count} items",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["line1\nline2straße",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["key_name-1",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["src/a/b.ts",[]],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a",[]],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["﻿boma..b",[]],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["trailing.","x"],"ok":{"0":"x","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["line1\nline2","i"],"ok":{"0":"i","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["{name} has {count} items",["a",1]],"ok":{"0":"a","1":1,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["./x/**/*.jsonhello",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["héllo wörld",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["👍🏽 thumbs",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["日本語",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["é",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["İstanbul",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["straße",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["ılık ırmak",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["👨‍👩‍👧 family",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a b",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["ΣΊΣΥΦΟΣ",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a😀b",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a²b x½ y①",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["aⅠb Ⅻ",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["a𐐀b 𝐀bc",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["कि ٣٤",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"nativeRequestHeaderDeadline","args":["abİstanbul",{"a":"b"},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["trailing.",["a",1],2147483648],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ab",{},{"$num":"NaN"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a😀b😀c","x",9007199254740992],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["emoji 👍🏽 mix",{},3],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["line1\nline2",["a",1],100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["./x/**/*.json:",{},1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["tab\tseparated",{"a":{"b":"c"}},9007199254740992],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["Hello World",null,{"$num":"-0"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["é",true,3],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["line1\nline2",{},-2.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a😀b😀ca😀b😀c","x",-2.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":[".leading",[],-2.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["hello",{"a":"b"},1000000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["日本語のテキスト",[],-1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":[".leading",{},3],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["é😀",["a",1],-1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["./x/**/*.jsonHELLO",{},{"$num":"NaN"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["日本語のテキスト",null,2147483648],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a.b.c",["a",1],0],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["tab\tseparated日本語のテキスト",{},{"$num":"-Infinity"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["é",["a",1],2147483648],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["hello",0,9007199254740992],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["tab\tseparated",{"a":{"b":"c"}},0],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["{name} has {count} items",{"a":{"b":"c"}},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a..b",{"a":{"b":"c"}},0],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":[":","x",3],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["abcns:key.path",[],{"$num":"-0"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["HELLO",true,1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["hello",true,1000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["İstanbul",{"a":"b"},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["straße",null,1000000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["trailing.emoji 👍🏽 mix",{},42],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["hello world",true,1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["key_name-1",{"a":{"b":"c"}},1000000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":[".leading",null,-1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["  padded  İstanbul",0,1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":[":",{"a":"b"},{"$num":"Infinity"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["abc",true,{"$num":"-0"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["HELLO",true,2147483648],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["İstanbul",true,10],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["tab\tseparated",[],42],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["x","x",3],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["straße",true,{"$num":"-Infinity"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["src/a/b.tsΣΊΣΥΦΟΣ",{},2],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["  padded  emoji 👍🏽 mix",null,100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["😀",true,{"$num":"NaN"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a..b",{"a":{"b":"c"}},{"$num":"-0"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["😀ns:key.path",0,{"$num":"NaN"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["Hello World",["a",1],{"$num":"Infinity"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["😀",{"a":"b"},1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["日本語のテキスト./x/**/*.json",null,1000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["😀trailing.",true,{"$num":"-0"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":[":",0,1000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ünïcödé",[],3],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["﻿bom",0,0.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["trailing.",[],0.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":[":",{"a":{"b":"c"}},-2.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":[".leading",{"a":"b"},1000000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a:b:cline1\nline2","x",2147483648],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ns:key.path",0,9007199254740992],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ünïcödé",["a",1],10],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["emoji 👍🏽 mix",{"a":{"b":"c"}},{"$num":"-Infinity"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ünïcödé",null,{"$num":"-0"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a.b.c","x",10],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ünïcödé",0,2147483648],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["key_name-1",[],{"$num":"-Infinity"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["line1\nline2",{"a":{"b":"c"}},0.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ünïcödéΣΊΣΥΦΟΣ","x",1000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["Hello World",{"a":"b"},2],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["hello",{"a":"b"},-1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ΣΊΣΥΦΟΣ",[],0.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ab","x",0.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["./x/**/*.json:",null,1000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["日本語のテキスト","x",42],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ΣΊΣΥΦΟΣ",{},10],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["  padded  ",null,{"$num":"Infinity"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["straße",0,{"$num":"Infinity"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["hello",["a",1],0.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":[".leading",["a",1],0],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":[".leading",{},{"$num":"-0"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["straße",{"a":{"b":"c"}},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a:b:c",{"a":{"b":"c"}},0],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ns:key.path",["a",1],0],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["src/a/b.ts","x",3],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["İstanbul",true,1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["./x/**/*.jsonabc",true,-1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["",["a",1],3],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ΣΊΣΥΦΟΣ",[],2],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["HELLO",[],3],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ΣΊΣΥΦΟΣİstanbul",0,{"$num":"-0"}],"ok":45000}
+{"fn":"nativeRequestHeaderDeadline","args":["日本語のテキスト",[],2147483648],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["helloa.b.c","x",1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a😀",{},{"$num":"-Infinity"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ns:key.patha😀b😀c",null,1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a",true,{"$num":"NaN"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["hello",{"a":"b"},1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a.b.c",true,1000000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["abc",0,2],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["emoji 👍🏽 mix",true,1000000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ΣΊΣΥΦΟΣ",true,42],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["key_name-1./x/**/*.json",["a",1],1000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a😀b😀c",["a",1],{"$num":"-0"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["😀",{"a":{"b":"c"}},0],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["é",0,{"$num":"-Infinity"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["😀",[],0],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["hello","x",1000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["日本語のテキスト./x/**/*.json",{"a":{"b":"c"}},2],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["  padded  ",{},9007199254740992],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a.b.c","x",2],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["trailing.",{},0],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["src/a/b.ts",[],1000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ab",{"a":{"b":"c"}},42],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["İstanbul",{"a":{"b":"c"}},42],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":[":",["a",1],0.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":[":",{"a":{"b":"c"}},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["abc",{"a":{"b":"c"}},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ns:key.path",null,0],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["😀","x",{"$num":"Infinity"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["X","x",0.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["straße",{"a":{"b":"c"}},0.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a.b.c",{"a":"b"},3],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["{name} has {count} items","x",42],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a:b:c",["a",1],10],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["HELLO",true,0.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["hello",0,1000000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":[".leadinghello world",true,{"$num":"-Infinity"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["😀﻿bom",null,{"$num":"-0"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["İstanbul",["a",1],{"$num":"-Infinity"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["line1\nline2",{"a":{"b":"c"}},1000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["key_name-1",{},10],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["😀",0,{"$num":"NaN"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["straße﻿bom","x",9007199254740992],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["  padded  ünïcödé",{"a":"b"},3],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["emoji 👍🏽 mix",{"a":{"b":"c"}},2],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["abc",[],42],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["x","x",1000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ns:key.path",[],1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ns:key.pathé",["a",1],2],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["helloa..b",["a",1],{"$num":"-Infinity"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["Hello World","l",{"$num":"NaN"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a😀b😀cns:key.path",0,1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["﻿bom",{"a":{"b":"c"}},9007199254740992],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["key_name-1",null,9007199254740992],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["日本語のテキスト﻿bom",[],{"$num":"-Infinity"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["X","x",1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a..b","x",3],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["😀",{"a":{"b":"c"}},2147483648],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ns:key.path",true,0.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["İstanbul",{"a":{"b":"c"}},{"$num":"-0"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a😀b😀c",["a",1],-1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["﻿bom",true,0.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["éΣΊΣΥΦΟΣ",{"a":"b"},{"$num":"Infinity"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["  padded  ",{"a":{"b":"c"}},2147483648],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["straße",0,2],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["./x/**/*.json",null,1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["key_name-1",true,0],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["  padded  ",0,10],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a.b.ca:b:c",0,-2.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["😀HELLO",[],0],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["HELLO","x",2],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ünïcödé",["a",1],2147483648],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["hello world",true,3],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["HELLO",{"a":"b"},{"$num":"NaN"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["trailing.",{},1000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["İstanbul",[],100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["﻿bom",{},0.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":[":",[],{"$num":"NaN"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["{name} has {count} items",{"a":"b"},-1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["straße😀",true,9007199254740992],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["straße",null,1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a:b:c",[],{"$num":"-Infinity"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["  padded  ",true,3],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a..b",null,-2.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["﻿bom",0,{"$num":"-0"}],"ok":45000}
+{"fn":"nativeRequestHeaderDeadline","args":["éstraße",0,1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a..b",true,-2.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ünïcödéabc","x",{"$num":"Infinity"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["","x",2],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["tab\tseparated",{},1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":[":a",{},0],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a.b.c",{"a":"b"},9007199254740992],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a.b.c",0,1000000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["key_name-1",{"a":{"b":"c"}},{"$num":"NaN"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["x","x",0],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ünïcödé",true,-2.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["日本語のテキスト",{"a":"b"},-2.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["﻿bom","x",10],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["HELLOa😀b😀c",0,3],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["İstanbul",[],-1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a😀b😀c",0,100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ünïcödéa.b.c",["a",1],1000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["😀",true,100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ab",{"a":"b"},-2.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["tab\tseparatedΣΊΣΥΦΟΣ",{"a":{"b":"c"}},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["İstanbul",{"a":"b"},0.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a",[],-2.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["abstraße","x",100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ünïcödéünïcödé",0,0.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["İstanbul","n",{"$num":"NaN"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["héllo wörld",{"a":"b"},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["👍🏽 thumbs",{"a":"b"},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["日本語",{"a":"b"},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["",{"a":"b"},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["é",{"a":"b"},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["straße",{"a":"b"},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ılık ırmak",{"a":"b"},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["👨‍👩‍👧 family",{"a":"b"},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a b",{"a":"b"},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["ΣΊΣΥΦΟΣ",{"a":"b"},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a😀b",{"a":"b"},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["﻿bom",{"a":"b"},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a²b x½ y①",{"a":"b"},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["aⅠb Ⅻ",{"a":"b"},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["a𐐀b 𝐀bc",{"a":"b"},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["कि ٣٤",{"a":"b"},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["abİstanbul",{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["abİstanbul",{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["abİstanbul",[3,1,2],100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["abİstanbul",{},100],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["abİstanbul",{"a":"b"},-7.5],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["abİstanbul",{"a":"b"},0.1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["abİstanbul",{"a":"b"},0.30000000000000004],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["abİstanbul",{"a":"b"},1e+21],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["abİstanbul",{"a":"b"},1e-7],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["abİstanbul",{"a":"b"},5e-324],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["abİstanbul",{"a":"b"},1.7976931348623157e+308],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["abİstanbul",{"a":"b"},9007199254740992],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["abİstanbul",{"a":"b"},{"$num":"-0"}],"ok":{"$undefined":true}}
+{"fn":"nativeProviderDeadlines","args":["opencode",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["openai",{"baseURL":"x"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"baseURL":"x"}}
+{"fn":"nativeProviderDeadlines","args":["openai",{"chunkTimeout":false}],"ok":{"headerTimeout":45000,"chunkTimeout":false}}
+{"fn":"nativeProviderDeadlines","args":["claude-agent",{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"nativeProviderDeadlines","args":["claude-agent",{"timeout":600000}],"ok":{"timeout":600000}}
+{"fn":"nativeProviderDeadlines","args":["anthropic",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"withNativeProviderDeadlines","args":["claude-agent",{"name":"Claude"}],"ok":{"name":"Claude"}}
+{"fn":"withNativeProviderDeadlines","args":["claude-agent",{"settings":{"timeout":600000}}],"ok":{"settings":{"timeout":600000}}}
+{"fn":"withNativeProviderDeadlines","args":["opencode",{"name":"Zen"}],"ok":{"name":"Zen","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["anthropic",{"name":"Anthropic"}],"ok":{"name":"Anthropic","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"nativeRequestHeaderDeadline","args":["opencode",{"$undefined":true},300000],"ok":45000}
+{"fn":"nativeRequestHeaderDeadline","args":["opencode",300000,300000],"ok":45000}
+{"fn":"nativeRequestHeaderDeadline","args":["opencode",60000,300000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["opencode",false,300000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["claude-agent",{"$undefined":true},300000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["anthropic",{"$undefined":true},300000],"ok":45000}
+{"fn":"nativeProviderDeadlines","args":["constructor",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["constructor",null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["constructor","ab"],"ok":{"0":"a","1":"b","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["constructor","😀"],"ok":{"0":{"$utf16":[55357]},"1":{"$utf16":[56832]},"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["constructor",[1,2]],"ok":{"0":1,"1":2,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["constructor",{"1":"y","2":"x","b":1,"headerTimeout":3}],"ok":{"1":"y","2":"x","headerTimeout":3,"chunkTimeout":300000,"b":1}}
+{"fn":"nativeProviderDeadlines","args":["constructor",5],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["constructor",true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["constructor",{"$map":[["a",1]]}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["constructor",{"$set":[1]}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["constructor",{"$bytes":[7,8]}],"ok":{"0":7,"1":8,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["constructor",{"$date":"2020-01-01T00:00:00.000Z"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["constructor",{"$num":"NaN"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["constructor",{"headerTimeout":{"$undefined":true}}],"ok":{"headerTimeout":{"$undefined":true},"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["constructor",{"chunkTimeout":null,"x":{"y":1}}],"ok":{"headerTimeout":45000,"chunkTimeout":null,"x":{"y":1}}}
+{"fn":"nativeProviderDeadlines","args":["constructor",{"4294967294":2,"4294967295":1,"01":3}],"ok":{"4294967294":2,"headerTimeout":45000,"chunkTimeout":300000,"4294967295":1,"01":3}}
+{"fn":"nativeProviderDeadlines","args":["__proto__",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["__proto__",null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["__proto__","ab"],"ok":{"0":"a","1":"b","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["__proto__","😀"],"ok":{"0":{"$utf16":[55357]},"1":{"$utf16":[56832]},"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["__proto__",[1,2]],"ok":{"0":1,"1":2,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["__proto__",{"1":"y","2":"x","b":1,"headerTimeout":3}],"ok":{"1":"y","2":"x","headerTimeout":3,"chunkTimeout":300000,"b":1}}
+{"fn":"nativeProviderDeadlines","args":["__proto__",5],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["__proto__",true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["__proto__",{"$map":[["a",1]]}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["__proto__",{"$set":[1]}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["__proto__",{"$bytes":[7,8]}],"ok":{"0":7,"1":8,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["__proto__",{"$date":"2020-01-01T00:00:00.000Z"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["__proto__",{"$num":"NaN"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["__proto__",{"headerTimeout":{"$undefined":true}}],"ok":{"headerTimeout":{"$undefined":true},"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["__proto__",{"chunkTimeout":null,"x":{"y":1}}],"ok":{"headerTimeout":45000,"chunkTimeout":null,"x":{"y":1}}}
+{"fn":"nativeProviderDeadlines","args":["__proto__",{"4294967294":2,"4294967295":1,"01":3}],"ok":{"4294967294":2,"headerTimeout":45000,"chunkTimeout":300000,"4294967295":1,"01":3}}
+{"fn":"nativeProviderDeadlines","args":["toString",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["toString",null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["toString","ab"],"ok":{"0":"a","1":"b","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["toString","😀"],"ok":{"0":{"$utf16":[55357]},"1":{"$utf16":[56832]},"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["toString",[1,2]],"ok":{"0":1,"1":2,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["toString",{"1":"y","2":"x","b":1,"headerTimeout":3}],"ok":{"1":"y","2":"x","headerTimeout":3,"chunkTimeout":300000,"b":1}}
+{"fn":"nativeProviderDeadlines","args":["toString",5],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["toString",true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["toString",{"$map":[["a",1]]}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["toString",{"$set":[1]}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["toString",{"$bytes":[7,8]}],"ok":{"0":7,"1":8,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["toString",{"$date":"2020-01-01T00:00:00.000Z"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["toString",{"$num":"NaN"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["toString",{"headerTimeout":{"$undefined":true}}],"ok":{"headerTimeout":{"$undefined":true},"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["toString",{"chunkTimeout":null,"x":{"y":1}}],"ok":{"headerTimeout":45000,"chunkTimeout":null,"x":{"y":1}}}
+{"fn":"nativeProviderDeadlines","args":["toString",{"4294967294":2,"4294967295":1,"01":3}],"ok":{"4294967294":2,"headerTimeout":45000,"chunkTimeout":300000,"4294967295":1,"01":3}}
+{"fn":"nativeProviderDeadlines","args":["claude-agent",{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"nativeProviderDeadlines","args":["claude-agent",null],"ok":null}
+{"fn":"nativeProviderDeadlines","args":["claude-agent","ab"],"ok":"ab"}
+{"fn":"nativeProviderDeadlines","args":["claude-agent","😀"],"ok":"😀"}
+{"fn":"nativeProviderDeadlines","args":["claude-agent",[1,2]],"ok":[1,2]}
+{"fn":"nativeProviderDeadlines","args":["claude-agent",{"1":"y","2":"x","b":1,"headerTimeout":3}],"ok":{"1":"y","2":"x","b":1,"headerTimeout":3}}
+{"fn":"nativeProviderDeadlines","args":["claude-agent",5],"ok":5}
+{"fn":"nativeProviderDeadlines","args":["claude-agent",true],"ok":true}
+{"fn":"nativeProviderDeadlines","args":["claude-agent",{"$map":[["a",1]]}],"ok":{"$map":[["a",1]]}}
+{"fn":"nativeProviderDeadlines","args":["claude-agent",{"$set":[1]}],"ok":{"$set":[1]}}
+{"fn":"nativeProviderDeadlines","args":["claude-agent",{"$bytes":[7,8]}],"ok":{"$bytes":[7,8]}}
+{"fn":"nativeProviderDeadlines","args":["claude-agent",{"$date":"2020-01-01T00:00:00.000Z"}],"ok":{"$date":"2020-01-01T00:00:00.000Z"}}
+{"fn":"nativeProviderDeadlines","args":["claude-agent",{"$num":"NaN"}],"ok":{"$num":"NaN"}}
+{"fn":"nativeProviderDeadlines","args":["claude-agent",{"headerTimeout":{"$undefined":true}}],"ok":{"headerTimeout":{"$undefined":true}}}
+{"fn":"nativeProviderDeadlines","args":["claude-agent",{"chunkTimeout":null,"x":{"y":1}}],"ok":{"chunkTimeout":null,"x":{"y":1}}}
+{"fn":"nativeProviderDeadlines","args":["claude-agent",{"4294967294":2,"4294967295":1,"01":3}],"ok":{"4294967294":2,"4294967295":1,"01":3}}
+{"fn":"nativeProviderDeadlines","args":["Claude-Agent",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["Claude-Agent",null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["Claude-Agent","ab"],"ok":{"0":"a","1":"b","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["Claude-Agent","😀"],"ok":{"0":{"$utf16":[55357]},"1":{"$utf16":[56832]},"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["Claude-Agent",[1,2]],"ok":{"0":1,"1":2,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["Claude-Agent",{"1":"y","2":"x","b":1,"headerTimeout":3}],"ok":{"1":"y","2":"x","headerTimeout":3,"chunkTimeout":300000,"b":1}}
+{"fn":"nativeProviderDeadlines","args":["Claude-Agent",5],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["Claude-Agent",true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["Claude-Agent",{"$map":[["a",1]]}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["Claude-Agent",{"$set":[1]}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["Claude-Agent",{"$bytes":[7,8]}],"ok":{"0":7,"1":8,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["Claude-Agent",{"$date":"2020-01-01T00:00:00.000Z"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["Claude-Agent",{"$num":"NaN"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["Claude-Agent",{"headerTimeout":{"$undefined":true}}],"ok":{"headerTimeout":{"$undefined":true},"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["Claude-Agent",{"chunkTimeout":null,"x":{"y":1}}],"ok":{"headerTimeout":45000,"chunkTimeout":null,"x":{"y":1}}}
+{"fn":"nativeProviderDeadlines","args":["Claude-Agent",{"4294967294":2,"4294967295":1,"01":3}],"ok":{"4294967294":2,"headerTimeout":45000,"chunkTimeout":300000,"4294967295":1,"01":3}}
+{"fn":"nativeProviderDeadlines","args":[null,{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[null,null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[null,"ab"],"ok":{"0":"a","1":"b","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[null,"😀"],"ok":{"0":{"$utf16":[55357]},"1":{"$utf16":[56832]},"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[null,[1,2]],"ok":{"0":1,"1":2,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[null,{"1":"y","2":"x","b":1,"headerTimeout":3}],"ok":{"1":"y","2":"x","headerTimeout":3,"chunkTimeout":300000,"b":1}}
+{"fn":"nativeProviderDeadlines","args":[null,5],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[null,true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[null,{"$map":[["a",1]]}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[null,{"$set":[1]}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[null,{"$bytes":[7,8]}],"ok":{"0":7,"1":8,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[null,{"$date":"2020-01-01T00:00:00.000Z"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[null,{"$num":"NaN"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[null,{"headerTimeout":{"$undefined":true}}],"ok":{"headerTimeout":{"$undefined":true},"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[null,{"chunkTimeout":null,"x":{"y":1}}],"ok":{"headerTimeout":45000,"chunkTimeout":null,"x":{"y":1}}}
+{"fn":"nativeProviderDeadlines","args":[null,{"4294967294":2,"4294967295":1,"01":3}],"ok":{"4294967294":2,"headerTimeout":45000,"chunkTimeout":300000,"4294967295":1,"01":3}}
+{"fn":"nativeProviderDeadlines","args":[{"$undefined":true},{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[{"$undefined":true},null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[{"$undefined":true},"ab"],"ok":{"0":"a","1":"b","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[{"$undefined":true},"😀"],"ok":{"0":{"$utf16":[55357]},"1":{"$utf16":[56832]},"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[{"$undefined":true},[1,2]],"ok":{"0":1,"1":2,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[{"$undefined":true},{"1":"y","2":"x","b":1,"headerTimeout":3}],"ok":{"1":"y","2":"x","headerTimeout":3,"chunkTimeout":300000,"b":1}}
+{"fn":"nativeProviderDeadlines","args":[{"$undefined":true},5],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[{"$undefined":true},true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[{"$undefined":true},{"$map":[["a",1]]}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[{"$undefined":true},{"$set":[1]}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[{"$undefined":true},{"$bytes":[7,8]}],"ok":{"0":7,"1":8,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[{"$undefined":true},{"$date":"2020-01-01T00:00:00.000Z"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[{"$undefined":true},{"$num":"NaN"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[{"$undefined":true},{"headerTimeout":{"$undefined":true}}],"ok":{"headerTimeout":{"$undefined":true},"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[{"$undefined":true},{"chunkTimeout":null,"x":{"y":1}}],"ok":{"headerTimeout":45000,"chunkTimeout":null,"x":{"y":1}}}
+{"fn":"nativeProviderDeadlines","args":[{"$undefined":true},{"4294967294":2,"4294967295":1,"01":3}],"ok":{"4294967294":2,"headerTimeout":45000,"chunkTimeout":300000,"4294967295":1,"01":3}}
+{"fn":"nativeProviderDeadlines","args":[5,{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[5,null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[5,"ab"],"ok":{"0":"a","1":"b","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[5,"😀"],"ok":{"0":{"$utf16":[55357]},"1":{"$utf16":[56832]},"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[5,[1,2]],"ok":{"0":1,"1":2,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[5,{"1":"y","2":"x","b":1,"headerTimeout":3}],"ok":{"1":"y","2":"x","headerTimeout":3,"chunkTimeout":300000,"b":1}}
+{"fn":"nativeProviderDeadlines","args":[5,5],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[5,true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[5,{"$map":[["a",1]]}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[5,{"$set":[1]}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[5,{"$bytes":[7,8]}],"ok":{"0":7,"1":8,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[5,{"$date":"2020-01-01T00:00:00.000Z"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[5,{"$num":"NaN"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[5,{"headerTimeout":{"$undefined":true}}],"ok":{"headerTimeout":{"$undefined":true},"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[5,{"chunkTimeout":null,"x":{"y":1}}],"ok":{"headerTimeout":45000,"chunkTimeout":null,"x":{"y":1}}}
+{"fn":"nativeProviderDeadlines","args":[5,{"4294967294":2,"4294967295":1,"01":3}],"ok":{"4294967294":2,"headerTimeout":45000,"chunkTimeout":300000,"4294967295":1,"01":3}}
+{"fn":"nativeProviderDeadlines","args":[["claude-agent"],{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[["claude-agent"],null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[["claude-agent"],"ab"],"ok":{"0":"a","1":"b","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[["claude-agent"],"😀"],"ok":{"0":{"$utf16":[55357]},"1":{"$utf16":[56832]},"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[["claude-agent"],[1,2]],"ok":{"0":1,"1":2,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[["claude-agent"],{"1":"y","2":"x","b":1,"headerTimeout":3}],"ok":{"1":"y","2":"x","headerTimeout":3,"chunkTimeout":300000,"b":1}}
+{"fn":"nativeProviderDeadlines","args":[["claude-agent"],5],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[["claude-agent"],true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[["claude-agent"],{"$map":[["a",1]]}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[["claude-agent"],{"$set":[1]}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[["claude-agent"],{"$bytes":[7,8]}],"ok":{"0":7,"1":8,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[["claude-agent"],{"$date":"2020-01-01T00:00:00.000Z"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[["claude-agent"],{"$num":"NaN"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[["claude-agent"],{"headerTimeout":{"$undefined":true}}],"ok":{"headerTimeout":{"$undefined":true},"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":[["claude-agent"],{"chunkTimeout":null,"x":{"y":1}}],"ok":{"headerTimeout":45000,"chunkTimeout":null,"x":{"y":1}}}
+{"fn":"nativeProviderDeadlines","args":[["claude-agent"],{"4294967294":2,"4294967295":1,"01":3}],"ok":{"4294967294":2,"headerTimeout":45000,"chunkTimeout":300000,"4294967295":1,"01":3}}
+{"fn":"nativeProviderDeadlines","args":["hasOwnProperty",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hasOwnProperty",null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hasOwnProperty","ab"],"ok":{"0":"a","1":"b","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hasOwnProperty","😀"],"ok":{"0":{"$utf16":[55357]},"1":{"$utf16":[56832]},"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hasOwnProperty",[1,2]],"ok":{"0":1,"1":2,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hasOwnProperty",{"1":"y","2":"x","b":1,"headerTimeout":3}],"ok":{"1":"y","2":"x","headerTimeout":3,"chunkTimeout":300000,"b":1}}
+{"fn":"nativeProviderDeadlines","args":["hasOwnProperty",5],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hasOwnProperty",true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hasOwnProperty",{"$map":[["a",1]]}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hasOwnProperty",{"$set":[1]}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hasOwnProperty",{"$bytes":[7,8]}],"ok":{"0":7,"1":8,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hasOwnProperty",{"$date":"2020-01-01T00:00:00.000Z"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hasOwnProperty",{"$num":"NaN"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hasOwnProperty",{"headerTimeout":{"$undefined":true}}],"ok":{"headerTimeout":{"$undefined":true},"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["hasOwnProperty",{"chunkTimeout":null,"x":{"y":1}}],"ok":{"headerTimeout":45000,"chunkTimeout":null,"x":{"y":1}}}
+{"fn":"nativeProviderDeadlines","args":["hasOwnProperty",{"4294967294":2,"4294967295":1,"01":3}],"ok":{"4294967294":2,"headerTimeout":45000,"chunkTimeout":300000,"4294967295":1,"01":3}}
+{"fn":"nativeProviderDeadlines","args":["",{"$undefined":true}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["",null],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["","ab"],"ok":{"0":"a","1":"b","headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["","😀"],"ok":{"0":{"$utf16":[55357]},"1":{"$utf16":[56832]},"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["",[1,2]],"ok":{"0":1,"1":2,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["",{"1":"y","2":"x","b":1,"headerTimeout":3}],"ok":{"1":"y","2":"x","headerTimeout":3,"chunkTimeout":300000,"b":1}}
+{"fn":"nativeProviderDeadlines","args":["",5],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["",true],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["",{"$map":[["a",1]]}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["",{"$set":[1]}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["",{"$bytes":[7,8]}],"ok":{"0":7,"1":8,"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["",{"$date":"2020-01-01T00:00:00.000Z"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["",{"$num":"NaN"}],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["",{"headerTimeout":{"$undefined":true}}],"ok":{"headerTimeout":{"$undefined":true},"chunkTimeout":300000}}
+{"fn":"nativeProviderDeadlines","args":["",{"chunkTimeout":null,"x":{"y":1}}],"ok":{"headerTimeout":45000,"chunkTimeout":null,"x":{"y":1}}}
+{"fn":"nativeProviderDeadlines","args":["",{"4294967294":2,"4294967295":1,"01":3}],"ok":{"4294967294":2,"headerTimeout":45000,"chunkTimeout":300000,"4294967295":1,"01":3}}
+{"fn":"withNativeProviderDeadlines","args":["opencode",{"$undefined":true}],"error":"Cannot read properties of undefined (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["opencode",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["opencode",{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["opencode","zz"],"ok":{"0":"z","1":"z","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["opencode",[9]],"ok":{"0":9,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["opencode",5],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["opencode",{"settings":"q"}],"ok":{"settings":{"0":"q","headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["opencode",{"settings":null}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["opencode",{"settings":{"$undefined":true}}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["opencode",{"0":0,"settings":{"a":1},"z":2}],"ok":{"0":0,"settings":{"headerTimeout":45000,"chunkTimeout":300000,"a":1},"z":2}}
+{"fn":"withNativeProviderDeadlines","args":["opencode",{"$map":[]}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["opencode",{"name":"x","settings":[1]}],"ok":{"name":"x","settings":{"0":1,"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["opencode",true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":["claude-agent",{"$undefined":true}],"error":"Cannot read properties of undefined (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["claude-agent",null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":["claude-agent",{}],"ok":{}}
+{"fn":"withNativeProviderDeadlines","args":["claude-agent","zz"],"ok":"zz"}
+{"fn":"withNativeProviderDeadlines","args":["claude-agent",[9]],"ok":[9]}
+{"fn":"withNativeProviderDeadlines","args":["claude-agent",5],"ok":5}
+{"fn":"withNativeProviderDeadlines","args":["claude-agent",{"settings":"q"}],"ok":{"settings":"q"}}
+{"fn":"withNativeProviderDeadlines","args":["claude-agent",{"settings":null}],"ok":{"settings":null}}
+{"fn":"withNativeProviderDeadlines","args":["claude-agent",{"settings":{"$undefined":true}}],"ok":{"settings":{"$undefined":true}}}
+{"fn":"withNativeProviderDeadlines","args":["claude-agent",{"0":0,"settings":{"a":1},"z":2}],"ok":{"0":0,"settings":{"a":1},"z":2}}
+{"fn":"withNativeProviderDeadlines","args":["claude-agent",{"$map":[]}],"ok":{"$map":[]}}
+{"fn":"withNativeProviderDeadlines","args":["claude-agent",{"name":"x","settings":[1]}],"ok":{"name":"x","settings":[1]}}
+{"fn":"withNativeProviderDeadlines","args":["claude-agent",true],"ok":true}
+{"fn":"withNativeProviderDeadlines","args":[{"$undefined":true},{"$undefined":true}],"error":"Cannot read properties of undefined (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":[{"$undefined":true},null],"error":"Cannot read properties of null (reading 'settings')"}
+{"fn":"withNativeProviderDeadlines","args":[{"$undefined":true},{}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[{"$undefined":true},"zz"],"ok":{"0":"z","1":"z","settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[{"$undefined":true},[9]],"ok":{"0":9,"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[{"$undefined":true},5],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[{"$undefined":true},{"settings":"q"}],"ok":{"settings":{"0":"q","headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[{"$undefined":true},{"settings":null}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[{"$undefined":true},{"settings":{"$undefined":true}}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[{"$undefined":true},{"0":0,"settings":{"a":1},"z":2}],"ok":{"0":0,"settings":{"headerTimeout":45000,"chunkTimeout":300000,"a":1},"z":2}}
+{"fn":"withNativeProviderDeadlines","args":[{"$undefined":true},{"$map":[]}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[{"$undefined":true},{"name":"x","settings":[1]}],"ok":{"name":"x","settings":{"0":1,"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"withNativeProviderDeadlines","args":[{"$undefined":true},true],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"nativeProviderDeadlines","args":[],"ok":{"headerTimeout":45000,"chunkTimeout":300000}}
+{"fn":"withNativeProviderDeadlines","args":[],"error":"Cannot read properties of undefined (reading 'settings')"}
+{"fn":"nativeRequestHeaderDeadline","args":[],"ok":45000}
+{"fn":"nativeRequestHeaderDeadline","args":["opencode",{"$num":"NaN"},{"$num":"NaN"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["opencode",0,{"$num":"-0"}],"ok":45000}
+{"fn":"nativeRequestHeaderDeadline","args":["opencode",null,null],"ok":45000}
+{"fn":"nativeRequestHeaderDeadline","args":["opencode",null,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["opencode","1",1],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["opencode",{},{}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["opencode",[],[]],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["opencode",true,true],"ok":45000}
+{"fn":"nativeRequestHeaderDeadline","args":["opencode","a","a"],"ok":45000}
+{"fn":"nativeRequestHeaderDeadline","args":[null,{"$undefined":true},{"$undefined":true}],"ok":45000}
+{"fn":"nativeRequestHeaderDeadline","args":["opencode",{"$num":"Infinity"},{"$num":"Infinity"}],"ok":45000}
+{"fn":"nativeRequestHeaderDeadline","args":["opencode",300000],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["opencode",{"$undefined":true}],"ok":45000}
+{"fn":"nativeRequestHeaderDeadline","args":["claude-agent",5,6],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["x",5],"ok":{"$undefined":true}}
+{"fn":"nativeProviderDeadlines","args":["x",{"a":{"$num":"NaN"},"b":[{"$num":"-0"},{"$undefined":true}],"c":{"$map":[["k",1]]}}],"ok":{"headerTimeout":45000,"chunkTimeout":300000,"a":{"$num":"NaN"},"b":[{"$num":"-0"},{"$undefined":true}],"c":{"$map":[["k",1]]}}}
+{"fn":"nativeProviderDeadlines","args":["claude-agent",{"$num":"-0"}],"ok":{"$num":"-0"}}
+{"fn":"nativeProviderDeadlines","args":["claude-agent",{"$map":[["k",1]]}],"ok":{"$map":[["k",1]]}}
+{"fn":"withNativeProviderDeadlines","args":["claude-agent",{"$num":"NaN"}],"ok":{"$num":"NaN"}}
+{"fn":"withNativeProviderDeadlines","args":["claude-agent",{"$set":[1]}],"ok":{"$set":[1]}}
+{"fn":"withNativeProviderDeadlines","args":["claude-agent",{"$date":"2020-01-01T00:00:00.000Z"}],"ok":{"$date":"2020-01-01T00:00:00.000Z"}}
+{"fn":"withNativeProviderDeadlines","args":["x",{"$set":[1]}],"ok":{"settings":{"headerTimeout":45000,"chunkTimeout":300000}}}
+{"fn":"nativeRequestHeaderDeadline","args":["opencode",{"$map":[]},{"$map":[]}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["opencode",{"$set":[]},{"$set":[]}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["opencode",{"$utf16":[55296]},{"$utf16":[55296]}],"ok":45000}
+{"fn":"nativeRequestHeaderDeadline","args":["opencode",{"$date":"2020-01-01T00:00:00.000Z"},{"$date":"2020-01-01T00:00:00.000Z"}],"ok":{"$undefined":true}}
+{"fn":"nativeRequestHeaderDeadline","args":["opencode",{"$bytes":[1]},{"$bytes":[1]}],"ok":{"$undefined":true}}

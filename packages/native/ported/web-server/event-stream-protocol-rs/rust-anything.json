@@ -1,0 +1,97 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/event-stream",
+  "unit": "protocol.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "protocol-rs",
+  "exports": [
+    {
+      "name": "parseSseEventEnvelope",
+      "file": "protocol.js",
+      "line": 16,
+      "params": [
+        {
+          "name": "block",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toUpstreamV2SseEvent",
+      "file": "protocol.js",
+      "line": 94,
+      "params": [
+        {
+          "name": "parsed",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{ eventId: null, upstreamEventId: string | null, directory: string | null, payload: Record<string, unknown> }\n| typeof MESSAGE_STREAM_UPSTREAM_KEEPALIVE | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "serializeMessageStreamWsEvent",
+      "file": "protocol.js",
+      "line": 191,
+      "params": [
+        {
+          "name": "payload",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "options",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "createMessageStreamGapControlPayload",
+      "file": "protocol.js",
+      "line": 118,
+      "reason": "registers its payload in a module WeakSet (identity)"
+    },
+    {
+      "name": "isMessageStreamControlPayload",
+      "file": "protocol.js",
+      "line": 126,
+      "reason": "WeakSet identity check"
+    },
+    {
+      "name": "sendMessageStreamWsFrame",
+      "file": "protocol.js",
+      "line": 135,
+      "reason": "calls socket methods"
+    },
+    {
+      "name": "sendMessageStreamWsEvent",
+      "file": "protocol.js",
+      "line": 202,
+      "reason": "calls socket methods"
+    }
+  ]
+}

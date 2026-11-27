@@ -1,0 +1,19 @@
+{
+  "unit": "native-provider-deadlines.js",
+  "files": 1,
+  "fingerprint": "8844e9b3fa4e513f",
+  "cases": 920,
+  "cases_hash": "1c331e4a23c545c9",
+  "coverage": {
+    "lines": 41,
+    "reached": 41,
+    "files": [
+      {
+        "file": "native-provider-deadlines.js",
+        "lines": 41,
+        "reached": 41,
+        "missed": ""
+      }
+    ]
+  }
+}

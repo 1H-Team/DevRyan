@@ -1,0 +1,326 @@
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"ab"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"ünï":"İstanbul"},"ab"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"b":"😀"},""],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"src/a/b.ts"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"2":{"$undefined":true},"a.b":"a😀b😀c","title":{"$undefined":true}},"a:b:c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"ünï":{"$undefined":true}},"straße"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"./x/**/*.json"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"nav":{"$undefined":true}},"tab\tseparated"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"10":"ΣΊΣΥΦΟΣ","a.b":"a😀b😀c"},"a😀b😀c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":"é"},"a"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"ns:key.path"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"2":":","a":{"$undefined":true},"home":{"$undefined":true}},"key_name-1"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"ünï":"line1\nline2","a.b":"a.b.ctab\tseparated"},""],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":"tab\tseparated","title":{"$undefined":true}},"  padded  "],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"10":"﻿bom","title":{"$undefined":true},"nav":"HELLO"},"ab"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":{"$undefined":true}},"{name} has {count} items"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"home":{"$undefined":true},"a":{"$undefined":true}},"a"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a.b":{"$undefined":true}},"日本語のテキスト"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":"emoji 👍🏽 mix"},"key_name-1"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"HELLO"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"ünïcödé"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":{"$undefined":true},"b":{"$undefined":true},"home":":ns:key.path"},"😀"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"title":{"$undefined":true},"a.b":{"$undefined":true},"😀":"line1\nline2"},"aba"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"b":{"$undefined":true},"ünï":"src/a/b.ts","home":"key_name-1"},"HELLO"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"emoji 👍🏽 mix:"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a.b":{"$undefined":true},"b":{"$undefined":true}},"tab\tseparated"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[null,"helloab"],"error":"Cannot read properties of null (reading 'DEVRYAN_RUNTIME_BUNDLE_ROOT')"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"title":"abckey_name-1"},"a:b:c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"b":{"$undefined":true}},"a"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"home":"İstanbul","title":"line1\nline2"},"line1\nline2"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"10":"./x/**/*.json","home":{"$undefined":true}},"src/a/b.ts"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"nav":{"$undefined":true},"ünï":{"$undefined":true}},"abc"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[["a",1],"ΣΊΣΥΦΟΣ"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"ab"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"b":{"$undefined":true},"a.b":"straße"},""],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"2":"helloünïcödé","10":{"$undefined":true}},"Hello World"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"10":{"$undefined":true},"home":{"$undefined":true}},"{name} has {count} items"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"10":{"$undefined":true},"title":{"$undefined":true},"ünï":{"$undefined":true}},"hello world"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"home":":abc","b":"a..b","nav":{"$undefined":true}},":"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"nav":{"$undefined":true},"home":{"$undefined":true}},"ünïcödéemoji 👍🏽 mix"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"ünï":{"$undefined":true},"b":"a😀b😀c"},""],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"2":"abc","a":{"$undefined":true}},"ΣΊΣΥΦΟΣ"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a.b":{"$undefined":true}},"straße"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"title":{"$undefined":true},"a.b":{"$undefined":true}},"ns:key.path"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":emoji 👍🏽 mix","home":{"$undefined":true}},"a..b"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"ünï":{"$undefined":true},"b":"emoji 👍🏽 mix","a":"  padded  "},".leading"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a.b":{"$undefined":true}},"😀"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":"tab\tseparated"},"Hello World"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":"a😀b😀c","b":"straße"},"hello"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a.b":{"$undefined":true},"😀":".leadinga.b.c","title":{"$undefined":true}},"src/a/b.ts"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"home":"Hello WorldΣΊΣΥΦΟΣ"},"ab"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"b":{"$undefined":true}},"a..b"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"ünï":"HELLOtrailing.","😀":"./x/**/*.json"},"line1\nline2"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":"ns:key.patha","😀":"tab\tseparated"},":"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a.b":"hello"},"ab"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[0,"é"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"home":"ünïcödé"},"key_name-1hello world"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"b":{"$undefined":true},"a":"hello world","😀":"{name} has {count} items﻿bom"},"line1\nline2"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"trailing."],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":"😀"},"a😀b😀c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"home":".leading","nav":":"},"a..b"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"b":"straßea:b:c","😀":{"$undefined":true}},"ab"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"b":"straße","ünï":"hellostraße","a.b":"key_name-1.leading"},"src/a/b.ts"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":{"$undefined":true},"title":"tab\tseparatedtrailing."},"trailing."],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[true,"key_name-1"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"a😀b😀c.leading"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"nav":"{name} has {count} items","a.b":{"$undefined":true}},"trailing."],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"ΣΊΣΥΦΟΣé"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"home":"ns:key.path./x/**/*.json"},"a..b"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"2":{"$undefined":true},"10":{"$undefined":true}},"  padded  "],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a.b":"İstanbul","ünï":{"$undefined":true}},"./x/**/*.json"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"title":{"$undefined":true}},"straße"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":{"$undefined":true}},"﻿bom"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"hello world"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"ünï":{"$undefined":true}},"src/a/b.ts"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[0,"HELLOΣΊΣΥΦΟΣ"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":"ΣΊΣΥΦΟΣ"},"tab\tseparated"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":"tab\tseparated"},"a😀b😀c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"2":{"$undefined":true},"😀":{"$undefined":true},"title":{"$undefined":true}},"src/a/b.tsΣΊΣΥΦΟΣ"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"é"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":"b"},"straße"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":{"$undefined":true},"a.b":"src/a/b.ts"},"  padded  "],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"10":"日本語のテキストé","a":":","home":":"},"./x/**/*.json"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"ünï":{"$undefined":true},"a":{"$undefined":true}},"İstanbul"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"home":"  padded  ","😀":"abHELLO"},"ünïcödé"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"b":"straße"},"straße"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"ünï":{"$undefined":true}},"ünïcödétrailing."],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[true,"hello world"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a.b":"hello world"},"a:b:c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"10":{"$undefined":true},"b":{"$undefined":true}},"a😀b😀c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"title":{"$undefined":true},"home":"日本語のテキスト"},"straße"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[true,"Hello World日本語のテキスト"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"nav":{"$undefined":true},"b":{"$undefined":true}},"./x/**/*.json"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":{"$undefined":true}},":emoji 👍🏽 mix"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"nav":"line1\nline2Hello World","a":{"$undefined":true},"b":".leading"},"a..bHello World"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"title":{"$undefined":true},"a.b":"ünïcödé"},"a:b:c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"ünï":"a😀b😀c","😀":"emoji 👍🏽 mix"},"ns:key.path"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"{name} has {count} items"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"home":{"$undefined":true},"title":{"$undefined":true}},"a..b"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[["a",1],"hello worldtab\tseparated"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"a😀b😀c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"nav":"aabc","home":"😀日本語のテキスト"},"key_name-1a😀b😀c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"2":{"$undefined":true},"ünï":{"$undefined":true},"nav":{"$undefined":true}},"ab"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":"trailing.","ünï":{"$undefined":true}},"{name} has {count} items"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":{"b":"c"}},"tab\tseparated"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a.b":{"$undefined":true}},"line1\nline2"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"a.b.c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"title":{"$undefined":true}},"abca"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[0,"﻿bom"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"b":{"$undefined":true}},"  padded  a:b:c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":{"$undefined":true},"ünï":"abc"},"src/a/b.ts"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":["x","tab\tseparated"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"ünï":"a..b","b":"a..b"},":"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"title":"tab\tseparated","a.b":{"$undefined":true},"nav":{"$undefined":true}},"hello"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"home":{"$undefined":true}},"Hello World"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"ünï":{"$undefined":true}},"  padded  "],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"10":"","b":{"$undefined":true},"a.b":{"$undefined":true}},"  padded  İstanbul"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"ünï":{"$undefined":true},"a.b":"éemoji 👍🏽 mix"},"./x/**/*.json"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"2":"étrailing."},"abstraße"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"İstanbul"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[0,"a😀b😀c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"2":{"$undefined":true}},"İstanbul"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"title":"a.b.c","ünï":":"},"a😀b😀ca:b:c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":{"$undefined":true},"ünï":":"},"{name} has {count} items"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[null,"hello"],"error":"Cannot read properties of null (reading 'DEVRYAN_RUNTIME_BUNDLE_ROOT')"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"2":"abchello","ünï":":"},"a..bstraße"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"title":{"$undefined":true},"a":{"$undefined":true},"😀":{"$undefined":true}},"Hello World"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"10":{"$undefined":true},"ünï":"İstanbul"},"a:b:c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"home":{"$undefined":true}},"﻿bomİstanbul"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":{"$undefined":true}},"straße"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"2":"trailing."},"﻿bom﻿bom"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"key_name-1straße"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"title":"ΣΊΣΥΦΟΣ"},"abc"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":{"$undefined":true},"a.b":{"$undefined":true}},"﻿bom"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"b":{"$undefined":true}},"line1\nline2"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"nav":".leading"},"a..b"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":"b"},"hello world"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"10":{"$undefined":true},"b":".leading./x/**/*.json","a.b":{"$undefined":true}},"ab"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"Hello Worldemoji 👍🏽 mix"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"nav":{"$undefined":true}},"./x/**/*.json"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":"ns:key.path"},"hello world"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":{"b":"c"}},"a😀b😀c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[[],"a😀b😀c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"2":{"$undefined":true},"ünï":{"$undefined":true},"nav":{"$undefined":true}},"ns:key.path"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"ΣΊΣΥΦΟΣ"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":{"b":"c"}},":straße"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a.b":"a:b:c"},"a😀b😀c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"10":{"$undefined":true},"b":{"$undefined":true}},"😀"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":"line1\nline2"},"a:b:c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"nav":{"$undefined":true},"a.b":{"$undefined":true}},"a.b.c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"10":"","😀":{"$undefined":true},"a.b":{"$undefined":true}},"a:b:c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"10":{"$undefined":true}},"a:b:c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"home":"hello worldé","😀":{"$undefined":true}},"日本語のテキスト./x/**/*.json"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"aa:b:c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"hello worldİstanbul"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[[],"😀"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[true,"HELLO"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"10":"./x/**/*.json","a":{"$undefined":true},"title":{"$undefined":true}},"é"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":{"$undefined":true}},"./x/**/*.json"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a.b":{"$undefined":true}},"ünïcödé"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"ünï":{"$undefined":true}},"a"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"a..b"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[null,"tab\tseparated"],"error":"Cannot read properties of null (reading 'DEVRYAN_RUNTIME_BUNDLE_ROOT')"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"日本語のテキスト"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"nav":"straße"},"日本語のテキスト"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"nav":"ΣΊΣΥΦΟΣ"},"a😀b😀c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"nav":{"$undefined":true},"b":{"$undefined":true}},"trailing.straße"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a.b":{"$undefined":true},"title":"line1\nline2"},".leading"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[[],"  padded  "],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"2":{"$undefined":true},"10":"ünïcödé","a":"ΣΊΣΥΦΟΣ"},"a..b"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"b":"straße"},"İstanbul"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"﻿bom"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"😀"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":"line1\nline2ab"},":"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":"a:b:c","nav":{"$undefined":true}},"key_name-1"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},".leadingHello World"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"home":{"$undefined":true}},"﻿bom"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":{"$undefined":true}},"abc"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"10":"line1\nline2","😀":{"$undefined":true},"b":{"$undefined":true}},"tab\tseparated"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"10":{"$undefined":true}},"hello world"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"2":":"},"key_name-1"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[[],".leading"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"2":{"$undefined":true},"title":{"$undefined":true},"a.b":"emoji 👍🏽 mix./x/**/*.json"},"emoji 👍🏽 mix"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"home":"a..b  padded  ","a":"tab\tseparated"},"emoji 👍🏽 mixé"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"ünï":"a..b","title":{"$undefined":true}},"  padded  日本語のテキスト"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"2":"ns:key.path","a.b":{"$undefined":true},"nav":"HELLO"},"İstanbul"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":"key_name-1"},"a😀b😀c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"10":"tab\tseparated","b":"é","nav":"ns:key.path"},"line1\nline2"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[true,"ΣΊΣΥΦΟΣ"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},""],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"10":{"$undefined":true},"😀":{"$undefined":true}},"a.b.c"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":{"$undefined":true},"😀":{"$undefined":true}},":"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a":{"$undefined":true}},"éa..b"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"emoji 👍🏽 mix"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"home":{"$undefined":true}},"hello world"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"b":{"$undefined":true},"ünï":"src/a/b.ts"},"ab"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"10":{"$undefined":true},"a.b":{"$undefined":true}},".leading"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[[],"key_name-1"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"a.b":"hello worldemoji 👍🏽 mix"},"trailing."],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[["a",1],".leading"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"héllo wörld"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"👍🏽 thumbs"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"日本語"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},""],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"é"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"İstanbul"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"straße"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"ılık ırmak"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"👨‍👩‍👧 family"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"a b"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"ΣΊΣΥΦΟΣ"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"a😀b"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"﻿bom"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"a²b x½ y①"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"aⅠb Ⅻ"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"a𐐀b 𝐀bc"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"कि ٣٤"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"Iı İi"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"K K k"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"ſ s S"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"x‍y 👨‍👩‍👧"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"a b c　d"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"١٢٣ ٤٥"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"𝟘𝟙 ²³"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"snake_case foo-bar o'neil"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"ǅungla Ǆ"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"one\r\ntwo threefour"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"café café"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"😀":":trailing."},"ΣΑΣ σας ς"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"/Users/me"],"ok":"/Users/me/.local/state/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"/Users/me/"],"ok":"/Users/me/.local/state/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"rel"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},null],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"/a/./b"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{},"/"],"ok":"/.local/state/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/opt/b"},"/Users/me"],"ok":"/opt/b"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/opt/b"},"/Users/me/"],"ok":"/opt/b"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/opt/b"},"rel"],"ok":"/opt/b"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/opt/b"},null],"ok":"/opt/b"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/opt/b"},"/a/./b"],"ok":"/opt/b"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/opt/b"},"/"],"ok":"/opt/b"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/opt/b/"},"/Users/me"],"ok":"/opt/b/"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/opt/b/"},"/Users/me/"],"ok":"/opt/b/"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/opt/b/"},"rel"],"ok":"/opt/b/"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/opt/b/"},null],"ok":"/opt/b/"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/opt/b/"},"/a/./b"],"ok":"/opt/b/"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/opt/b/"},"/"],"ok":"/opt/b/"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"rel"},"/Users/me"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"rel"},"/Users/me/"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"rel"},"rel"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"rel"},null],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"rel"},"/a/./b"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"rel"},"/"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/a/../b"},"/Users/me"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/a/../b"},"/Users/me/"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/a/../b"},"rel"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/a/../b"},null],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/a/../b"},"/a/./b"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/a/../b"},"/"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/a\n"},"/Users/me"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/a\n"},"/Users/me/"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/a\n"},"rel"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/a\n"},null],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/a\n"},"/a/./b"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":"/a\n"},"/"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":5},"/Users/me"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":5},"/Users/me/"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":5},"rel"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":5},null],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":5},"/a/./b"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":5},"/"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":null},"/Users/me"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":null},"/Users/me/"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":null},"rel"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":null},null],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":null},"/a/./b"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":null},"/"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"/x/state"},"/Users/me"],"ok":"/x/state/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"/x/state"},"/Users/me/"],"ok":"/x/state/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"/x/state"},"rel"],"ok":"/x/state/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"/x/state"},null],"ok":"/x/state/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"/x/state"},"/a/./b"],"ok":"/x/state/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"/x/state"},"/"],"ok":"/x/state/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"/x/state/"},"/Users/me"],"ok":"/x/state/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"/x/state/"},"/Users/me/"],"ok":"/x/state/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"/x/state/"},"rel"],"ok":"/x/state/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"/x/state/"},null],"ok":"/x/state/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"/x/state/"},"/a/./b"],"ok":"/x/state/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"/x/state/"},"/"],"ok":"/x/state/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":""},"/Users/me"],"ok":"/Users/me/.local/state/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":""},"/Users/me/"],"ok":"/Users/me/.local/state/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":""},"rel"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":""},null],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":""},"/a/./b"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":""},"/"],"ok":"/.local/state/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"x"},"/Users/me"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"x"},"/Users/me/"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"x"},"rel"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"x"},null],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"x"},"/a/./b"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"x"},"/"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"//x"},"/Users/me"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"//x"},"/Users/me/"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"//x"},"rel"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"//x"},null],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"//x"},"/a/./b"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"XDG_STATE_HOME":"//x"},"/"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":{"$undefined":true},"XDG_STATE_HOME":"/s"},"/Users/me"],"ok":"/s/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":{"$undefined":true},"XDG_STATE_HOME":"/s"},"/Users/me/"],"ok":"/s/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":{"$undefined":true},"XDG_STATE_HOME":"/s"},"rel"],"ok":"/s/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":{"$undefined":true},"XDG_STATE_HOME":"/s"},null],"ok":"/s/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":{"$undefined":true},"XDG_STATE_HOME":"/s"},"/a/./b"],"ok":"/s/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[{"DEVRYAN_RUNTIME_BUNDLE_ROOT":{"$undefined":true},"XDG_STATE_HOME":"/s"},"/"],"ok":"/s/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[null,"/Users/me"],"error":"Cannot read properties of null (reading 'DEVRYAN_RUNTIME_BUNDLE_ROOT')"}
+{"fn":"resolveRuntimeBundleRoot","args":[null,"/Users/me/"],"error":"Cannot read properties of null (reading 'DEVRYAN_RUNTIME_BUNDLE_ROOT')"}
+{"fn":"resolveRuntimeBundleRoot","args":[null,"rel"],"error":"Cannot read properties of null (reading 'DEVRYAN_RUNTIME_BUNDLE_ROOT')"}
+{"fn":"resolveRuntimeBundleRoot","args":[null,null],"error":"Cannot read properties of null (reading 'DEVRYAN_RUNTIME_BUNDLE_ROOT')"}
+{"fn":"resolveRuntimeBundleRoot","args":[null,"/a/./b"],"error":"Cannot read properties of null (reading 'DEVRYAN_RUNTIME_BUNDLE_ROOT')"}
+{"fn":"resolveRuntimeBundleRoot","args":[null,"/"],"error":"Cannot read properties of null (reading 'DEVRYAN_RUNTIME_BUNDLE_ROOT')"}
+{"fn":"resolveRuntimeBundleRoot","args":["str","/Users/me"],"ok":"/Users/me/.local/state/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":["str","/Users/me/"],"ok":"/Users/me/.local/state/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":["str","rel"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":["str",null],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":["str","/a/./b"],"error":"bundle_recovery_owner_required"}
+{"fn":"resolveRuntimeBundleRoot","args":["str","/"],"ok":"/.local/state/devryan/runtime-bundles"}
+{"fn":"resolveRuntimeBundleRoot","args":[],"error":"Cannot read properties of undefined (reading 'DEVRYAN_RUNTIME_BUNDLE_ROOT')"}

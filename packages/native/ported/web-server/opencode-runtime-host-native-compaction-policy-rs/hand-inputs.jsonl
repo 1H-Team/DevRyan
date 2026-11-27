@@ -1,0 +1,53 @@
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": 12000}}, "compatibility": {"legacy": {"compaction": {"reserved": 9000}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": 12000}}, "compatibility": {"legacy": {"compaction": {"reserved": -5}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": 12000}}, "compatibility": {"legacy": {"compaction": {"reserved": "x"}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": 12000}}, "compatibility": {"legacy": {"compaction": {"reserved": {"$undefined": true}}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": 0}}, "compatibility": {"legacy": {"compaction": {"reserved": 9000}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": 0}}, "compatibility": {"legacy": {"compaction": {"reserved": -5}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": 0}}, "compatibility": {"legacy": {"compaction": {"reserved": "x"}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": 0}}, "compatibility": {"legacy": {"compaction": {"reserved": {"$undefined": true}}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {}}, "compatibility": {"legacy": {"compaction": {"reserved": 9000}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {}}, "compatibility": {"legacy": {"compaction": {"reserved": -5}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {}}, "compatibility": {"legacy": {"compaction": {"reserved": "x"}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {}}, "compatibility": {"legacy": {"compaction": {"reserved": {"$undefined": true}}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": "1000"}}, "compatibility": {"legacy": {"compaction": {"reserved": 9000}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": "1000"}}, "compatibility": {"legacy": {"compaction": {"reserved": -5}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": "1000"}}, "compatibility": {"legacy": {"compaction": {"reserved": "x"}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": "1000"}}, "compatibility": {"legacy": {"compaction": {"reserved": {"$undefined": true}}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": {"$num": "Infinity"}}}, "compatibility": {"legacy": {"compaction": {"reserved": 9000}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": {"$num": "Infinity"}}}, "compatibility": {"legacy": {"compaction": {"reserved": -5}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": {"$num": "Infinity"}}}, "compatibility": {"legacy": {"compaction": {"reserved": "x"}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": {"$num": "Infinity"}}}, "compatibility": {"legacy": {"compaction": {"reserved": {"$undefined": true}}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": {"$num": "NaN"}}}, "compatibility": {"legacy": {"compaction": {"reserved": 9000}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": {"$num": "NaN"}}}, "compatibility": {"legacy": {"compaction": {"reserved": -5}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": {"$num": "NaN"}}}, "compatibility": {"legacy": {"compaction": {"reserved": "x"}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": {"$num": "NaN"}}}, "compatibility": {"legacy": {"compaction": {"reserved": {"$undefined": true}}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": null}}, "compatibility": {"legacy": {"compaction": {"reserved": 9000}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": null}}, "compatibility": {"legacy": {"compaction": {"reserved": -5}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": null}}, "compatibility": {"legacy": {"compaction": {"reserved": "x"}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": null}}, "compatibility": {"legacy": {"compaction": {"reserved": {"$undefined": true}}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": -1}}, "compatibility": {"legacy": {"compaction": {"reserved": 9000}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": -1}}, "compatibility": {"legacy": {"compaction": {"reserved": -5}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": -1}}, "compatibility": {"legacy": {"compaction": {"reserved": "x"}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": -1}}, "compatibility": {"legacy": {"compaction": {"reserved": {"$undefined": true}}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": 1.5}}, "compatibility": {"legacy": {"compaction": {"reserved": 9000}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": 1.5}}, "compatibility": {"legacy": {"compaction": {"reserved": -5}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": 1.5}}, "compatibility": {"legacy": {"compaction": {"reserved": "x"}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": 1.5}}, "compatibility": {"legacy": {"compaction": {"reserved": {"$undefined": true}}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": {"$num": "-0"}}}, "compatibility": {"legacy": {"compaction": {"reserved": 9000}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": {"$num": "-0"}}}, "compatibility": {"legacy": {"compaction": {"reserved": -5}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": {"$num": "-0"}}}, "compatibility": {"legacy": {"compaction": {"reserved": "x"}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": {"$num": "-0"}}}, "compatibility": {"legacy": {"compaction": {"reserved": {"$undefined": true}}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": 9007199254740992}}, "compatibility": {"legacy": {"compaction": {"reserved": 9000}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": 9007199254740992}}, "compatibility": {"legacy": {"compaction": {"reserved": -5}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": 9007199254740992}}, "compatibility": {"legacy": {"compaction": {"reserved": "x"}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": 9007199254740992}}, "compatibility": {"legacy": {"compaction": {"reserved": {"$undefined": true}}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": {"$undefined": true}}}, "compatibility": {"legacy": {"compaction": {"reserved": 9000}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": {"$undefined": true}}}, "compatibility": {"legacy": {"compaction": {"reserved": -5}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": {"$undefined": true}}}, "compatibility": {"legacy": {"compaction": {"reserved": "x"}}}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"buffer": {"$undefined": true}}}, "compatibility": {"legacy": {"compaction": {"reserved": {"$undefined": true}}}}}]}
+{"fn": "nativeCompactionReserve", "args": []}
+{"fn": "nativeCompactionReserve", "args": [null]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": [1]}}]}
+{"fn": "nativeCompactionReserve", "args": [{"configuration": {"compaction": {"$map": []}}, "compatibility": {"legacy": {"compaction": {"reserved": 7}}}}]}
+{"fn": "nativeCompactionReserve", "args": ["s"]}

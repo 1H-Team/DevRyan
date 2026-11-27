@@ -1,0 +1,32 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [],
+  "product": [],
+  "engine": [
+    {
+      "site": "packages/web/server/lib/opencode/default-plugins.js:41",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'entries')"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/default-plugins.js:44",
+      "class": "TypeError",
+      "sample": "entries.filter is not a function"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/default-plugins.js:48",
+      "class": "TypeError",
+      "sample": "files.filter is not a function"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/default-plugins.js:54",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'defaultPluginId')"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/default-plugins.js:55",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'defaultPluginId')"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "unit": "native-provider-integrations.js",
+  "files": 1,
+  "fingerprint": "bf1077d24d227618",
+  "cases": 57,
+  "cases_hash": "4e691634782e8562",
+  "coverage": {
+    "lines": 22,
+    "reached": 22,
+    "files": [
+      {
+        "file": "native-provider-integrations.js",
+        "lines": 22,
+        "reached": 22,
+        "missed": ""
+      }
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "unit": "errors.js",
+  "files": 1,
+  "fingerprint": "ea7770e206bc1fbe",
+  "cases": 836,
+  "cases_hash": "27d86edb11c8883c",
+  "coverage": {
+    "lines": 225,
+    "reached": 194,
+    "files": [
+      {
+        "file": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/shared-runtime/lib/provider-error-details.js",
+        "lines": 41,
+        "reached": 30,
+        "missed": "31-41"
+      },
+      {
+        "file": "errors.js",
+        "lines": 184,
+        "reached": 164,
+        "missed": "110-117, 129-140"
+      }
+    ]
+  }
+}

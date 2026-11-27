@@ -1,0 +1,91 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode/v2/projection",
+  "unit": "errors.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "errors-rs",
+  "exports": [
+    {
+      "name": "toV1InterruptError",
+      "file": "errors.js",
+      "line": 152,
+      "params": [
+        {
+          "name": "reason",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "source",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "V1NamedError",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "withAbortSource",
+      "file": "errors.js",
+      "line": 167,
+      "params": [
+        {
+          "name": "error",
+          "ts_type": "T",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "source",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "T",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV2Error",
+      "file": "errors.js",
+      "line": 180,
+      "params": [
+        {
+          "name": "error",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "V2StructuredError | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "v1ErrorNameForV2Type",
+      "file": "errors.js",
+      "line": 109,
+      "reason": "kept on request"
+    },
+    {
+      "name": "toV1Error",
+      "file": "errors.js",
+      "line": 128,
+      "reason": "kept on request"
+    }
+  ]
+}

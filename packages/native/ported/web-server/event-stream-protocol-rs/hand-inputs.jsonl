@@ -1,0 +1,182 @@
+{"fn": "parseSseEventEnvelope", "args": [""]}
+{"fn": "parseSseEventEnvelope", "args": [null]}
+{"fn": "parseSseEventEnvelope", "args": [5]}
+{"fn": "parseSseEventEnvelope", "args": ["id: 1\ndata: {\"a\":1}"]}
+{"fn": "parseSseEventEnvelope", "args": ["data:{\"payload\":{\"type\":\"x\"},\"directory\":\"/d\"}"]}
+{"fn": "parseSseEventEnvelope", "args": ["id:   \ndata: {\"payload\":[1,2],\"directory\":\"\"}"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: {\"payload\":null,\"properties\":{\"directory\":\"/p\"}}"]}
+{"fn": "parseSseEventEnvelope", "args": ["data:  {\"x\":1}\ndata: {\"y\":2}"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: [1,\ndata: 2]"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: \"str\""]}
+{"fn": "parseSseEventEnvelope", "args": ["data: 12"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: null"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: true"]}
+{"fn": "parseSseEventEnvelope", "args": ["data:    "]}
+{"fn": "parseSseEventEnvelope", "args": ["event: x\nid: 7"]}
+{"fn": "parseSseEventEnvelope", "args": ["id: a\nid: b\ndata: {}"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: {bad}"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: {\"directory\":5,\"properties\":{\"directory\":\"/q\"}}"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: {\"directory\":\"/own\",\"properties\":{\"directory\":\"/q\"}}"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: {\"2\":1,\"b\":2,\"1\":3}"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: {\"a\":1,\"a\":2}"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: 1e400"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: -0"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: {\"s\":\"\\ud800\"}"]}
+{"fn": "parseSseEventEnvelope", "args": ["\ufeffdata: {}"]}
+{"fn": "parseSseEventEnvelope", "args": ["data:\u00a0{\"a\":1}"]}
+{"fn": "parseSseEventEnvelope", "args": ["data:\t{}"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: {}\r\nid: 9\r"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: {}  x"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: \"\\u0041\""]}
+{"fn": "parseSseEventEnvelope", "args": ["data: [1,]"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: {\"payload\":\"str\"}"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: {\"payload\":{}}"]}
+{"fn": "parseSseEventEnvelope", "args": ["id:\u2028x\u2028\ndata: 1"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: 01"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: .5"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: 1."]}
+{"fn": "parseSseEventEnvelope", "args": ["data: -"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: {\"properties\":null}"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: {\"properties\":{\"directory\":\"\"}}"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: \u3000{}\u3000"]}
+{"fn": "parseSseEventEnvelope", "args": ["  data: {}"]}
+{"fn": "parseSseEventEnvelope", "args": ["data: {\"__x\":1}"]}
+{"fn": "parseSseEventEnvelope", "args": []}
+{"fn": "toUpstreamV2SseEvent", "args": [null]}
+{"fn": "toUpstreamV2SseEvent", "args": [0]}
+{"fn": "toUpstreamV2SseEvent", "args": ["s"]}
+{"fn": "toUpstreamV2SseEvent", "args": [[]]}
+{"fn": "toUpstreamV2SseEvent", "args": [{}]}
+{"fn": "toUpstreamV2SseEvent", "args": [{"kind": "comment"}]}
+{"fn": "toUpstreamV2SseEvent", "args": [{"kind": "event"}]}
+{"fn": "toUpstreamV2SseEvent", "args": [{"kind": "event", "envelope": null}]}
+{"fn": "toUpstreamV2SseEvent", "args": [{"kind": "event", "envelope": "x"}]}
+{"fn": "toUpstreamV2SseEvent", "args": [{"kind": "event", "envelope": {"type": "a"}, "eventId": "e1", "directory": "/d"}]}
+{"fn": "toUpstreamV2SseEvent", "args": [{"kind": "event", "envelope": [1], "eventId": "", "directory": 5}]}
+{"fn": "toUpstreamV2SseEvent", "args": [{"kind": "other", "envelope": {}}]}
+{"fn": "toUpstreamV2SseEvent", "args": [[1]]}
+{"fn": "toUpstreamV2SseEvent", "args": [{"kind": "event", "envelope": {"a": 1}, "eventId": 7}]}
+{"fn": "toUpstreamV2SseEvent", "args": []}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "x"}, {"$undefined": true}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "x"}, {}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "x"}, {"eventId": "e", "directory": "/d"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "x"}, {"eventId": "", "directory": ""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "x"}, {"eventId": 5}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "x"}, {"dialect": "devryan"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "x"}, {"dialect": "legacy", "eventId": "\"q\""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "x"}, "str"]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "x"}, 7]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "x"}, null]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "x"}, {"directory": "/x\n"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "devryan:a", "p": 1}, {"$undefined": true}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "devryan:a", "p": 1}, {}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "devryan:a", "p": 1}, {"eventId": "e", "directory": "/d"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "devryan:a", "p": 1}, {"eventId": "", "directory": ""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "devryan:a", "p": 1}, {"eventId": 5}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "devryan:a", "p": 1}, {"dialect": "devryan"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "devryan:a", "p": 1}, {"dialect": "legacy", "eventId": "\"q\""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "devryan:a", "p": 1}, "str"]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "devryan:a", "p": 1}, 7]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "devryan:a", "p": 1}, null]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "devryan:a", "p": 1}, {"directory": "/x\n"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "openchamber:a"}, {"$undefined": true}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "openchamber:a"}, {}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "openchamber:a"}, {"eventId": "e", "directory": "/d"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "openchamber:a"}, {"eventId": "", "directory": ""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "openchamber:a"}, {"eventId": 5}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "openchamber:a"}, {"dialect": "devryan"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "openchamber:a"}, {"dialect": "legacy", "eventId": "\"q\""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "openchamber:a"}, "str"]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "openchamber:a"}, 7]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "openchamber:a"}, null]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "openchamber:a"}, {"directory": "/x\n"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [null, {"$undefined": true}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [null, {}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [null, {"eventId": "e", "directory": "/d"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [null, {"eventId": "", "directory": ""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [null, {"eventId": 5}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [null, {"dialect": "devryan"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [null, {"dialect": "legacy", "eventId": "\"q\""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [null, "str"]}
+{"fn": "serializeMessageStreamWsEvent", "args": [null, 7]}
+{"fn": "serializeMessageStreamWsEvent", "args": [null, null]}
+{"fn": "serializeMessageStreamWsEvent", "args": [null, {"directory": "/x\n"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$undefined": true}, {"$undefined": true}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$undefined": true}, {}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$undefined": true}, {"eventId": "e", "directory": "/d"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$undefined": true}, {"eventId": "", "directory": ""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$undefined": true}, {"eventId": 5}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$undefined": true}, {"dialect": "devryan"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$undefined": true}, {"dialect": "legacy", "eventId": "\"q\""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$undefined": true}, "str"]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$undefined": true}, 7]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$undefined": true}, null]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$undefined": true}, {"directory": "/x\n"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [5, {"$undefined": true}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [5, {}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [5, {"eventId": "e", "directory": "/d"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [5, {"eventId": "", "directory": ""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [5, {"eventId": 5}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [5, {"dialect": "devryan"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [5, {"dialect": "legacy", "eventId": "\"q\""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [5, "str"]}
+{"fn": "serializeMessageStreamWsEvent", "args": [5, 7]}
+{"fn": "serializeMessageStreamWsEvent", "args": [5, null]}
+{"fn": "serializeMessageStreamWsEvent", "args": [5, {"directory": "/x\n"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": ["s", {"$undefined": true}]}
+{"fn": "serializeMessageStreamWsEvent", "args": ["s", {}]}
+{"fn": "serializeMessageStreamWsEvent", "args": ["s", {"eventId": "e", "directory": "/d"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": ["s", {"eventId": "", "directory": ""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": ["s", {"eventId": 5}]}
+{"fn": "serializeMessageStreamWsEvent", "args": ["s", {"dialect": "devryan"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": ["s", {"dialect": "legacy", "eventId": "\"q\""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": ["s", "str"]}
+{"fn": "serializeMessageStreamWsEvent", "args": ["s", 7]}
+{"fn": "serializeMessageStreamWsEvent", "args": ["s", null]}
+{"fn": "serializeMessageStreamWsEvent", "args": ["s", {"directory": "/x\n"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [[1, {"$undefined": true}, 2], {"$undefined": true}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [[1, {"$undefined": true}, 2], {}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [[1, {"$undefined": true}, 2], {"eventId": "e", "directory": "/d"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [[1, {"$undefined": true}, 2], {"eventId": "", "directory": ""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [[1, {"$undefined": true}, 2], {"eventId": 5}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [[1, {"$undefined": true}, 2], {"dialect": "devryan"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [[1, {"$undefined": true}, 2], {"dialect": "legacy", "eventId": "\"q\""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [[1, {"$undefined": true}, 2], "str"]}
+{"fn": "serializeMessageStreamWsEvent", "args": [[1, {"$undefined": true}, 2], 7]}
+{"fn": "serializeMessageStreamWsEvent", "args": [[1, {"$undefined": true}, 2], null]}
+{"fn": "serializeMessageStreamWsEvent", "args": [[1, {"$undefined": true}, 2], {"directory": "/x\n"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"a": {"$undefined": true}, "b": {"$num": "NaN"}}, {"$undefined": true}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"a": {"$undefined": true}, "b": {"$num": "NaN"}}, {}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"a": {"$undefined": true}, "b": {"$num": "NaN"}}, {"eventId": "e", "directory": "/d"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"a": {"$undefined": true}, "b": {"$num": "NaN"}}, {"eventId": "", "directory": ""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"a": {"$undefined": true}, "b": {"$num": "NaN"}}, {"eventId": 5}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"a": {"$undefined": true}, "b": {"$num": "NaN"}}, {"dialect": "devryan"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"a": {"$undefined": true}, "b": {"$num": "NaN"}}, {"dialect": "legacy", "eventId": "\"q\""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"a": {"$undefined": true}, "b": {"$num": "NaN"}}, "str"]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"a": {"$undefined": true}, "b": {"$num": "NaN"}}, 7]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"a": {"$undefined": true}, "b": {"$num": "NaN"}}, null]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"a": {"$undefined": true}, "b": {"$num": "NaN"}}, {"directory": "/x\n"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$num": "-0"}, {"$undefined": true}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$num": "-0"}, {}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$num": "-0"}, {"eventId": "e", "directory": "/d"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$num": "-0"}, {"eventId": "", "directory": ""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$num": "-0"}, {"eventId": 5}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$num": "-0"}, {"dialect": "devryan"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$num": "-0"}, {"dialect": "legacy", "eventId": "\"q\""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$num": "-0"}, "str"]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$num": "-0"}, 7]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$num": "-0"}, null]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$num": "-0"}, {"directory": "/x\n"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [true, {"$undefined": true}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [true, {}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [true, {"eventId": "e", "directory": "/d"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [true, {"eventId": "", "directory": ""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [true, {"eventId": 5}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [true, {"dialect": "devryan"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [true, {"dialect": "legacy", "eventId": "\"q\""}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [true, "str"]}
+{"fn": "serializeMessageStreamWsEvent", "args": [true, 7]}
+{"fn": "serializeMessageStreamWsEvent", "args": [true, null]}
+{"fn": "serializeMessageStreamWsEvent", "args": [true, {"directory": "/x\n"}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"$undefined": true}]}
+{"fn": "serializeMessageStreamWsEvent", "args": [{"type": "devryan:z"}]}

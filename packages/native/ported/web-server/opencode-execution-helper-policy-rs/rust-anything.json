@@ -1,0 +1,30 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode",
+  "unit": "execution-helper-policy.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "execution-helper-policy-rs",
+  "exports": [
+    {
+      "name": "isReviewedControllerGitArgs",
+      "file": "execution-helper-policy.js",
+      "line": 20,
+      "params": [
+        {
+          "name": "args",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

@@ -1,0 +1,43 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/multi-user",
+  "unit": "branch-previews.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "branch-previews-rs",
+  "exports": [
+    {
+      "name": "publicBranchPreview",
+      "file": "branch-previews.js",
+      "line": 53,
+      "params": [
+        {
+          "name": "row",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "normalizeBranchPreviewUrl",
+      "file": "branch-previews.js",
+      "line": 17,
+      "reason": "kept on request"
+    },
+    {
+      "name": "createBranchPreviewService",
+      "file": "branch-previews.js",
+      "line": 144,
+      "reason": "kept on request"
+    }
+  ]
+}
