@@ -1,0 +1,19 @@
+{
+  "unit": "native-verification-order.js",
+  "files": 1,
+  "fingerprint": "24f01d46ba9eb263",
+  "cases": 91,
+  "cases_hash": "287fd756865236d9",
+  "coverage": {
+    "lines": 34,
+    "reached": 6,
+    "files": [
+      {
+        "file": "native-verification-order.js",
+        "lines": 34,
+        "reached": 6,
+        "missed": "9-36"
+      }
+    ]
+  }
+}

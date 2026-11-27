@@ -1,0 +1,19 @@
+{
+  "unit": "eviction.ts",
+  "files": 1,
+  "fingerprint": "de63c1222dfab765",
+  "cases": 400,
+  "cases_hash": "96f18377e6a70692",
+  "coverage": {
+    "lines": 50,
+    "reached": 33,
+    "files": [
+      {
+        "file": "eviction.ts",
+        "lines": 50,
+        "reached": 33,
+        "missed": "27-43"
+      }
+    ]
+  }
+}

@@ -1,0 +1,227 @@
+{"fn":"hasForwardingHeaders","args":[true],"ok":false}
+{"fn":"hasForwardingHeaders","args":["x"],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"a":{"b":"c"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[["a",1]],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"a":"b"}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[0],"ok":false}
+{"fn":"hasForwardingHeaders","args":[[]],"ok":false}
+{"fn":"hasForwardingHeaders","args":[null],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[[3,1,2]],"ok":false}
+{"fn":"hasForwardingHeaders","args":[],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"Forwarded":"x"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"X-Forwarded-For":"1"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"x-forwardedfor":"1"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"CF-Ray":"r"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"cfray":"r"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"a","accept":"b"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":"forwarded"}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":["cf-x"]}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":null}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"$map":[["forwarded",1]]}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":["str"],"ok":false}
+{"fn":"hasForwardingHeaders","args":[5],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"İforwarded":1}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"FORWARDED":1}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-Forwarded-For":"1.2.3.4"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-Forwarded-For":"1.2.3.4, 5.6.7.8"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-Forwarded-For":["1.2.3.4","5.6.7.8"]}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-Forwarded-For":""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-Forwarded-For":null}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-Forwarded-For":"for=\"[2001:db8::1]:4711\""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-for":"1.2.3.4"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-for":"1.2.3.4, 5.6.7.8"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-for":["1.2.3.4","5.6.7.8"]}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-for":""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-for":null}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-for":"for=\"[2001:db8::1]:4711\""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-FORWARDED-PROTO":"1.2.3.4"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-FORWARDED-PROTO":"1.2.3.4, 5.6.7.8"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-FORWARDED-PROTO":["1.2.3.4","5.6.7.8"]}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-FORWARDED-PROTO":""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-FORWARDED-PROTO":null}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-FORWARDED-PROTO":"for=\"[2001:db8::1]:4711\""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-host":"1.2.3.4"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-host":"1.2.3.4, 5.6.7.8"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-host":["1.2.3.4","5.6.7.8"]}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-host":""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-host":null}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-host":"for=\"[2001:db8::1]:4711\""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-port":"1.2.3.4"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-port":"1.2.3.4, 5.6.7.8"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-port":["1.2.3.4","5.6.7.8"]}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-port":""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-port":null}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-port":"for=\"[2001:db8::1]:4711\""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-":"1.2.3.4"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-":"1.2.3.4, 5.6.7.8"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-":["1.2.3.4","5.6.7.8"]}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-":""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-":null}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-":"for=\"[2001:db8::1]:4711\""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-Forwarded":"1.2.3.4"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-Forwarded":"1.2.3.4, 5.6.7.8"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-Forwarded":["1.2.3.4","5.6.7.8"]}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-Forwarded":""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-Forwarded":null}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-Forwarded":"for=\"[2001:db8::1]:4711\""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","xforwarded-for":"1.2.3.4"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","xforwarded-for":"1.2.3.4, 5.6.7.8"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","xforwarded-for":["1.2.3.4","5.6.7.8"]}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","xforwarded-for":""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","xforwarded-for":null}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","xforwarded-for":"for=\"[2001:db8::1]:4711\""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x_forwarded_for":"1.2.3.4"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x_forwarded_for":"1.2.3.4, 5.6.7.8"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x_forwarded_for":["1.2.3.4","5.6.7.8"]}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x_forwarded_for":""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x_forwarded_for":null}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x_forwarded_for":"for=\"[2001:db8::1]:4711\""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded_for":"1.2.3.4"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded_for":"1.2.3.4, 5.6.7.8"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded_for":["1.2.3.4","5.6.7.8"]}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded_for":""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded_for":null}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded_for":"for=\"[2001:db8::1]:4711\""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","Forwarded":"1.2.3.4"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","Forwarded":"1.2.3.4, 5.6.7.8"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","Forwarded":["1.2.3.4","5.6.7.8"]}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","Forwarded":""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","Forwarded":null}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","Forwarded":"for=\"[2001:db8::1]:4711\""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","FORWARDED":"1.2.3.4"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","FORWARDED":"1.2.3.4, 5.6.7.8"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","FORWARDED":["1.2.3.4","5.6.7.8"]}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","FORWARDED":""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","FORWARDED":null}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","FORWARDED":"for=\"[2001:db8::1]:4711\""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","forwarded ":"1.2.3.4"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","forwarded ":"1.2.3.4, 5.6.7.8"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","forwarded ":["1.2.3.4","5.6.7.8"]}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","forwarded ":""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","forwarded ":null}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","forwarded ":"for=\"[2001:db8::1]:4711\""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","forwarded-for":"1.2.3.4"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","forwarded-for":"1.2.3.4, 5.6.7.8"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","forwarded-for":["1.2.3.4","5.6.7.8"]}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","forwarded-for":""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","forwarded-for":null}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","forwarded-for":"for=\"[2001:db8::1]:4711\""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001"," forwarded":"1.2.3.4"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001"," forwarded":"1.2.3.4, 5.6.7.8"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001"," forwarded":["1.2.3.4","5.6.7.8"]}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001"," forwarded":""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001"," forwarded":null}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001"," forwarded":"for=\"[2001:db8::1]:4711\""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf-connecting-ip":"1.2.3.4"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf-connecting-ip":"1.2.3.4, 5.6.7.8"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf-connecting-ip":["1.2.3.4","5.6.7.8"]}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf-connecting-ip":""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf-connecting-ip":null}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf-connecting-ip":"for=\"[2001:db8::1]:4711\""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","CF-IPCountry":"1.2.3.4"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","CF-IPCountry":"1.2.3.4, 5.6.7.8"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","CF-IPCountry":["1.2.3.4","5.6.7.8"]}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","CF-IPCountry":""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","CF-IPCountry":null}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","CF-IPCountry":"for=\"[2001:db8::1]:4711\""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf-":"1.2.3.4"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf-":"1.2.3.4, 5.6.7.8"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf-":["1.2.3.4","5.6.7.8"]}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf-":""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf-":null}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf-":"for=\"[2001:db8::1]:4711\""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf":"1.2.3.4"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf":"1.2.3.4, 5.6.7.8"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf":["1.2.3.4","5.6.7.8"]}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf":""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf":null}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf":"for=\"[2001:db8::1]:4711\""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf_ray":"1.2.3.4"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf_ray":"1.2.3.4, 5.6.7.8"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf_ray":["1.2.3.4","5.6.7.8"]}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf_ray":""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf_ray":null}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","cf_ray":"for=\"[2001:db8::1]:4711\""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","true-client-ip":"1.2.3.4"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","true-client-ip":"1.2.3.4, 5.6.7.8"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","true-client-ip":["1.2.3.4","5.6.7.8"]}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","true-client-ip":""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","true-client-ip":null}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","true-client-ip":"for=\"[2001:db8::1]:4711\""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-real-ip":"1.2.3.4"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-real-ip":"1.2.3.4, 5.6.7.8"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-real-ip":["1.2.3.4","5.6.7.8"]}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-real-ip":""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-real-ip":null}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-real-ip":"for=\"[2001:db8::1]:4711\""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-client-ip":"1.2.3.4"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-client-ip":"1.2.3.4, 5.6.7.8"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-client-ip":["1.2.3.4","5.6.7.8"]}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-client-ip":""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-client-ip":null}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-client-ip":"for=\"[2001:db8::1]:4711\""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","via":"1.2.3.4"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","via":"1.2.3.4, 5.6.7.8"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","via":["1.2.3.4","5.6.7.8"]}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","via":""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","via":null}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","via":"for=\"[2001:db8::1]:4711\""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-original-forwarded-for":"1.2.3.4"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-original-forwarded-for":"1.2.3.4, 5.6.7.8"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-original-forwarded-for":["1.2.3.4","5.6.7.8"]}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-original-forwarded-for":""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-original-forwarded-for":null}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-original-forwarded-for":"for=\"[2001:db8::1]:4711\""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-for\u0000":"1.2.3.4"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-for\u0000":"1.2.3.4, 5.6.7.8"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-for\u0000":["1.2.3.4","5.6.7.8"]}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-for\u0000":""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-for\u0000":null}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-for\u0000":"for=\"[2001:db8::1]:4711\""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-Forwarded-For\r\n":"1.2.3.4"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-Forwarded-For\r\n":"1.2.3.4, 5.6.7.8"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-Forwarded-For\r\n":["1.2.3.4","5.6.7.8"]}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-Forwarded-For\r\n":""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-Forwarded-For\r\n":null}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","X-Forwarded-For\r\n":"for=\"[2001:db8::1]:4711\""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","K-forwarded-for":"1.2.3.4"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","K-forwarded-for":"1.2.3.4, 5.6.7.8"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","K-forwarded-for":["1.2.3.4","5.6.7.8"]}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","K-forwarded-for":""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","K-forwarded-for":null}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","K-forwarded-for":"for=\"[2001:db8::1]:4711\""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-ﬀorwarded-for":"1.2.3.4"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-ﬀorwarded-for":"1.2.3.4, 5.6.7.8"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-ﬀorwarded-for":["1.2.3.4","5.6.7.8"]}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-ﬀorwarded-for":""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-ﬀorwarded-for":null}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-ﬀorwarded-for":"for=\"[2001:db8::1]:4711\""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","İforwarded":"1.2.3.4"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","İforwarded":"1.2.3.4, 5.6.7.8"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","İforwarded":["1.2.3.4","5.6.7.8"]}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","İforwarded":""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","İforwarded":null}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","İforwarded":"for=\"[2001:db8::1]:4711\""}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-fORWARDED-for":"1.2.3.4"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-fORWARDED-for":"1.2.3.4, 5.6.7.8"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-fORWARDED-for":["1.2.3.4","5.6.7.8"]}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-fORWARDED-for":""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-fORWARDED-for":null}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-fORWARDED-for":"for=\"[2001:db8::1]:4711\""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-for,x-forwarded-for":"1.2.3.4"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-for,x-forwarded-for":"1.2.3.4, 5.6.7.8"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-for,x-forwarded-for":["1.2.3.4","5.6.7.8"]}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-for,x-forwarded-for":""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-for,x-forwarded-for":null}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"127.0.0.1:3001","x-forwarded-for,x-forwarded-for":"for=\"[2001:db8::1]:4711\""}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"[::1]:3001","origin":"http://[::1]:3001"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"host":"localhost:65535"},"socket":{"remoteAddress":"::ffff:127.0.0.1"}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"rawHeaders":["X-Forwarded-For","1.2.3.4"],"headers":{}}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"x-forwarded-for":"a","X-Forwarded-For":"b"}}],"ok":true}
+{"fn":"hasForwardingHeaders","args":[{"headers":["x-forwarded-for"]}],"ok":false}
+{"fn":"hasForwardingHeaders","args":[{"headers":{"0":"x-forwarded-for","1":"cf-ray"}}],"ok":false}

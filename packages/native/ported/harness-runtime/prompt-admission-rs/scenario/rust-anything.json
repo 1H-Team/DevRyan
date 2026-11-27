@@ -1,0 +1,30 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/native/ported/harness-runtime/prompt-admission-rs/scenario-js",
+  "unit": "prompt-admission-scenario.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "prompt-admission-scenario-rs",
+  "exports": [
+    {
+      "name": "runPromptAdmission",
+      "file": "prompt-admission-scenario.js",
+      "line": 10,
+      "params": [
+        {
+          "name": "steps",
+          "ts_type": "{ op: string, name?: unknown, block?: unknown, hold?: number }[]",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown[]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

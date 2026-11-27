@@ -1,0 +1,37 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib",
+  "unit": "legacy-api-path.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "legacy-api-path-rs",
+  "exports": [
+    {
+      "name": "canonicalApiUrl",
+      "file": "legacy-api-path.js",
+      "line": 11,
+      "params": [
+        {
+          "name": "url",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "legacyApiPathRewrite",
+      "file": "legacy-api-path.js",
+      "line": 17,
+      "reason": "middleware, mutates req and calls next"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+bin.name = "devryan"
+args = ["logs", "--all"]
+status.code = 1
+fs.sandbox = true

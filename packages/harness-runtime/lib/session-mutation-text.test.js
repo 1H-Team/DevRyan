@@ -1,6 +1,61 @@
-import { expect, test } from 'bun:test';
-import { applyMutationText, decodeMutationRunRows, encodeMutationRunRows, initialMutationRuns, minimizeMutationAncestry, mutationDiff, mutationText,
-  visibleMutationRuns } from './session-mutation-text.js';
+import { expect, test as bunTest } from 'bun:test';
+import { withExecutionTiming } from './execution-admission.js';
+import { applyMutationText, decodeMutationRunRows, encodeMutationRunRows, initialMutationRuns, javascriptMutationDiff, minimizeMutationAncestry, mutationDiff,
+  mutationDiffPaths, mutationText, visibleMutationRuns } from './session-mutation-text.js';
+
+// Every case runs twice: on the JavaScript path (the switch unset) and on the
+// Rust path (DEVRYAN_LEDGER_RUST=1). The path counters make a silent fallback
+// fail: a Rust run must not reach the JavaScript diff at all, and a case that
+// diffs must be answered by the Rust core at least once. A JavaScript run must
+// never reach the core. Cases that never diff a pair past the early exits
+// (codecs, compaction) are named here and still run on both paths.
+const NO_RUST_DIFF = new Set([
+  'format 2 rows store run metadata once and decode to the same runs as format 1 rows',
+  'compaction keeps partially overlapping ranges and drops a range covered by several',
+  'compaction refuses cyclic or malformed ancestry',
+]);
+const SWITCH = 'DEVRYAN_LEDGER_RUST';
+async function onPath(rust, action) {
+  const previous = process.env[SWITCH];
+  if (rust) process.env[SWITCH] = '1'; else delete process.env[SWITCH];
+  const start = mutationDiffPaths();
+  try { await action(); } finally { if (previous === undefined) delete process.env[SWITCH]; else process.env[SWITCH] = previous; }
+  const end = mutationDiffPaths();
+  return Object.fromEntries(Object.keys(end).map((key) => [key, end[key] - start[key]]));
+}
+bunTest('a fallback on the Rust path runs the JavaScript diff and reaches the execution journal once', async () => {
+  // A budget that is not a safe integer stays on the JavaScript path (the
+  // core takes integers only): the result is the reference's, and the cause
+  // is journaled through the execution's diagnostics, once.
+  const records = [];
+  const input = { sessionID: 'ses_fallback', messageID: 'msg_fallback', callID: 'call_fallback' };
+  const used = await onPath(true, () => withExecutionTiming(input, async () => {
+    for (const budget of [10.5, 3.25]) expect(mutationDiff('abcdef', 'abXdef', { budget })).toEqual(javascriptMutationDiff('abcdef', 'abXdef', { budget }));
+  }, { phase: 'fallback_probe', onDiagnostic: (record) => records.push(record) }));
+  expect(used).toEqual({ rust: 0, javascript: 2, early: 0 });
+  expect(records.filter((record) => record.phase === 'ledger_core')).toEqual([
+    { event: 'session_execution', ...input, phase: 'ledger_core', state: 'fallback', code: 'ledger_core_budget' }]);
+  // Off, the core is never asked, so nothing is journaled.
+  const quiet = [];
+  const off = await onPath(false, () => withExecutionTiming(input, async () => { mutationDiff('abcdef', 'abXdef', { budget: 10.5 }); },
+    { phase: 'fallback_probe', onDiagnostic: (record) => quiet.push(record) }));
+  expect(off).toEqual({ rust: 0, javascript: 1, early: 0 });
+  expect(quiet.filter((record) => record.phase === 'ledger_core')).toEqual([]);
+});
+
+const test = (name, action, timeout) => {
+  bunTest(`${name} [javascript]`, async () => {
+    const used = await onPath(false, action);
+    expect(used.rust).toBe(0);
+    expect(used.early).toBe(0);
+  }, timeout);
+  bunTest(`${name} [rust]`, async () => {
+    const used = await onPath(true, action);
+    expect(used.javascript).toBe(0);
+    if (NO_RUST_DIFF.has(name)) expect(used.rust).toBe(0);
+    else expect(used.rust).toBeGreaterThan(0);
+  }, timeout);
+};
 
 const sequentialCases = [
   ['ac', ['abc', 'aXbc'], [[0, 'aXc']]],

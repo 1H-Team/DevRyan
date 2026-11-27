@@ -1,0 +1,73 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/multi-user",
+  "unit": "dotenv-visibility.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "dotenv-visibility-rs",
+  "exports": [
+    {
+      "name": "isProtectedDotenvPath",
+      "file": "dotenv-visibility.js",
+      "line": 30,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "shouldHideProtectedDotenv",
+      "file": "dotenv-visibility.js",
+      "line": 37,
+      "params": [
+        {
+          "name": "principal",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "filterProtectedDotenvReferences",
+      "file": "dotenv-visibility.js",
+      "line": 60,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "createDotenvVisibilityMiddleware",
+      "file": "dotenv-visibility.js",
+      "line": 136,
+      "reason": "middleware over req/res, WHATWG URL parsing"
+    }
+  ]
+}

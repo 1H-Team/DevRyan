@@ -13,7 +13,7 @@ const TOKEN_QUERY = [
   'ORDER BY key;',
 ].join(' ');
 
-export const getCursorStateDatabasePath = ({ homedir = os.homedir, pathImpl = path } = {}) =>
+const getCursorStateDatabasePath = ({ homedir = os.homedir, pathImpl = path } = {}) =>
   pathImpl.join(
     homedir(),
     'Library',

@@ -1,0 +1,60 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/native/ported/session-user-activity-rs/mutation-ts",
+  "unit": "session-user-activity-mutation.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "session-user-activity-mutation-rs",
+  "exports": [
+    {
+      "name": "updateFromMessagesReturningDraft",
+      "file": "session-user-activity-mutation.ts",
+      "line": 10,
+      "params": [
+        {
+          "name": "draft",
+          "ts_type": "State",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "sessionID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{ result: boolean; draft: State }",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "updateFromMessageReturningDraft",
+      "file": "session-user-activity-mutation.ts",
+      "line": 15,
+      "params": [
+        {
+          "name": "draft",
+          "ts_type": "State",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "message",
+          "ts_type": "Message",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{ result: boolean; draft: State }",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

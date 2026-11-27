@@ -1,0 +1,19 @@
+{
+  "unit": "event-pipeline-connection-state.ts",
+  "files": 1,
+  "fingerprint": "01aa098de1f25f22",
+  "cases": 204,
+  "cases_hash": "f26991701ccc6c59",
+  "coverage": {
+    "lines": 34,
+    "reached": 34,
+    "files": [
+      {
+        "file": "event-pipeline-connection-state.ts",
+        "lines": 34,
+        "reached": 34,
+        "missed": ""
+      }
+    ]
+  }
+}

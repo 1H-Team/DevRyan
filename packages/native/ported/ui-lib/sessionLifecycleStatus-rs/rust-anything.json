@@ -1,0 +1,30 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "sessionLifecycleStatus.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "sessionlifecyclestatus-rs",
+  "exports": [
+    {
+      "name": "deriveSessionLifecycleStatus",
+      "file": "sessionLifecycleStatus.ts",
+      "line": 66,
+      "params": [
+        {
+          "name": "inputs",
+          "ts_type": "SessionLifecycleInputs",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "(| { kind: 'idle'; planModeOn: boolean }\n  | { kind: 'streaming'; planModeOn: boolean }\n  | { kind: 'awaiting-question'; questionCount: number }\n  | { kind: 'plan-proposed'; sourceMessageId?: string }\n  | { kind: 'plan-executing'; sourceMessageId?: string }\n  | { kind: 'error'; message: string })",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

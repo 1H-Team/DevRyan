@@ -1,0 +1,11 @@
+{"fn": "isAnthropicProviderId", "args": ["anthropic"]}
+{"fn": "isAnthropicProviderId", "args": [" Claude "]}
+{"fn": "isAnthropicProviderId", "args": ["ANTHROPIC-OAUTH"]}
+{"fn": "isAnthropicProviderId", "args": ["opencode-with-claude"]}
+{"fn": "isAnthropicProviderId", "args": ["claude-agent"]}
+{"fn": "isAnthropicProviderId", "args": ["openai"]}
+{"fn": "isAnthropicProviderId", "args": [""]}
+{"fn": "isAnthropicProviderId", "args": [null]}
+{"fn": "isAnthropicProviderId", "args": [5]}
+{"fn": "isAnthropicProviderId", "args": [["claude"]]}
+{"fn": "isAnthropicProviderId", "args": ["﻿claude"]}

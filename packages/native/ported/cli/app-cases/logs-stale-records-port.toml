@@ -1,0 +1,5 @@
+bin.name = "devryan"
+args = ["logs", "--port", "3000"]
+status.code = 1
+fs.sandbox = true
+fs.base = "logs-stale-records-port.in"

@@ -1,0 +1,4 @@
+bin.name = "devryan"
+args = ["__lookupSetter__"]
+status.code = 0
+fs.sandbox = true

@@ -1,0 +1,133 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "sessionTitles.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "sessiontitles-rs",
+  "exports": [
+    {
+      "name": "isCursorAcpErrorTitle",
+      "file": "sessionTitles.ts",
+      "line": 105,
+      "params": [
+        {
+          "name": "title",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isGeneratedNewSessionTitle",
+      "file": "sessionTitles.ts",
+      "line": 112,
+      "params": [
+        {
+          "name": "title",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isPlanControlSessionTitle",
+      "file": "sessionTitles.ts",
+      "line": 119,
+      "params": [
+        {
+          "name": "title",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "deriveSessionTitleFromUserText",
+      "file": "sessionTitles.ts",
+      "line": 126,
+      "params": [
+        {
+          "name": "text",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        },
+        {
+          "name": "fallback",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isPlaceholderSessionTitle",
+      "file": "sessionTitles.ts",
+      "line": 157,
+      "params": [
+        {
+          "name": "title",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "resolveDisplaySessionTitle",
+      "file": "sessionTitles.ts",
+      "line": 181,
+      "params": [
+        {
+          "name": "arg0",
+          "ts_type": "{\n  title?: string | null\n  latestUserText?: string | null\n  fallback?: string\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "mergeSessionPreservingMeaningfulTitle",
+      "file": "sessionTitles.ts",
+      "line": 166,
+      "reason": "rests on the managed-task display-name formatter of @devryan/orchestration-runtime"
+    }
+  ]
+}

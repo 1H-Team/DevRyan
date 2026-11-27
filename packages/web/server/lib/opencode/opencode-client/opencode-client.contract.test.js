@@ -10,7 +10,7 @@ import { createLoopbackOpenCodeFixtureForGeneration } from '../../../../../../sc
 import { PERF_CHILD_SESSION_IDS, PERF_PARENT_SESSION_ID } from '../../../../../../scripts/perf/fixture-session-seeds.mjs';
 import { createOpenCodeAdmission } from '../v2/admission.js';
 import { TARGET_OPENCODE_V2_VERSION } from '../readiness-probe.js';
-import { NO_CONTENT, isNoContent, readResponseBody, unwrapData, unwrapList, unwrapLocated, unwrapPage, unwrapV1Payload } from './envelope.js';
+import { NO_CONTENT, isNoContent, readResponseBody, unwrapData, unwrapList, unwrapPage, unwrapV1Payload } from './envelope.js';
 import { createV2HttpError, mapV2ErrorResponse, nativeRefusalCode, OPENCODE_CLIENT_ERROR_CODES, OpenCodeClientError, V2_ERROR_TAG_CODES } from './errors.js';
 import { createOpenCodeClient, OPENCODE_CLIENT_SHAPE } from './index.js';
 import { translateLocation } from './location.js';
@@ -705,7 +705,6 @@ describe('envelopes', () => {
     expect(unwrapData({ interrupted: false })).toEqual({ interrupted: false });
     expect(unwrapData(NO_CONTENT)).toBeNull();
     expect(isNoContent(NO_CONTENT)).toBe(true);
-    expect(unwrapLocated({ location: { directory: '/a' }, data: [1] })).toEqual({ location: { directory: '/a' }, data: [1] });
     expect(unwrapPage({ data: [1, 2], cursor: { previous: 'p', next: 'n' } })).toEqual({ data: [1, 2], next: 'n', previous: 'p' });
     expect(unwrapPage({ data: [], cursor: { previous: null, next: null } })).toEqual({ data: [], next: undefined, previous: undefined });
     expect(unwrapList({ location: { directory: '/a' }, data: [3] })).toEqual([3]);

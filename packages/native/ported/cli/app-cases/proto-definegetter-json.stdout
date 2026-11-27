@@ -1,0 +1,6 @@
+{
+  "status": "error",
+  "error": {
+    "message": "Object.prototype.__defineGetter__: Expecting function"
+  }
+}

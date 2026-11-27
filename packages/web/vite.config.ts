@@ -5,7 +5,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { VitePWA } from 'vite-plugin-pwa';
-import { themeStoragePlugin } from '../../vite-theme-plugin';
 import { vendorCodeSplitting } from './vite-chunking';
 import { terminalAssetsPlugin } from './vite-terminal-assets';
 
@@ -39,7 +38,6 @@ export default defineConfig({
         ];
       },
     },
-    themeStoragePlugin(),
     VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src',

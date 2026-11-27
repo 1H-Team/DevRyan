@@ -1,0 +1,19 @@
+{
+  "unit": "session-cache.ts",
+  "files": 1,
+  "fingerprint": "8fa40a8bcfe225ff",
+  "cases": 204,
+  "cases_hash": "3381d92d88939d9d",
+  "coverage": {
+    "lines": 94,
+    "reached": 48,
+    "files": [
+      {
+        "file": "session-cache.ts",
+        "lines": 94,
+        "reached": 48,
+        "missed": "56-57, 59-64, 66-75, 77-85, 88-106"
+      }
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "unit": "host-stall-clock-scenario.js",
+  "files": 1,
+  "fingerprint": "d621bf02fcb89224",
+  "cases": 213,
+  "cases_hash": "6099accecc57a4b8",
+  "coverage": {
+    "lines": 100,
+    "reached": 95,
+    "files": [
+      {
+        "file": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/harness-runtime/lib/host-stall-clock.js",
+        "lines": 74,
+        "reached": 69,
+        "missed": "67-71"
+      },
+      {
+        "file": "host-stall-clock-scenario.js",
+        "lines": 26,
+        "reached": 26,
+        "missed": ""
+      }
+    ]
+  }
+}

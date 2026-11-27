@@ -1,0 +1,5 @@
+bin.name = "devryan"
+args = ["logs", "--all", "--no-follow", "--json"]
+status.code = 1
+fs.sandbox = true
+fs.base = "logs-free-pids-all.in"

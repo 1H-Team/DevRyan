@@ -1,0 +1,6 @@
+{
+  "status": "error",
+  "error": {
+    "message": "Unsupported shell 'nu'. Supported: bash, zsh, fish."
+  }
+}

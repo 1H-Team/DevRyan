@@ -1,0 +1,1 @@
+{"fn":"applyPendingPartDeltasToParts","args":[[{"id":"reasoning_1","messageID":"msg_1","sessionID":"ses_1","type":"reasoning","text":""}],"reasoning_1",[{"messageID":"msg_1","partID":"reasoning_1","field":"text","delta":"The user requests to continue implementing the complete explanation.","updatedAt":1}],{"sanitizeAssistantText":true}]}

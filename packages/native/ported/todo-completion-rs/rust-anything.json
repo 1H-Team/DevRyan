@@ -1,0 +1,54 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "todo-completion.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "todo-completion-rs",
+  "exports": [
+    {
+      "name": "hasIncompleteTodos",
+      "file": "todo-completion.ts",
+      "line": 7,
+      "params": [
+        {
+          "name": "todos",
+          "ts_type": "readonly unknown[] | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "mayAutoContinueOpenTodos",
+      "file": "todo-completion.ts",
+      "line": 31,
+      "params": [
+        {
+          "name": "message",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "todos",
+          "ts_type": "readonly unknown[] | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

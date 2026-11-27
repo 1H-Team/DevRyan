@@ -1,0 +1,31 @@
+{
+  "unit": "protocol.js",
+  "files": 1,
+  "fingerprint": "badbf79e347b2564",
+  "cases": 321,
+  "cases_hash": "c87cdd0556f16647",
+  "coverage": {
+    "lines": 252,
+    "reached": 178,
+    "files": [
+      {
+        "file": "event-dialect.js",
+        "lines": 31,
+        "reached": 23,
+        "missed": "14-21"
+      },
+      {
+        "file": "payload-serialization.js",
+        "lines": 39,
+        "reached": 33,
+        "missed": "26-29, 42-43"
+      },
+      {
+        "file": "protocol.js",
+        "lines": 182,
+        "reached": 122,
+        "missed": "119-123, 131-133, 136-138, 140, 142-148, 150-159, 161-180, 182-186, 203-208"
+      }
+    ]
+  }
+}

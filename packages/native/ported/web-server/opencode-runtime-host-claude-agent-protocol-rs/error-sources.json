@@ -1,0 +1,111 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:16",
+      "text": "if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !allowed.includes(key))) throw fail();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:18",
+      "text": "const id = value => { if (typeof value !== 'string' || !/^[a-f0-9-]{32,64}$/.test(value)) throw fail(); };"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:19",
+      "text": "const text = (value, max) => { if (typeof value !== 'string' || value.length > max || value.includes('\\0')) throw fail(); };"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:22",
+      "text": "|| !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) throw fail();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:24",
+      "text": "if (decoded.toString('base64') !== value || decoded.length > CLAUDE_AGENT_CHUNK_BYTES) throw fail();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:27",
+      "text": "if (typeof value !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) throw fail();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:31",
+      "text": "if (Buffer.byteLength(JSON.stringify(value) ?? '') > 60 * 1024) throw fail();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:36",
+      "text": "if (value.protocol !== 1 || value.type !== 'claude-agent' || !['spawn', 'stdin', 'end', 'kill', 'session'].includes(action)) throw fail();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:39",
+      "text": "if (!Array.isArray(value.args) || value.args.length > 128) throw fail();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:42",
+      "text": "if (!path.isAbsolute(value.cwd) || /[\\u0000-\\u001f]/.test(value.cwd)) throw fail();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:44",
+      "text": "if (Object.keys(value.env).length > 256) throw fail();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:46",
+      "text": "if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name)) throw fail();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:51",
+      "text": "if (action === 'kill' && !SIGNALS.includes(value.signal)) throw fail();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:53",
+      "text": "if (!SESSION_OPERATIONS.includes(value.operation)) throw fail();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:56",
+      "text": "else if (value.messageID !== undefined) throw fail();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:63",
+      "text": "if (Buffer.byteLength(JSON.stringify(value) ?? '') > 8 * 1024 * 1024) throw fail();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:67",
+      "text": "if (value.protocol !== 1 || value.type !== 'claude-agent-reply' || !['started', 'stdout', 'exit', 'result', 'error'].includes(action)) throw fail();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:71",
+      "text": "if (value.code !== null && (!Number.isSafeInteger(value.code) || value.code < 0 || value.code > 255)) throw fail();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:72",
+      "text": "if (value.signal !== null && (typeof value.signal !== 'string' || !/^SIG[A-Z0-9]{1,16}$/.test(value.signal))) throw fail();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:73",
+      "text": "if (value.error !== undefined && !CLAUDE_AGENT_ERRORS.includes(value.error)) throw fail();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:75",
+      "text": "if (action === 'error' && !CLAUDE_AGENT_ERRORS.includes(value.error)) throw fail();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:81",
+      "text": "if (!Array.isArray(result.messages) || result.messages.length > 100_000) throw fail();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:83",
+      "text": "if (!Array.isArray(pair) || pair.length !== 2) throw fail();"
+    }
+  ],
+  "product": [
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/claude-agent-protocol.js:14",
+      "class": "Error",
+      "sample": "claude_agent_invalid"
+    }
+  ],
+  "engine": [
+    {
+      "site": "JSON.stringify (<anonymous>)",
+      "class": "TypeError",
+      "sample": "Do not know how to serialize a BigInt"
+    }
+  ]
+}

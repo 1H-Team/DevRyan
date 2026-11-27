@@ -10,7 +10,6 @@ import {
   ensureDirs,
   parseMdFile,
   writeMdFile,
-  readConfigLayers,
   walkSkillMdFiles,
   addSkillFromMdFile,
   resolveSkillSearchDirectories,
@@ -107,29 +106,6 @@ function getSkillScope(skillName, workingDirectory) {
   }
   
   return { scope: null, path: null, source: null };
-}
-
-function getSkillWritePath(skillName, workingDirectory, requestedScope) {
-  const existing = getSkillScope(skillName, workingDirectory);
-  if (existing.path) {
-    return existing;
-  }
-  
-  const scope = requestedScope || (workingDirectory ? SKILL_SCOPE.PROJECT : SKILL_SCOPE.USER);
-  if (scope === SKILL_SCOPE.PROJECT && workingDirectory) {
-    ensureProjectSkillDir(workingDirectory);
-    return { 
-      scope: SKILL_SCOPE.PROJECT, 
-      path: getProjectSkillPath(workingDirectory, skillName),
-      source: 'opencode'
-    };
-  }
-  
-  return { 
-    scope: SKILL_SCOPE.USER, 
-    path: getUserSkillPath(skillName),
-    source: 'opencode'
-  };
 }
 
 function discoverSkills(workingDirectory) {
@@ -419,7 +395,6 @@ function deleteSkill(skillName, workingDirectory, discoveredSkill = null) {
 export {
   getSkillSources,
   getSkillScope,
-  getSkillWritePath,
   discoverSkills,
   createSkill,
   updateSkill,

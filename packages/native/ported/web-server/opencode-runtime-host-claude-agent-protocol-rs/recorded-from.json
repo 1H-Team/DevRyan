@@ -1,0 +1,19 @@
+{
+  "unit": "claude-agent-protocol.js",
+  "files": 1,
+  "fingerprint": "4af2be7afa8f4d0a",
+  "cases": 193,
+  "cases_hash": "6fb803361766855c",
+  "coverage": {
+    "lines": 84,
+    "reached": 84,
+    "files": [
+      {
+        "file": "claude-agent-protocol.js",
+        "lines": 84,
+        "reached": 84,
+        "missed": ""
+      }
+    ]
+  }
+}

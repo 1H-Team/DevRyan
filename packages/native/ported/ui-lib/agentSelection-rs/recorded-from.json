@@ -1,0 +1,19 @@
+{
+  "unit": "agentSelection.ts",
+  "files": 1,
+  "fingerprint": "8f675da6f09b0ff2",
+  "cases": 1902,
+  "cases_hash": "eb2df303e67b6979",
+  "coverage": {
+    "lines": 87,
+    "reached": 62,
+    "files": [
+      {
+        "file": "agentSelection.ts",
+        "lines": 87,
+        "reached": 62,
+        "missed": "29-30, 49-54, 56-57, 59-60, 63-67, 69-70, 73-76, 78-79"
+      }
+    ]
+  }
+}

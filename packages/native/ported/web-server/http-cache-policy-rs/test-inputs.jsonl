@@ -1,0 +1,8 @@
+{"fn":"shouldDisableHttpCache","args":["/api/session/ses_123/message?limit=500"]}
+{"fn":"shouldDisableHttpCache","args":["/api/git/file-diff?directory=/tmp/repo"]}
+{"fn":"shouldDisableHttpCache","args":["/api/preview/proxy/id/src/App.tsx"]}
+{"fn":"shouldDisableHttpCache","args":["/health"]}
+{"fn":"shouldDisableHttpCache","args":["/assets/index-abc123.js"]}
+{"fn":"shouldDisableHttpCache","args":["/favicon.ico"]}
+{"fn":"shouldDisableHttpCache","args":["/api/session/ses_123/message"]}
+{"fn":"shouldDisableHttpCache","args":["/api/event"]}

@@ -1,0 +1,19 @@
+{
+  "unit": "hunk-validation.js",
+  "files": 1,
+  "fingerprint": "eee4c3b185123673",
+  "cases": 107,
+  "cases_hash": "ef490249bf5f4648",
+  "coverage": {
+    "lines": 17,
+    "reached": 17,
+    "files": [
+      {
+        "file": "hunk-validation.js",
+        "lines": 17,
+        "reached": 17,
+        "missed": ""
+      }
+    ]
+  }
+}

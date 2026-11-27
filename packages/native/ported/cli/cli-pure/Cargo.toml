@@ -1,0 +1,13 @@
+[package]
+name = "cli-pure"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "The pure part of the devryan CLI (packages/web/bin/cli.js): argument parsing, version, help, usage and argument errors, shell completion, runtime argument checks"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+
+[workspace]

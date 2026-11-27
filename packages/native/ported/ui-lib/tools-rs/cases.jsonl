@@ -1,0 +1,228 @@
+{"fn":"getToolPermissionAliases","args":["😀"],"ok":["😀"]}
+{"fn":"getToolPermissionAliases","args":["ΣΊΣΥΦΟΣ"],"ok":["ΣΊΣΥΦΟΣ"]}
+{"fn":"getToolPermissionAliases","args":["日本語のテキストé"],"ok":["日本語のテキストé"]}
+{"fn":"getToolPermissionAliases","args":["  padded  é"],"ok":["  padded  é"]}
+{"fn":"getToolPermissionAliases","args":["İstanbul"],"ok":["İstanbul"]}
+{"fn":"getToolPermissionAliases","args":["abc"],"ok":["abc"]}
+{"fn":"getToolPermissionAliases","args":["a:b:c"],"ok":["a:b:c"]}
+{"fn":"getToolPermissionAliases","args":["a😀b😀c"],"ok":["a😀b😀c"]}
+{"fn":"getToolPermissionAliases","args":["tab\tseparated"],"ok":["tab\tseparated"]}
+{"fn":"getToolPermissionAliases","args":["a.b.c"],"ok":["a.b.c"]}
+{"fn":"getToolPermissionAliases","args":["日本語のテキスト"],"ok":["日本語のテキスト"]}
+{"fn":"getToolPermissionAliases","args":["line1\nline2"],"ok":["line1\nline2"]}
+{"fn":"getToolPermissionAliases","args":["hello worldstraße"],"ok":["hello worldstraße"]}
+{"fn":"getToolPermissionAliases","args":["trailing."],"ok":["trailing."]}
+{"fn":"getToolPermissionAliases","args":["é"],"ok":["é"]}
+{"fn":"getToolPermissionAliases","args":["src/a/b.ts"],"ok":["src/a/b.ts"]}
+{"fn":"getToolPermissionAliases","args":["ns:key.path"],"ok":["ns:key.path"]}
+{"fn":"getToolPermissionAliases","args":["hello"],"ok":["hello"]}
+{"fn":"getToolPermissionAliases","args":["ab"],"ok":["ab"]}
+{"fn":"getToolPermissionAliases","args":["a..b"],"ok":["a..b"]}
+{"fn":"getToolPermissionAliases","args":[""],"ok":[""]}
+{"fn":"getToolPermissionAliases","args":["trailing.tab\tseparated"],"ok":["trailing.tab\tseparated"]}
+{"fn":"getToolPermissionAliases","args":["İstanbul日本語のテキスト"],"ok":["İstanbul日本語のテキスト"]}
+{"fn":"getToolPermissionAliases","args":["a"],"ok":["a"]}
+{"fn":"getToolPermissionAliases","args":["key_name-1"],"ok":["key_name-1"]}
+{"fn":"getToolPermissionAliases","args":["straße"],"ok":["straße"]}
+{"fn":"getToolPermissionAliases","args":["ünïcödé"],"ok":["ünïcödé"]}
+{"fn":"getToolPermissionAliases","args":["étrailing."],"ok":["étrailing."]}
+{"fn":"getToolPermissionAliases","args":["HELLO"],"ok":["HELLO"]}
+{"fn":"getToolPermissionAliases","args":["日本語のテキストns:key.path"],"ok":["日本語のテキストns:key.path"]}
+{"fn":"getToolPermissionAliases","args":["日本語のテキスト./x/**/*.json"],"ok":["日本語のテキスト./x/**/*.json"]}
+{"fn":"getToolPermissionAliases","args":[":line1\nline2"],"ok":[":line1\nline2"]}
+{"fn":"getToolPermissionAliases","args":["İstanbula:b:c"],"ok":["İstanbula:b:c"]}
+{"fn":"getToolPermissionAliases","args":["ns:key.pathünïcödé"],"ok":["ns:key.pathünïcödé"]}
+{"fn":"getToolPermissionAliases","args":["  padded  "],"ok":["  padded  "]}
+{"fn":"getToolPermissionAliases","args":["asrc/a/b.ts"],"ok":["asrc/a/b.ts"]}
+{"fn":"getToolPermissionAliases","args":[":"],"ok":[":"]}
+{"fn":"getToolPermissionAliases","args":["emoji 👍🏽 mix"],"ok":["emoji 👍🏽 mix"]}
+{"fn":"getToolPermissionAliases","args":["Hello World{name} has {count} items"],"ok":["Hello World{name} has {count} items"]}
+{"fn":"getToolPermissionAliases","args":["{name} has {count} items  padded  "],"ok":["{name} has {count} items  padded  "]}
+{"fn":"getToolPermissionAliases","args":["{name} has {count} itemsİstanbul"],"ok":["{name} has {count} itemsİstanbul"]}
+{"fn":"getToolPermissionAliases","args":[".leading"],"ok":[".leading"]}
+{"fn":"getToolPermissionAliases","args":["abab"],"ok":["abab"]}
+{"fn":"getToolPermissionAliases","args":["Hello World"],"ok":["Hello World"]}
+{"fn":"getToolPermissionAliases","args":["{name} has {count} items"],"ok":["{name} has {count} items"]}
+{"fn":"getToolPermissionAliases","args":["./x/**/*.json"],"ok":["./x/**/*.json"]}
+{"fn":"getToolPermissionAliases","args":["éhello world"],"ok":["éhello world"]}
+{"fn":"getToolPermissionAliases","args":["ékey_name-1"],"ok":["ékey_name-1"]}
+{"fn":"getToolPermissionAliases","args":["ab日本語のテキスト"],"ok":["ab日本語のテキスト"]}
+{"fn":"getToolPermissionAliases","args":[".leading日本語のテキスト"],"ok":[".leading日本語のテキスト"]}
+{"fn":"getToolPermissionAliases","args":["abckey_name-1"],"ok":["abckey_name-1"]}
+{"fn":"getToolPermissionAliases","args":["a:b:csrc/a/b.ts"],"ok":["a:b:csrc/a/b.ts"]}
+{"fn":"getToolPermissionAliases","args":[".leadingkey_name-1"],"ok":[".leadingkey_name-1"]}
+{"fn":"getToolPermissionAliases","args":["aΣΊΣΥΦΟΣ"],"ok":["aΣΊΣΥΦΟΣ"]}
+{"fn":"getToolPermissionAliases","args":["hello world"],"ok":["hello world"]}
+{"fn":"getToolPermissionAliases","args":["HELLO{name} has {count} items"],"ok":["HELLO{name} has {count} items"]}
+{"fn":"getToolPermissionAliases","args":["hellokey_name-1"],"ok":["hellokey_name-1"]}
+{"fn":"getToolPermissionAliases","args":["  padded  a:b:c"],"ok":["  padded  a:b:c"]}
+{"fn":"getToolPermissionAliases","args":["{name} has {count} items./x/**/*.json"],"ok":["{name} has {count} items./x/**/*.json"]}
+{"fn":"getToolPermissionAliases","args":["ns:key.pathHello World"],"ok":["ns:key.pathHello World"]}
+{"fn":"getToolPermissionAliases","args":["src/a/b.ts﻿bom"],"ok":["src/a/b.ts﻿bom"]}
+{"fn":"getToolPermissionAliases","args":["﻿bom"],"ok":["﻿bom"]}
+{"fn":"getToolPermissionAliases","args":["ünïcödéab"],"ok":["ünïcödéab"]}
+{"fn":"getToolPermissionAliases","args":["a😀b😀c日本語のテキスト"],"ok":["a😀b😀c日本語のテキスト"]}
+{"fn":"getToolPermissionAliases","args":["ns:key.pathns:key.path"],"ok":["ns:key.pathns:key.path"]}
+{"fn":"getToolPermissionAliases","args":["ΣΊΣΥΦΟΣ.leading"],"ok":["ΣΊΣΥΦΟΣ.leading"]}
+{"fn":"getToolPermissionAliases","args":["straße日本語のテキスト"],"ok":["straße日本語のテキスト"]}
+{"fn":"getToolPermissionAliases","args":["trailing.İstanbul"],"ok":["trailing.İstanbul"]}
+{"fn":"getToolPermissionAliases","args":["a.b.c😀"],"ok":["a.b.c😀"]}
+{"fn":"getToolPermissionAliases","args":["ünïcödéa..b"],"ok":["ünïcödéa..b"]}
+{"fn":"getToolPermissionAliases","args":["ünïcödéa😀b😀c"],"ok":["ünïcödéa😀b😀c"]}
+{"fn":"getToolPermissionAliases","args":[".leadinga..b"],"ok":[".leadinga..b"]}
+{"fn":"getToolPermissionAliases","args":["a..bemoji 👍🏽 mix"],"ok":["a..bemoji 👍🏽 mix"]}
+{"fn":"getToolPermissionAliases","args":["a:b:cab"],"ok":["a:b:cab"]}
+{"fn":"getToolPermissionAliases","args":["abé"],"ok":["abé"]}
+{"fn":"getToolPermissionAliases","args":["{name} has {count} itemstrailing."],"ok":["{name} has {count} itemstrailing."]}
+{"fn":"getToolPermissionAliases","args":["{name} has {count} items日本語のテキスト"],"ok":["{name} has {count} items日本語のテキスト"]}
+{"fn":"getToolPermissionAliases","args":["a./x/**/*.json"],"ok":["a./x/**/*.json"]}
+{"fn":"getToolPermissionAliases","args":["a..b﻿bom"],"ok":["a..b﻿bom"]}
+{"fn":"getToolPermissionAliases","args":["éa"],"ok":["éa"]}
+{"fn":"getToolPermissionAliases","args":["src/a/b.tsline1\nline2"],"ok":["src/a/b.tsline1\nline2"]}
+{"fn":"getToolPermissionAliases","args":["aünïcödé"],"ok":["aünïcödé"]}
+{"fn":"getToolPermissionAliases","args":["trailing.ünïcödé"],"ok":["trailing.ünïcödé"]}
+{"fn":"getToolPermissionAliases","args":["Hello Worldünïcödé"],"ok":["Hello Worldünïcödé"]}
+{"fn":"getToolPermissionAliases","args":["./x/**/*.jsonsrc/a/b.ts"],"ok":["./x/**/*.jsonsrc/a/b.ts"]}
+{"fn":"getToolPermissionAliases","args":["hellons:key.path"],"ok":["hellons:key.path"]}
+{"fn":"getToolPermissionAliases","args":["hellotrailing."],"ok":["hellotrailing."]}
+{"fn":"getToolPermissionAliases","args":["éa😀b😀c"],"ok":["éa😀b😀c"]}
+{"fn":"getToolPermissionAliases","args":["İstanbulline1\nline2"],"ok":["İstanbulline1\nline2"]}
+{"fn":"getToolPermissionAliases","args":["a.b.cünïcödé"],"ok":["a.b.cünïcödé"]}
+{"fn":"getToolPermissionAliases","args":["😀a:b:c"],"ok":["😀a:b:c"]}
+{"fn":"getToolPermissionAliases","args":["straßehello world"],"ok":["straßehello world"]}
+{"fn":"getToolPermissionAliases","args":["Hello Worldns:key.path"],"ok":["Hello Worldns:key.path"]}
+{"fn":"getToolPermissionAliases","args":["straßeline1\nline2"],"ok":["straßeline1\nline2"]}
+{"fn":"getToolPermissionAliases","args":["src/a/b.tsa😀b😀c"],"ok":["src/a/b.tsa😀b😀c"]}
+{"fn":"getToolPermissionAliases","args":["{name} has {count} itemsline1\nline2"],"ok":["{name} has {count} itemsline1\nline2"]}
+{"fn":"getToolPermissionAliases","args":["étab\tseparated"],"ok":["étab\tseparated"]}
+{"fn":"getToolPermissionAliases","args":["a:b:ca"],"ok":["a:b:ca"]}
+{"fn":"getToolPermissionAliases","args":[".leadinga😀b😀c"],"ok":[".leadinga😀b😀c"]}
+{"fn":"getToolPermissionAliases","args":["HELLOünïcödé"],"ok":["HELLOünïcödé"]}
+{"fn":"getToolPermissionAliases","args":["line1\nline2a:b:c"],"ok":["line1\nline2a:b:c"]}
+{"fn":"getToolPermissionAliases","args":["ΣΊΣΥΦΟΣünïcödé"],"ok":["ΣΊΣΥΦΟΣünïcödé"]}
+{"fn":"getToolPermissionAliases","args":["﻿boma..b"],"ok":["﻿boma..b"]}
+{"fn":"getToolPermissionAliases","args":["Hello World.leading"],"ok":["Hello World.leading"]}
+{"fn":"getToolPermissionAliases","args":["😀ab"],"ok":["😀ab"]}
+{"fn":"getToolPermissionAliases","args":["ünïcödétab\tseparated"],"ok":["ünïcödétab\tseparated"]}
+{"fn":"getToolPermissionAliases","args":["a:b:c日本語のテキスト"],"ok":["a:b:c日本語のテキスト"]}
+{"fn":"getToolPermissionAliases","args":["a:b:ckey_name-1"],"ok":["a:b:ckey_name-1"]}
+{"fn":"getToolPermissionAliases","args":["HELLO日本語のテキスト"],"ok":["HELLO日本語のテキスト"]}
+{"fn":"getToolPermissionAliases","args":["HELLOline1\nline2"],"ok":["HELLOline1\nline2"]}
+{"fn":"getToolPermissionAliases","args":["a.b.cΣΊΣΥΦΟΣ"],"ok":["a.b.cΣΊΣΥΦΟΣ"]}
+{"fn":"getToolPermissionAliases","args":["src/a/b.tsHELLO"],"ok":["src/a/b.tsHELLO"]}
+{"fn":"getToolPermissionAliases","args":["straßens:key.path"],"ok":["straßens:key.path"]}
+{"fn":"getToolPermissionAliases","args":[".leadingİstanbul"],"ok":[".leadingİstanbul"]}
+{"fn":"getToolPermissionAliases","args":[":trailing."],"ok":[":trailing."]}
+{"fn":"getToolPermissionAliases","args":["tab\tseparateda:b:c"],"ok":["tab\tseparateda:b:c"]}
+{"fn":"getToolPermissionAliases","args":[".leadingab"],"ok":[".leadingab"]}
+{"fn":"getToolPermissionAliases","args":["hello worldabc"],"ok":["hello worldabc"]}
+{"fn":"getToolPermissionAliases","args":["trailing.hello"],"ok":["trailing.hello"]}
+{"fn":"getToolPermissionAliases","args":["aba😀b😀c"],"ok":["aba😀b😀c"]}
+{"fn":"getToolPermissionAliases","args":[".leadingline1\nline2"],"ok":[".leadingline1\nline2"]}
+{"fn":"getToolPermissionAliases","args":["line1\nline2key_name-1"],"ok":["line1\nline2key_name-1"]}
+{"fn":"getToolPermissionAliases","args":["a😀b😀cHello World"],"ok":["a😀b😀cHello World"]}
+{"fn":"getToolPermissionAliases","args":["ahello"],"ok":["ahello"]}
+{"fn":"getToolPermissionAliases","args":["a.b.cHello World"],"ok":["a.b.cHello World"]}
+{"fn":"getToolPermissionAliases","args":["abΣΊΣΥΦΟΣ"],"ok":["abΣΊΣΥΦΟΣ"]}
+{"fn":"getToolPermissionAliases","args":["tab\tseparatedabc"],"ok":["tab\tseparatedabc"]}
+{"fn":"getToolPermissionAliases","args":["{name} has {count} itemshello"],"ok":["{name} has {count} itemshello"]}
+{"fn":"getToolPermissionAliases","args":["  padded  a😀b😀c"],"ok":["  padded  a😀b😀c"]}
+{"fn":"getToolPermissionAliases","args":["ΣΊΣΥΦΟΣa.b.c"],"ok":["ΣΊΣΥΦΟΣa.b.c"]}
+{"fn":"getToolPermissionAliases","args":["{name} has {count} itemshello world"],"ok":["{name} has {count} itemshello world"]}
+{"fn":"getToolPermissionAliases","args":["é  padded  "],"ok":["é  padded  "]}
+{"fn":"getToolPermissionAliases","args":["﻿bom{name} has {count} items"],"ok":["﻿bom{name} has {count} items"]}
+{"fn":"getToolPermissionAliases","args":["日本語のテキスト日本語のテキスト"],"ok":["日本語のテキスト日本語のテキスト"]}
+{"fn":"getToolPermissionAliases","args":["HELLOa..b"],"ok":["HELLOa..b"]}
+{"fn":"getToolPermissionAliases","args":["a:b:ca😀b😀c"],"ok":["a:b:ca😀b😀c"]}
+{"fn":"getToolPermissionAliases","args":["{name} has {count} itemsünïcödé"],"ok":["{name} has {count} itemsünïcödé"]}
+{"fn":"getToolPermissionAliases","args":["﻿bomHELLO"],"ok":["﻿bomHELLO"]}
+{"fn":"getToolPermissionAliases","args":[":HELLO"],"ok":[":HELLO"]}
+{"fn":"getToolPermissionAliases","args":["HELLOabc"],"ok":["HELLOabc"]}
+{"fn":"getToolPermissionAliases","args":["tab\tseparatedkey_name-1"],"ok":["tab\tseparatedkey_name-1"]}
+{"fn":"getToolPermissionAliases","args":["helloa"],"ok":["helloa"]}
+{"fn":"getToolPermissionAliases","args":["{name} has {count} itemsΣΊΣΥΦΟΣ"],"ok":["{name} has {count} itemsΣΊΣΥΦΟΣ"]}
+{"fn":"getToolPermissionAliases","args":["﻿bomΣΊΣΥΦΟΣ"],"ok":["﻿bomΣΊΣΥΦΟΣ"]}
+{"fn":"getToolPermissionAliases","args":["éHELLO"],"ok":["éHELLO"]}
+{"fn":"getToolPermissionAliases","args":["src/a/b.ts  padded  "],"ok":["src/a/b.ts  padded  "]}
+{"fn":"getToolPermissionAliases","args":["hello﻿bom"],"ok":["hello﻿bom"]}
+{"fn":"getToolPermissionAliases","args":["./x/**/*.jsonHELLO"],"ok":["./x/**/*.jsonHELLO"]}
+{"fn":"getToolPermissionAliases","args":["hello world./x/**/*.json"],"ok":["hello world./x/**/*.json"]}
+{"fn":"getToolPermissionAliases","args":["helloİstanbul"],"ok":["helloİstanbul"]}
+{"fn":"getToolPermissionAliases","args":[".leadinga.b.c"],"ok":[".leadinga.b.c"]}
+{"fn":"getToolPermissionAliases","args":["a.b.chello"],"ok":["a.b.chello"]}
+{"fn":"getToolPermissionAliases","args":["ΣΊΣΥΦΟΣtrailing."],"ok":["ΣΊΣΥΦΟΣtrailing."]}
+{"fn":"getToolPermissionAliases","args":["emoji 👍🏽 mixtab\tseparated"],"ok":["emoji 👍🏽 mixtab\tseparated"]}
+{"fn":"getToolPermissionAliases","args":["  padded  straße"],"ok":["  padded  straße"]}
+{"fn":"getToolPermissionAliases","args":["trailing.ab"],"ok":["trailing.ab"]}
+{"fn":"getToolPermissionAliases","args":["hellohello"],"ok":["hellohello"]}
+{"fn":"getToolPermissionAliases","args":["日本語のテキストhello world"],"ok":["日本語のテキストhello world"]}
+{"fn":"getToolPermissionAliases","args":["trailing.{name} has {count} items"],"ok":["trailing.{name} has {count} items"]}
+{"fn":"getToolPermissionAliases","args":["./x/**/*.jsonstraße"],"ok":["./x/**/*.jsonstraße"]}
+{"fn":"getToolPermissionAliases","args":["key_name-1hello"],"ok":["key_name-1hello"]}
+{"fn":"getToolPermissionAliases","args":["ünïcödékey_name-1"],"ok":["ünïcödékey_name-1"]}
+{"fn":"getToolPermissionAliases","args":["aemoji 👍🏽 mix"],"ok":["aemoji 👍🏽 mix"]}
+{"fn":"getToolPermissionAliases","args":["src/a/b.tsΣΊΣΥΦΟΣ"],"ok":["src/a/b.tsΣΊΣΥΦΟΣ"]}
+{"fn":"getToolPermissionAliases","args":["emoji 👍🏽 mix  padded  "],"ok":["emoji 👍🏽 mix  padded  "]}
+{"fn":"getToolPermissionAliases","args":["HELLO./x/**/*.json"],"ok":["HELLO./x/**/*.json"]}
+{"fn":"getToolPermissionAliases","args":["ΣΊΣΥΦΟΣa"],"ok":["ΣΊΣΥΦΟΣa"]}
+{"fn":"getToolPermissionAliases","args":["aba.b.c"],"ok":["aba.b.c"]}
+{"fn":"getToolPermissionAliases","args":["helloemoji 👍🏽 mix"],"ok":["helloemoji 👍🏽 mix"]}
+{"fn":"getToolPermissionAliases","args":["﻿bom.leading"],"ok":["﻿bom.leading"]}
+{"fn":"getToolPermissionAliases","args":["a.b.cns:key.path"],"ok":["a.b.cns:key.path"]}
+{"fn":"getToolPermissionAliases","args":["ab./x/**/*.json"],"ok":["ab./x/**/*.json"]}
+{"fn":"getToolPermissionAliases","args":["hello worldΣΊΣΥΦΟΣ"],"ok":["hello worldΣΊΣΥΦΟΣ"]}
+{"fn":"getToolPermissionAliases","args":["emoji 👍🏽 mixa..b"],"ok":["emoji 👍🏽 mixa..b"]}
+{"fn":"getToolPermissionAliases","args":["ab  padded  "],"ok":["ab  padded  "]}
+{"fn":"getToolPermissionAliases","args":["İstanbulabc"],"ok":["İstanbulabc"]}
+{"fn":"getToolPermissionAliases","args":["Hello Worlda.b.c"],"ok":["Hello Worlda.b.c"]}
+{"fn":"getToolPermissionAliases","args":["a..ba:b:c"],"ok":["a..ba:b:c"]}
+{"fn":"getToolPermissionAliases","args":["a.b.c.leading"],"ok":["a.b.c.leading"]}
+{"fn":"getToolPermissionAliases","args":["abhello world"],"ok":["abhello world"]}
+{"fn":"getToolPermissionAliases","args":["a..ba.b.c"],"ok":["a..ba.b.c"]}
+{"fn":"getToolPermissionAliases","args":["key_name-1a..b"],"ok":["key_name-1a..b"]}
+{"fn":"getToolPermissionAliases","args":["straße  padded  "],"ok":["straße  padded  "]}
+{"fn":"getToolPermissionAliases","args":["straßetab\tseparated"],"ok":["straßetab\tseparated"]}
+{"fn":"getToolPermissionAliases","args":["éab"],"ok":["éab"]}
+{"fn":"getToolPermissionAliases","args":["😀Hello World"],"ok":["😀Hello World"]}
+{"fn":"getToolPermissionAliases","args":["HELLOé"],"ok":["HELLOé"]}
+{"fn":"getToolPermissionAliases","args":["HELLOhello"],"ok":["HELLOhello"]}
+{"fn":"getToolPermissionAliases","args":["aHELLO"],"ok":["aHELLO"]}
+{"fn":"getToolPermissionAliases","args":["key_name-1ΣΊΣΥΦΟΣ"],"ok":["key_name-1ΣΊΣΥΦΟΣ"]}
+{"fn":"getToolPermissionAliases","args":["HELLOtab\tseparated"],"ok":["HELLOtab\tseparated"]}
+{"fn":"getToolPermissionAliases","args":["aline1\nline2"],"ok":["aline1\nline2"]}
+{"fn":"getToolPermissionAliases","args":["abca:b:c"],"ok":["abca:b:c"]}
+{"fn":"getToolPermissionAliases","args":["日本語のテキストİstanbul"],"ok":["日本語のテキストİstanbul"]}
+{"fn":"getToolPermissionAliases","args":["emoji 👍🏽 mix:"],"ok":["emoji 👍🏽 mix:"]}
+{"fn":"getToolPermissionAliases","args":["ΣΊΣΥΦΟΣ:"],"ok":["ΣΊΣΥΦΟΣ:"]}
+{"fn":"getToolPermissionAliases","args":["abcHELLO"],"ok":["abcHELLO"]}
+{"fn":"getToolPermissionAliases","args":["日本語のテキストa:b:c"],"ok":["日本語のテキストa:b:c"]}
+{"fn":"getToolPermissionAliases","args":["abca.b.c"],"ok":["abca.b.c"]}
+{"fn":"getToolPermissionAliases","args":["astraße"],"ok":["astraße"]}
+{"fn":"getToolPermissionAliases","args":["héllo wörld"],"ok":["héllo wörld"]}
+{"fn":"getToolPermissionAliases","args":["👍🏽 thumbs"],"ok":["👍🏽 thumbs"]}
+{"fn":"getToolPermissionAliases","args":["日本語"],"ok":["日本語"]}
+{"fn":"getToolPermissionAliases","args":["ılık ırmak"],"ok":["ılık ırmak"]}
+{"fn":"getToolPermissionAliases","args":["👨‍👩‍👧 family"],"ok":["👨‍👩‍👧 family"]}
+{"fn":"getToolPermissionAliases","args":["a b"],"ok":["a b"]}
+{"fn":"getToolPermissionAliases","args":["a😀b"],"ok":["a😀b"]}
+{"fn":"getToolPermissionAliases","args":["a²b x½ y①"],"ok":["a²b x½ y①"]}
+{"fn":"getToolPermissionAliases","args":["aⅠb Ⅻ"],"ok":["aⅠb Ⅻ"]}
+{"fn":"getToolPermissionAliases","args":["a𐐀b 𝐀bc"],"ok":["a𐐀b 𝐀bc"]}
+{"fn":"getToolPermissionAliases","args":["कि ٣٤"],"ok":["कि ٣٤"]}
+{"fn":"getToolPermissionAliases","args":["apply_patch"],"ok":["edit","write","patch","apply_patch"]}
+{"fn":"getToolPermissionAliases","args":["webfetch"],"ok":["webfetch"]}
+{"fn":"getToolPermissionAliases","args":["edit"],"ok":["edit","write","patch","apply_patch"]}
+{"fn":"getToolPermissionAliases","args":["ask"],"ok":["question","ask","input","clarification"]}
+{"fn":"getToolPermissionAliases","args":["clarification"],"ok":["question","ask","input","clarification"]}
+{"fn":"getToolPermissionAliases","args":["read"],"ok":["read"]}
+{"fn":"getToolPermissionAliases","args":["bash"],"ok":["bash"]}
+{"fn":"getToolPermissionAliases","args":["task"],"ok":["task"]}
+{"fn":"getToolPermissionAliases","args":["skill"],"ok":["skill"]}
+{"fn":"getToolPermissionAliases","args":["mcp__future_plugin__inspect"],"ok":["mcp__future_plugin__inspect"]}
+{"fn":"getToolPermissionAliases","args":[""],"ok":[""]}
+{"fn":"getToolPermissionAliases","args":[" read"],"ok":[" read"]}
+{"fn":"getToolPermissionAliases","args":["READ"],"ok":["READ"]}
+{"fn":"getToolPermissionAliases","args":[null],"ok":[null]}
+{"fn":"getToolPermissionAliases","args":[5],"ok":[5]}
+{"fn":"getToolPermissionAliases","args":[["read"]],"ok":[["read"]]}
+{"fn":"getToolPermissionAliases","args":[],"ok":[{"$undefined":true}]}

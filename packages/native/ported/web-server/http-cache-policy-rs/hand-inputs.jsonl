@@ -1,0 +1,14 @@
+{"fn": "shouldDisableHttpCache", "args": ["/health"]}
+{"fn": "shouldDisableHttpCache", "args": ["/health?x=1"]}
+{"fn": "shouldDisableHttpCache", "args": ["/healthz"]}
+{"fn": "shouldDisableHttpCache", "args": ["/api/x"]}
+{"fn": "shouldDisableHttpCache", "args": ["/api"]}
+{"fn": "shouldDisableHttpCache", "args": ["/API/x"]}
+{"fn": "shouldDisableHttpCache", "args": ["/"]}
+{"fn": "shouldDisableHttpCache", "args": []}
+{"fn": "shouldDisableHttpCache", "args": [5]}
+{"fn": "shouldDisableHttpCache", "args": [""]}
+{"fn": "shouldDisableHttpCache", "args": ["/api/"]}
+{"fn": "shouldDisableHttpCache", "args": ["x/api/"]}
+{"fn": "shouldDisableHttpCache", "args": [{"$utf16": [47, 97, 112, 105, 47, 55296]}]}
+{"fn": "shouldDisableHttpCache", "args": [null]}

@@ -1,0 +1,19 @@
+{
+  "unit": "message-order.ts",
+  "files": 1,
+  "fingerprint": "dbd9f0ef4c48f630",
+  "cases": 1162,
+  "cases_hash": "c91d902db63f328d",
+  "coverage": {
+    "lines": 60,
+    "reached": 60,
+    "files": [
+      {
+        "file": "message-order.ts",
+        "lines": 60,
+        "reached": 60,
+        "missed": ""
+      }
+    ]
+  }
+}

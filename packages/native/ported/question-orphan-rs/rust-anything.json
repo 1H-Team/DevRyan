@@ -1,0 +1,120 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "question-orphan.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "question-orphan-rs",
+  "exports": [
+    {
+      "name": "isQuestionOrphaned",
+      "file": "question-orphan.ts",
+      "line": 34,
+      "params": [
+        {
+          "name": "request",
+          "ts_type": "{\n  questions: ReadonlyArray<{ question: string; header?: string }>\n  tool?: { messageID: string; callID: string }\n}",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "evidence",
+          "ts_type": "({\n  /** Parts of the assistant message that issued the question (`tool.messageID`). */\n  parts: readonly Part[] | undefined\n  /** Message infos of the question's session, used to spot an aborted assistant message. */\n  messages: readonly Message[] | undefined\n})",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isPendingQuestionOrphaned",
+      "file": "question-orphan.ts",
+      "line": 58,
+      "params": [
+        {
+          "name": "state",
+          "ts_type": "({\n  part: Record<string, readonly Part[] | undefined>\n  message: Record<string, readonly Message[] | undefined>\n})",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "request",
+          "ts_type": "{\n  questions: ReadonlyArray<{ question: string; header?: string }>\n  tool?: { messageID: string; callID: string }\n} & { sessionID: string }",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "countLivePendingQuestions",
+      "file": "question-orphan.ts",
+      "line": 69,
+      "params": [
+        {
+          "name": "state",
+          "ts_type": "({\n  part: Record<string, readonly Part[] | undefined>\n  message: Record<string, readonly Message[] | undefined>\n}) & { question: Record<string, ReadonlyArray<{\n  questions: ReadonlyArray<{ question: string; header?: string }>\n  tool?: { messageID: string; callID: string }\n} & { sessionID: string }> | undefined> }",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "sessionId",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "number",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isQuestionOrphanedError",
+      "file": "question-orphan.ts",
+      "line": 82,
+      "params": [
+        {
+          "name": "error",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "formatOrphanedQuestionAnswers",
+      "file": "question-orphan.ts",
+      "line": 94,
+      "params": [
+        {
+          "name": "entries",
+          "ts_type": "ReadonlyArray<{ request: {\n  questions: ReadonlyArray<{ question: string; header?: string }>\n  tool?: { messageID: string; callID: string }\n}; answers: ReadonlyArray<ReadonlyArray<string>> }>",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

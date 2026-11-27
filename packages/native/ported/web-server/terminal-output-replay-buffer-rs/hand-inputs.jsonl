@@ -1,0 +1,82 @@
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [{"id": 1, "data": "a", "bytes": 1}, {"id": 2, "data": "b", "bytes": 1}, {"id": 3, "data": "c", "bytes": 1}], "totalBytes": 3, "nextId": 4}]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [{"id": 1, "data": "a", "bytes": 1}, {"id": 2, "data": "b", "bytes": 1}, {"id": 3, "data": "c", "bytes": 1}], "totalBytes": 3, "nextId": 4}, 0]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [{"id": 1, "data": "a", "bytes": 1}, {"id": 2, "data": "b", "bytes": 1}, {"id": 3, "data": "c", "bytes": 1}], "totalBytes": 3, "nextId": 4}, 1]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [{"id": 1, "data": "a", "bytes": 1}, {"id": 2, "data": "b", "bytes": 1}, {"id": 3, "data": "c", "bytes": 1}], "totalBytes": 3, "nextId": 4}, 2]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [{"id": 1, "data": "a", "bytes": 1}, {"id": 2, "data": "b", "bytes": 1}, {"id": 3, "data": "c", "bytes": 1}], "totalBytes": 3, "nextId": 4}, "2"]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [{"id": 1, "data": "a", "bytes": 1}, {"id": 2, "data": "b", "bytes": 1}, {"id": 3, "data": "c", "bytes": 1}], "totalBytes": 3, "nextId": 4}, "10"]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [{"id": 1, "data": "a", "bytes": 1}, {"id": 2, "data": "b", "bytes": 1}, {"id": 3, "data": "c", "bytes": 1}], "totalBytes": 3, "nextId": 4}, null]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [{"id": 1, "data": "a", "bytes": 1}, {"id": 2, "data": "b", "bytes": 1}, {"id": 3, "data": "c", "bytes": 1}], "totalBytes": 3, "nextId": 4}, {"$num": "NaN"}]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [{"id": 1, "data": "a", "bytes": 1}, {"id": 2, "data": "b", "bytes": 1}, {"id": 3, "data": "c", "bytes": 1}], "totalBytes": 3, "nextId": 4}, [1]]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": []}]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": []}, 0]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": []}, 1]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": []}, 2]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": []}, "2"]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": []}, "10"]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": []}, null]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": []}, {"$num": "NaN"}]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": []}, [1]]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": "x"}]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": "x"}, 0]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": "x"}, 1]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": "x"}, 2]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": "x"}, "2"]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": "x"}, "10"]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": "x"}, null]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": "x"}, {"$num": "NaN"}]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": "x"}, [1]]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [null]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [null, 0]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [null, 1]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [null, 2]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [null, "2"]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [null, "10"]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [null, null]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [null, {"$num": "NaN"}]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [null, [1]]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": ["s"]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": ["s", 0]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": ["s", 1]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": ["s", 2]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": ["s", "2"]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": ["s", "10"]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": ["s", null]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": ["s", {"$num": "NaN"}]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": ["s", [1]]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [[[{"id": 1, "data": "a", "bytes": 1}, {"id": 2, "data": "b", "bytes": 1}, {"id": 3, "data": "c", "bytes": 1}]]]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [[[{"id": 1, "data": "a", "bytes": 1}, {"id": 2, "data": "b", "bytes": 1}, {"id": 3, "data": "c", "bytes": 1}]], 0]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [[[{"id": 1, "data": "a", "bytes": 1}, {"id": 2, "data": "b", "bytes": 1}, {"id": 3, "data": "c", "bytes": 1}]], 1]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [[[{"id": 1, "data": "a", "bytes": 1}, {"id": 2, "data": "b", "bytes": 1}, {"id": 3, "data": "c", "bytes": 1}]], 2]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [[[{"id": 1, "data": "a", "bytes": 1}, {"id": 2, "data": "b", "bytes": 1}, {"id": 3, "data": "c", "bytes": 1}]], "2"]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [[[{"id": 1, "data": "a", "bytes": 1}, {"id": 2, "data": "b", "bytes": 1}, {"id": 3, "data": "c", "bytes": 1}]], "10"]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [[[{"id": 1, "data": "a", "bytes": 1}, {"id": 2, "data": "b", "bytes": 1}, {"id": 3, "data": "c", "bytes": 1}]], null]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [[[{"id": 1, "data": "a", "bytes": 1}, {"id": 2, "data": "b", "bytes": 1}, {"id": 3, "data": "c", "bytes": 1}]], {"$num": "NaN"}]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [[[{"id": 1, "data": "a", "bytes": 1}, {"id": 2, "data": "b", "bytes": 1}, {"id": 3, "data": "c", "bytes": 1}]], [1]]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [{"id": "10"}, {"id": "9"}, {"id": null}, {}]}]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [{"id": "10"}, {"id": "9"}, {"id": null}, {}]}, 0]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [{"id": "10"}, {"id": "9"}, {"id": null}, {}]}, 1]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [{"id": "10"}, {"id": "9"}, {"id": null}, {}]}, 2]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [{"id": "10"}, {"id": "9"}, {"id": null}, {}]}, "2"]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [{"id": "10"}, {"id": "9"}, {"id": null}, {}]}, "10"]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [{"id": "10"}, {"id": "9"}, {"id": null}, {}]}, null]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [{"id": "10"}, {"id": "9"}, {"id": null}, {}]}, {"$num": "NaN"}]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [{"id": "10"}, {"id": "9"}, {"id": null}, {}]}, [1]]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [null]}]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [null]}, 0]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [null]}, 1]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [null]}, 2]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [null]}, "2"]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [null]}, "10"]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [null]}, null]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [null]}, {"$num": "NaN"}]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"chunks": [null]}, [1]]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"$map": []}]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"$map": []}, 0]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"$map": []}, 1]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"$map": []}, 2]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"$map": []}, "2"]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"$map": []}, "10"]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"$map": []}, null]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"$map": []}, {"$num": "NaN"}]}
+{"fn": "listTerminalOutputReplayChunksSince", "args": [{"$map": []}, [1]]}
+{"fn": "createTerminalOutputReplayBuffer", "args": []}

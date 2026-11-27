@@ -1,0 +1,54 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/orchestration-runtime",
+  "unit": "provider-capabilities.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "provider-capabilities-rs",
+  "exports": [
+    {
+      "name": "supportsManagedReadOnlyProvider",
+      "file": "provider-capabilities.js",
+      "line": 17,
+      "params": [
+        {
+          "name": "providerId",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "arg1",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "supportsManagedReadOnlyAgent",
+      "file": "provider-capabilities.js",
+      "line": 26,
+      "params": [
+        {
+          "name": "agent",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

@@ -1,0 +1,57 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/native-credential-mutation-owner.js:34",
+      "text": "throw fail('native_credential_mutation_binding_invalid');"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/native-credential-mutation-owner.js:52",
+      "text": "throw fail('native_credential_resolution_binding_invalid');"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/native-credential-mutation-owner.js:60",
+      "text": "throw fail('native_credential_mutation_owner_invalid');"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/native-credential-mutation-owner.js:63",
+      "text": "const assertLive = signal => { if (closed || signal?.aborted) throw fail('native_credential_mutation_closed', 503); };"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/native-credential-mutation-owner.js:70",
+      "text": "throw fail('native_credential_mutation_request_invalid');"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/native-credential-mutation-owner.js:74",
+      "text": "throw fail('native_credential_mutation_binding_invalid');"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/native-credential-mutation-owner.js:75",
+      "text": "if (activeCalls.has(input.callID) || recentCalls.has(input.callID)) throw fail('native_credential_mutation_replayed');"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/native-credential-mutation-owner.js:76",
+      "text": "if (activeCalls.size >= 4096) throw fail('native_credential_mutation_capacity', 503);"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/native-credential-mutation-owner.js:87",
+      "text": "if (typeof withResolution !== 'function' || input.authorizationID !== input.callID) throw fail('native_credential_resolution_authorization_required');"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/native-credential-mutation-owner.js:95",
+      "text": "if (!grant || typeof grant.reauthorize !== 'function') throw fail('native_credential_mutation_authorization_required');"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/native-credential-mutation-owner.js:104",
+      "text": "}); } catch (error) { settled(); throw error; }"
+    }
+  ],
+  "product": [
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/native-credential-mutation-owner.js:5",
+      "class": "Error",
+      "sample": "native_credential_resolution_binding_invalid"
+    }
+  ],
+  "engine": []
+}

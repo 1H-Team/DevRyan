@@ -1,0 +1,337 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "decoders/",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "decoders-rs",
+  "exports": [
+    {
+      "name": "decodeAssistantMessageError",
+      "file": "decoders/assistantMessageError.ts",
+      "line": 20,
+      "params": [
+        {
+          "name": "error",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "({\n  readonly name: string | undefined;\n  readonly message: string | undefined;\n  readonly dataMessage: string | undefined;\n  readonly detail: string | undefined;\n  readonly abortSource?: AbortSource;\n}) | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "readAssistantMessageError",
+      "file": "decoders/assistantMessageError.ts",
+      "line": 32,
+      "params": [
+        {
+          "name": "info",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "({\n  readonly name: string | undefined;\n  readonly message: string | undefined;\n  readonly dataMessage: string | undefined;\n  readonly detail: string | undefined;\n  readonly abortSource?: AbortSource;\n}) | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isRecord",
+      "file": "decoders/guards.ts",
+      "line": 6,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "value is Record<string, unknown>",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "readString",
+      "file": "decoders/guards.ts",
+      "line": 26,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isNullableString",
+      "file": "decoders/guards.ts",
+      "line": 28,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "value is string | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isOptionalNullableString",
+      "file": "decoders/guards.ts",
+      "line": 29,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "value is string | null | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isTimestamp",
+      "file": "decoders/guards.ts",
+      "line": 32,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "value is number",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isNullableTimestamp",
+      "file": "decoders/guards.ts",
+      "line": 35,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "value is number | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isOptionalNullableTimestamp",
+      "file": "decoders/guards.ts",
+      "line": 36,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "value is number | null | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isCount",
+      "file": "decoders/guards.ts",
+      "line": 39,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "value is number",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "decodeManagedTaskToolPart",
+      "file": "decoders/managedTaskToolPart.ts",
+      "line": 60,
+      "params": [
+        {
+          "name": "part",
+          "ts_type": "ToolPart",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "({\n  /** `input.action`, trimmed. */\n  readonly action: string;\n  /** `state.status`, trimmed. */\n  readonly status: string;\n  readonly agent: string;\n  readonly label: string;\n  /** `input.task_id`, trimmed. */\n  readonly inputTaskId: string;\n  /** The output object (a JSON string is parsed); null when absent or not an object. */\n  readonly output: Record<string, unknown> | null;\n  /** `output.task`, when it is an object. */\n  readonly outputTask: Record<string, unknown> | null;\n  /** `output.followUpTask.task`, when it is an object. */\n  readonly followUpTask: Record<string, unknown> | null;\n  readonly error: unknown;\n})",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "readMessageRole",
+      "file": "decoders/messageInfo.ts",
+      "line": 14,
+      "params": [
+        {
+          "name": "info",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "readMessageId",
+      "file": "decoders/messageInfo.ts",
+      "line": 21,
+      "params": [
+        {
+          "name": "info",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "readMessageParentId",
+      "file": "decoders/messageInfo.ts",
+      "line": 22,
+      "params": [
+        {
+          "name": "info",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "readMessageSessionId",
+      "file": "decoders/messageInfo.ts",
+      "line": 23,
+      "params": [
+        {
+          "name": "info",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "readMessageClientRole",
+      "file": "decoders/messageInfo.ts",
+      "line": 24,
+      "params": [
+        {
+          "name": "info",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "readMessageCreatedAt",
+      "file": "decoders/messageInfo.ts",
+      "line": 30,
+      "params": [
+        {
+          "name": "info",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "number | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "readTrimmedString",
+      "file": "decoders/guards.ts",
+      "line": 11,
+      "reason": "rest parameter (the bindings pass only the first argument)"
+    },
+    {
+      "name": "readNonEmptyString",
+      "file": "decoders/guards.ts",
+      "line": 19,
+      "reason": "rest parameter (the bindings pass only the first argument)"
+    },
+    {
+      "name": "oneOf",
+      "file": "decoders/guards.ts",
+      "line": 42,
+      "reason": "returns a closure"
+    }
+  ]
+}

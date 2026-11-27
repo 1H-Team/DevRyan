@@ -1,0 +1,1162 @@
+{"fn":"compareMessagesChronologically","args":[{"a":"b"},{"a":"b"}],"ok":0}
+{"fn":"compareMessagesChronologically","args":[{"a":{"b":"c"}},"x"],"ok":0}
+{"fn":"compareMessagesChronologically","args":[true,0],"ok":0}
+{"fn":"compareMessagesChronologically","args":[null,"x"],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"compareMessagesChronologically","args":[{"a":{"b":"c"}},0],"ok":0}
+{"fn":"compareMessagesChronologically","args":[{},[]],"ok":0}
+{"fn":"compareMessagesChronologically","args":[0,{"a":"b"}],"ok":0}
+{"fn":"compareMessagesChronologically","args":[{"a":"b"},{}],"ok":0}
+{"fn":"compareMessagesChronologically","args":[null,0],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"compareMessagesChronologically","args":[0,true],"ok":0}
+{"fn":"compareMessagesChronologically","args":[null,{}],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"compareMessagesChronologically","args":[{"a":"b"},0],"ok":0}
+{"fn":"compareMessagesChronologically","args":[{"a":{"b":"c"}},["a",1]],"ok":0}
+{"fn":"compareMessagesChronologically","args":[true,{"a":"b"}],"ok":0}
+{"fn":"compareMessagesChronologically","args":[{},["a",1]],"ok":0}
+{"fn":"compareMessagesChronologically","args":[0,"x"],"ok":0}
+{"fn":"compareMessagesChronologically","args":[true,[]],"ok":0}
+{"fn":"compareMessagesChronologically","args":[[],{"a":"b"}],"ok":0}
+{"fn":"compareMessagesChronologically","args":[null,{"a":"b"}],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"compareMessagesChronologically","args":[{},"x"],"ok":0}
+{"fn":"compareMessagesChronologically","args":[{"a":{"b":"c"}},true],"ok":0}
+{"fn":"compareMessagesChronologically","args":["x",{"a":{"b":"c"}}],"ok":0}
+{"fn":"compareMessagesChronologically","args":[true,{"a":{"b":"c"}}],"ok":0}
+{"fn":"compareMessagesChronologically","args":[{"a":{"b":"c"}},{"a":"b"}],"ok":0}
+{"fn":"compareMessagesChronologically","args":[{},{"a":{"b":"c"}}],"ok":0}
+{"fn":"compareMessagesChronologically","args":[[],0],"ok":0}
+{"fn":"compareMessagesChronologically","args":[["a",1],{"a":{"b":"c"}}],"ok":0}
+{"fn":"compareMessagesChronologically","args":[[],"x"],"ok":0}
+{"fn":"compareMessagesChronologically","args":[0,["a",1]],"ok":0}
+{"fn":"compareMessagesChronologically","args":[{},{"a":"b"}],"ok":0}
+{"fn":"compareMessagesChronologically","args":[true,{}],"ok":0}
+{"fn":"compareMessagesChronologically","args":["x",0],"ok":0}
+{"fn":"compareMessagesChronologically","args":[{"a":{"b":"c"}},{}],"ok":0}
+{"fn":"compareMessagesChronologically","args":[{"a":"b"},null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"compareMessagesChronologically","args":[["a",1],{"a":"b"}],"ok":0}
+{"fn":"compareMessagesChronologically","args":[{},null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"compareMessagesChronologically","args":[0,{"a":{"b":"c"}}],"ok":0}
+{"fn":"compareMessagesChronologically","args":[null,[]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"compareMessagesChronologically","args":[[],null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"compareMessagesChronologically","args":[{},{}],"ok":0}
+{"fn":"compareMessagesChronologically","args":[true,["a",1]],"ok":0}
+{"fn":"compareMessagesChronologically","args":[["a",1],null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"compareMessagesChronologically","args":[null,{"a":{"b":"c"}}],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"compareMessagesChronologically","args":["x",{"a":"b"}],"ok":0}
+{"fn":"compareMessagesChronologically","args":[true,"x"],"ok":0}
+{"fn":"compareMessagesChronologically","args":[null,null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"compareMessagesChronologically","args":[null,true],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"compareMessagesChronologically","args":[["a",1],{}],"ok":0}
+{"fn":"compareMessagesChronologically","args":[{"a":"b"},true],"ok":0}
+{"fn":"compareMessagesChronologically","args":[0,[]],"ok":0}
+{"fn":"compareMessagesChronologically","args":[["a",1],["a",1]],"ok":0}
+{"fn":"compareMessagesChronologically","args":[{"a":"b"},"x"],"ok":0}
+{"fn":"compareMessagesChronologically","args":[[],[]],"ok":0}
+{"fn":"compareMessagesChronologically","args":[true,null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"compareMessagesChronologically","args":[{"a":{"b":"c"}},[]],"ok":0}
+{"fn":"compareMessagesChronologically","args":[{"a":{"b":"c"}},null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"compareMessagesChronologically","args":[["a",1],"x"],"ok":0}
+{"fn":"compareMessagesChronologically","args":[{},true],"ok":0}
+{"fn":"compareMessagesChronologically","args":[{"a":"b"},["a",1]],"ok":0}
+{"fn":"compareMessagesChronologically","args":[0,{}],"ok":0}
+{"fn":"compareMessagesChronologically","args":[true,true],"ok":0}
+{"fn":"compareMessagesChronologically","args":[{},0],"ok":0}
+{"fn":"compareMessagesChronologically","args":[["a",1],0],"ok":0}
+{"fn":"compareMessagesChronologically","args":[0,0],"ok":0}
+{"fn":"compareMessagesChronologically","args":[[],["a",1]],"ok":0}
+{"fn":"compareMessagesChronologically","args":["x",["a",1]],"ok":0}
+{"fn":"compareMessagesChronologically","args":[["a",1],[]],"ok":0}
+{"fn":"compareMessagesChronologically","args":[0,null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"compareMessagesChronologically","args":["x",true],"ok":0}
+{"fn":"compareMessagesChronologically","args":["x",null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"compareMessagesChronologically","args":[null,["a",1]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"compareMessagesChronologically","args":[{"a":{"b":"c"}},{"a":{"b":"c"}}],"ok":0}
+{"fn":"compareMessagesChronologically","args":[{"a":"b"},{"a":{"b":"c"}}],"ok":0}
+{"fn":"compareMessagesChronologically","args":[[],true],"ok":0}
+{"fn":"compareMessagesChronologically","args":[["a",1],true],"ok":0}
+{"fn":"compareMessagesChronologically","args":[[],{"a":{"b":"c"}}],"ok":0}
+{"fn":"compareMessagesChronologically","args":["x",[]],"ok":0}
+{"fn":"compareMessagesChronologically","args":["x","x"],"ok":0}
+{"fn":"compareMessagesChronologically","args":[{"a":"b"},[]],"ok":0}
+{"fn":"compareMessagesChronologically","args":[[],{}],"ok":0}
+{"fn":"compareMessagesChronologically","args":["x",{}],"ok":0}
+{"fn":"compareMessagesChronologically","args":["x","X"],"ok":0}
+{"fn":"compareMessagesChronologically","args":["X","x"],"ok":0}
+{"fn":"sortMessagesChronologically","args":[[["a",1]]],"ok":[["a",1]]}
+{"fn":"sortMessagesChronologically","args":[["x","x",{}]],"ok":["x","x",{}]}
+{"fn":"sortMessagesChronologically","args":[["x",{"a":{"b":"c"}},null]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[[]]],"ok":[[]]}
+{"fn":"sortMessagesChronologically","args":[[null,[]]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[[],null]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[]],"ok":[]}
+{"fn":"sortMessagesChronologically","args":[["x"]],"ok":["x"]}
+{"fn":"sortMessagesChronologically","args":[["x",{"a":{"b":"c"}}]],"ok":["x",{"a":{"b":"c"}}]}
+{"fn":"sortMessagesChronologically","args":[[null,{"a":"b"},{}]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[0],"error":"messages is not iterable"}
+{"fn":"sortMessagesChronologically","args":[[[],{}]],"ok":[[],{}]}
+{"fn":"sortMessagesChronologically","args":[[{"a":{"b":"c"}},{"a":"b"},0]],"ok":[{"a":{"b":"c"}},{"a":"b"},0]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],{"a":{"b":"c"}},[]]],"ok":[["a",1],{"a":{"b":"c"}},[]]}
+{"fn":"sortMessagesChronologically","args":[[null,true,["a",1]]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[["a",1]],"ok":["a",1]}
+{"fn":"sortMessagesChronologically","args":[["x",{"a":"b"},{"a":{"b":"c"}}]],"ok":["x",{"a":"b"},{"a":{"b":"c"}}]}
+{"fn":"sortMessagesChronologically","args":[[null,null]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[{}],"error":"messages is not iterable"}
+{"fn":"sortMessagesChronologically","args":[[{"a":{"b":"c"}},{"a":{"b":"c"}},[]]],"ok":[{"a":{"b":"c"}},{"a":{"b":"c"}},[]]}
+{"fn":"sortMessagesChronologically","args":[[0,{"a":"b"}]],"ok":[0,{"a":"b"}]}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},["a",1],["a",1]]],"ok":[{"a":"b"},["a",1],["a",1]]}
+{"fn":"sortMessagesChronologically","args":[[{"a":{"b":"c"}},0]],"ok":[{"a":{"b":"c"}},0]}
+{"fn":"sortMessagesChronologically","args":[{"a":{"b":"c"}}],"error":"messages is not iterable"}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},0]],"ok":[{"a":"b"},0]}
+{"fn":"sortMessagesChronologically","args":[null],"error":"messages is not iterable"}
+{"fn":"sortMessagesChronologically","args":[{"a":"b"}],"error":"messages is not iterable"}
+{"fn":"sortMessagesChronologically","args":[[true]],"ok":[true]}
+{"fn":"sortMessagesChronologically","args":[["x",[],"x"]],"ok":["x",[],"x"]}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},["a",1],{"a":{"b":"c"}}]],"ok":[{"a":"b"},["a",1],{"a":{"b":"c"}}]}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},["a",1]]],"ok":[{"a":"b"},["a",1]]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],{},{}]],"ok":[["a",1],{},{}]}
+{"fn":"sortMessagesChronologically","args":[true],"error":"messages is not iterable"}
+{"fn":"sortMessagesChronologically","args":["x"],"ok":["x"]}
+{"fn":"sortMessagesChronologically","args":[[{},{"a":"b"}]],"ok":[{},{"a":"b"}]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],{},[]]],"ok":[["a",1],{},[]]}
+{"fn":"sortMessagesChronologically","args":[[true,"x",{"a":{"b":"c"}}]],"ok":[true,"x",{"a":{"b":"c"}}]}
+{"fn":"sortMessagesChronologically","args":[[0]],"ok":[0]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],0]],"ok":[["a",1],0]}
+{"fn":"sortMessagesChronologically","args":[[[],["a",1]]],"ok":[[],["a",1]]}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"}]],"ok":[{"a":"b"}]}
+{"fn":"sortMessagesChronologically","args":[[{"a":{"b":"c"}}]],"ok":[{"a":{"b":"c"}}]}
+{"fn":"sortMessagesChronologically","args":[[{},{"a":"b"},{"a":{"b":"c"}}]],"ok":[{},{"a":"b"},{"a":{"b":"c"}}]}
+{"fn":"sortMessagesChronologically","args":[["x",{"a":"b"},{"a":"b"}]],"ok":["x",{"a":"b"},{"a":"b"}]}
+{"fn":"sortMessagesChronologically","args":[[{"a":{"b":"c"}},["a",1]]],"ok":[{"a":{"b":"c"}},["a",1]]}
+{"fn":"sortMessagesChronologically","args":[[{},true,["a",1]]],"ok":[{},true,["a",1]]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],{"a":"b"}]],"ok":[["a",1],{"a":"b"}]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],[]]],"ok":[["a",1],[]]}
+{"fn":"sortMessagesChronologically","args":[[true,null]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[["x",0]],"ok":["x",0]}
+{"fn":"sortMessagesChronologically","args":[[{"a":{"b":"c"}},true]],"ok":[{"a":{"b":"c"}},true]}
+{"fn":"sortMessagesChronologically","args":[[{}]],"ok":[{}]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],null]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[["x",{"a":"b"},true]],"ok":["x",{"a":"b"},true]}
+{"fn":"sortMessagesChronologically","args":[[null,{"a":{"b":"c"}}]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[["x",["a",1]]],"ok":["x",["a",1]]}
+{"fn":"sortMessagesChronologically","args":[[{},[],null]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[[],{"a":"b"}]],"ok":[[],{"a":"b"}]}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},true]],"ok":[{"a":"b"},true]}
+{"fn":"sortMessagesChronologically","args":[[{},0,{"a":"b"}]],"ok":[{},0,{"a":"b"}]}
+{"fn":"sortMessagesChronologically","args":[[null,{}]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[0,"x",{}]],"ok":[0,"x",{}]}
+{"fn":"sortMessagesChronologically","args":[[0,["a",1],0]],"ok":[0,["a",1],0]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],true,"x"]],"ok":[["a",1],true,"x"]}
+{"fn":"sortMessagesChronologically","args":[[[],["a",1],[]]],"ok":[[],["a",1],[]]}
+{"fn":"sortMessagesChronologically","args":[[{},{},"x"]],"ok":[{},{},"x"]}
+{"fn":"sortMessagesChronologically","args":[["x","x",["a",1]]],"ok":["x","x",["a",1]]}
+{"fn":"sortMessagesChronologically","args":[[true,{"a":"b"},[]]],"ok":[true,{"a":"b"},[]]}
+{"fn":"sortMessagesChronologically","args":[[0,["a",1],{}]],"ok":[0,["a",1],{}]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],{},{"a":{"b":"c"}}]],"ok":[["a",1],{},{"a":{"b":"c"}}]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],true]],"ok":[["a",1],true]}
+{"fn":"sortMessagesChronologically","args":[[true,{"a":"b"}]],"ok":[true,{"a":"b"}]}
+{"fn":"sortMessagesChronologically","args":[[{"a":{"b":"c"}},{},null]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},[],{}]],"ok":[{"a":"b"},[],{}]}
+{"fn":"sortMessagesChronologically","args":[[null]],"ok":[null]}
+{"fn":"sortMessagesChronologically","args":[[{"a":{"b":"c"}},{"a":{"b":"c"}},"x"]],"ok":[{"a":{"b":"c"}},{"a":{"b":"c"}},"x"]}
+{"fn":"sortMessagesChronologically","args":[[true,{"a":{"b":"c"}},{"a":{"b":"c"}}]],"ok":[true,{"a":{"b":"c"}},{"a":{"b":"c"}}]}
+{"fn":"sortMessagesChronologically","args":[[true,{"a":{"b":"c"}}]],"ok":[true,{"a":{"b":"c"}}]}
+{"fn":"sortMessagesChronologically","args":[[{},{},0]],"ok":[{},{},0]}
+{"fn":"sortMessagesChronologically","args":[[{"a":{"b":"c"}},[]]],"ok":[{"a":{"b":"c"}},[]]}
+{"fn":"sortMessagesChronologically","args":[[null,{"a":"b"}]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[true,null,"x"]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[true,true,null]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[{"a":{"b":"c"}},{},"x"]],"ok":[{"a":{"b":"c"}},{},"x"]}
+{"fn":"sortMessagesChronologically","args":[[[],{},null]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[null,0]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[["x","x",0]],"ok":["x","x",0]}
+{"fn":"sortMessagesChronologically","args":[[0,"x",{"a":"b"}]],"ok":[0,"x",{"a":"b"}]}
+{"fn":"sortMessagesChronologically","args":[[[],[],[]]],"ok":[[],[],[]]}
+{"fn":"sortMessagesChronologically","args":[["x","x"]],"ok":["x","x"]}
+{"fn":"sortMessagesChronologically","args":[[{"a":{"b":"c"}},{},{}]],"ok":[{"a":{"b":"c"}},{},{}]}
+{"fn":"sortMessagesChronologically","args":[[{"a":{"b":"c"}},{"a":{"b":"c"}}]],"ok":[{"a":{"b":"c"}},{"a":{"b":"c"}}]}
+{"fn":"sortMessagesChronologically","args":[[{},{}]],"ok":[{},{}]}
+{"fn":"sortMessagesChronologically","args":[[{},"x"]],"ok":[{},"x"]}
+{"fn":"sortMessagesChronologically","args":[[true,"x",["a",1]]],"ok":[true,"x",["a",1]]}
+{"fn":"sortMessagesChronologically","args":[[{"a":{"b":"c"}},true,true]],"ok":[{"a":{"b":"c"}},true,true]}
+{"fn":"sortMessagesChronologically","args":[["x",true,"x"]],"ok":["x",true,"x"]}
+{"fn":"sortMessagesChronologically","args":[[{},{"a":"b"},{}]],"ok":[{},{"a":"b"},{}]}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},{},[]]],"ok":[{"a":"b"},{},[]]}
+{"fn":"sortMessagesChronologically","args":[["x","x",[]]],"ok":["x","x",[]]}
+{"fn":"sortMessagesChronologically","args":[[null,0,[]]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},{"a":"b"},["a",1]]],"ok":[{"a":"b"},{"a":"b"},["a",1]]}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},["a",1],true]],"ok":[{"a":"b"},["a",1],true]}
+{"fn":"sortMessagesChronologically","args":[[[],true]],"ok":[[],true]}
+{"fn":"sortMessagesChronologically","args":[[0,true]],"ok":[0,true]}
+{"fn":"sortMessagesChronologically","args":[[[],[]]],"ok":[[],[]]}
+{"fn":"sortMessagesChronologically","args":[["x",[]]],"ok":["x",[]]}
+{"fn":"sortMessagesChronologically","args":[[{"a":{"b":"c"}},{"a":{"b":"c"}},{"a":{"b":"c"}}]],"ok":[{"a":{"b":"c"}},{"a":{"b":"c"}},{"a":{"b":"c"}}]}
+{"fn":"sortMessagesChronologically","args":[[null,{"a":"b"},true]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},{}]],"ok":[{"a":"b"},{}]}
+{"fn":"sortMessagesChronologically","args":[[true,["a",1]]],"ok":[true,["a",1]]}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},null]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[null,true,{"a":"b"}]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[0,{"a":{"b":"c"}},[]]],"ok":[0,{"a":{"b":"c"}},[]]}
+{"fn":"sortMessagesChronologically","args":[[true,[],{}]],"ok":[true,[],{}]}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},[],["a",1]]],"ok":[{"a":"b"},[],["a",1]]}
+{"fn":"sortMessagesChronologically","args":[[null,"x"]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[null,"x","x"]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[[],0,["a",1]]],"ok":[[],0,["a",1]]}
+{"fn":"sortMessagesChronologically","args":[[[],"x"]],"ok":[[],"x"]}
+{"fn":"sortMessagesChronologically","args":[[null,true,{}]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[["x",true,{"a":{"b":"c"}}]],"ok":["x",true,{"a":{"b":"c"}}]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],["a",1]]],"ok":[["a",1],["a",1]]}
+{"fn":"sortMessagesChronologically","args":[[null,["a",1]]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[{},[]]],"ok":[{},[]]}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},{"a":"b"}]],"ok":[{"a":"b"},{"a":"b"}]}
+{"fn":"sortMessagesChronologically","args":[[true,[],{"a":"b"}]],"ok":[true,[],{"a":"b"}]}
+{"fn":"sortMessagesChronologically","args":[[null,{},["a",1]]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[null,true,null]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[true,{"a":"b"},true]],"ok":[true,{"a":"b"},true]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],{},null]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},"x"]],"ok":[{"a":"b"},"x"]}
+{"fn":"sortMessagesChronologically","args":[[0,true,{"a":"b"}]],"ok":[0,true,{"a":"b"}]}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},{"a":{"b":"c"}}]],"ok":[{"a":"b"},{"a":{"b":"c"}}]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],{"a":{"b":"c"}},"x"]],"ok":[["a",1],{"a":{"b":"c"}},"x"]}
+{"fn":"sortMessagesChronologically","args":[[{},{"a":"b"},true]],"ok":[{},{"a":"b"},true]}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},["a",1],"x"]],"ok":[{"a":"b"},["a",1],"x"]}
+{"fn":"sortMessagesChronologically","args":[[{"a":{"b":"c"}},{}]],"ok":[{"a":{"b":"c"}},{}]}
+{"fn":"sortMessagesChronologically","args":[[{"a":{"b":"c"}},{"a":"b"}]],"ok":[{"a":{"b":"c"}},{"a":"b"}]}
+{"fn":"sortMessagesChronologically","args":[[null,{"a":"b"},null]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},true,{"a":"b"}]],"ok":[{"a":"b"},true,{"a":"b"}]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],{"a":{"b":"c"}}]],"ok":[["a",1],{"a":{"b":"c"}}]}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},{"a":{"b":"c"}},{}]],"ok":[{"a":"b"},{"a":{"b":"c"}},{}]}
+{"fn":"sortMessagesChronologically","args":[[[],0]],"ok":[[],0]}
+{"fn":"sortMessagesChronologically","args":[[{"a":{"b":"c"}},null]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[true,{"a":{"b":"c"}},{"a":"b"}]],"ok":[true,{"a":{"b":"c"}},{"a":"b"}]}
+{"fn":"sortMessagesChronologically","args":[[0,"x",[]]],"ok":[0,"x",[]]}
+{"fn":"sortMessagesChronologically","args":[[{},"x",["a",1]]],"ok":[{},"x",["a",1]]}
+{"fn":"sortMessagesChronologically","args":[["x",{"a":{"b":"c"}},{"a":{"b":"c"}}]],"ok":["x",{"a":{"b":"c"}},{"a":{"b":"c"}}]}
+{"fn":"sortMessagesChronologically","args":[["x",{},"x"]],"ok":["x",{},"x"]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],"x"]],"ok":[["a",1],"x"]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],{"a":{"b":"c"}},["a",1]]],"ok":[["a",1],{"a":{"b":"c"}},["a",1]]}
+{"fn":"sortMessagesChronologically","args":[[{},["a",1]]],"ok":[{},["a",1]]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],{"a":"b"},"x"]],"ok":[["a",1],{"a":"b"},"x"]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],{"a":"b"},[]]],"ok":[["a",1],{"a":"b"},[]]}
+{"fn":"sortMessagesChronologically","args":[[{"a":{"b":"c"}},0,"x"]],"ok":[{"a":{"b":"c"}},0,"x"]}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},["a",1],0]],"ok":[{"a":"b"},["a",1],0]}
+{"fn":"sortMessagesChronologically","args":[[true,{},["a",1]]],"ok":[true,{},["a",1]]}
+{"fn":"sortMessagesChronologically","args":[[true,true]],"ok":[true,true]}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},"x",0]],"ok":[{"a":"b"},"x",0]}
+{"fn":"sortMessagesChronologically","args":[[{},0,true]],"ok":[{},0,true]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],"x",{"a":{"b":"c"}}]],"ok":[["a",1],"x",{"a":{"b":"c"}}]}
+{"fn":"sortMessagesChronologically","args":[["x",{"a":"b"}]],"ok":["x",{"a":"b"}]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],["a",1],{"a":{"b":"c"}}]],"ok":[["a",1],["a",1],{"a":{"b":"c"}}]}
+{"fn":"sortMessagesChronologically","args":[["x",{"a":"b"},0]],"ok":["x",{"a":"b"},0]}
+{"fn":"sortMessagesChronologically","args":[["x",["a",1],{}]],"ok":["x",["a",1],{}]}
+{"fn":"sortMessagesChronologically","args":[[{},0,{"a":{"b":"c"}}]],"ok":[{},0,{"a":{"b":"c"}}]}
+{"fn":"sortMessagesChronologically","args":[[[],0,[]]],"ok":[[],0,[]]}
+{"fn":"sortMessagesChronologically","args":[[0,null,{"a":{"b":"c"}}]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[{},{"a":{"b":"c"}}]],"ok":[{},{"a":{"b":"c"}}]}
+{"fn":"sortMessagesChronologically","args":[[null,null,{}]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[null,["a",1],{}]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[[],{"a":{"b":"c"}},{"a":{"b":"c"}}]],"ok":[[],{"a":{"b":"c"}},{"a":{"b":"c"}}]}
+{"fn":"sortMessagesChronologically","args":[[{},0,{}]],"ok":[{},0,{}]}
+{"fn":"sortMessagesChronologically","args":[[null,[],"x"]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[[],["a",1],true]],"ok":[[],["a",1],true]}
+{"fn":"sortMessagesChronologically","args":[[0,true,["a",1]]],"ok":[0,true,["a",1]]}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},{"a":{"b":"c"}},{"a":"b"}]],"ok":[{"a":"b"},{"a":{"b":"c"}},{"a":"b"}]}
+{"fn":"sortMessagesChronologically","args":[[true,{"a":"b"},{"a":"b"}]],"ok":[true,{"a":"b"},{"a":"b"}]}
+{"fn":"sortMessagesChronologically","args":[[{"a":"b"},{"a":"b"},{"a":{"b":"c"}}]],"ok":[{"a":"b"},{"a":"b"},{"a":{"b":"c"}}]}
+{"fn":"sortMessagesChronologically","args":[[true,[]]],"ok":[true,[]]}
+{"fn":"sortMessagesChronologically","args":[[0,null]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[["x",["a",1],["a",1]]],"ok":["x",["a",1],["a",1]]}
+{"fn":"sortMessagesChronologically","args":[["x",null,["a",1]]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[{},true,true]],"ok":[{},true,true]}
+{"fn":"sortMessagesChronologically","args":[[{},[],["a",1]]],"ok":[{},[],["a",1]]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],true,0]],"ok":[["a",1],true,0]}
+{"fn":"sortMessagesChronologically","args":[[0,0,["a",1]]],"ok":[0,0,["a",1]]}
+{"fn":"sortMessagesChronologically","args":[["x","x",null]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[[],"x","x"]],"ok":[[],"x","x"]}
+{"fn":"sortMessagesChronologically","args":[[true,{"a":{"b":"c"}},0]],"ok":[true,{"a":{"b":"c"}},0]}
+{"fn":"sortMessagesChronologically","args":[["x",null]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[[],{"a":"b"},[]]],"ok":[[],{"a":"b"},[]]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],{}]],"ok":[["a",1],{}]}
+{"fn":"sortMessagesChronologically","args":[[{},true,"x"]],"ok":[{},true,"x"]}
+{"fn":"sortMessagesChronologically","args":[[["a",1],["a",1],{"a":"b"}]],"ok":[["a",1],["a",1],{"a":"b"}]}
+{"fn":"sortMessagesChronologically","args":[[0,[],[]]],"ok":[0,[],[]]}
+{"fn":"sortMessagesChronologically","args":[[null,true]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"sortMessagesChronologically","args":[[{},true]],"ok":[{},true]}
+{"fn":"sortMessagesChronologically","args":[[0,0,{"a":"b"}]],"ok":[0,0,{"a":"b"}]}
+{"fn":"insertMessageChronologically","args":[[{}],"x"],"ok":[{},"x"]}
+{"fn":"insertMessageChronologically","args":[[],{"a":"b"}],"ok":[{"a":"b"}]}
+{"fn":"insertMessageChronologically","args":[0,[]],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[[[]],"x"],"ok":[[],"x"]}
+{"fn":"insertMessageChronologically","args":[[null,true],[]],"ok":[null,true,[]]}
+{"fn":"insertMessageChronologically","args":["x","x"],"ok":["x","x"]}
+{"fn":"insertMessageChronologically","args":[0,["a",1]],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[[],{}],"ok":[{}]}
+{"fn":"insertMessageChronologically","args":["x",{}],"ok":["x",{}]}
+{"fn":"insertMessageChronologically","args":[[{"a":{"b":"c"}},{"a":"b"},{"a":"b"}],true],"ok":[{"a":{"b":"c"}},{"a":"b"},{"a":"b"},true]}
+{"fn":"insertMessageChronologically","args":[[],"x"],"ok":["x"]}
+{"fn":"insertMessageChronologically","args":[true,null],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[[[]],["a",1]],"ok":[[],["a",1]]}
+{"fn":"insertMessageChronologically","args":[["x",true],null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[["x"],true],"ok":["x",true]}
+{"fn":"insertMessageChronologically","args":[[{}],null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[["x","x"],null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[["a",1],true],0],"ok":[["a",1],true,0]}
+{"fn":"insertMessageChronologically","args":[[["a",1]],true],"ok":[["a",1],true]}
+{"fn":"insertMessageChronologically","args":[[0],{"a":"b"}],"ok":[0,{"a":"b"}]}
+{"fn":"insertMessageChronologically","args":[[{"a":"b"},null],{"a":"b"}],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[{},"x",{"a":{"b":"c"}}],[]],"ok":[{},"x",{"a":{"b":"c"}},[]]}
+{"fn":"insertMessageChronologically","args":[[{"a":{"b":"c"}},null,["a",1]],"x"],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[null,["a",1]],[]],"ok":[null,["a",1],[]]}
+{"fn":"insertMessageChronologically","args":[[["a",1]],"x"],"ok":[["a",1],"x"]}
+{"fn":"insertMessageChronologically","args":[true,true],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[[null,["a",1],{"a":"b"}],null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[true,0],true],"ok":[true,0,true]}
+{"fn":"insertMessageChronologically","args":[[0],{"a":{"b":"c"}}],"ok":[0,{"a":{"b":"c"}}]}
+{"fn":"insertMessageChronologically","args":[["x"],[]],"ok":["x",[]]}
+{"fn":"insertMessageChronologically","args":[[],0],"ok":[0]}
+{"fn":"insertMessageChronologically","args":[["x",[]],[]],"ok":["x",[],[]]}
+{"fn":"insertMessageChronologically","args":[[{}],0],"ok":[{},0]}
+{"fn":"insertMessageChronologically","args":[[],{"a":{"b":"c"}}],"ok":[{"a":{"b":"c"}}]}
+{"fn":"insertMessageChronologically","args":[[{},[]],{}],"ok":[{},[],{}]}
+{"fn":"insertMessageChronologically","args":[[{},true],["a",1]],"ok":[{},true,["a",1]]}
+{"fn":"insertMessageChronologically","args":[[["a",1],[]],0],"ok":[["a",1],[],0]}
+{"fn":"insertMessageChronologically","args":[[{"a":"b"},0,{"a":"b"}],{"a":{"b":"c"}}],"ok":[{"a":"b"},0,{"a":"b"},{"a":{"b":"c"}}]}
+{"fn":"insertMessageChronologically","args":[[{"a":"b"}],null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[["a",1]],["a",1]],"ok":[["a",1],["a",1]]}
+{"fn":"insertMessageChronologically","args":[[null,["a",1],{"a":"b"}],{}],"ok":[null,["a",1],{"a":"b"},{}]}
+{"fn":"insertMessageChronologically","args":[[{"a":{"b":"c"}}],0],"ok":[{"a":{"b":"c"}},0]}
+{"fn":"insertMessageChronologically","args":[[{"a":"b"},{"a":{"b":"c"}},"x"],null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[{"a":"b"},{"a":{"b":"c"}}],0],"ok":[{"a":"b"},{"a":{"b":"c"}},0]}
+{"fn":"insertMessageChronologically","args":[[true,["a",1]],{}],"ok":[true,["a",1],{}]}
+{"fn":"insertMessageChronologically","args":[[["a",1],["a",1],null],["a",1]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[["a",1]],null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[null,true,null],null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[["a",1],{},null],[]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[true,{"a":"b"},{"a":"b"}],0],"ok":[true,{"a":"b"},{"a":"b"},0]}
+{"fn":"insertMessageChronologically","args":[[],true],"ok":[true]}
+{"fn":"insertMessageChronologically","args":[{},["a",1]],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[[["a",1],{},true],[]],"ok":[["a",1],{},true,[]]}
+{"fn":"insertMessageChronologically","args":[[true,null,null],{}],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[true,{"a":{"b":"c"}}],["a",1]],"ok":[true,{"a":{"b":"c"}},["a",1]]}
+{"fn":"insertMessageChronologically","args":[[null,[],"x"],{"a":"b"}],"ok":[null,[],"x",{"a":"b"}]}
+{"fn":"insertMessageChronologically","args":[true,["a",1]],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[[[],[]],["a",1]],"ok":[[],[],["a",1]]}
+{"fn":"insertMessageChronologically","args":[[["a",1],{"a":"b"},true],{}],"ok":[["a",1],{"a":"b"},true,{}]}
+{"fn":"insertMessageChronologically","args":[[["a",1],0,true],[]],"ok":[["a",1],0,true,[]]}
+{"fn":"insertMessageChronologically","args":[[true],"x"],"ok":[true,"x"]}
+{"fn":"insertMessageChronologically","args":[[0,{"a":{"b":"c"}},0],{"a":{"b":"c"}}],"ok":[0,{"a":{"b":"c"}},0,{"a":{"b":"c"}}]}
+{"fn":"insertMessageChronologically","args":[[[],{}],{"a":"b"}],"ok":[[],{},{"a":"b"}]}
+{"fn":"insertMessageChronologically","args":[{"a":"b"},null],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[[[],{}],true],"ok":[[],{},true]}
+{"fn":"insertMessageChronologically","args":[[null,null],"x"],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[{"a":"b"},[]],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[[true,[],{"a":{"b":"c"}}],{"a":"b"}],"ok":[true,[],{"a":{"b":"c"}},{"a":"b"}]}
+{"fn":"insertMessageChronologically","args":[[["a",1],[]],{"a":{"b":"c"}}],"ok":[["a",1],[],{"a":{"b":"c"}}]}
+{"fn":"insertMessageChronologically","args":[[],[]],"ok":[[]]}
+{"fn":"insertMessageChronologically","args":[{"a":"b"},["a",1]],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[[0,[],[]],{"a":"b"}],"ok":[0,[],[],{"a":"b"}]}
+{"fn":"insertMessageChronologically","args":[[],["a",1]],"ok":[["a",1]]}
+{"fn":"insertMessageChronologically","args":[0,0],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[[["a",1]],0],"ok":[["a",1],0]}
+{"fn":"insertMessageChronologically","args":[[true],0],"ok":[true,0]}
+{"fn":"insertMessageChronologically","args":[[["a",1],{},[]],0],"ok":[["a",1],{},[],0]}
+{"fn":"insertMessageChronologically","args":[0,null],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[[0,true,{}],true],"ok":[0,true,{},true]}
+{"fn":"insertMessageChronologically","args":[[0,"x",{"a":"b"}],{}],"ok":[0,"x",{"a":"b"},{}]}
+{"fn":"insertMessageChronologically","args":[[{}],["a",1]],"ok":[{},["a",1]]}
+{"fn":"insertMessageChronologically","args":[["a",1],null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[true],null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[0,{"a":{"b":"c"}}],{}],"ok":[0,{"a":{"b":"c"}},{}]}
+{"fn":"insertMessageChronologically","args":[[["a",1],"x",{}],"x"],"ok":[["a",1],"x",{},"x"]}
+{"fn":"insertMessageChronologically","args":[[null],true],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[null],"x"],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[{"a":{"b":"c"}},[],{"a":"b"}],true],"ok":[{"a":{"b":"c"}},[],{"a":"b"},true]}
+{"fn":"insertMessageChronologically","args":[[{},true],true],"ok":[{},true,true]}
+{"fn":"insertMessageChronologically","args":[[[]],[]],"ok":[[],[]]}
+{"fn":"insertMessageChronologically","args":[null,["a",1]],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"insertMessageChronologically","args":[["x"],null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[[],[],{}],null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[0,true],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[[["a",1],"x","x"],{"a":"b"}],"ok":[["a",1],"x","x",{"a":"b"}]}
+{"fn":"insertMessageChronologically","args":[[[]],null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[],null],"ok":[null]}
+{"fn":"insertMessageChronologically","args":[[["a",1],{"a":"b"}],[]],"ok":[["a",1],{"a":"b"},[]]}
+{"fn":"insertMessageChronologically","args":[[{"a":"b"},"x"],"x"],"ok":[{"a":"b"},"x","x"]}
+{"fn":"insertMessageChronologically","args":[[true,[],{"a":"b"}],"x"],"ok":[true,[],{"a":"b"},"x"]}
+{"fn":"insertMessageChronologically","args":[[{},true],{"a":"b"}],"ok":[{},true,{"a":"b"}]}
+{"fn":"insertMessageChronologically","args":[["x",{"a":"b"},true],{"a":"b"}],"ok":["x",{"a":"b"},true,{"a":"b"}]}
+{"fn":"insertMessageChronologically","args":[[["a",1],"x"],{"a":{"b":"c"}}],"ok":[["a",1],"x",{"a":{"b":"c"}}]}
+{"fn":"insertMessageChronologically","args":[[null,[],[]],[]],"ok":[null,[],[],[]]}
+{"fn":"insertMessageChronologically","args":[{},"x"],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[[0],null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[{"a":{"b":"c"}},[]],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[["x",0,0],["a",1]],"ok":["x",0,0,["a",1]]}
+{"fn":"insertMessageChronologically","args":[[true,{}],["a",1]],"ok":[true,{},["a",1]]}
+{"fn":"insertMessageChronologically","args":[[["a",1],{"a":{"b":"c"}}],["a",1]],"ok":[["a",1],{"a":{"b":"c"}},["a",1]]}
+{"fn":"insertMessageChronologically","args":[["x",{},0],{"a":{"b":"c"}}],"ok":["x",{},0,{"a":{"b":"c"}}]}
+{"fn":"insertMessageChronologically","args":[[{},{}],{"a":{"b":"c"}}],"ok":[{},{},{"a":{"b":"c"}}]}
+{"fn":"insertMessageChronologically","args":[[true],true],"ok":[true,true]}
+{"fn":"insertMessageChronologically","args":[[{"a":{"b":"c"}},true,null],"x"],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[null],{"a":{"b":"c"}}],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[true,[]],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[[{}],{"a":"b"}],"ok":[{},{"a":"b"}]}
+{"fn":"insertMessageChronologically","args":[[{"a":{"b":"c"}},[]],null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[["x",[],true],true],"ok":["x",[],true,true]}
+{"fn":"insertMessageChronologically","args":[[["a",1],true,"x"],"x"],"ok":[["a",1],true,"x","x"]}
+{"fn":"insertMessageChronologically","args":[[0,0],0],"ok":[0,0,0]}
+{"fn":"insertMessageChronologically","args":[[{"a":"b"}],"x"],"ok":[{"a":"b"},"x"]}
+{"fn":"insertMessageChronologically","args":[["a",1],{"a":{"b":"c"}}],"ok":["a",1,{"a":{"b":"c"}}]}
+{"fn":"insertMessageChronologically","args":[[["a",1],[],0],{}],"ok":[["a",1],[],0,{}]}
+{"fn":"insertMessageChronologically","args":[[{"a":{"b":"c"}},null],{"a":"b"}],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[null,0],{"a":{"b":"c"}}],"ok":[null,0,{"a":{"b":"c"}}]}
+{"fn":"insertMessageChronologically","args":[[{},"x",true],{}],"ok":[{},"x",true,{}]}
+{"fn":"insertMessageChronologically","args":[[null,"x",null],"x"],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[0],["a",1]],"ok":[0,["a",1]]}
+{"fn":"insertMessageChronologically","args":[[0,0,{"a":"b"}],{}],"ok":[0,0,{"a":"b"},{}]}
+{"fn":"insertMessageChronologically","args":[[true,true],0],"ok":[true,true,0]}
+{"fn":"insertMessageChronologically","args":[[true,0],[]],"ok":[true,0,[]]}
+{"fn":"insertMessageChronologically","args":[[{},null],["a",1]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[true,{"a":"b"}],true],"ok":[true,{"a":"b"},true]}
+{"fn":"insertMessageChronologically","args":[[{"a":{"b":"c"}},0,{"a":"b"}],["a",1]],"ok":[{"a":{"b":"c"}},0,{"a":"b"},["a",1]]}
+{"fn":"insertMessageChronologically","args":[[{},["a",1],"x"],{}],"ok":[{},["a",1],"x",{}]}
+{"fn":"insertMessageChronologically","args":[[{}],[]],"ok":[{},[]]}
+{"fn":"insertMessageChronologically","args":[{"a":"b"},{"a":{"b":"c"}}],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[[0,["a",1],"x"],"x"],"ok":[0,["a",1],"x","x"]}
+{"fn":"insertMessageChronologically","args":[[{},0,0],{}],"ok":[{},0,0,{}]}
+{"fn":"insertMessageChronologically","args":[[[]],{}],"ok":[[],{}]}
+{"fn":"insertMessageChronologically","args":[[{"a":{"b":"c"}}],null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[true,true,{"a":{"b":"c"}}],{"a":{"b":"c"}}],"ok":[true,true,{"a":{"b":"c"}},{"a":{"b":"c"}}]}
+{"fn":"insertMessageChronologically","args":[["x"],{"a":"b"}],"ok":["x",{"a":"b"}]}
+{"fn":"insertMessageChronologically","args":[{},0],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[true,{"a":{"b":"c"}}],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[{},null],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[{"a":"b"},{}],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[[true],{"a":"b"}],"ok":[true,{"a":"b"}]}
+{"fn":"insertMessageChronologically","args":[[{},{"a":"b"},[]],true],"ok":[{},{"a":"b"},[],true]}
+{"fn":"insertMessageChronologically","args":[[{"a":{"b":"c"}},{}],"x"],"ok":[{"a":{"b":"c"}},{},"x"]}
+{"fn":"insertMessageChronologically","args":[[{"a":"b"}],true],"ok":[{"a":"b"},true]}
+{"fn":"insertMessageChronologically","args":[[0,"x"],"x"],"ok":[0,"x","x"]}
+{"fn":"insertMessageChronologically","args":[[0],true],"ok":[0,true]}
+{"fn":"insertMessageChronologically","args":[[{"a":{"b":"c"}},true],[]],"ok":[{"a":{"b":"c"}},true,[]]}
+{"fn":"insertMessageChronologically","args":[[{"a":{"b":"c"}},null,{"a":{"b":"c"}}],null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[[]],0],"ok":[[],0]}
+{"fn":"insertMessageChronologically","args":[[["a",1]],[]],"ok":[["a",1],[]]}
+{"fn":"insertMessageChronologically","args":[[[],"x",true],["a",1]],"ok":[[],"x",true,["a",1]]}
+{"fn":"insertMessageChronologically","args":[[null],0],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[["a",1],0],0],"ok":[["a",1],0,0]}
+{"fn":"insertMessageChronologically","args":[[{"a":"b"},"x"],{"a":{"b":"c"}}],"ok":[{"a":"b"},"x",{"a":{"b":"c"}}]}
+{"fn":"insertMessageChronologically","args":[[[],0],["a",1]],"ok":[[],0,["a",1]]}
+{"fn":"insertMessageChronologically","args":[[0,{}],0],"ok":[0,{},0]}
+{"fn":"insertMessageChronologically","args":[[{"a":{"b":"c"}},[],{}],{"a":{"b":"c"}}],"ok":[{"a":{"b":"c"}},[],{},{"a":{"b":"c"}}]}
+{"fn":"insertMessageChronologically","args":[[{"a":{"b":"c"}}],["a",1]],"ok":[{"a":{"b":"c"}},["a",1]]}
+{"fn":"insertMessageChronologically","args":[[{"a":"b"},{},0],true],"ok":[{"a":"b"},{},0,true]}
+{"fn":"insertMessageChronologically","args":[{},true],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[["x",true],{"a":{"b":"c"}}],"ok":["x",true,{"a":{"b":"c"}}]}
+{"fn":"insertMessageChronologically","args":[[true,[],true],{"a":{"b":"c"}}],"ok":[true,[],true,{"a":{"b":"c"}}]}
+{"fn":"insertMessageChronologically","args":[[null,"x",[]],null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[null,true],{"a":{"b":"c"}}],"ok":[null,true,{"a":{"b":"c"}}]}
+{"fn":"insertMessageChronologically","args":[{"a":"b"},true],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[[[]],{"a":"b"}],"ok":[[],{"a":"b"}]}
+{"fn":"insertMessageChronologically","args":[[null,true,[]],"x"],"ok":[null,true,[],"x"]}
+{"fn":"insertMessageChronologically","args":[[{}],{"a":{"b":"c"}}],"ok":[{},{"a":{"b":"c"}}]}
+{"fn":"insertMessageChronologically","args":[[null],{}],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[0,{"a":{"b":"c"}},"x"],{"a":{"b":"c"}}],"ok":[0,{"a":{"b":"c"}},"x",{"a":{"b":"c"}}]}
+{"fn":"insertMessageChronologically","args":[true,{}],"error":"messages is not iterable"}
+{"fn":"insertMessageChronologically","args":[[[],{"a":{"b":"c"}},"x"],"x"],"ok":[[],{"a":{"b":"c"}},"x","x"]}
+{"fn":"insertMessageChronologically","args":[[null,"x",{"a":"b"}],{"a":{"b":"c"}}],"ok":[null,"x",{"a":"b"},{"a":{"b":"c"}}]}
+{"fn":"insertMessageChronologically","args":[[0,[],{"a":"b"}],["a",1]],"ok":[0,[],{"a":"b"},["a",1]]}
+{"fn":"insertMessageChronologically","args":[[null,{},0],true],"ok":[null,{},0,true]}
+{"fn":"insertMessageChronologically","args":[[true],[]],"ok":[true,[]]}
+{"fn":"insertMessageChronologically","args":[[["a",1]],{"a":{"b":"c"}}],"ok":[["a",1],{"a":{"b":"c"}}]}
+{"fn":"insertMessageChronologically","args":[[[],["a",1]],true],"ok":[[],["a",1],true]}
+{"fn":"insertMessageChronologically","args":[["x",{"a":{"b":"c"}},"x"],{"a":{"b":"c"}}],"ok":["x",{"a":{"b":"c"}},"x",{"a":{"b":"c"}}]}
+{"fn":"insertMessageChronologically","args":[[0,null],"x"],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[{"a":"b"},["a",1]],"x"],"ok":[{"a":"b"},["a",1],"x"]}
+{"fn":"insertMessageChronologically","args":[[0,{"a":{"b":"c"}},["a",1]],true],"ok":[0,{"a":{"b":"c"}},["a",1],true]}
+{"fn":"insertMessageChronologically","args":[["x","x","x"],{"a":"b"}],"ok":["x","x","x",{"a":"b"}]}
+{"fn":"insertMessageChronologically","args":[[{"a":{"b":"c"}},null],true],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[{"a":"b"},"x",true],{}],"ok":[{"a":"b"},"x",true,{}]}
+{"fn":"insertMessageChronologically","args":[[{"a":{"b":"c"}}],{}],"ok":[{"a":{"b":"c"}},{}]}
+{"fn":"insertMessageChronologically","args":[[0,"x",{"a":{"b":"c"}}],"x"],"ok":[0,"x",{"a":{"b":"c"}},"x"]}
+{"fn":"insertMessageChronologically","args":[[{"a":"b"},[]],true],"ok":[{"a":"b"},[],true]}
+{"fn":"insertMessageChronologically","args":[[null],["a",1]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[{"a":{"b":"c"}},{"a":"b"}],{"a":"b"}],"ok":[{"a":{"b":"c"}},{"a":"b"},{"a":"b"}]}
+{"fn":"insertMessageChronologically","args":[[0,null,{}],["a",1]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[["a",1],null],[]],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"insertMessageChronologically","args":[[{}],{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":[{},{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}]}
+{"fn":"insertMessageChronologically","args":[[{}],{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":[{},{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}]}
+{"fn":"insertMessageChronologically","args":[[{}],[3,1,2]],"ok":[{},[3,1,2]]}
+{"fn":"insertMessageChronologically","args":[[{}],{}],"ok":[{},{}]}
+{"fn":"findMessageIndex","args":[[null,["a",1],0],"tab\tseparated"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[0,"a..b"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[[{"a":{"b":"c"}}],"  padded  "],"ok":-1}
+{"fn":"findMessageIndex","args":[[null,0],"straßeab"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[["a",1],true,{"a":"b"}],"ünïcödé"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"line1\nline2"],"ok":-1}
+{"fn":"findMessageIndex","args":[[true,["a",1]],"  padded  "],"ok":-1}
+{"fn":"findMessageIndex","args":[["x",0,0],"a"],"ok":-1}
+{"fn":"findMessageIndex","args":[[[]],"src/a/b.ts"],"ok":-1}
+{"fn":"findMessageIndex","args":[["x",0],"﻿bom"],"ok":-1}
+{"fn":"findMessageIndex","args":[["x",[],null],"﻿bom"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[["a",1]],".leadingkey_name-1"],"ok":-1}
+{"fn":"findMessageIndex","args":[[true,{"a":{"b":"c"}}],"straße"],"ok":-1}
+{"fn":"findMessageIndex","args":[[["a",1]],"a😀b😀c"],"ok":-1}
+{"fn":"findMessageIndex","args":[{},"ünïcödé"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[[{"a":"b"},{}],"a..bİstanbul"],"ok":-1}
+{"fn":"findMessageIndex","args":[true,"key_name-1"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[[{},[]],"a..b{name} has {count} items"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"日本語のテキスト"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{"a":{"b":"c"}}],"ns:key.path"],"ok":-1}
+{"fn":"findMessageIndex","args":[[true,[]],"abc"],"ok":-1}
+{"fn":"findMessageIndex","args":[[null],"é"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[],"a:b:c"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"﻿bomstraße"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"a😀b😀c"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{"a":"b"},{"a":{"b":"c"}},[]],"src/a/b.ts"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{},["a",1],{"a":{"b":"c"}}],"ab"],"ok":-1}
+{"fn":"findMessageIndex","args":[[true,{"a":{"b":"c"}},null],"Hello World"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[["a",1],"a.b.c"],"ok":-1}
+{"fn":"findMessageIndex","args":[[null,0],"key_name-1"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[],"ünïcödé"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{"a":{"b":"c"}},"x",{}],"straße"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"abc"],"ok":-1}
+{"fn":"findMessageIndex","args":[[["a",1],{"a":"b"},[]],"a.b.c"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{"a":{"b":"c"}},{}],"Hello World"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"line1\nline2Hello World"],"ok":-1}
+{"fn":"findMessageIndex","args":[[null,{"a":{"b":"c"}}],"ab"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[null,null],".leading"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[],"  padded  "],"ok":-1}
+{"fn":"findMessageIndex","args":[[["a",1],true],"abc"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"hello world"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{"a":"b"},{"a":"b"}],"line1\nline2"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{"a":{"b":"c"}},null,{}],"abcHELLO"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[null,"emoji 👍🏽 mix"],"error":"Cannot read properties of null (reading 'findIndex')"}
+{"fn":"findMessageIndex","args":[["x",true],"ünïcödé"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{"a":"b"}],".leading"],"ok":-1}
+{"fn":"findMessageIndex","args":[[0],"HELLO"],"ok":-1}
+{"fn":"findMessageIndex","args":[{"a":{"b":"c"}},"é"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[["x"],"İstanbul"],"ok":-1}
+{"fn":"findMessageIndex","args":[[["a",1]],"trailing."],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"tab\tseparated"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{},"x"],"{name} has {count} items"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{}],"ns:key.path"],"ok":-1}
+{"fn":"findMessageIndex","args":[[true],"emoji 👍🏽 mix"],"ok":-1}
+{"fn":"findMessageIndex","args":[[[],[]],"ünïcödé"],"ok":-1}
+{"fn":"findMessageIndex","args":[["x",null],"ΣΊΣΥΦΟΣ"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[{"a":"b"}],"ünïcödékey_name-1"],"ok":-1}
+{"fn":"findMessageIndex","args":[null,"abc"],"error":"Cannot read properties of null (reading 'findIndex')"}
+{"fn":"findMessageIndex","args":[0,"HELLO"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[{"a":{"b":"c"}},"tab\tseparated"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[[[],0],"trailing."],"ok":-1}
+{"fn":"findMessageIndex","args":[[["a",1]],"src/a/b.ts"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{"a":"b"}],"key_name-1"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{"a":"b"},{"a":{"b":"c"}},0],"abc"],"ok":-1}
+{"fn":"findMessageIndex","args":[["x",[],{"a":{"b":"c"}}],"{name} has {count} itemsΣΊΣΥΦΟΣ"],"ok":-1}
+{"fn":"findMessageIndex","args":[[null],"line1\nline2"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[{"a":{"b":"c"}},{"a":"b"}],"HELLO"],"ok":-1}
+{"fn":"findMessageIndex","args":[[0],"ΣΊΣΥΦΟΣ"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{"a":"b"},0,{}],"ns:key.path"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"src/a/b.ts"],"ok":-1}
+{"fn":"findMessageIndex","args":[[null,{"a":{"b":"c"}}],"a:b:c"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[null,"ΣΊΣΥΦΟΣ"],"error":"Cannot read properties of null (reading 'findIndex')"}
+{"fn":"findMessageIndex","args":[[{}],"ΣΊΣΥΦΟΣ"],"ok":-1}
+{"fn":"findMessageIndex","args":[[["a",1],0,{"a":{"b":"c"}}],"HELLOHello World"],"ok":-1}
+{"fn":"findMessageIndex","args":[[[],{},{"a":"b"}],"ΣΊΣΥΦΟΣ"],"ok":-1}
+{"fn":"findMessageIndex","args":[[null],"emoji 👍🏽 mix"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[],"HELLO"],"ok":-1}
+{"fn":"findMessageIndex","args":[[null],"ns:key.path"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[true],"./x/**/*.json"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{"a":{"b":"c"}}],"HELLO{name} has {count} items"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"ΣΊΣΥΦΟΣ"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{"a":{"b":"c"}},0,{"a":"b"}],"hello world"],"ok":-1}
+{"fn":"findMessageIndex","args":[[0,{},"x"],"ΣΊΣΥΦΟΣ"],"ok":-1}
+{"fn":"findMessageIndex","args":[["x",true],"İstanbul"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"abemoji 👍🏽 mix"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"Hello World  padded  "],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"İstanbulline1\nline2"],"ok":-1}
+{"fn":"findMessageIndex","args":[[true,0,{"a":"b"}],"./x/**/*.jsoné"],"ok":-1}
+{"fn":"findMessageIndex","args":[["x","x"],"emoji 👍🏽 mix"],"ok":-1}
+{"fn":"findMessageIndex","args":[["x"],""],"ok":-1}
+{"fn":"findMessageIndex","args":[[{"a":"b"},true,{"a":"b"}],"é{name} has {count} items"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"ab"],"ok":-1}
+{"fn":"findMessageIndex","args":[["x",{"a":{"b":"c"}},[]],"straßehello world"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{}],"hellons:key.path"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{},["a",1],{}],"trailing."],"ok":-1}
+{"fn":"findMessageIndex","args":[0,""],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[[true,null],"a😀b😀c"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[["a",1]],"a..b"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{"a":{"b":"c"}},[],[]],":"],"ok":-1}
+{"fn":"findMessageIndex","args":[0,"a:b:c"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[[true,[],null],"line1\nline2"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[{},"emoji 👍🏽 mix"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[[],"﻿bom"],"ok":-1}
+{"fn":"findMessageIndex","args":[[["a",1],{}],"日本語のテキスト"],"ok":-1}
+{"fn":"findMessageIndex","args":[{"a":"b"},"emoji 👍🏽 mix"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[["x",{},[]],"﻿bomemoji 👍🏽 mix"],"ok":-1}
+{"fn":"findMessageIndex","args":[[true],"{name} has {count} itemsünïcödé"],"ok":-1}
+{"fn":"findMessageIndex","args":[["x"],"hello world"],"ok":-1}
+{"fn":"findMessageIndex","args":[["a",1],"abc"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{"a":"b"},{}],"日本語のテキスト"],"ok":-1}
+{"fn":"findMessageIndex","args":[true,"ab"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[[null,[],[]],"ns:key.path"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[[],{},true],"HELLO"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{},{}],"﻿bomline1\nline2"],"ok":-1}
+{"fn":"findMessageIndex","args":["x",".leading./x/**/*.json"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":["x","İstanbul"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[[{"a":"b"},[],{}],"trailing."],"ok":-1}
+{"fn":"findMessageIndex","args":[["x",true,0],"Hello World"],"ok":-1}
+{"fn":"findMessageIndex","args":[[0,0,null],"straße"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[["a",1],"x",{}],""],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"hello"],"ok":-1}
+{"fn":"findMessageIndex","args":[[["a",1],["a",1]],"tab\tseparated"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"İstanbulstraße"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"ns:key.path"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"😀"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"key_name-1"],"ok":-1}
+{"fn":"findMessageIndex","args":[[["a",1],{"a":{"b":"c"}}],"hello"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{}],"ns:key.pathns:key.path"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{},[],true],"😀"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{},["a",1]],"abc"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{"a":{"b":"c"}}],"./x/**/*.json"],"ok":-1}
+{"fn":"findMessageIndex","args":[["x"],"src/a/b.ts"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"Hello World"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{"a":"b"},{"a":"b"},null],"a..b"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[true,{"a":"b"}],"a..b"],"ok":-1}
+{"fn":"findMessageIndex","args":[["x"],"  padded  "],"ok":-1}
+{"fn":"findMessageIndex","args":[[],""],"ok":-1}
+{"fn":"findMessageIndex","args":[["a",1],"a:b:c"],"ok":-1}
+{"fn":"findMessageIndex","args":[[[],[]],"{name} has {count} items"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"key_name-1hello world"],"ok":-1}
+{"fn":"findMessageIndex","args":[[true],"﻿bomΣΊΣΥΦΟΣ"],"ok":-1}
+{"fn":"findMessageIndex","args":[{"a":{"b":"c"}},"ünïcödé"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[[],"a"],"ok":-1}
+{"fn":"findMessageIndex","args":[[["a",1]],"ns:key.path"],"ok":-1}
+{"fn":"findMessageIndex","args":[[["a",1],[]],"Hello World"],"ok":-1}
+{"fn":"findMessageIndex","args":[[["a",1]],".leading"],"ok":-1}
+{"fn":"findMessageIndex","args":[[true,[],"x"],"tab\tseparated"],"ok":-1}
+{"fn":"findMessageIndex","args":[["x",{}],"src/a/b.ts"],"ok":-1}
+{"fn":"findMessageIndex","args":[{},"src/a/b.ts"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[[{},{},[]],"a:b:c"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"trailing."],"ok":-1}
+{"fn":"findMessageIndex","args":[[true],"日本語のテキスト"],"ok":-1}
+{"fn":"findMessageIndex","args":[[["a",1],{"a":"b"},true],"a:b:c"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{}],"abca.b.c"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{},{"a":{"b":"c"}},[]],"{name} has {count} items"],"ok":-1}
+{"fn":"findMessageIndex","args":[[true],"ab.leading"],"ok":-1}
+{"fn":"findMessageIndex","args":[[null],"hello world"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[null],"a:b:c"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[{"a":"b"},"a:b:c"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[[{"a":"b"}],"trailing."],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"ΣΊΣΥΦΟΣa..b"],"ok":-1}
+{"fn":"findMessageIndex","args":[[["a",1],true],"hello world"],"ok":-1}
+{"fn":"findMessageIndex","args":[[[],null],"a..b"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[null,{},["a",1]],"日本語のテキスト"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[{"a":"b"},true,["a",1]],"a:b:c"],"ok":-1}
+{"fn":"findMessageIndex","args":[[["a",1]],"ab"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"a.b.c"],"ok":-1}
+{"fn":"findMessageIndex","args":[true,"line1\nline2"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[[[]],"a😀b😀c"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{},[]],"hello.leading"],"ok":-1}
+{"fn":"findMessageIndex","args":[{"a":"b"},"a😀b😀cline1\nline2"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[[{},["a",1]],"a:b:ca😀b😀c"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{},{"a":"b"},["a",1]],"abcHELLO"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{"a":{"b":"c"}},[],{}],"trailing.straße"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{"a":"b"},"x",0],"ΣΊΣΥΦΟΣ﻿bom"],"ok":-1}
+{"fn":"findMessageIndex","args":[["x"],"hello"],"ok":-1}
+{"fn":"findMessageIndex","args":[[["a",1],["a",1]],"ünïcödéa:b:c"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"{name} has {count} items"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{"a":"b"},"x",{"a":{"b":"c"}}],"﻿bom"],"ok":-1}
+{"fn":"findMessageIndex","args":[[null,0,0],"key_name-1ΣΊΣΥΦΟΣ"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[],"a..b"],"ok":-1}
+{"fn":"findMessageIndex","args":[[{}],"emoji 👍🏽 mix"],"ok":-1}
+{"fn":"findMessageIndex","args":[true,".leadingtab\tseparated"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[[0],"Hello World"],"ok":-1}
+{"fn":"findMessageIndex","args":[{},"ns:key.path"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[["x",0],"  padded  "],"ok":-1}
+{"fn":"findMessageIndex","args":[[],":"],"ok":-1}
+{"fn":"findMessageIndex","args":[[],"é"],"ok":-1}
+{"fn":"findMessageIndex","args":[["a",1],"aünïcödé"],"ok":-1}
+{"fn":"findMessageIndex","args":[{},"line1\nline2"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[["x",0,{}],"key_name-1"],"ok":-1}
+{"fn":"findMessageIndex","args":[[[],["a",1]],"emoji 👍🏽 mix"],"ok":-1}
+{"fn":"findMessageIndex","args":[["a",1],"﻿bom"],"ok":-1}
+{"fn":"findMessageIndex","args":[[null,{"a":"b"},{"a":"b"}],"ns:key.path"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[["x"],":"],"ok":-1}
+{"fn":"findMessageIndex","args":[[0,null,["a",1]],"emoji 👍🏽 mix"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[[],[],null],":"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[true,"a:b:cΣΊΣΥΦΟΣ"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[{"a":"b"},"a"],"error":"messages.findIndex is not a function"}
+{"fn":"findMessageIndex","args":[[["a",1]],":"],"ok":-1}
+{"fn":"findMessageIndex","args":[[null,["a",1],0],"héllo wörld"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[null,["a",1],0],"👍🏽 thumbs"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[null,["a",1],0],"日本語"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[null,["a",1],0],""],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[null,["a",1],0],"é"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[null,["a",1],0],"İstanbul"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[null,["a",1],0],"straße"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[null,["a",1],0],"ılık ırmak"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[null,["a",1],0],"👨‍👩‍👧 family"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[null,["a",1],0],"a b"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[null,["a",1],0],"ΣΊΣΥΦΟΣ"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[null,["a",1],0],"a😀b"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[null,["a",1],0],"﻿bom"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[null,["a",1],0],"a²b x½ y①"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[null,["a",1],0],"aⅠb Ⅻ"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[null,["a",1],0],"a𐐀b 𝐀bc"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"findMessageIndex","args":[[null,["a",1],0],"कि ٣٤"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[[],"a.b.c"],"ok":[]}
+{"fn":"messagesBefore","args":[["x",{},["a",1]],"abc"],"ok":["x",{},["a",1]]}
+{"fn":"messagesBefore","args":[0,"key_name-1"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[[{"a":{"b":"c"}}],"a"],"ok":[{"a":{"b":"c"}}]}
+{"fn":"messagesBefore","args":[[],"日本語のテキスト"],"ok":[]}
+{"fn":"messagesBefore","args":[[{"a":{"b":"c"}},[]],"İstanbul"],"ok":[{"a":{"b":"c"}},[]]}
+{"fn":"messagesBefore","args":[[[],0,["a",1]],"﻿bom"],"ok":[[],0,["a",1]]}
+{"fn":"messagesBefore","args":[[],"a😀b😀c"],"ok":[]}
+{"fn":"messagesBefore","args":[[[],true],"src/a/b.tsa😀b😀c"],"ok":[[],true]}
+{"fn":"messagesBefore","args":[["a",1],"a.b.c"],"ok":["a",1]}
+{"fn":"messagesBefore","args":[[{"a":{"b":"c"}}],"a.b.c"],"ok":[{"a":{"b":"c"}}]}
+{"fn":"messagesBefore","args":[[{},[],[]],"ns:key.path"],"ok":[{},[],[]]}
+{"fn":"messagesBefore","args":[[{},{}],"😀"],"ok":[{},{}]}
+{"fn":"messagesBefore","args":[[null],"İstanbul"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[[],"tab\tseparated"],"ok":[]}
+{"fn":"messagesBefore","args":[[{}],"a"],"ok":[{}]}
+{"fn":"messagesBefore","args":[["x",[],["a",1]],"a😀b😀c"],"ok":["x",[],["a",1]]}
+{"fn":"messagesBefore","args":[0,".leading"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[[],":"],"ok":[]}
+{"fn":"messagesBefore","args":[[["a",1],true,{"a":{"b":"c"}}],"ns:key.path"],"ok":[["a",1],true,{"a":{"b":"c"}}]}
+{"fn":"messagesBefore","args":[[true,{"a":"b"}],"key_name-1"],"ok":[true,{"a":"b"}]}
+{"fn":"messagesBefore","args":[["a",1],"  padded  "],"ok":["a",1]}
+{"fn":"messagesBefore","args":[[{"a":{"b":"c"}}],"Hello World"],"ok":[{"a":{"b":"c"}}]}
+{"fn":"messagesBefore","args":[null,"a"],"error":"Cannot read properties of null (reading 'findIndex')"}
+{"fn":"messagesBefore","args":[[{"a":{"b":"c"}}],"﻿bom"],"ok":[{"a":{"b":"c"}}]}
+{"fn":"messagesBefore","args":[[{"a":{"b":"c"}},true,0],"trailing."],"ok":[{"a":{"b":"c"}},true,0]}
+{"fn":"messagesBefore","args":[[[]],"Hello World"],"ok":[[]]}
+{"fn":"messagesBefore","args":[{},"﻿bom"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[[],":日本語のテキスト"],"ok":[]}
+{"fn":"messagesBefore","args":[[true,0,[]],"  padded  "],"ok":[true,0,[]]}
+{"fn":"messagesBefore","args":["x","é"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[[],"﻿bom"],"ok":[]}
+{"fn":"messagesBefore","args":[[],"HELLO"],"ok":[]}
+{"fn":"messagesBefore","args":[[{}],"key_name-1  padded  "],"ok":[{}]}
+{"fn":"messagesBefore","args":[[{"a":{"b":"c"}},[],0],"emoji 👍🏽 mix"],"ok":[{"a":{"b":"c"}},[],0]}
+{"fn":"messagesBefore","args":[[],"a:b:c﻿bom"],"ok":[]}
+{"fn":"messagesBefore","args":[[],"a"],"ok":[]}
+{"fn":"messagesBefore","args":[[],"  padded  é"],"ok":[]}
+{"fn":"messagesBefore","args":[[null],"emoji 👍🏽 mix"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[[{"a":"b"},0,null],"hello"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[{"a":"b"},"a:b:c"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[[{}],"İstanbul"],"ok":[{}]}
+{"fn":"messagesBefore","args":[[["a",1],true,true],"key_name-1"],"ok":[["a",1],true,true]}
+{"fn":"messagesBefore","args":[true,"Hello World"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[{},"./x/**/*.json"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[[],"hello world"],"ok":[]}
+{"fn":"messagesBefore","args":[[["a",1]],"ns:key.path"],"ok":[["a",1]]}
+{"fn":"messagesBefore","args":[[0,[]],"  padded  "],"ok":[0,[]]}
+{"fn":"messagesBefore","args":[[0,null,true],"ünïcödé"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[[{"a":"b"}],"tab\tseparated"],"ok":[{"a":"b"}]}
+{"fn":"messagesBefore","args":[{"a":"b"},"Hello World"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[[[],null,["a",1]],"ΣΊΣΥΦΟΣ"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[[],"emoji 👍🏽 mix"],"ok":[]}
+{"fn":"messagesBefore","args":[[["a",1],["a",1]],"src/a/b.ts"],"ok":[["a",1],["a",1]]}
+{"fn":"messagesBefore","args":[[null,"x",0],".leading"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[[{"a":"b"},0,"x"],"a..b"],"ok":[{"a":"b"},0,"x"]}
+{"fn":"messagesBefore","args":[[true,[],"x"],"  padded  "],"ok":[true,[],"x"]}
+{"fn":"messagesBefore","args":[[],"İstanbul"],"ok":[]}
+{"fn":"messagesBefore","args":[[{"a":"b"},"x"],"İstanbul"],"ok":[{"a":"b"},"x"]}
+{"fn":"messagesBefore","args":[[true],"straße"],"ok":[true]}
+{"fn":"messagesBefore","args":[[[],true,null],"tab\tseparated"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[[null,{},{"a":"b"}],"emoji 👍🏽 mix"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[[],"ünïcödé"],"ok":[]}
+{"fn":"messagesBefore","args":[[],"ab"],"ok":[]}
+{"fn":"messagesBefore","args":[{},"abc"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[[{"a":{"b":"c"}},{"a":"b"}],"a:b:c"],"ok":[{"a":{"b":"c"}},{"a":"b"}]}
+{"fn":"messagesBefore","args":[[{"a":"b"}],"src/a/b.ts"],"ok":[{"a":"b"}]}
+{"fn":"messagesBefore","args":[{},".leading"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[[0,"x",{"a":"b"}],"trailing."],"ok":[0,"x",{"a":"b"}]}
+{"fn":"messagesBefore","args":[[{"a":"b"}],"line1\nline2"],"ok":[{"a":"b"}]}
+{"fn":"messagesBefore","args":[{"a":{"b":"c"}},"a"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[["x",{},{"a":{"b":"c"}}],"line1\nline2"],"ok":["x",{},{"a":{"b":"c"}}]}
+{"fn":"messagesBefore","args":[["x",true],"hello world"],"ok":["x",true]}
+{"fn":"messagesBefore","args":[["x"],".leading"],"ok":["x"]}
+{"fn":"messagesBefore","args":[[["a",1],{},"x"],"straße"],"ok":[["a",1],{},"x"]}
+{"fn":"messagesBefore","args":[[],"a..b"],"ok":[]}
+{"fn":"messagesBefore","args":[[],".leading"],"ok":[]}
+{"fn":"messagesBefore","args":[[0,["a",1]],"é"],"ok":[0,["a",1]]}
+{"fn":"messagesBefore","args":[[],"ünïcödéline1\nline2"],"ok":[]}
+{"fn":"messagesBefore","args":[["x",true],"ns:key.pathstraße"],"ok":["x",true]}
+{"fn":"messagesBefore","args":[[null,true],"é"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[["x"],"tab\tseparated"],"ok":["x"]}
+{"fn":"messagesBefore","args":[[[],["a",1],0],".leadingé"],"ok":[[],["a",1],0]}
+{"fn":"messagesBefore","args":[[true],"src/a/b.ts"],"ok":[true]}
+{"fn":"messagesBefore","args":[0,"İstanbul"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":["x","  padded  a.b.c"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[[],"a:b:c"],"ok":[]}
+{"fn":"messagesBefore","args":[[],"straße"],"ok":[]}
+{"fn":"messagesBefore","args":[[["a",1]],"a.b.c"],"ok":[["a",1]]}
+{"fn":"messagesBefore","args":[[],"😀"],"ok":[]}
+{"fn":"messagesBefore","args":[[true],"./x/**/*.json"],"ok":[true]}
+{"fn":"messagesBefore","args":[[],"abctrailing."],"ok":[]}
+{"fn":"messagesBefore","args":[[[],0,true],"😀"],"ok":[[],0,true]}
+{"fn":"messagesBefore","args":[["x",[],true],"a..ba:b:c"],"ok":["x",[],true]}
+{"fn":"messagesBefore","args":[[{"a":{"b":"c"}}],"trailing."],"ok":[{"a":{"b":"c"}}]}
+{"fn":"messagesBefore","args":[[{"a":"b"},"x",{"a":{"b":"c"}}],"日本語のテキスト﻿bom"],"ok":[{"a":"b"},"x",{"a":{"b":"c"}}]}
+{"fn":"messagesBefore","args":[[],"trailing."],"ok":[]}
+{"fn":"messagesBefore","args":[[["a",1],{}],"hello world"],"ok":[["a",1],{}]}
+{"fn":"messagesBefore","args":[["x",{"a":"b"},null],"ΣΊΣΥΦΟΣtrailing."],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[[],"Hello World"],"ok":[]}
+{"fn":"messagesBefore","args":[[0],"straße"],"ok":[0]}
+{"fn":"messagesBefore","args":[[],"ΣΊΣΥΦΟΣ"],"ok":[]}
+{"fn":"messagesBefore","args":[[null,null,"x"],"a"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":["x","hello"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[null,"é﻿bom"],"error":"Cannot read properties of null (reading 'findIndex')"}
+{"fn":"messagesBefore","args":[[[],{},"x"],"﻿bom"],"ok":[[],{},"x"]}
+{"fn":"messagesBefore","args":[[true],"a"],"ok":[true]}
+{"fn":"messagesBefore","args":[[[],0],":"],"ok":[[],0]}
+{"fn":"messagesBefore","args":[["x"],"straßeline1\nline2"],"ok":["x"]}
+{"fn":"messagesBefore","args":[[["a",1],true,"x"],"İstanbul"],"ok":[["a",1],true,"x"]}
+{"fn":"messagesBefore","args":[[{"a":{"b":"c"}},["a",1]],":"],"ok":[{"a":{"b":"c"}},["a",1]]}
+{"fn":"messagesBefore","args":[[{}],"{name} has {count} itemsé"],"ok":[{}]}
+{"fn":"messagesBefore","args":[{"a":{"b":"c"}},""],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":["x","ab"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[[["a",1],{"a":"b"},null],"HELLO"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[[true],"é"],"ok":[true]}
+{"fn":"messagesBefore","args":[[{"a":{"b":"c"}}],"a..b"],"ok":[{"a":{"b":"c"}}]}
+{"fn":"messagesBefore","args":[[true,true,true],"é"],"ok":[true,true,true]}
+{"fn":"messagesBefore","args":[[{}],"trailing."],"ok":[{}]}
+{"fn":"messagesBefore","args":[[[]],"a😀b😀c"],"ok":[[]]}
+{"fn":"messagesBefore","args":[[0],"trailing.key_name-1"],"ok":[0]}
+{"fn":"messagesBefore","args":[{"a":{"b":"c"}},"ns:key.path"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[[[]],"key_name-1"],"ok":[[]]}
+{"fn":"messagesBefore","args":[[true,[]],"trailing."],"ok":[true,[]]}
+{"fn":"messagesBefore","args":[[{"a":{"b":"c"}},{}],"﻿bom"],"ok":[{"a":{"b":"c"}},{}]}
+{"fn":"messagesBefore","args":[[0,{"a":"b"}],"key_name-1"],"ok":[0,{"a":"b"}]}
+{"fn":"messagesBefore","args":[[true,"x"],"a"],"ok":[true,"x"]}
+{"fn":"messagesBefore","args":[[],"  padded  straße"],"ok":[]}
+{"fn":"messagesBefore","args":[[],"src/a/b.tsns:key.path"],"ok":[]}
+{"fn":"messagesBefore","args":[[[]],".leading"],"ok":[[]]}
+{"fn":"messagesBefore","args":[{"a":"b"},"emoji 👍🏽 mix"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[[null,0],"src/a/b.ts"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[["x",0,true],"{name} has {count} items"],"ok":["x",0,true]}
+{"fn":"messagesBefore","args":[[{"a":"b"},{"a":{"b":"c"}}],"hello world"],"ok":[{"a":"b"},{"a":{"b":"c"}}]}
+{"fn":"messagesBefore","args":[{"a":"b"},"straßea.b.c"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[["x",null,true],"src/a/b.ts"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[{"a":{"b":"c"}},"a😀b😀c"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[[],"line1\nline2日本語のテキスト"],"ok":[]}
+{"fn":"messagesBefore","args":[[0],"İstanbul"],"ok":[0]}
+{"fn":"messagesBefore","args":[[],"key_name-1"],"ok":[]}
+{"fn":"messagesBefore","args":[[null],"a:b:c"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[[{}],"ns:key.path"],"ok":[{}]}
+{"fn":"messagesBefore","args":[[],"  padded  "],"ok":[]}
+{"fn":"messagesBefore","args":[[0,[],true],"helloab"],"ok":[0,[],true]}
+{"fn":"messagesBefore","args":[[{}],"😀"],"ok":[{}]}
+{"fn":"messagesBefore","args":[[true,true],"a:b:c"],"ok":[true,true]}
+{"fn":"messagesBefore","args":[[true,null],"İstanbul"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[["x"],"é"],"ok":["x"]}
+{"fn":"messagesBefore","args":[[],"﻿bomtab\tseparated"],"ok":[]}
+{"fn":"messagesBefore","args":[[{"a":{"b":"c"}},["a",1],{"a":{"b":"c"}}],"ünïcödé"],"ok":[{"a":{"b":"c"}},["a",1],{"a":{"b":"c"}}]}
+{"fn":"messagesBefore","args":[[[],true,["a",1]],"a😀b😀c"],"ok":[[],true,["a",1]]}
+{"fn":"messagesBefore","args":[[0],"abc"],"ok":[0]}
+{"fn":"messagesBefore","args":[{},"src/a/b.ts"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[[["a",1],["a",1],{"a":"b"}],"emoji 👍🏽 mix"],"ok":[["a",1],["a",1],{"a":"b"}]}
+{"fn":"messagesBefore","args":[{"a":{"b":"c"}},"ab"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[[[],{},true],"hello"],"ok":[[],{},true]}
+{"fn":"messagesBefore","args":[["x","x"],"a"],"ok":["x","x"]}
+{"fn":"messagesBefore","args":[[["a",1],{"a":{"b":"c"}}],"HELLO"],"ok":[["a",1],{"a":{"b":"c"}}]}
+{"fn":"messagesBefore","args":[[],"ns:key.path"],"ok":[]}
+{"fn":"messagesBefore","args":[[{},true],":"],"ok":[{},true]}
+{"fn":"messagesBefore","args":[true,"😀a.b.c"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[[],"./x/**/*.json"],"ok":[]}
+{"fn":"messagesBefore","args":[[{},null],"ab"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[[0,{"a":{"b":"c"}}],"straße"],"ok":[0,{"a":{"b":"c"}}]}
+{"fn":"messagesBefore","args":[[],"abc"],"ok":[]}
+{"fn":"messagesBefore","args":[[{"a":{"b":"c"}},["a",1],{}],"﻿bomHELLO"],"ok":[{"a":{"b":"c"}},["a",1],{}]}
+{"fn":"messagesBefore","args":[[0,null,true],"tab\tseparated😀"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[[{"a":"b"},{"a":{"b":"c"}}],"tab\tseparated"],"ok":[{"a":"b"},{"a":{"b":"c"}}]}
+{"fn":"messagesBefore","args":[[true,null],"src/a/b.ts"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[[null,["a",1]],"src/a/b.ts"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[[true,"x"],"a.b.cab"],"ok":[true,"x"]}
+{"fn":"messagesBefore","args":[["x",{}],"ab"],"ok":["x",{}]}
+{"fn":"messagesBefore","args":[[true,["a",1]],"HELLO"],"ok":[true,["a",1]]}
+{"fn":"messagesBefore","args":[[["a",1]],"emoji 👍🏽 mixab"],"ok":[["a",1]]}
+{"fn":"messagesBefore","args":[[null,{},null],"emoji 👍🏽 mix"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[[["a",1]],"key_name-1.leading"],"ok":[["a",1]]}
+{"fn":"messagesBefore","args":[["x"],"trailing."],"ok":["x"]}
+{"fn":"messagesBefore","args":[[true,"x"],"Hello World"],"ok":[true,"x"]}
+{"fn":"messagesBefore","args":[0,"helloa.b.c"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[[{"a":"b"}],"hello worldHello World"],"ok":[{"a":"b"}]}
+{"fn":"messagesBefore","args":[["x",{"a":{"b":"c"}}],"trailing."],"ok":["x",{"a":{"b":"c"}}]}
+{"fn":"messagesBefore","args":[[0],"hello world"],"ok":[0]}
+{"fn":"messagesBefore","args":[[{},null],"İstanbul"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[[{"a":"b"}],"﻿bom"],"ok":[{"a":"b"}]}
+{"fn":"messagesBefore","args":[["a",1],"日本語のテキスト"],"ok":["a",1]}
+{"fn":"messagesBefore","args":[["x"],"Hello World"],"ok":["x"]}
+{"fn":"messagesBefore","args":[[[],["a",1]],""],"ok":[[],["a",1]]}
+{"fn":"messagesBefore","args":[[true],"ab"],"ok":[true]}
+{"fn":"messagesBefore","args":[0,"ΣΊΣΥΦΟΣ"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[[null,{},"x"],"line1\nline2"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[[[],{"a":{"b":"c"}},null],"  padded  "],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[true,"a"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[{"a":"b"},"trailing."],"error":"messages.findIndex is not a function"}
+{"fn":"messagesBefore","args":[null,"abc"],"error":"Cannot read properties of null (reading 'findIndex')"}
+{"fn":"messagesBefore","args":[[[],["a",1],null],"ΣΊΣΥΦΟΣ"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[[0],"ns:key.path"],"ok":[0]}
+{"fn":"messagesBefore","args":[[true],"HELLO"],"ok":[true]}
+{"fn":"messagesBefore","args":[[null,"x",["a",1]],"{name} has {count} itemsa:b:c"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[[null],"HELLO"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesBefore","args":[[{},["a",1],{"a":"b"}],"İstanbul"],"ok":[{},["a",1],{"a":"b"}]}
+{"fn":"messagesBefore","args":[[],"héllo wörld"],"ok":[]}
+{"fn":"messagesBefore","args":[[],"👍🏽 thumbs"],"ok":[]}
+{"fn":"messagesBefore","args":[[],"日本語"],"ok":[]}
+{"fn":"messagesBefore","args":[[],""],"ok":[]}
+{"fn":"messagesBefore","args":[[],"é"],"ok":[]}
+{"fn":"messagesBefore","args":[[],"ılık ırmak"],"ok":[]}
+{"fn":"messagesBefore","args":[[],"👨‍👩‍👧 family"],"ok":[]}
+{"fn":"messagesBefore","args":[[],"a b"],"ok":[]}
+{"fn":"messagesBefore","args":[[],"a😀b"],"ok":[]}
+{"fn":"messagesBefore","args":[[],"a²b x½ y①"],"ok":[]}
+{"fn":"messagesBefore","args":[[],"aⅠb Ⅻ"],"ok":[]}
+{"fn":"messagesBefore","args":[[],"a𐐀b 𝐀bc"],"ok":[]}
+{"fn":"messagesBefore","args":[[],"कि ٣٤"],"ok":[]}
+{"fn":"messagesFrom","args":[[{}],"ns:key.path"],"ok":[]}
+{"fn":"messagesFrom","args":[[true,[],{"a":"b"}],".leading"],"ok":[]}
+{"fn":"messagesFrom","args":[[{},["a",1]],"﻿bom"],"ok":[]}
+{"fn":"messagesFrom","args":[{},"﻿bom"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":[[null,["a",1],null],"İstanbul"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[["x",true],"a"],"ok":[]}
+{"fn":"messagesFrom","args":[[null],""],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[],"ΣΊΣΥΦΟΣ"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"src/a/b.ts"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"ab"],"ok":[]}
+{"fn":"messagesFrom","args":[[0],".leading"],"ok":[]}
+{"fn":"messagesFrom","args":[["x"],"tab\tseparated"],"ok":[]}
+{"fn":"messagesFrom","args":[[],".leading"],"ok":[]}
+{"fn":"messagesFrom","args":[["x",null,{"a":"b"}],"ünïcödé"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[{"a":"b"}],":"],"ok":[]}
+{"fn":"messagesFrom","args":[[null,{"a":{"b":"c"}},["a",1]],"a😀b😀c"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[true],":"],"ok":[]}
+{"fn":"messagesFrom","args":[[{},["a",1],{"a":{"b":"c"}}],"key_name-1"],"ok":[]}
+{"fn":"messagesFrom","args":[[{}],"ΣΊΣΥΦΟΣ"],"ok":[]}
+{"fn":"messagesFrom","args":[[[],"x"],"a"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"ns:key.pathhello"],"ok":[]}
+{"fn":"messagesFrom","args":[[["a",1],{"a":"b"},[]],"a"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"trailing."],"ok":[]}
+{"fn":"messagesFrom","args":[null,"﻿bom"],"error":"Cannot read properties of null (reading 'findIndex')"}
+{"fn":"messagesFrom","args":[[],"﻿bomhello world"],"ok":[]}
+{"fn":"messagesFrom","args":[[true,{"a":"b"}],"emoji 👍🏽 mix"],"ok":[]}
+{"fn":"messagesFrom","args":[[0],"ns:key.path"],"ok":[]}
+{"fn":"messagesFrom","args":[[["a",1],0,{}],"src/a/b.ts"],"ok":[]}
+{"fn":"messagesFrom","args":[[true,{"a":"b"},{}],".leading"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"日本語のテキスト"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"a:b:c"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"İstanbul"],"ok":[]}
+{"fn":"messagesFrom","args":[[{"a":{"b":"c"}}],""],"ok":[]}
+{"fn":"messagesFrom","args":[[["a",1],{},{}],"hellons:key.path"],"ok":[]}
+{"fn":"messagesFrom","args":[[{"a":{"b":"c"}}],"İstanbul"],"ok":[]}
+{"fn":"messagesFrom","args":[[{},"x"],"日本語のテキスト"],"ok":[]}
+{"fn":"messagesFrom","args":[[true,"x"],"hello"],"ok":[]}
+{"fn":"messagesFrom","args":[[[],true],"tab\tseparated"],"ok":[]}
+{"fn":"messagesFrom","args":[[null,0,true],"İstanbul"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[null,{"a":{"b":"c"}},{"a":{"b":"c"}}],"ns:key.path"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[["a",1],["a",1],[]],"a😀b😀c"],"ok":[]}
+{"fn":"messagesFrom","args":[[{},{},["a",1]],"ns:key.path"],"ok":[]}
+{"fn":"messagesFrom","args":[[true,0,[]],"src/a/b.ts"],"ok":[]}
+{"fn":"messagesFrom","args":[[{},["a",1]],"line1\nline2"],"ok":[]}
+{"fn":"messagesFrom","args":[[null],":Hello World"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[{"a":{"b":"c"}}],"hello"],"ok":[]}
+{"fn":"messagesFrom","args":[true,"a😀b😀c"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":[[],"ünïcödé"],"ok":[]}
+{"fn":"messagesFrom","args":[null,"  padded  key_name-1"],"error":"Cannot read properties of null (reading 'findIndex')"}
+{"fn":"messagesFrom","args":[[],"﻿bom"],"ok":[]}
+{"fn":"messagesFrom","args":[[null,"x"],"ab"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[{},{}],"emoji 👍🏽 mix"],"ok":[]}
+{"fn":"messagesFrom","args":[[{"a":"b"},true],"hello world"],"ok":[]}
+{"fn":"messagesFrom","args":[[[],{"a":"b"},null],".leading"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[{"a":"b"}],"HELLOİstanbul"],"ok":[]}
+{"fn":"messagesFrom","args":[[true,null],"a😀b😀c"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[[],{},{"a":{"b":"c"}}],"hello world"],"ok":[]}
+{"fn":"messagesFrom","args":[[{"a":{"b":"c"}},null,{"a":{"b":"c"}}],"日本語のテキストa😀b😀c"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[[]],"hello"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"hello"],"ok":[]}
+{"fn":"messagesFrom","args":[[],":"],"ok":[]}
+{"fn":"messagesFrom","args":[0,"  padded  日本語のテキスト"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":[[0],"a.b.c"],"ok":[]}
+{"fn":"messagesFrom","args":[[["a",1],{"a":"b"}],"Hello World😀"],"ok":[]}
+{"fn":"messagesFrom","args":[[[]],"hello world"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"tab\tseparated"],"ok":[]}
+{"fn":"messagesFrom","args":[["x",0],"a.b.c"],"ok":[]}
+{"fn":"messagesFrom","args":[[null],"{name} has {count} items{name} has {count} items"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[0],"trailing."],"ok":[]}
+{"fn":"messagesFrom","args":[[0],"tab\tseparateda😀b😀c"],"ok":[]}
+{"fn":"messagesFrom","args":[[true,{},true],"hello world"],"ok":[]}
+{"fn":"messagesFrom","args":["x","x"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":[[["a",1],{"a":{"b":"c"}}],"emoji 👍🏽 mix"],"ok":[]}
+{"fn":"messagesFrom","args":[[{"a":{"b":"c"}}],"tab\tseparated"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"ns:key.path"],"ok":[]}
+{"fn":"messagesFrom","args":[[[],[]],"{name} has {count} items"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"aba😀b😀c"],"ok":[]}
+{"fn":"messagesFrom","args":[true,"HELLO"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":[[{"a":"b"},"x",null],"hello"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[null,{"a":"b"}],".leading"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[["a",1],["a",1],[]],"ns:key.pathns:key.path"],"ok":[]}
+{"fn":"messagesFrom","args":[[null],"emoji 👍🏽 mixa..b"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":["x","a"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":[[null,["a",1],null],"straße日本語のテキスト"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":["x","key_name-1"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":[[true,{"a":"b"},["a",1]],""],"ok":[]}
+{"fn":"messagesFrom","args":[[[],[]],"{name} has {count} items😀"],"ok":[]}
+{"fn":"messagesFrom","args":[[{"a":"b"},["a",1],true],"😀"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"😀"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"Hello World"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"key_name-1"],"ok":[]}
+{"fn":"messagesFrom","args":[[[],["a",1]],"ΣΊΣΥΦΟΣ"],"ok":[]}
+{"fn":"messagesFrom","args":[[{}],"a..b"],"ok":[]}
+{"fn":"messagesFrom","args":[[true,true],"abc"],"ok":[]}
+{"fn":"messagesFrom","args":[true,"İstanbul"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":[[null],"tab\tseparated"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[{},".leading"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":[[["a",1],[],0],"{name} has {count} items"],"ok":[]}
+{"fn":"messagesFrom","args":[[null,true,{}],"a..b"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[{"a":"b"}],"  padded  "],"ok":[]}
+{"fn":"messagesFrom","args":[[["a",1]],"a:b:c"],"ok":[]}
+{"fn":"messagesFrom","args":[[[]],"./x/**/*.json"],"ok":[]}
+{"fn":"messagesFrom","args":[[true,[]],"src/a/b.ts"],"ok":[]}
+{"fn":"messagesFrom","args":[[{},["a",1],true],"﻿bom:"],"ok":[]}
+{"fn":"messagesFrom","args":[[{},{"a":"b"},["a",1]],"😀HELLO"],"ok":[]}
+{"fn":"messagesFrom","args":["x","éİstanbul"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":[["a",1],"ab"],"ok":[]}
+{"fn":"messagesFrom","args":[[{},["a",1],null],"trailing."],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[["a",1]],"HELLO"],"ok":[]}
+{"fn":"messagesFrom","args":[[0,{"a":{"b":"c"}},null],":"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[["x"],"line1\nline2"],"ok":[]}
+{"fn":"messagesFrom","args":[[[]],"HELLO"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"a"],"ok":[]}
+{"fn":"messagesFrom","args":[[{},["a",1]],"a"],"ok":[]}
+{"fn":"messagesFrom","args":[[[],[]],"a..b"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"key_name-1ns:key.path"],"ok":[]}
+{"fn":"messagesFrom","args":[{"a":"b"},"İstanbul"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":[{"a":{"b":"c"}},"abcé"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":[[0,true,[]],"abc"],"ok":[]}
+{"fn":"messagesFrom","args":[[[]],"emoji 👍🏽 mixa😀b😀c"],"ok":[]}
+{"fn":"messagesFrom","args":[[0,{"a":"b"}],"  padded  "],"ok":[]}
+{"fn":"messagesFrom","args":[[null],"ab"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[],""],"ok":[]}
+{"fn":"messagesFrom","args":[[[]],"😀"],"ok":[]}
+{"fn":"messagesFrom","args":[["x",{"a":{"b":"c"}}],"./x/**/*.json./x/**/*.json"],"ok":[]}
+{"fn":"messagesFrom","args":[[{"a":{"b":"c"}}],"straßeemoji 👍🏽 mix"],"ok":[]}
+{"fn":"messagesFrom","args":[[{},"x",{"a":{"b":"c"}}],"ΣΊΣΥΦΟΣ"],"ok":[]}
+{"fn":"messagesFrom","args":[[{"a":"b"},["a",1],["a",1]],"ΣΊΣΥΦΟΣ"],"ok":[]}
+{"fn":"messagesFrom","args":[[[],null],"straße"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[],"emoji 👍🏽 mix"],"ok":[]}
+{"fn":"messagesFrom","args":[[[],{"a":"b"},0],"ünïcödé"],"ok":[]}
+{"fn":"messagesFrom","args":[[[],{"a":"b"},true],"a..b"],"ok":[]}
+{"fn":"messagesFrom","args":[[null,0],"ΣΊΣΥΦΟΣ"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[{},null,["a",1]],"straße"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[{},"日本語のテキスト"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":[[],".leadingline1\nline2"],"ok":[]}
+{"fn":"messagesFrom","args":[[null,[],{"a":"b"}],"é"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[["x",{"a":"b"},"x"],"tab\tseparatedtab\tseparated"],"ok":[]}
+{"fn":"messagesFrom","args":[["x"],"aabc"],"ok":[]}
+{"fn":"messagesFrom","args":[[["a",1],["a",1]],"{name} has {count} items"],"ok":[]}
+{"fn":"messagesFrom","args":[[{},{"a":{"b":"c"}},0],"emoji 👍🏽 mix"],"ok":[]}
+{"fn":"messagesFrom","args":[[null],"a..b"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[{"a":"b"},"line1\nline2"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":[[{"a":"b"},{"a":{"b":"c"}}],"😀"],"ok":[]}
+{"fn":"messagesFrom","args":[[[],0],"hello world"],"ok":[]}
+{"fn":"messagesFrom","args":[[{}],"Hello World"],"ok":[]}
+{"fn":"messagesFrom","args":[[true],"Hello World"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"abc"],"ok":[]}
+{"fn":"messagesFrom","args":["x","hello"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":[[[],{"a":"b"}],"line1\nline2"],"ok":[]}
+{"fn":"messagesFrom","args":[[true,{"a":{"b":"c"}},{"a":"b"}],"﻿bom"],"ok":[]}
+{"fn":"messagesFrom","args":[[[],["a",1]],":İstanbul"],"ok":[]}
+{"fn":"messagesFrom","args":[["x"],"{name} has {count} items"],"ok":[]}
+{"fn":"messagesFrom","args":[[0,null],"a..b"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[null,{"a":"b"}],"tab\tseparated"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[{"a":"b"}],"İstanbul"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"straße"],"ok":[]}
+{"fn":"messagesFrom","args":[[[]],"日本語のテキストns:key.path"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"a..b"],"ok":[]}
+{"fn":"messagesFrom","args":[true,"é"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":["x",".leading"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":[[[],["a",1]],"src/a/b.ts"],"ok":[]}
+{"fn":"messagesFrom","args":[[null],".leading"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[0,"key_name-1"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":[[0,null],"ab"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[null,0],"./x/**/*.jsonstraße"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[["x"],"a"],"ok":[]}
+{"fn":"messagesFrom","args":[["x",{"a":"b"},{}],"{name} has {count} items"],"ok":[]}
+{"fn":"messagesFrom","args":[[true],"abc"],"ok":[]}
+{"fn":"messagesFrom","args":[[[],[],{}],".leadingkey_name-1"],"ok":[]}
+{"fn":"messagesFrom","args":[[{"a":{"b":"c"}}],"ünïcödé"],"ok":[]}
+{"fn":"messagesFrom","args":[[null],"a:b:c:"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[0],"key_name-1"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"key_name-1src/a/b.ts"],"ok":[]}
+{"fn":"messagesFrom","args":[["x",["a",1]],"tab\tseparated"],"ok":[]}
+{"fn":"messagesFrom","args":[["x","x"],"HELLO"],"ok":[]}
+{"fn":"messagesFrom","args":[[true],"straße"],"ok":[]}
+{"fn":"messagesFrom","args":[null,"😀"],"error":"Cannot read properties of null (reading 'findIndex')"}
+{"fn":"messagesFrom","args":[[null,{},"x"],"ünïcödé"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[],"  padded  "],"ok":[]}
+{"fn":"messagesFrom","args":[[{"a":"b"},true,"x"],"line1\nline2"],"ok":[]}
+{"fn":"messagesFrom","args":[[{"a":"b"}],"ns:key.path"],"ok":[]}
+{"fn":"messagesFrom","args":[0,"straße"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":[[{}],"{name} has {count} items"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"a:b:ca😀b😀c"],"ok":[]}
+{"fn":"messagesFrom","args":[[{"a":{"b":"c"}},true],"ab"],"ok":[]}
+{"fn":"messagesFrom","args":[[true,0],"hello"],"ok":[]}
+{"fn":"messagesFrom","args":["x","ab"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":[[null,{"a":{"b":"c"}}],"line1\nline2"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[[],"hello world./x/**/*.json"],"ok":[]}
+{"fn":"messagesFrom","args":[[0],"日本語のテキスト"],"ok":[]}
+{"fn":"messagesFrom","args":[[[]],"Hello World"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"line1\nline2straße"],"ok":[]}
+{"fn":"messagesFrom","args":[true,"﻿bomstraße"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":[[null],"abΣΊΣΥΦΟΣ"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"messagesFrom","args":[["a",1],"日本語のテキストtrailing."],"ok":[]}
+{"fn":"messagesFrom","args":[0,"ΣΊΣΥΦΟΣ"],"error":"messages.findIndex is not a function"}
+{"fn":"messagesFrom","args":[[["a",1],"x"],"{name} has {count} items"],"ok":[]}
+{"fn":"messagesFrom","args":[[],"./x/**/*.jsoné"],"ok":[]}
+{"fn":"messagesFrom","args":[[true],"ab"],"ok":[]}
+{"fn":"messagesFrom","args":[[{}],"héllo wörld"],"ok":[]}
+{"fn":"messagesFrom","args":[[{}],"👍🏽 thumbs"],"ok":[]}
+{"fn":"messagesFrom","args":[[{}],"日本語"],"ok":[]}
+{"fn":"messagesFrom","args":[[{}],""],"ok":[]}
+{"fn":"messagesFrom","args":[[{}],"é"],"ok":[]}
+{"fn":"messagesFrom","args":[[{}],"İstanbul"],"ok":[]}
+{"fn":"messagesFrom","args":[[{}],"straße"],"ok":[]}
+{"fn":"messagesFrom","args":[[{}],"ılık ırmak"],"ok":[]}
+{"fn":"messagesFrom","args":[[{}],"👨‍👩‍👧 family"],"ok":[]}
+{"fn":"messagesFrom","args":[[{}],"a b"],"ok":[]}
+{"fn":"messagesFrom","args":[[{}],"a😀b"],"ok":[]}
+{"fn":"messagesFrom","args":[[{}],"﻿bom"],"ok":[]}
+{"fn":"messagesFrom","args":[[{}],"a²b x½ y①"],"ok":[]}
+{"fn":"messagesFrom","args":[[{}],"aⅠb Ⅻ"],"ok":[]}
+{"fn":"messagesFrom","args":[[{}],"a𐐀b 𝐀bc"],"ok":[]}
+{"fn":"messagesFrom","args":[[{}],"कि ٣٤"],"ok":[]}
+{"fn":"compareMessagesChronologically","args":[{"id":"msg_fff","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_000","sessionID":"session-1","role":"user","time":{"created":20}}],"ok":-10}
+{"fn":"sortMessagesChronologically","args":[[{"id":"msg_000","sessionID":"session-1","role":"user","time":{"created":20}},{"id":"msg_fff","sessionID":"session-1","role":"user","time":{"created":10}}]],"ok":[{"id":"msg_fff","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_000","sessionID":"session-1","role":"user","time":{"created":20}}]}
+{"fn":"sortMessagesChronologically","args":[[{"id":"msg_fff","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_000","sessionID":"session-1","role":"user","time":{"created":10}}]],"ok":[{"id":"msg_000","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_fff","sessionID":"session-1","role":"user","time":{"created":10}}]}
+{"fn":"compareMessagesChronologically","args":[{"id":"msg_000","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_fff","sessionID":"session-1","role":"user","time":{"created":10}}],"ok":-1}
+{"fn":"insertMessageChronologically","args":[[{"id":"msg_invalid","sessionID":"session-1","role":"user","time":{"created":{"$num":"NaN"}}},{"id":"msg_latest","sessionID":"session-1","role":"user","time":{"created":20}}],{"id":"msg_middle","sessionID":"session-1","role":"user","time":{"created":10}}],"ok":[{"id":"msg_invalid","sessionID":"session-1","role":"user","time":{"created":{"$num":"NaN"}}},{"id":"msg_middle","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_latest","sessionID":"session-1","role":"user","time":{"created":20}}]}
+{"fn":"compareMessagesChronologically","args":[{"id":"msg_latest","sessionID":"session-1","role":"user","time":{"created":20}},{"id":"msg_middle","sessionID":"session-1","role":"user","time":{"created":10}}],"ok":10}
+{"fn":"compareMessagesChronologically","args":[{"id":"msg_invalid","sessionID":"session-1","role":"user","time":{"created":{"$num":"NaN"}}},{"id":"msg_middle","sessionID":"session-1","role":"user","time":{"created":10}}],"ok":-10}
+{"fn":"findMessageIndex","args":[[{"id":"msg_fff","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_000","sessionID":"session-1","role":"user","time":{"created":20}},{"id":"msg_001","sessionID":"session-1","role":"user","time":{"created":30}}],"msg_000"],"ok":1}
+{"fn":"messagesBefore","args":[[{"id":"msg_fff","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_000","sessionID":"session-1","role":"user","time":{"created":20}},{"id":"msg_001","sessionID":"session-1","role":"user","time":{"created":30}}],"msg_000"],"ok":[{"id":"msg_fff","sessionID":"session-1","role":"user","time":{"created":10}}]}
+{"fn":"messagesFrom","args":[[{"id":"msg_fff","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_000","sessionID":"session-1","role":"user","time":{"created":20}},{"id":"msg_001","sessionID":"session-1","role":"user","time":{"created":30}}],"msg_000"],"ok":[{"id":"msg_000","sessionID":"session-1","role":"user","time":{"created":20}},{"id":"msg_001","sessionID":"session-1","role":"user","time":{"created":30}}]}
+{"fn":"messagesBefore","args":[[{"id":"msg_fff","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_000","sessionID":"session-1","role":"user","time":{"created":20}},{"id":"msg_001","sessionID":"session-1","role":"user","time":{"created":30}}],"missing"],"ok":[{"id":"msg_fff","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_000","sessionID":"session-1","role":"user","time":{"created":20}},{"id":"msg_001","sessionID":"session-1","role":"user","time":{"created":30}}]}
+{"fn":"findMessageIndex","args":[[{"id":"msg_fff","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_000","sessionID":"session-1","role":"user","time":{"created":20}},{"id":"msg_001","sessionID":"session-1","role":"user","time":{"created":30}}],"missing"],"ok":-1}
+{"fn":"messagesFrom","args":[[{"id":"msg_fff","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_000","sessionID":"session-1","role":"user","time":{"created":20}},{"id":"msg_001","sessionID":"session-1","role":"user","time":{"created":30}}],"missing"],"ok":[]}
+{"fn":"insertMessageChronologically","args":[[{"id":"msg_a","sessionID":"session-1","role":"user","time":{"created":5}},{"id":"msg_same","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_same","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_z","sessionID":"session-1","role":"user","time":{"created":20}}],{"id":"msg_same","sessionID":"session-1","role":"user","time":{"created":10}}],"ok":[{"id":"msg_a","sessionID":"session-1","role":"user","time":{"created":5}},{"id":"msg_same","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_same","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_same","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_z","sessionID":"session-1","role":"user","time":{"created":20}}]}
+{"fn":"compareMessagesChronologically","args":[{"id":"msg_same","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_same","sessionID":"session-1","role":"user","time":{"created":10}}],"ok":0}
+{"fn":"compareMessagesChronologically","args":[{"id":"msg_z","sessionID":"session-1","role":"user","time":{"created":20}},{"id":"msg_same","sessionID":"session-1","role":"user","time":{"created":10}}],"ok":10}
+{"fn":"insertMessageChronologically","args":[[{"id":"msg_m","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_n","sessionID":"session-1","role":"user","time":{"created":10}}],{"id":"msg_m","sessionID":"session-1","role":"user","time":{"created":10}}],"ok":[{"id":"msg_m","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_m","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_n","sessionID":"session-1","role":"user","time":{"created":10}}]}
+{"fn":"compareMessagesChronologically","args":[{"id":"msg_n","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_m","sessionID":"session-1","role":"user","time":{"created":10}}],"ok":1}
+{"fn":"compareMessagesChronologically","args":[{"id":"msg_m","sessionID":"session-1","role":"user","time":{"created":10}},{"id":"msg_m","sessionID":"session-1","role":"user","time":{"created":10}}],"ok":0}
+{"fn":"insertMessageChronologically","args":[[{"id":"msg_x","sessionID":"session-1","role":"user","time":{"created":0}}],{"id":"msg_x","sessionID":"session-1","role":"user","time":{"created":"late"}}],"ok":[{"id":"msg_x","sessionID":"session-1","role":"user","time":{"created":0}},{"id":"msg_x","sessionID":"session-1","role":"user","time":{"created":"late"}}]}
+{"fn":"compareMessagesChronologically","args":[{"id":"msg_x","sessionID":"session-1","role":"user","time":{"created":0}},{"id":"msg_x","sessionID":"session-1","role":"user","time":{"created":"late"}}],"ok":0}
+{"fn":"insertMessageChronologically","args":[[{"id":"msg_a","sessionID":"session-1","role":"user","time":{"created":1}}],{"id":"msg_z","sessionID":"session-1","role":"user","time":{"created":{"$num":"Infinity"}}}],"ok":[{"id":"msg_z","sessionID":"session-1","role":"user","time":{"created":{"$num":"Infinity"}}},{"id":"msg_a","sessionID":"session-1","role":"user","time":{"created":1}}]}
+{"fn":"compareMessagesChronologically","args":[{"id":"msg_a","sessionID":"session-1","role":"user","time":{"created":1}},{"id":"msg_z","sessionID":"session-1","role":"user","time":{"created":{"$num":"Infinity"}}}],"ok":1}
+{"fn":"insertMessageChronologically","args":[[{"id":"msg_a","sessionID":"session-1","role":"user","time":{"created":1}}],{"id":"msg_z","sessionID":"session-1","role":"user","time":{"created":{"$num":"-Infinity"}}}],"ok":[{"id":"msg_z","sessionID":"session-1","role":"user","time":{"created":{"$num":"-Infinity"}}},{"id":"msg_a","sessionID":"session-1","role":"user","time":{"created":1}}]}
+{"fn":"compareMessagesChronologically","args":[{"id":"msg_a","sessionID":"session-1","role":"user","time":{"created":1}},{"id":"msg_z","sessionID":"session-1","role":"user","time":{"created":{"$num":"-Infinity"}}}],"ok":1}
+{"fn":"insertMessageChronologically","args":[[{"id":"msg_a","sessionID":"session-1","role":"user","time":{"created":1}}],{"id":"msg_z","sessionID":"session-1","role":"user","time":{"created":{"$num":"NaN"}}}],"ok":[{"id":"msg_z","sessionID":"session-1","role":"user","time":{"created":{"$num":"NaN"}}},{"id":"msg_a","sessionID":"session-1","role":"user","time":{"created":1}}]}
+{"fn":"compareMessagesChronologically","args":[{"id":"msg_a","sessionID":"session-1","role":"user","time":{"created":1}},{"id":"msg_z","sessionID":"session-1","role":"user","time":{"created":{"$num":"NaN"}}}],"ok":1}
+{"fn":"insertMessageChronologically","args":[[{"id":"msg_1","sessionID":"session-1","role":"user","time":{"created":1}}],{"id":"msg_1","sessionID":"session-1","role":"user","time":{"created":1}}],"ok":[{"id":"msg_1","sessionID":"session-1","role":"user","time":{"created":1}},{"id":"msg_1","sessionID":"session-1","role":"user","time":{"created":1}}]}
+{"fn":"compareMessagesChronologically","args":[{"id":"msg_1","sessionID":"session-1","role":"user","time":{"created":1}},{"id":"msg_1","sessionID":"session-1","role":"user","time":{"created":1}}],"ok":0}

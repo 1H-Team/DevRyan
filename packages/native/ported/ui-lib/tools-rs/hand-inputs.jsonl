@@ -1,0 +1,17 @@
+{"fn": "getToolPermissionAliases", "args": ["apply_patch"]}
+{"fn": "getToolPermissionAliases", "args": ["webfetch"]}
+{"fn": "getToolPermissionAliases", "args": ["edit"]}
+{"fn": "getToolPermissionAliases", "args": ["ask"]}
+{"fn": "getToolPermissionAliases", "args": ["clarification"]}
+{"fn": "getToolPermissionAliases", "args": ["read"]}
+{"fn": "getToolPermissionAliases", "args": ["bash"]}
+{"fn": "getToolPermissionAliases", "args": ["task"]}
+{"fn": "getToolPermissionAliases", "args": ["skill"]}
+{"fn": "getToolPermissionAliases", "args": ["mcp__future_plugin__inspect"]}
+{"fn": "getToolPermissionAliases", "args": [""]}
+{"fn": "getToolPermissionAliases", "args": [" read"]}
+{"fn": "getToolPermissionAliases", "args": ["READ"]}
+{"fn": "getToolPermissionAliases", "args": [null]}
+{"fn": "getToolPermissionAliases", "args": [5]}
+{"fn": "getToolPermissionAliases", "args": [["read"]]}
+{"fn": "getToolPermissionAliases", "args": []}

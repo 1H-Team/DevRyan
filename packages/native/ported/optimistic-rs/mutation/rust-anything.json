@@ -1,0 +1,60 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/native/ported/optimistic-rs/mutation-ts",
+  "unit": "optimistic-mutation.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "optimistic-mutation-rs",
+  "exports": [
+    {
+      "name": "applyOptimisticAddReturningDraft",
+      "file": "optimistic-mutation.ts",
+      "line": 11,
+      "params": [
+        {
+          "name": "draft",
+          "ts_type": "OptimisticStore",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "input",
+          "ts_type": "OptimisticAddInput",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "OptimisticStore",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "applyOptimisticRemoveReturningDraft",
+      "file": "optimistic-mutation.ts",
+      "line": 16,
+      "params": [
+        {
+          "name": "draft",
+          "ts_type": "OptimisticStore",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "input",
+          "ts_type": "OptimisticRemoveInput",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "OptimisticStore",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

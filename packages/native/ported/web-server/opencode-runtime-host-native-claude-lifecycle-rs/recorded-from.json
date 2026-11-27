@@ -1,0 +1,19 @@
+{
+  "unit": "native-claude-lifecycle.js",
+  "files": 1,
+  "fingerprint": "0569305bf7c2d3ca",
+  "cases": 856,
+  "cases_hash": "7ef5a95e8003e9c8",
+  "coverage": {
+    "lines": 166,
+    "reached": 145,
+    "files": [
+      {
+        "file": "native-claude-lifecycle.js",
+        "lines": 166,
+        "reached": 145,
+        "missed": "19-23, 27-30, 33-35, 37-45"
+      }
+    ]
+  }
+}

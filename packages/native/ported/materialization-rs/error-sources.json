@@ -1,0 +1,42 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [],
+  "product": [],
+  "engine": [
+    {
+      "site": "packages/ui/src/sync/materialization.ts:211",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'skipPartTypes')"
+    },
+    {
+      "site": "packages/ui/src/sync/materialization.ts:214",
+      "class": "TypeError",
+      "sample": "records.filter is not a function"
+    },
+    {
+      "site": "packages/ui/src/sync/materialization.ts:223",
+      "class": "TypeError",
+      "sample": "Cannot read properties of undefined (reading 'a😀b😀c')"
+    },
+    {
+      "site": "packages/ui/src/sync/materialization.ts:231",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'id')"
+    },
+    {
+      "site": "packages/ui/src/sync/materialization.ts:303",
+      "class": "TypeError",
+      "sample": "Cannot read properties of undefined (reading 'Hello World')"
+    },
+    {
+      "site": "packages/ui/src/sync/revert-transactions.ts:61",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'revert_transaction')"
+    },
+    {
+      "site": "packages/ui/src/sync/revert-transactions.ts:67",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'id')"
+    }
+  ]
+}

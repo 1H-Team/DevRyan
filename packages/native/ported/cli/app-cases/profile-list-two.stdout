@@ -1,0 +1,10 @@
+┌  Tunnel Profiles
+│
+◆  prod-main (cloudflare/managed-remote)
+│  app.example.com origin:3000 token:present
+│
+◆  Staging (cloudflare/managed-remote)
+│  stage.example.com origin:1024 token:present
+│
+└  2 profile(s)
+

@@ -1,0 +1,17 @@
+[package]
+name = "devryan-scheduler-policy"
+version = "0.1.0"
+description = "The orchestration scheduler's pure policy modules in Rust, checked against vectors the JavaScript writes (tests only; nothing calls it yet)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+devryan-js-layer.workspace = true
+
+[lints]
+workspace = true

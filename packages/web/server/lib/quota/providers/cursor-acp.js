@@ -22,7 +22,7 @@ const CURSOR_OAUTH_REFRESH_URL = `${CURSOR_OAUTH_BASE_URL}/oauth/token`;
 const CURSOR_OAUTH_CLIENT_ID = 'KbZUR41cY7W6zRSdpSUJ7I7mLYBKOCmB';
 const CURSOR_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
-export const getCursorUsageSessionToken = (auth) => {
+const getCursorUsageSessionToken = (auth) => {
   const entry = normalizeAuthEntry(getAuthEntry(auth, aliases));
   const token = typeof entry?.usageSessionToken === 'string' ? entry.usageSessionToken.trim() : '';
   return token || null;
@@ -85,7 +85,7 @@ export const resolveCursorQuotaCredential = ({
     : { kind: null, source: null, credential: null };
 };
 
-export const getCursorUsageSessionTokenCandidates = (sessionToken) => {
+const getCursorUsageSessionTokenCandidates = (sessionToken) => {
   const token = typeof sessionToken === 'string' ? sessionToken.trim() : '';
   if (!token) return [];
 

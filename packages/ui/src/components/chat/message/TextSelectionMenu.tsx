@@ -569,5 +569,3 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
     document.body
   );
 };
-
-export default TextSelectionMenu;

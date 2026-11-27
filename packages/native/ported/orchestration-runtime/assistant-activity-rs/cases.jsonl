@@ -1,0 +1,29 @@
+{"fn":"isManagedAssistantActivityPart","args":[0],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[[]],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[null],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[["a",1]],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[true],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[{}],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":["x"],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[{"a":"b"}],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[[3,1,2]],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[{"type":"text","text":"hi"}],"ok":true}
+{"fn":"isManagedAssistantActivityPart","args":[{"type":"text","text":"  "}],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[{"type":"reasoning","text":" x"}],"ok":true}
+{"fn":"isManagedAssistantActivityPart","args":[{"type":"reasoning","text":5}],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[{"type":"tool","callID":"c"}],"ok":true}
+{"fn":"isManagedAssistantActivityPart","args":[{"type":"tool","callID":""}],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[{"type":"tool","callID":5}],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[{"type":"tool"}],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[{"type":"file","text":"x"}],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[null],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[{"$undefined":true}],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":["text"],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[5],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[{}],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[{"type":"text"}],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[{"type":"text","text":"﻿"}],"ok":false}
+{"fn":"isManagedAssistantActivityPart","args":[{"type":"tool","callID":" "}],"ok":true}

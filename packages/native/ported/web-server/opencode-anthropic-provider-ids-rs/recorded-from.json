@@ -1,0 +1,19 @@
+{
+  "unit": "anthropic-provider-ids.js",
+  "files": 1,
+  "fingerprint": "dd1e30a6b667ff30",
+  "cases": 23,
+  "cases_hash": "1efdb81097fe1f0a",
+  "coverage": {
+    "lines": 7,
+    "reached": 7,
+    "files": [
+      {
+        "file": "anthropic-provider-ids.js",
+        "lines": 7,
+        "reached": 7,
+        "missed": ""
+      }
+    ]
+  }
+}

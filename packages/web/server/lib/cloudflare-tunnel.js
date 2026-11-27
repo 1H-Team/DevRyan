@@ -192,18 +192,7 @@ export async function checkCloudflaredAvailable() {
   return { available: false, path: null, version: null };
 }
 
-export function printCloudflareTunnelInstallHelp() {
-  const platform = process.platform;
-  let installCmd = '';
-
-  if (platform === 'darwin') {
-    installCmd = 'brew install cloudflared';
-  } else if (platform === 'win32') {
-    installCmd = 'winget install --id Cloudflare.cloudflared';
-  } else {
-    installCmd = 'Download from https://github.com/cloudflare/cloudflared/releases';
-  }
-
+function printCloudflareTunnelInstallHelp() {
   console.log(`
 ╔══════════════════════════════════════════════════════════════════╗
 ║  Cloudflare tunnel requires 'cloudflared' to be installed        ║
@@ -415,10 +404,6 @@ function extractHostnameFromCloudflaredConfigDetailed(configPath) {
 
   return { hostname: null, parseError: null };
 }
-
-const extractHostnameFromCloudflaredConfig = (configPath) => {
-  return extractHostnameFromCloudflaredConfigDetailed(configPath).hostname;
-};
 
 const getDefaultCloudflaredConfigPath = () => path.join(os.homedir(), '.cloudflared', 'config.yml');
 

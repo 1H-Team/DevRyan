@@ -1,0 +1,97 @@
+{"fn": "resolveRuntimeBundleRoot", "args": [{}, "/Users/me"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{}, "/Users/me/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{}, "rel"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{}, null]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{}, "/a/./b"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{}, "/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/opt/b"}, "/Users/me"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/opt/b"}, "/Users/me/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/opt/b"}, "rel"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/opt/b"}, null]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/opt/b"}, "/a/./b"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/opt/b"}, "/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/opt/b/"}, "/Users/me"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/opt/b/"}, "/Users/me/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/opt/b/"}, "rel"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/opt/b/"}, null]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/opt/b/"}, "/a/./b"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/opt/b/"}, "/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "rel"}, "/Users/me"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "rel"}, "/Users/me/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "rel"}, "rel"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "rel"}, null]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "rel"}, "/a/./b"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "rel"}, "/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/a/../b"}, "/Users/me"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/a/../b"}, "/Users/me/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/a/../b"}, "rel"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/a/../b"}, null]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/a/../b"}, "/a/./b"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/a/../b"}, "/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/a\n"}, "/Users/me"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/a\n"}, "/Users/me/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/a\n"}, "rel"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/a\n"}, null]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/a\n"}, "/a/./b"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": "/a\n"}, "/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": 5}, "/Users/me"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": 5}, "/Users/me/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": 5}, "rel"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": 5}, null]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": 5}, "/a/./b"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": 5}, "/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": null}, "/Users/me"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": null}, "/Users/me/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": null}, "rel"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": null}, null]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": null}, "/a/./b"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": null}, "/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "/x/state"}, "/Users/me"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "/x/state"}, "/Users/me/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "/x/state"}, "rel"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "/x/state"}, null]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "/x/state"}, "/a/./b"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "/x/state"}, "/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "/x/state/"}, "/Users/me"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "/x/state/"}, "/Users/me/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "/x/state/"}, "rel"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "/x/state/"}, null]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "/x/state/"}, "/a/./b"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "/x/state/"}, "/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": ""}, "/Users/me"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": ""}, "/Users/me/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": ""}, "rel"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": ""}, null]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": ""}, "/a/./b"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": ""}, "/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "x"}, "/Users/me"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "x"}, "/Users/me/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "x"}, "rel"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "x"}, null]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "x"}, "/a/./b"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "x"}, "/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "//x"}, "/Users/me"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "//x"}, "/Users/me/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "//x"}, "rel"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "//x"}, null]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "//x"}, "/a/./b"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"XDG_STATE_HOME": "//x"}, "/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": {"$undefined": true}, "XDG_STATE_HOME": "/s"}, "/Users/me"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": {"$undefined": true}, "XDG_STATE_HOME": "/s"}, "/Users/me/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": {"$undefined": true}, "XDG_STATE_HOME": "/s"}, "rel"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": {"$undefined": true}, "XDG_STATE_HOME": "/s"}, null]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": {"$undefined": true}, "XDG_STATE_HOME": "/s"}, "/a/./b"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [{"DEVRYAN_RUNTIME_BUNDLE_ROOT": {"$undefined": true}, "XDG_STATE_HOME": "/s"}, "/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [null, "/Users/me"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [null, "/Users/me/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [null, "rel"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [null, null]}
+{"fn": "resolveRuntimeBundleRoot", "args": [null, "/a/./b"]}
+{"fn": "resolveRuntimeBundleRoot", "args": [null, "/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": ["str", "/Users/me"]}
+{"fn": "resolveRuntimeBundleRoot", "args": ["str", "/Users/me/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": ["str", "rel"]}
+{"fn": "resolveRuntimeBundleRoot", "args": ["str", null]}
+{"fn": "resolveRuntimeBundleRoot", "args": ["str", "/a/./b"]}
+{"fn": "resolveRuntimeBundleRoot", "args": ["str", "/"]}
+{"fn": "resolveRuntimeBundleRoot", "args": []}

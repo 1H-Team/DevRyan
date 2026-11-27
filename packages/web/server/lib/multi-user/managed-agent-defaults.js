@@ -31,7 +31,7 @@ export const findManagedAgent = (agents, agentName) => {
   )) || null;
 };
 
-export const executionFromManagedAgent = (agent) => {
+const executionFromManagedAgent = (agent) => {
   const providerId = clean(agent?.model?.providerID ?? agent?.model?.providerId);
   const modelId = clean(agent?.model?.modelID ?? agent?.model?.modelId);
   if (!providerId || !modelId) return null;

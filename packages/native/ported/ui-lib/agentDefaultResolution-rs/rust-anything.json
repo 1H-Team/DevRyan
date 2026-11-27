@@ -1,0 +1,72 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "agentDefaultResolution.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "agentdefaultresolution-rs",
+  "exports": [
+    {
+      "name": "findAgentDefaultOverride",
+      "file": "agentDefaultResolution.ts",
+      "line": 33,
+      "params": [
+        {
+          "name": "selections",
+          "ts_type": "Record<string, AgentModelSelection> | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "agentName",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "AgentModelSelection | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isSingleModelAgentDefault",
+      "file": "agentDefaultResolution.ts",
+      "line": 42,
+      "params": [
+        {
+          "name": "agent",
+          "ts_type": "({\n  name: string;\n  model?: { providerID?: string; modelID?: string };\n  variant?: string | null;\n  modelRefs?: string[];\n  councillors?: unknown[];\n}) | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "resolveAgentDefaultSelection",
+      "file": "agentDefaultResolution.ts",
+      "line": 49,
+      "params": [
+        {
+          "name": "arg0",
+          "ts_type": "{\n  agentName: string | null | undefined;\n  agents: ({\n  name: string;\n  model?: { providerID?: string; modelID?: string };\n  variant?: string | null;\n  modelRefs?: string[];\n  councillors?: unknown[];\n})[];\n  providers: {\n  id: string;\n  models?: Array<{\n    id: string;\n    variants?: Record<string, unknown>;\n    available?: boolean;\n    unavailableReason?: ProviderModelAvailability['unavailableReason'];\n  }>;\n}[];\n  personalSelections?: Record<string, AgentModelSelection>;\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "(Omit<AgentModelSelection, \"variant\"> & {\n  variant: string | null;\n  agentName: string;\n  source: ('personal' | 'inherited' | 'host-managed' | 'availability-fallback');\n}) | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

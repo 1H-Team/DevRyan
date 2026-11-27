@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { MODEL_CATALOG_DIRECTORY, allowListGaps, catalogDiff, chatgptAllowList, modelCatalogFreshness, readReviewedCatalog, refreshModelCatalog } from './model-catalog-refresh.mjs';
+import { MODEL_CATALOG_DIRECTORY, MODEL_CATALOG_STALE, allowListGaps, catalogDiff, chatgptAllowList, modelCatalogFreshness, readReviewedCatalog, refreshModelCatalog } from './model-catalog-refresh.mjs';
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const row = (id, fast = false) => ({ id, ...(fast ? { experimental: { modes: { fast: {} } } } : {}) });
@@ -65,4 +65,12 @@ test('refresh keeps the response bytes and records their provenance', async t =>
   assert.match(readme, /Retrieved UTC: `2026-11-02T00:00:00.000Z`/);
   assert.match(readme, new RegExp(`SHA-256: \`${provenance.sha256}\``));
   await assert.rejects(refreshModelCatalog({ directory, fetchImpl: fakeFetch(catalog([row('gpt-6.1-terra')])) }), /no openai\/gpt-6\.1-sol/);
+});
+
+test('a stale verdict carries MODEL_CATALOG_STALE; a catalog that cannot be read rejects without it', async t => {
+  const directory = await catalogDirectory(t, catalog([row('gpt-6.1-sol')]));
+  await assert.rejects(modelCatalogFreshness({ directory, fetchImpl: fakeFetch(catalog([row('gpt-6.1-sol'), row('gpt-6.1-terra')])) }),
+    error => error.code === MODEL_CATALOG_STALE);
+  await assert.rejects(modelCatalogFreshness({ directory, fetchImpl: async () => { throw new TypeError('fetch failed'); } }), error => error.code !== MODEL_CATALOG_STALE);
+  await assert.rejects(modelCatalogFreshness({ directory, fetchImpl: async () => new Response('', { status: 503 }) }), error => error.code !== MODEL_CATALOG_STALE);
 });

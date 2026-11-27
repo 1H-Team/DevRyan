@@ -1,0 +1,19 @@
+{
+  "unit": "sanitize.ts",
+  "files": 1,
+  "fingerprint": "a72b57ed3378fb47",
+  "cases": 1087,
+  "cases_hash": "2291e74e116b0d52",
+  "coverage": {
+    "lines": 66,
+    "reached": 66,
+    "files": [
+      {
+        "file": "sanitize.ts",
+        "lines": 66,
+        "reached": 66,
+        "missed": ""
+      }
+    ]
+  }
+}

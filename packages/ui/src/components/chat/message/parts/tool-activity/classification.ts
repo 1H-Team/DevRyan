@@ -303,14 +303,6 @@ export const isFetchToolName = (toolName: unknown): boolean => {
     return FETCH_TOOL_NAMES.has(normalizeToolName(toolName));
 };
 
-export const getStaticGroupToolName = (toolName: string): string => {
-    const normalized = normalizeToolName(toolName);
-    if (SEARCH_TOOL_NAMES.has(normalized)) {
-        return 'grep';
-    }
-    return normalized;
-};
-
 export const getToolActivityGroupInfo = (toolName: unknown, part?: ToolPart): ToolActivityGroupInfo | null => {
     const normalized = normalizeToolName(toolName);
     if (!normalized || isStandaloneTool(normalized)) {

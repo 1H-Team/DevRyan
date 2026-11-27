@@ -11,7 +11,6 @@ import {
   DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS,
   RETIRED_DEVRYAN_PROFILE_DEPENDENCIES,
   getDevRyanManagedPluginForSpec,
-  getDevRyanManagedPluginRegistrationForConfigPath,
   inspectDevRyanManagedPluginInstallation,
   isRetiredDevRyanPluginSpec,
   reconcileDevRyanManagedPluginSpecs,
@@ -295,17 +294,6 @@ describe('managed plugin manifest', () => {
       'user-plugin@4.2.0',
       'opencode-with-claude@1.6.17',
     ]);
-  });
-
-  it('uses a file URL when a managed entrypoint is registered from a project config', () => {
-    const configDirectory = path.join('/Users', 'test', '.config', 'opencode');
-    const projectConfigPath = path.join('/tmp', 'project', '.opencode', 'opencode.json');
-    expect(getDevRyanManagedPluginRegistrationForConfigPath(
-      DEVRYAN_MANAGED_PLUGIN_IDS.GPT_IMAGEGEN,
-      { configDirectory, configPath: projectConfigPath },
-    )).toBe(
-      'file:///Users/test/.config/opencode/node_modules/opencode-gpt-imagegen/dist/index.js',
-    );
   });
 
   it('reports missing, mismatched, and incomplete installed packages', () => {

@@ -14,6 +14,10 @@ import { buildClaudeAgentEnvironment } from '../../packages/web/server/lib/openc
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const fail = code => Object.assign(new Error(code), { code });
+// A cleanup failure after a failed turn is reported with, never instead of, the
+// turn's own failure: the turn's code and measurement stay on the thrown error.
+const withCleanupFailure = (failure, cleanupError) => Object.assign(new AggregateError([failure, cleanupError],
+  `${failure?.message ?? failure}; ${cleanupError?.message ?? cleanupError}`, { cause: failure }), { code: failure?.code, measurement: failure?.measurement });
 const finite = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const order = ['bridge', 'native', 'native', 'bridge', 'bridge', 'native'];
 const numericUsage = usage => Object.fromEntries(Object.entries(usage ?? {}).filter(([key, value]) =>
@@ -46,7 +50,7 @@ export async function runNativeClaudeTurn({ query, prompt, roleInstructions, pro
   const abort = () => { controller.abort(); rejectDeadline?.(fail('comparison_turn_timeout_or_cancelled')); };
   signal?.addEventListener('abort', abort, { once: true });
   if (signal?.aborted) controller.abort();
-  let session, result;
+  let session, result, failed = false, failure;
   const processes = [];
   const spawnOwned = options => {
     const child = spawn(options.command, options.args, { cwd: options.cwd, env: options.env, signal: options.signal,
@@ -78,11 +82,13 @@ export async function runNativeClaudeTurn({ query, prompt, roleInstructions, pro
     return { durationMs: performance.now() - started, tools, models: [...models], sdkModelTurns: finite(result.num_turns),
       usage: numericUsage(result.usage), costUsd: finite(result.total_cost_usd) };
   } catch {
-    throw Object.assign(fail(controller.signal.aborted ? 'comparison_turn_timeout_or_cancelled' : 'comparison_native_turn_failed'),
+    failed = true;
+    failure = Object.assign(fail(controller.signal.aborted ? 'comparison_turn_timeout_or_cancelled' : 'comparison_native_turn_failed'),
       { measurement: { durationMs: performance.now() - started, tools, models: [...models] } });
+    throw failure;
   } finally {
     clearTimeout(timer); signal?.removeEventListener('abort', abort); controller.abort(); session?.close();
-    for (const child of processes) {
+    try { for (const child of processes) {
       const kill = signal => { try { if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, signal); else child.kill(signal); } catch (error) { if (error.code !== 'ESRCH') throw fail('comparison_native_cleanup_failed'); } };
       kill('SIGTERM');
       if (child.exitCode === null && child.signalCode === null) await new Promise(resolve => {
@@ -95,7 +101,7 @@ export async function runNativeClaudeTurn({ query, prompt, roleInstructions, pro
         const timer = setTimeout(done, 1000); child.once('exit', done);
       });
       if (child.exitCode === null && child.signalCode === null) throw fail('comparison_native_cleanup_failed');
-    }
+    } } catch (cleanupError) { throw failed ? withCleanupFailure(failure, cleanupError) : cleanupError; }
   }
 }
 
@@ -117,7 +123,7 @@ export function createBenchmarkTimingClient(client) {
 }
 
 async function runBridgeTurn(input) {
-  let result;
+  let result, failed = false, failure;
   const timing = createBenchmarkTimingClient(input.client);
   try {
     result = await runSessionTurn({ client: timing.client, directory: input.directory, selection: input.selection,
@@ -135,10 +141,15 @@ async function runBridgeTurn(input) {
     return { durationMs: result.durationMs, usage, tools, turnTiming: result.turnTiming, turnTimingAvailability: timing.getAvailability(), sessionId: result.rootSessionId,
       models: [...new Set(result.sessionTree.flatMap(entry => entry.messages.filter(message => message.info?.role === 'assistant')
         .map(message => message.info.modelID).filter(Boolean)))], fingerprint };
+  } catch (error) {
+    failed = true; failure = error;
+    throw error;
   } finally {
     if (result) {
-      const cleanup = await abortSessionTree(input.client, result.rootSessionId, input.directory, { timeoutMs: 5000, knownSessionIds: result.childSessionIds });
-      if (!cleanup.complete) throw fail('comparison_session_cleanup_failed');
+      try {
+        const cleanup = await abortSessionTree(input.client, result.rootSessionId, input.directory, { timeoutMs: 5000, knownSessionIds: result.childSessionIds });
+        if (!cleanup.complete) throw fail('comparison_session_cleanup_failed');
+      } catch (cleanupError) { throw failed ? withCleanupFailure(failure, cleanupError) : cleanupError; }
     }
   }
 }

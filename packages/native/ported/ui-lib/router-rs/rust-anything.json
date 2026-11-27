@@ -1,0 +1,79 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "router/",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "router-rs",
+  "exports": [
+    {
+      "name": "resolveRoutedSessionDirectory",
+      "file": "router/routedSessionDirectory.ts",
+      "line": 19,
+      "params": [
+        {
+          "name": "sessionId",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "liveDirectory",
+          "ts_type": "string | null | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "sessions",
+          "ts_type": "readonly Session[]",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "parseRoute",
+      "file": "router/parseRoute.ts",
+      "line": 13,
+      "reason": "reads URLSearchParams and window.location"
+    },
+    {
+      "name": "hasRouteParams",
+      "file": "router/parseRoute.ts",
+      "line": 120,
+      "reason": "reads URLSearchParams"
+    },
+    {
+      "name": "serializeRoute",
+      "file": "router/serializeRoute.ts",
+      "line": 24,
+      "reason": "returns URLSearchParams"
+    },
+    {
+      "name": "buildURL",
+      "file": "router/serializeRoute.ts",
+      "line": 57,
+      "reason": "reads URLSearchParams and window.location"
+    },
+    {
+      "name": "routeMatchesURL",
+      "file": "router/serializeRoute.ts",
+      "line": 72,
+      "reason": "reads window.location"
+    },
+    {
+      "name": "updateBrowserURL",
+      "file": "router/serializeRoute.ts",
+      "line": 105,
+      "reason": "writes window.history"
+    }
+  ]
+}

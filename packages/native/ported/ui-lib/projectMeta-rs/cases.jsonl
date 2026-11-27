@@ -1,0 +1,399 @@
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},{"themeVariant":"light"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},true],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[[],{"themeVariant":"dark","iconColor":"﻿bom"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"iconColor":":"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["x"],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["x",{"$undefined":true}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"iconColor":"  padded    padded  "}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["x",{"themeVariant":"dark"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null,true],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[true,{"themeVariant":"dark"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[["a",1],{"iconColor":"tab\tseparated"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},{"themeVariant":"light","iconColor":"hello world"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[["a",1]],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[true,{"iconColor":"src/a/b.ts"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},{"themeVariant":"dark","iconColor":".leading"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[["a",1],{"themeVariant":"dark","iconColor":"日本語のテキスト"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},{"themeVariant":"light"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[true,{"themeVariant":"dark","iconColor":"key_name-1"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},{}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[0,{"themeVariant":"light","iconColor":"src/a/b.ts"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},{"$undefined":true}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},null],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[[],{"iconColor":"😀"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["x",{"themeVariant":"light","iconColor":"a.b.c"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[0,{}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[true,{"themeVariant":"dark","iconColor":"emoji 👍🏽 mix"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[["a",1],{"themeVariant":"dark","iconColor":"hello world"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[["a",1],{"$undefined":true}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},[]],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[[]],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[[],{"iconColor":"hello"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[[],{"themeVariant":"light","iconColor":"abc"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["x",{"themeVariant":"light","iconColor":"a:b:c"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["x",[]],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null,{"themeVariant":"dark","iconColor":"a:b:c😀"}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[{},0],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[["a",1],{"themeVariant":"dark","iconColor":"key_name-1"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},{"themeVariant":"dark","iconColor":"emoji 👍🏽 mix"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},{"themeVariant":"light","iconColor":"ns:key.path"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},{"themeVariant":"light","iconColor":"ab"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[[],{"iconColor":"é"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},0],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},{"themeVariant":"light","iconColor":""}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[0,{"iconColor":"src/a/b.ts"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[0,{"$undefined":true}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[[],{"themeVariant":"light","iconColor":"ns:key.path"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[true,{"themeVariant":"light","iconColor":"hello﻿bom"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[[],{"themeVariant":"dark","iconColor":"src/a/b.ts"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[[],{"themeVariant":"light"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null,{"themeVariant":"dark","iconColor":"ns:key.path"}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"$undefined":true}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},{"iconColor":".leadingΣΊΣΥΦΟΣ"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"themeVariant":"light","iconColor":"emoji 👍🏽 mix"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[["a",1],{"themeVariant":"light"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"themeVariant":"light","iconColor":"tab\tseparated"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[true],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[true,{"themeVariant":"light","iconColor":"ab"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[true,{"iconColor":"😀"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["x",{"themeVariant":"dark","iconColor":"straße"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[["a",1],0],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null,{"a":{"b":"c"}}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[{},{"iconColor":"straße﻿bom"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},{"iconColor":"tab\tseparated"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[["a",1],{"themeVariant":"dark","iconColor":"emoji 👍🏽 mix"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["x",{"iconColor":"src/a/b.ts"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[0],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[["a",1],{"themeVariant":"dark"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},{"themeVariant":"dark","iconColor":"ns:key.path"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},["a",1]],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},{"iconColor":"trailing."}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[true,{"themeVariant":"light","iconColor":"HELLO"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[[],{"a":{"b":"c"}}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[[],{"themeVariant":"dark","iconColor":"ünïcödétab\tseparated"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null,["a",1]],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[0,{"themeVariant":"light"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[["a",1],["a",1]],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null,{"themeVariant":"light","iconColor":"straße"}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},[]],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"themeVariant":"light","iconColor":"line1\nline2"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},{"themeVariant":"light","iconColor":"./x/**/*.json"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[["a",1],{"themeVariant":"dark","iconColor":"src/a/b.ts"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},{"$undefined":true}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"themeVariant":"light","iconColor":"tab\tseparateda.b.c"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"iconColor":"tab\tseparated"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},{"iconColor":"{name} has {count} items"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["x",{"iconColor":"hello world"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},{"themeVariant":"dark"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},{"themeVariant":"dark","iconColor":"日本語のテキスト"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null,{"themeVariant":"dark","iconColor":":ns:key.path"}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":["x","x"],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[true,{"$undefined":true}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},{"themeVariant":"dark","iconColor":"line1\nline2"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null,{}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[[],{"themeVariant":"light","iconColor":":"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null,{"themeVariant":"light","iconColor":"a"}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},{}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},{"themeVariant":"light","iconColor":"  padded  ./x/**/*.json"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"themeVariant":"light","iconColor":"  padded  "}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[["a",1],{"iconColor":"ns:key.path"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["x",true],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[[],{}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"themeVariant":"dark","iconColor":"ab"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[0,{"themeVariant":"light","iconColor":"{name} has {count} items"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null,{"themeVariant":"dark","iconColor":"ab"}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[[],{"themeVariant":"dark","iconColor":"HELLO"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[true,{"iconColor":"tab\tseparated"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"themeVariant":"dark","iconColor":"😀"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[["a",1],{"themeVariant":"dark","iconColor":"😀"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"themeVariant":"light","iconColor":"ünïcödé"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["x",{}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null,0],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[{},{"themeVariant":"light","iconColor":"a..b"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[true,{"themeVariant":"light"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["x",{"themeVariant":"light","iconColor":"tab\tseparated"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},{"themeVariant":"light","iconColor":"a"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},{"themeVariant":"dark","iconColor":"trailing.key_name-1"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},["a",1]],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null,{"themeVariant":"light","iconColor":"Hello World"}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":["x",{"iconColor":"a😀b😀c"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[[],{"themeVariant":"light","iconColor":"﻿bom"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},true],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[[],{"themeVariant":"dark","iconColor":"./x/**/*.json"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},{"iconColor":"éhello world"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},{"themeVariant":"light","iconColor":"abhello"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[[],{"themeVariant":"dark","iconColor":""}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"themeVariant":"dark","iconColor":"emoji 👍🏽 mixemoji 👍🏽 mix"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},{"themeVariant":"dark","iconColor":".leading"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["x",{"themeVariant":"dark","iconColor":"src/a/b.ts"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},{"themeVariant":"dark","iconColor":"key_name-1"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},{"themeVariant":"dark","iconColor":"hello"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"themeVariant":"light","iconColor":"key_name-1emoji 👍🏽 mix"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},{"themeVariant":"dark","iconColor":"ns:key.path"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},{"themeVariant":"light","iconColor":"{name} has {count} items"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"iconColor":"key_name-1"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[0,{"themeVariant":"light","iconColor":":"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null,{"themeVariant":"light","iconColor":"a..b"}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[[],{"themeVariant":"light","iconColor":"hellotab\tseparated"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[true,{"themeVariant":"light","iconColor":"ns:key.patha"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"themeVariant":"dark","iconColor":"hello"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[true,{"themeVariant":"dark","iconColor":""}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},{"iconColor":"hello world"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["x",{"themeVariant":"dark","iconColor":"tab\tseparated"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[true,{"themeVariant":"dark","iconColor":"日本語のテキスト./x/**/*.json"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},{"iconColor":".leading"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null,{"iconColor":"./x/**/*.json"}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[[],{"themeVariant":"dark","iconColor":"😀tab\tseparated"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null,{"iconColor":"a"}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[["a",1],{"themeVariant":"light","iconColor":"trailing."}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"themeVariant":"light"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null,{"$undefined":true}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"iconColor":"src/a/b.ts"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},{"themeVariant":"dark","iconColor":"straße"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[true,{"themeVariant":"light","iconColor":"tab\tseparateda"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"themeVariant":"dark","iconColor":"straße"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[["a",1],{"themeVariant":"dark","iconColor":"./x/**/*.json"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["x",{"themeVariant":"light","iconColor":"line1\nline2"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},{"themeVariant":"light","iconColor":"﻿bom"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[0,["a",1]],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[0,{"themeVariant":"light","iconColor":"a..b"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null,{"iconColor":"key_name-1ünïcödé"}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[[],{"themeVariant":"dark","iconColor":"Hello World.leading"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null,{"themeVariant":"light","iconColor":"a:b:c"}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[{},{"iconColor":"a..b"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[true,{"themeVariant":"dark","iconColor":"a:b:c"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[[],[]],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"themeVariant":"dark","iconColor":":"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[["a",1],{"themeVariant":"dark","iconColor":"HELLO"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"themeVariant":"dark","iconColor":"日本語のテキスト"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},true],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[0,{"themeVariant":"light","iconColor":"  padded  "}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},{"themeVariant":"dark","iconColor":"tab\tseparateda😀b😀c"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[["a",1],{"themeVariant":"light","iconColor":""}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},{"themeVariant":"light","iconColor":".leading"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[["a",1],{"themeVariant":"light","iconColor":"straße"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[[],{"themeVariant":"dark","iconColor":"ünïcödé"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},{"themeVariant":"light","iconColor":"Hello World"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"themeVariant":"dark","iconColor":""}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},{"iconColor":"ΣΊΣΥΦΟΣ"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null,[]],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[[],{"themeVariant":"light","iconColor":"trailing.ab"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[["a",1],{"iconColor":"Hello World"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null,{"iconColor":".leadinga..b"}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[{},{"iconColor":"straße"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[true,{"iconColor":"HELLO"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["x",{"themeVariant":"light","iconColor":"ünïcödé"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["x",{"themeVariant":"dark","iconColor":"İstanbulhello"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[null,{"iconColor":"😀a😀b😀c"}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[["a",1],[]],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[0,{"a":{"b":"c"}}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[["a",1],null],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{},{"iconColor":"é"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":{"b":"c"}},{"themeVariant":"light","iconColor":"tab\tseparated"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[0,{"themeVariant":"light","iconColor":"line1\nline2"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[true,null],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{"themeVariant":"light","iconColor":"straße"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[true,{"themeVariant":"dark","iconColor":"hello world"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"a":"b"},{}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p1","iconImage":{"mime":"image/png","updatedAt":123,"source":"custom"}}],"ok":"/api/projects/p1/icon?v=123"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p1","iconImage":{"mime":"image/png","updatedAt":123,"source":"custom"}},{}],"ok":"/api/projects/p1/icon?v=123"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p1","iconImage":{"mime":"image/png","updatedAt":123,"source":"custom"}},{"iconColor":"  #ff0000 "}],"ok":"/api/projects/p1/icon?v=123&iconColor=%23ff0000"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p1","iconImage":{"mime":"image/png","updatedAt":123,"source":"custom"}},{"iconColor":"a b+c&d=é"}],"ok":"/api/projects/p1/icon?v=123&iconColor=a+b%2Bc%26d%3D%C3%A9"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p1","iconImage":{"mime":"image/png","updatedAt":123,"source":"custom"}},{"iconColor":"   "}],"ok":"/api/projects/p1/icon?v=123"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p1","iconImage":{"mime":"image/png","updatedAt":123,"source":"custom"}},{"iconColor":5}],"ok":"/api/projects/p1/icon?v=123"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p1","iconImage":{"mime":"image/png","updatedAt":123,"source":"custom"}},{"themeVariant":"light"}],"ok":"/api/projects/p1/icon?v=123&theme=light"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p1","iconImage":{"mime":"image/png","updatedAt":123,"source":"custom"}},{"themeVariant":"dark","iconColor":"x"}],"ok":"/api/projects/p1/icon?v=123&iconColor=x&theme=dark"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p1","iconImage":{"mime":"image/png","updatedAt":123,"source":"custom"}},{"themeVariant":"Dark"}],"ok":"/api/projects/p1/icon?v=123"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p1","iconImage":{"mime":"image/png","updatedAt":123,"source":"custom"}},{"iconColor":{"$utf16":[32,56320,65]}}],"ok":"/api/projects/p1/icon?v=123&iconColor=%EF%BF%BDA"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p1","iconImage":{"mime":"image/png","updatedAt":123,"source":"custom"}},"str"],"ok":"/api/projects/p1/icon?v=123"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"a b/é😀","iconImage":{"mime":"image/png","updatedAt":1.5,"source":"custom"}}],"ok":"/api/projects/a%20b%2F%C3%A9%F0%9F%98%80/icon?v=1.5"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"a b/é😀","iconImage":{"mime":"image/png","updatedAt":1.5,"source":"custom"}},{}],"ok":"/api/projects/a%20b%2F%C3%A9%F0%9F%98%80/icon?v=1.5"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"a b/é😀","iconImage":{"mime":"image/png","updatedAt":1.5,"source":"custom"}},{"iconColor":"  #ff0000 "}],"ok":"/api/projects/a%20b%2F%C3%A9%F0%9F%98%80/icon?v=1.5&iconColor=%23ff0000"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"a b/é😀","iconImage":{"mime":"image/png","updatedAt":1.5,"source":"custom"}},{"iconColor":"a b+c&d=é"}],"ok":"/api/projects/a%20b%2F%C3%A9%F0%9F%98%80/icon?v=1.5&iconColor=a+b%2Bc%26d%3D%C3%A9"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"a b/é😀","iconImage":{"mime":"image/png","updatedAt":1.5,"source":"custom"}},{"iconColor":"   "}],"ok":"/api/projects/a%20b%2F%C3%A9%F0%9F%98%80/icon?v=1.5"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"a b/é😀","iconImage":{"mime":"image/png","updatedAt":1.5,"source":"custom"}},{"iconColor":5}],"ok":"/api/projects/a%20b%2F%C3%A9%F0%9F%98%80/icon?v=1.5"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"a b/é😀","iconImage":{"mime":"image/png","updatedAt":1.5,"source":"custom"}},{"themeVariant":"light"}],"ok":"/api/projects/a%20b%2F%C3%A9%F0%9F%98%80/icon?v=1.5&theme=light"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"a b/é😀","iconImage":{"mime":"image/png","updatedAt":1.5,"source":"custom"}},{"themeVariant":"dark","iconColor":"x"}],"ok":"/api/projects/a%20b%2F%C3%A9%F0%9F%98%80/icon?v=1.5&iconColor=x&theme=dark"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"a b/é😀","iconImage":{"mime":"image/png","updatedAt":1.5,"source":"custom"}},{"themeVariant":"Dark"}],"ok":"/api/projects/a%20b%2F%C3%A9%F0%9F%98%80/icon?v=1.5"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"a b/é😀","iconImage":{"mime":"image/png","updatedAt":1.5,"source":"custom"}},{"iconColor":{"$utf16":[32,56320,65]}}],"ok":"/api/projects/a%20b%2F%C3%A9%F0%9F%98%80/icon?v=1.5&iconColor=%EF%BF%BDA"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"a b/é😀","iconImage":{"mime":"image/png","updatedAt":1.5,"source":"custom"}},"str"],"ok":"/api/projects/a%20b%2F%C3%A9%F0%9F%98%80/icon?v=1.5"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":0,"source":"custom"}}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":0,"source":"custom"}},{}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":0,"source":"custom"}},{"iconColor":"  #ff0000 "}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":0,"source":"custom"}},{"iconColor":"a b+c&d=é"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":0,"source":"custom"}},{"iconColor":"   "}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":0,"source":"custom"}},{"iconColor":5}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":0,"source":"custom"}},{"themeVariant":"light"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":0,"source":"custom"}},{"themeVariant":"dark","iconColor":"x"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":0,"source":"custom"}},{"themeVariant":"Dark"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":0,"source":"custom"}},{"iconColor":{"$utf16":[32,56320,65]}}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":0,"source":"custom"}},"str"],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":-1,"source":"custom"}}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":-1,"source":"custom"}},{}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":-1,"source":"custom"}},{"iconColor":"  #ff0000 "}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":-1,"source":"custom"}},{"iconColor":"a b+c&d=é"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":-1,"source":"custom"}},{"iconColor":"   "}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":-1,"source":"custom"}},{"iconColor":5}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":-1,"source":"custom"}},{"themeVariant":"light"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":-1,"source":"custom"}},{"themeVariant":"dark","iconColor":"x"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":-1,"source":"custom"}},{"themeVariant":"Dark"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":-1,"source":"custom"}},{"iconColor":{"$utf16":[32,56320,65]}}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":-1,"source":"custom"}},"str"],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"NaN"},"source":"custom"}}],"ok":"/api/projects/p/icon?v=NaN"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"NaN"},"source":"custom"}},{}],"ok":"/api/projects/p/icon?v=NaN"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"NaN"},"source":"custom"}},{"iconColor":"  #ff0000 "}],"ok":"/api/projects/p/icon?v=NaN&iconColor=%23ff0000"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"NaN"},"source":"custom"}},{"iconColor":"a b+c&d=é"}],"ok":"/api/projects/p/icon?v=NaN&iconColor=a+b%2Bc%26d%3D%C3%A9"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"NaN"},"source":"custom"}},{"iconColor":"   "}],"ok":"/api/projects/p/icon?v=NaN"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"NaN"},"source":"custom"}},{"iconColor":5}],"ok":"/api/projects/p/icon?v=NaN"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"NaN"},"source":"custom"}},{"themeVariant":"light"}],"ok":"/api/projects/p/icon?v=NaN&theme=light"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"NaN"},"source":"custom"}},{"themeVariant":"dark","iconColor":"x"}],"ok":"/api/projects/p/icon?v=NaN&iconColor=x&theme=dark"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"NaN"},"source":"custom"}},{"themeVariant":"Dark"}],"ok":"/api/projects/p/icon?v=NaN"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"NaN"},"source":"custom"}},{"iconColor":{"$utf16":[32,56320,65]}}],"ok":"/api/projects/p/icon?v=NaN&iconColor=%EF%BF%BDA"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"NaN"},"source":"custom"}},"str"],"ok":"/api/projects/p/icon?v=NaN"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"Infinity"},"source":"custom"}}],"ok":"/api/projects/p/icon?v=Infinity"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"Infinity"},"source":"custom"}},{}],"ok":"/api/projects/p/icon?v=Infinity"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"Infinity"},"source":"custom"}},{"iconColor":"  #ff0000 "}],"ok":"/api/projects/p/icon?v=Infinity&iconColor=%23ff0000"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"Infinity"},"source":"custom"}},{"iconColor":"a b+c&d=é"}],"ok":"/api/projects/p/icon?v=Infinity&iconColor=a+b%2Bc%26d%3D%C3%A9"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"Infinity"},"source":"custom"}},{"iconColor":"   "}],"ok":"/api/projects/p/icon?v=Infinity"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"Infinity"},"source":"custom"}},{"iconColor":5}],"ok":"/api/projects/p/icon?v=Infinity"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"Infinity"},"source":"custom"}},{"themeVariant":"light"}],"ok":"/api/projects/p/icon?v=Infinity&theme=light"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"Infinity"},"source":"custom"}},{"themeVariant":"dark","iconColor":"x"}],"ok":"/api/projects/p/icon?v=Infinity&iconColor=x&theme=dark"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"Infinity"},"source":"custom"}},{"themeVariant":"Dark"}],"ok":"/api/projects/p/icon?v=Infinity"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"Infinity"},"source":"custom"}},{"iconColor":{"$utf16":[32,56320,65]}}],"ok":"/api/projects/p/icon?v=Infinity&iconColor=%EF%BF%BDA"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":{"$num":"Infinity"},"source":"custom"}},"str"],"ok":"/api/projects/p/icon?v=Infinity"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":"5","source":"custom"}}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":"5","source":"custom"}},{}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":"5","source":"custom"}},{"iconColor":"  #ff0000 "}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":"5","source":"custom"}},{"iconColor":"a b+c&d=é"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":"5","source":"custom"}},{"iconColor":"   "}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":"5","source":"custom"}},{"iconColor":5}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":"5","source":"custom"}},{"themeVariant":"light"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":"5","source":"custom"}},{"themeVariant":"dark","iconColor":"x"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":"5","source":"custom"}},{"themeVariant":"Dark"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":"5","source":"custom"}},{"iconColor":{"$utf16":[32,56320,65]}}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":"5","source":"custom"}},"str"],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":null}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":null},{}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":null},{"iconColor":"  #ff0000 "}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":null},{"iconColor":"a b+c&d=é"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":null},{"iconColor":"   "}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":null},{"iconColor":5}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":null},{"themeVariant":"light"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":null},{"themeVariant":"dark","iconColor":"x"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":null},{"themeVariant":"Dark"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":null},{"iconColor":{"$utf16":[32,56320,65]}}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":null},"str"],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p"},{}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p"},{"iconColor":"  #ff0000 "}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p"},{"iconColor":"a b+c&d=é"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p"},{"iconColor":"   "}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p"},{"iconColor":5}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p"},{"themeVariant":"light"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p"},{"themeVariant":"dark","iconColor":"x"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p"},{"themeVariant":"Dark"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p"},{"iconColor":{"$utf16":[32,56320,65]}}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p"},"str"],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"iconImage":{"mime":"image/png","updatedAt":7,"source":"custom"}}],"ok":"/api/projects/undefined/icon?v=7"}
+{"fn":"getProjectIconImageUrl","args":[{"iconImage":{"mime":"image/png","updatedAt":7,"source":"custom"}},{}],"ok":"/api/projects/undefined/icon?v=7"}
+{"fn":"getProjectIconImageUrl","args":[{"iconImage":{"mime":"image/png","updatedAt":7,"source":"custom"}},{"iconColor":"  #ff0000 "}],"ok":"/api/projects/undefined/icon?v=7&iconColor=%23ff0000"}
+{"fn":"getProjectIconImageUrl","args":[{"iconImage":{"mime":"image/png","updatedAt":7,"source":"custom"}},{"iconColor":"a b+c&d=é"}],"ok":"/api/projects/undefined/icon?v=7&iconColor=a+b%2Bc%26d%3D%C3%A9"}
+{"fn":"getProjectIconImageUrl","args":[{"iconImage":{"mime":"image/png","updatedAt":7,"source":"custom"}},{"iconColor":"   "}],"ok":"/api/projects/undefined/icon?v=7"}
+{"fn":"getProjectIconImageUrl","args":[{"iconImage":{"mime":"image/png","updatedAt":7,"source":"custom"}},{"iconColor":5}],"ok":"/api/projects/undefined/icon?v=7"}
+{"fn":"getProjectIconImageUrl","args":[{"iconImage":{"mime":"image/png","updatedAt":7,"source":"custom"}},{"themeVariant":"light"}],"ok":"/api/projects/undefined/icon?v=7&theme=light"}
+{"fn":"getProjectIconImageUrl","args":[{"iconImage":{"mime":"image/png","updatedAt":7,"source":"custom"}},{"themeVariant":"dark","iconColor":"x"}],"ok":"/api/projects/undefined/icon?v=7&iconColor=x&theme=dark"}
+{"fn":"getProjectIconImageUrl","args":[{"iconImage":{"mime":"image/png","updatedAt":7,"source":"custom"}},{"themeVariant":"Dark"}],"ok":"/api/projects/undefined/icon?v=7"}
+{"fn":"getProjectIconImageUrl","args":[{"iconImage":{"mime":"image/png","updatedAt":7,"source":"custom"}},{"iconColor":{"$utf16":[32,56320,65]}}],"ok":"/api/projects/undefined/icon?v=7&iconColor=%EF%BF%BDA"}
+{"fn":"getProjectIconImageUrl","args":[{"iconImage":{"mime":"image/png","updatedAt":7,"source":"custom"}},"str"],"ok":"/api/projects/undefined/icon?v=7"}
+{"fn":"getProjectIconImageUrl","args":[{"id":5,"iconImage":{"mime":"image/png","updatedAt":1e+21,"source":"custom"}}],"ok":"/api/projects/5/icon?v=1e%2B21"}
+{"fn":"getProjectIconImageUrl","args":[{"id":5,"iconImage":{"mime":"image/png","updatedAt":1e+21,"source":"custom"}},{}],"ok":"/api/projects/5/icon?v=1e%2B21"}
+{"fn":"getProjectIconImageUrl","args":[{"id":5,"iconImage":{"mime":"image/png","updatedAt":1e+21,"source":"custom"}},{"iconColor":"  #ff0000 "}],"ok":"/api/projects/5/icon?v=1e%2B21&iconColor=%23ff0000"}
+{"fn":"getProjectIconImageUrl","args":[{"id":5,"iconImage":{"mime":"image/png","updatedAt":1e+21,"source":"custom"}},{"iconColor":"a b+c&d=é"}],"ok":"/api/projects/5/icon?v=1e%2B21&iconColor=a+b%2Bc%26d%3D%C3%A9"}
+{"fn":"getProjectIconImageUrl","args":[{"id":5,"iconImage":{"mime":"image/png","updatedAt":1e+21,"source":"custom"}},{"iconColor":"   "}],"ok":"/api/projects/5/icon?v=1e%2B21"}
+{"fn":"getProjectIconImageUrl","args":[{"id":5,"iconImage":{"mime":"image/png","updatedAt":1e+21,"source":"custom"}},{"iconColor":5}],"ok":"/api/projects/5/icon?v=1e%2B21"}
+{"fn":"getProjectIconImageUrl","args":[{"id":5,"iconImage":{"mime":"image/png","updatedAt":1e+21,"source":"custom"}},{"themeVariant":"light"}],"ok":"/api/projects/5/icon?v=1e%2B21&theme=light"}
+{"fn":"getProjectIconImageUrl","args":[{"id":5,"iconImage":{"mime":"image/png","updatedAt":1e+21,"source":"custom"}},{"themeVariant":"dark","iconColor":"x"}],"ok":"/api/projects/5/icon?v=1e%2B21&iconColor=x&theme=dark"}
+{"fn":"getProjectIconImageUrl","args":[{"id":5,"iconImage":{"mime":"image/png","updatedAt":1e+21,"source":"custom"}},{"themeVariant":"Dark"}],"ok":"/api/projects/5/icon?v=1e%2B21"}
+{"fn":"getProjectIconImageUrl","args":[{"id":5,"iconImage":{"mime":"image/png","updatedAt":1e+21,"source":"custom"}},{"iconColor":{"$utf16":[32,56320,65]}}],"ok":"/api/projects/5/icon?v=1e%2B21&iconColor=%EF%BF%BDA"}
+{"fn":"getProjectIconImageUrl","args":[{"id":5,"iconImage":{"mime":"image/png","updatedAt":1e+21,"source":"custom"}},"str"],"ok":"/api/projects/5/icon?v=1e%2B21"}
+{"fn":"getProjectIconImageUrl","args":[{"id":{"$utf16":[55296]},"iconImage":{"mime":"image/png","updatedAt":1,"source":"custom"}}],"error":"URI malformed"}
+{"fn":"getProjectIconImageUrl","args":[{"id":{"$utf16":[55296]},"iconImage":{"mime":"image/png","updatedAt":1,"source":"custom"}},{}],"error":"URI malformed"}
+{"fn":"getProjectIconImageUrl","args":[{"id":{"$utf16":[55296]},"iconImage":{"mime":"image/png","updatedAt":1,"source":"custom"}},{"iconColor":"  #ff0000 "}],"error":"URI malformed"}
+{"fn":"getProjectIconImageUrl","args":[{"id":{"$utf16":[55296]},"iconImage":{"mime":"image/png","updatedAt":1,"source":"custom"}},{"iconColor":"a b+c&d=é"}],"error":"URI malformed"}
+{"fn":"getProjectIconImageUrl","args":[{"id":{"$utf16":[55296]},"iconImage":{"mime":"image/png","updatedAt":1,"source":"custom"}},{"iconColor":"   "}],"error":"URI malformed"}
+{"fn":"getProjectIconImageUrl","args":[{"id":{"$utf16":[55296]},"iconImage":{"mime":"image/png","updatedAt":1,"source":"custom"}},{"iconColor":5}],"error":"URI malformed"}
+{"fn":"getProjectIconImageUrl","args":[{"id":{"$utf16":[55296]},"iconImage":{"mime":"image/png","updatedAt":1,"source":"custom"}},{"themeVariant":"light"}],"error":"URI malformed"}
+{"fn":"getProjectIconImageUrl","args":[{"id":{"$utf16":[55296]},"iconImage":{"mime":"image/png","updatedAt":1,"source":"custom"}},{"themeVariant":"dark","iconColor":"x"}],"error":"URI malformed"}
+{"fn":"getProjectIconImageUrl","args":[{"id":{"$utf16":[55296]},"iconImage":{"mime":"image/png","updatedAt":1,"source":"custom"}},{"themeVariant":"Dark"}],"error":"URI malformed"}
+{"fn":"getProjectIconImageUrl","args":[{"id":{"$utf16":[55296]},"iconImage":{"mime":"image/png","updatedAt":1,"source":"custom"}},{"iconColor":{"$utf16":[32,56320,65]}}],"error":"URI malformed"}
+{"fn":"getProjectIconImageUrl","args":[{"id":{"$utf16":[55296]},"iconImage":{"mime":"image/png","updatedAt":1,"source":"custom"}},"str"],"error":"URI malformed"}
+{"fn":"getProjectIconImageUrl","args":[{"id":["x",{"a":1}],"iconImage":{"mime":"image/png","updatedAt":2,"source":"custom"}}],"ok":"/api/projects/x%2C%5Bobject%20Object%5D/icon?v=2"}
+{"fn":"getProjectIconImageUrl","args":[{"id":["x",{"a":1}],"iconImage":{"mime":"image/png","updatedAt":2,"source":"custom"}},{}],"ok":"/api/projects/x%2C%5Bobject%20Object%5D/icon?v=2"}
+{"fn":"getProjectIconImageUrl","args":[{"id":["x",{"a":1}],"iconImage":{"mime":"image/png","updatedAt":2,"source":"custom"}},{"iconColor":"  #ff0000 "}],"ok":"/api/projects/x%2C%5Bobject%20Object%5D/icon?v=2&iconColor=%23ff0000"}
+{"fn":"getProjectIconImageUrl","args":[{"id":["x",{"a":1}],"iconImage":{"mime":"image/png","updatedAt":2,"source":"custom"}},{"iconColor":"a b+c&d=é"}],"ok":"/api/projects/x%2C%5Bobject%20Object%5D/icon?v=2&iconColor=a+b%2Bc%26d%3D%C3%A9"}
+{"fn":"getProjectIconImageUrl","args":[{"id":["x",{"a":1}],"iconImage":{"mime":"image/png","updatedAt":2,"source":"custom"}},{"iconColor":"   "}],"ok":"/api/projects/x%2C%5Bobject%20Object%5D/icon?v=2"}
+{"fn":"getProjectIconImageUrl","args":[{"id":["x",{"a":1}],"iconImage":{"mime":"image/png","updatedAt":2,"source":"custom"}},{"iconColor":5}],"ok":"/api/projects/x%2C%5Bobject%20Object%5D/icon?v=2"}
+{"fn":"getProjectIconImageUrl","args":[{"id":["x",{"a":1}],"iconImage":{"mime":"image/png","updatedAt":2,"source":"custom"}},{"themeVariant":"light"}],"ok":"/api/projects/x%2C%5Bobject%20Object%5D/icon?v=2&theme=light"}
+{"fn":"getProjectIconImageUrl","args":[{"id":["x",{"a":1}],"iconImage":{"mime":"image/png","updatedAt":2,"source":"custom"}},{"themeVariant":"dark","iconColor":"x"}],"ok":"/api/projects/x%2C%5Bobject%20Object%5D/icon?v=2&iconColor=x&theme=dark"}
+{"fn":"getProjectIconImageUrl","args":[{"id":["x",{"a":1}],"iconImage":{"mime":"image/png","updatedAt":2,"source":"custom"}},{"themeVariant":"Dark"}],"ok":"/api/projects/x%2C%5Bobject%20Object%5D/icon?v=2"}
+{"fn":"getProjectIconImageUrl","args":[{"id":["x",{"a":1}],"iconImage":{"mime":"image/png","updatedAt":2,"source":"custom"}},{"iconColor":{"$utf16":[32,56320,65]}}],"ok":"/api/projects/x%2C%5Bobject%20Object%5D/icon?v=2&iconColor=%EF%BF%BDA"}
+{"fn":"getProjectIconImageUrl","args":[{"id":["x",{"a":1}],"iconImage":{"mime":"image/png","updatedAt":2,"source":"custom"}},"str"],"ok":"/api/projects/x%2C%5Bobject%20Object%5D/icon?v=2"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"!*'()~-_.","iconImage":{"mime":"image/png","updatedAt":3,"source":"custom"}}],"ok":"/api/projects/!*'()~-_./icon?v=3"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"!*'()~-_.","iconImage":{"mime":"image/png","updatedAt":3,"source":"custom"}},{}],"ok":"/api/projects/!*'()~-_./icon?v=3"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"!*'()~-_.","iconImage":{"mime":"image/png","updatedAt":3,"source":"custom"}},{"iconColor":"  #ff0000 "}],"ok":"/api/projects/!*'()~-_./icon?v=3&iconColor=%23ff0000"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"!*'()~-_.","iconImage":{"mime":"image/png","updatedAt":3,"source":"custom"}},{"iconColor":"a b+c&d=é"}],"ok":"/api/projects/!*'()~-_./icon?v=3&iconColor=a+b%2Bc%26d%3D%C3%A9"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"!*'()~-_.","iconImage":{"mime":"image/png","updatedAt":3,"source":"custom"}},{"iconColor":"   "}],"ok":"/api/projects/!*'()~-_./icon?v=3"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"!*'()~-_.","iconImage":{"mime":"image/png","updatedAt":3,"source":"custom"}},{"iconColor":5}],"ok":"/api/projects/!*'()~-_./icon?v=3"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"!*'()~-_.","iconImage":{"mime":"image/png","updatedAt":3,"source":"custom"}},{"themeVariant":"light"}],"ok":"/api/projects/!*'()~-_./icon?v=3&theme=light"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"!*'()~-_.","iconImage":{"mime":"image/png","updatedAt":3,"source":"custom"}},{"themeVariant":"dark","iconColor":"x"}],"ok":"/api/projects/!*'()~-_./icon?v=3&iconColor=x&theme=dark"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"!*'()~-_.","iconImage":{"mime":"image/png","updatedAt":3,"source":"custom"}},{"themeVariant":"Dark"}],"ok":"/api/projects/!*'()~-_./icon?v=3"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"!*'()~-_.","iconImage":{"mime":"image/png","updatedAt":3,"source":"custom"}},{"iconColor":{"$utf16":[32,56320,65]}}],"ok":"/api/projects/!*'()~-_./icon?v=3&iconColor=%EF%BF%BDA"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"!*'()~-_.","iconImage":{"mime":"image/png","updatedAt":3,"source":"custom"}},"str"],"ok":"/api/projects/!*'()~-_./icon?v=3"}
+{"fn":"getProjectIconImageUrl","args":[null],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[null,{}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[null,{"iconColor":"  #ff0000 "}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[null,{"iconColor":"a b+c&d=é"}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[null,{"iconColor":"   "}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[null,{"iconColor":5}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[null,{"themeVariant":"light"}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[null,{"themeVariant":"dark","iconColor":"x"}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[null,{"themeVariant":"Dark"}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[null,{"iconColor":{"$utf16":[32,56320,65]}}],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":[null,"str"],"error":"Cannot read properties of null (reading 'iconImage')"}
+{"fn":"getProjectIconImageUrl","args":["str"],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["str",{}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["str",{"iconColor":"  #ff0000 "}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["str",{"iconColor":"a b+c&d=é"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["str",{"iconColor":"   "}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["str",{"iconColor":5}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["str",{"themeVariant":"light"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["str",{"themeVariant":"dark","iconColor":"x"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["str",{"themeVariant":"Dark"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["str",{"iconColor":{"$utf16":[32,56320,65]}}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":["str","str"],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":"x"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":"x"},{}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":"x"},{"iconColor":"  #ff0000 "}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":"x"},{"iconColor":"a b+c&d=é"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":"x"},{"iconColor":"   "}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":"x"},{"iconColor":5}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":"x"},{"themeVariant":"light"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":"x"},{"themeVariant":"dark","iconColor":"x"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":"x"},{"themeVariant":"Dark"}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":"x"},{"iconColor":{"$utf16":[32,56320,65]}}],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":"x"},"str"],"ok":null}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":1e-7,"source":"custom"}}],"ok":"/api/projects/p/icon?v=1e-7"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":1e-7,"source":"custom"}},{}],"ok":"/api/projects/p/icon?v=1e-7"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":1e-7,"source":"custom"}},{"iconColor":"  #ff0000 "}],"ok":"/api/projects/p/icon?v=1e-7&iconColor=%23ff0000"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":1e-7,"source":"custom"}},{"iconColor":"a b+c&d=é"}],"ok":"/api/projects/p/icon?v=1e-7&iconColor=a+b%2Bc%26d%3D%C3%A9"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":1e-7,"source":"custom"}},{"iconColor":"   "}],"ok":"/api/projects/p/icon?v=1e-7"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":1e-7,"source":"custom"}},{"iconColor":5}],"ok":"/api/projects/p/icon?v=1e-7"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":1e-7,"source":"custom"}},{"themeVariant":"light"}],"ok":"/api/projects/p/icon?v=1e-7&theme=light"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":1e-7,"source":"custom"}},{"themeVariant":"dark","iconColor":"x"}],"ok":"/api/projects/p/icon?v=1e-7&iconColor=x&theme=dark"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":1e-7,"source":"custom"}},{"themeVariant":"Dark"}],"ok":"/api/projects/p/icon?v=1e-7"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":1e-7,"source":"custom"}},{"iconColor":{"$utf16":[32,56320,65]}}],"ok":"/api/projects/p/icon?v=1e-7&iconColor=%EF%BF%BDA"}
+{"fn":"getProjectIconImageUrl","args":[{"id":"p","iconImage":{"mime":"image/png","updatedAt":1e-7,"source":"custom"}},"str"],"ok":"/api/projects/p/icon?v=1e-7"}
+{"fn":"getProjectIconImageUrl","args":[],"error":"Cannot read properties of undefined (reading 'iconImage')"}

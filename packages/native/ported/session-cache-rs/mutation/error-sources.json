@@ -1,0 +1,47 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [],
+  "product": [],
+  "engine": [
+    {
+      "site": "Array.from (<anonymous>)",
+      "class": "TypeError",
+      "sample": "undefined is not iterable (cannot read property Symbol(Symbol.iterator))"
+    },
+    {
+      "site": "new Set (<anonymous>)",
+      "class": "TypeError",
+      "sample": "number 5 is not iterable (cannot read property Symbol(Symbol.iterator))"
+    },
+    {
+      "site": "packages/native/ported/session-cache-rs/mutation-ts/session-cache-mutation.ts:23",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'seen')"
+    },
+    {
+      "site": "packages/ui/src/sync/session-cache.ts:61",
+      "class": "TypeError",
+      "sample": "number 5 is not iterable (cannot read property Symbol(Symbol.iterator))"
+    },
+    {
+      "site": "packages/ui/src/sync/session-cache.ts:72",
+      "class": "TypeError",
+      "sample": "parts?.some is not a function"
+    },
+    {
+      "site": "packages/ui/src/sync/session-cache.ts:78",
+      "class": "TypeError",
+      "sample": "Cannot convert undefined or null to object"
+    },
+    {
+      "site": "packages/ui/src/sync/session-cache.ts:79",
+      "class": "TypeError",
+      "sample": "Cannot convert undefined or null to object"
+    },
+    {
+      "site": "packages/ui/src/sync/session-cache.ts:83",
+      "class": "TypeError",
+      "sample": "Cannot delete property '0' of [object String]"
+    }
+  ]
+}

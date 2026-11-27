@@ -1,0 +1,10 @@
+{
+  "status": "error",
+  "error": {
+    "message": "`--tunnel` was removed from top-level serve flow. Use: devryan tunnel start ...",
+    "details": [
+      "`--tunnel` was removed from top-level serve flow. Use: devryan tunnel start ...",
+      "Unknown option: --frob"
+    ]
+  }
+}

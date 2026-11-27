@@ -5,7 +5,7 @@ This module provides WebSocket transport utilities for terminal input and output
 
 ## Entrypoints and structure
 - `packages/web/server/lib/terminal/`: Terminal module directory.
-  - `index.js`: Stable module entrypoint that re-exports protocol helpers and replay-buffer helpers.
+  - `index.js`: Module entrypoint that re-exports the protocol and replay-buffer helpers `runtime.js` and `lib/event-stream/runtime.js` use (the input-socket names alias the protocol constants).
   - `runtime.js`: Runtime module that owns terminal session state, WS server setup, and `/api/terminal/*` route registration.
   - `project-environment.js`: Fixed-file dotenv parser/loader that admits browser-public values from a managed project's registered repository.
   - `terminal-ws-protocol.js`: Single-file module containing terminal WebSocket protocol utilities.
@@ -13,7 +13,7 @@ This module provides WebSocket transport utilities for terminal input and output
 - `packages/web/server/lib/terminal/terminal-ws-protocol.test.js`: Test file for protocol utilities.
 - `packages/web/server/lib/terminal/output-replay-buffer.test.js`: Test file for replay buffer helpers.
 
-Public API entry point: imported by `packages/web/server/index.js` from `./lib/terminal/index.js`.
+Entry point: `index.js`, imported by `runtime.js` and `lib/event-stream/runtime.js`; the helpers below are exported by the file that defines them.
 
 ## Public exports
 
@@ -25,7 +25,6 @@ Public API entry point: imported by `packages/web/server/index.js` from `./lib/t
 
 ### Request Parsing
 - `parseRequestPathname(requestUrl)`: Extracts pathname from request URL string. Returns empty string for invalid inputs.
-- `isTerminalWsPathname(pathname)`: Returns whether a pathname matches a supported terminal WebSocket route.
 
 ### Message Normalization
 - `normalizeTerminalWsMessageToBuffer(rawData)`: Normalizes various data types (Buffer, Uint8Array, ArrayBuffer, string, chunk arrays) to a single Buffer.
@@ -39,7 +38,6 @@ Public API entry point: imported by `packages/web/server/index.js` from `./lib/t
 - `createTerminalOutputReplayBuffer()`: Creates mutable state for recent terminal output replay.
 - `appendTerminalOutputReplayChunk(bufferState, data, maxBytes?)`: Appends a chunk, trimming older buffered data to stay within the configured byte budget.
 - `listTerminalOutputReplayChunksSince(bufferState, lastSeenId)`: Returns buffered chunks newer than the provided replay cursor.
-- `getLatestTerminalOutputReplayChunkId(bufferState)`: Returns the latest chunk id in the replay buffer, or `0` when empty.
 
 ### Rate Limiting
 - `pruneRebindTimestamps(timestamps, now, windowMs)`: Filters timestamps to keep only those within the active time window.

@@ -1,0 +1,19 @@
+{
+  "unit": "assistant-activity.js",
+  "files": 1,
+  "fingerprint": "f45a89208e27b259",
+  "cases": 29,
+  "cases_hash": "01beb34fb3a90504",
+  "coverage": {
+    "lines": 139,
+    "reached": 10,
+    "files": [
+      {
+        "file": "assistant-activity.js",
+        "lines": 139,
+        "reached": 10,
+        "missed": "11-139"
+      }
+    ]
+  }
+}

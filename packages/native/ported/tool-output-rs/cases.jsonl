@@ -1,0 +1,350 @@
+{"fn":"isToolOutputOmitted","args":[{"a":"b"}],"ok":false}
+{"fn":"isToolOutputOmitted","args":[{"$undefined":true}],"ok":false}
+{"fn":"isToolOutputOmitted","args":[["a",1]],"ok":false}
+{"fn":"isToolOutputOmitted","args":[true],"ok":false}
+{"fn":"isToolOutputOmitted","args":[],"ok":false}
+{"fn":"isToolOutputOmitted","args":[{"a":{"b":"c"}}],"ok":false}
+{"fn":"isToolOutputOmitted","args":[null],"ok":false}
+{"fn":"isToolOutputOmitted","args":["x"],"ok":false}
+{"fn":"isToolOutputOmitted","args":[{}],"ok":false}
+{"fn":"isToolOutputOmitted","args":[[]],"ok":false}
+{"fn":"isToolOutputOmitted","args":[0],"ok":false}
+{"fn":"getOmittedToolOutputBytes","args":[["a",1]],"error":"Cannot read properties of undefined (reading 'outputBytes')"}
+{"fn":"getOmittedToolOutputBytes","args":[0],"error":"Cannot read properties of undefined (reading 'outputBytes')"}
+{"fn":"getOmittedToolOutputBytes","args":[[]],"error":"Cannot read properties of undefined (reading 'outputBytes')"}
+{"fn":"getOmittedToolOutputBytes","args":["x"],"error":"Cannot read properties of undefined (reading 'outputBytes')"}
+{"fn":"getOmittedToolOutputBytes","args":[{"a":"b"}],"error":"Cannot read properties of undefined (reading 'outputBytes')"}
+{"fn":"getOmittedToolOutputBytes","args":[true],"error":"Cannot read properties of undefined (reading 'outputBytes')"}
+{"fn":"getOmittedToolOutputBytes","args":[{"a":{"b":"c"}}],"error":"Cannot read properties of undefined (reading 'outputBytes')"}
+{"fn":"getOmittedToolOutputBytes","args":[{}],"error":"Cannot read properties of undefined (reading 'outputBytes')"}
+{"fn":"getOmittedToolOutputBytes","args":[null],"error":"Cannot read properties of null (reading 'state')"}
+{"fn":"keepFullToolOutput","args":[{},"x"],"ok":"x"}
+{"fn":"keepFullToolOutput","args":[{},0],"ok":0}
+{"fn":"keepFullToolOutput","args":[{"a":{"b":"c"}},{"a":{"b":"c"}}],"ok":{"a":{"b":"c"}}}
+{"fn":"keepFullToolOutput","args":[true,null],"ok":null}
+{"fn":"keepFullToolOutput","args":[{"a":"b"},["a",1]],"ok":["a",1]}
+{"fn":"keepFullToolOutput","args":[{"$undefined":true},{"a":{"b":"c"}}],"ok":{"a":{"b":"c"}}}
+{"fn":"keepFullToolOutput","args":[[],"x"],"ok":"x"}
+{"fn":"keepFullToolOutput","args":[true,{}],"ok":{}}
+{"fn":"keepFullToolOutput","args":[{"$undefined":true},null],"ok":null}
+{"fn":"keepFullToolOutput","args":[{"$undefined":true},["a",1]],"ok":["a",1]}
+{"fn":"keepFullToolOutput","args":[{"$undefined":true},0],"ok":0}
+{"fn":"keepFullToolOutput","args":[{"$undefined":true},"x"],"ok":"x"}
+{"fn":"keepFullToolOutput","args":[null,{}],"ok":{}}
+{"fn":"keepFullToolOutput","args":[[],["a",1]],"ok":["a",1]}
+{"fn":"keepFullToolOutput","args":[{"a":{"b":"c"}},{}],"ok":{}}
+{"fn":"keepFullToolOutput","args":[{"a":{"b":"c"}},["a",1]],"ok":["a",1]}
+{"fn":"keepFullToolOutput","args":[null,true],"ok":true}
+{"fn":"keepFullToolOutput","args":[["a",1],"x"],"ok":"x"}
+{"fn":"keepFullToolOutput","args":[true,["a",1]],"ok":["a",1]}
+{"fn":"keepFullToolOutput","args":[{"$undefined":true},true],"ok":true}
+{"fn":"keepFullToolOutput","args":[0,["a",1]],"ok":["a",1]}
+{"fn":"keepFullToolOutput","args":[null,"x"],"ok":"x"}
+{"fn":"keepFullToolOutput","args":["x",[]],"ok":[]}
+{"fn":"keepFullToolOutput","args":["x",["a",1]],"ok":["a",1]}
+{"fn":"keepFullToolOutput","args":[{"a":"b"},"x"],"ok":"x"}
+{"fn":"keepFullToolOutput","args":["x",{"a":"b"}],"ok":{"a":"b"}}
+{"fn":"keepFullToolOutput","args":[{"$undefined":true},[]],"ok":[]}
+{"fn":"keepFullToolOutput","args":["x",0],"ok":0}
+{"fn":"keepFullToolOutput","args":[[],{"a":{"b":"c"}}],"ok":{"a":{"b":"c"}}}
+{"fn":"keepFullToolOutput","args":[{"$undefined":true},{"a":"b"}],"ok":{"a":"b"}}
+{"fn":"keepFullToolOutput","args":[{},["a",1]],"ok":["a",1]}
+{"fn":"keepFullToolOutput","args":[{},{"a":"b"}],"ok":{"a":"b"}}
+{"fn":"keepFullToolOutput","args":[true,0],"ok":0}
+{"fn":"keepFullToolOutput","args":[{"a":{"b":"c"}},{"a":"b"}],"ok":{"a":"b"}}
+{"fn":"keepFullToolOutput","args":[{"a":"b"},[]],"ok":[]}
+{"fn":"keepFullToolOutput","args":[null,["a",1]],"ok":["a",1]}
+{"fn":"keepFullToolOutput","args":[[],{}],"ok":{}}
+{"fn":"keepFullToolOutput","args":[{"$undefined":true},{}],"ok":{}}
+{"fn":"keepFullToolOutput","args":[{},true],"ok":true}
+{"fn":"keepFullToolOutput","args":[0,0],"ok":0}
+{"fn":"keepFullToolOutput","args":["x",{"a":{"b":"c"}}],"ok":{"a":{"b":"c"}}}
+{"fn":"keepFullToolOutput","args":[[],null],"ok":null}
+{"fn":"keepFullToolOutput","args":[{"a":{"b":"c"}},[]],"ok":[]}
+{"fn":"keepFullToolOutput","args":[{"a":"b"},{"a":{"b":"c"}}],"ok":{"a":{"b":"c"}}}
+{"fn":"keepFullToolOutput","args":[{},{}],"ok":{}}
+{"fn":"keepFullToolOutput","args":[["a",1],0],"ok":0}
+{"fn":"keepFullToolOutput","args":[{"a":"b"},null],"ok":null}
+{"fn":"keepFullToolOutput","args":[0,{}],"ok":{}}
+{"fn":"keepFullToolOutput","args":[["a",1],{}],"ok":{}}
+{"fn":"keepFullToolOutput","args":[["a",1],[]],"ok":[]}
+{"fn":"keepFullToolOutput","args":[0,null],"ok":null}
+{"fn":"keepFullToolOutput","args":[0,[]],"ok":[]}
+{"fn":"keepFullToolOutput","args":[{},[]],"ok":[]}
+{"fn":"keepFullToolOutput","args":[{"a":"b"},0],"ok":0}
+{"fn":"keepFullToolOutput","args":["x",{}],"ok":{}}
+{"fn":"keepFullToolOutput","args":[{},{"a":{"b":"c"}}],"ok":{"a":{"b":"c"}}}
+{"fn":"keepFullToolOutput","args":[null,null],"ok":null}
+{"fn":"keepFullToolOutput","args":[null,0],"ok":0}
+{"fn":"keepFullToolOutput","args":[0,{"a":"b"}],"ok":{"a":"b"}}
+{"fn":"keepFullToolOutput","args":[0,"x"],"ok":"x"}
+{"fn":"keepFullToolOutput","args":[null,{"a":"b"}],"ok":{"a":"b"}}
+{"fn":"keepFullToolOutput","args":[{"a":"b"},{"a":"b"}],"ok":{"a":"b"}}
+{"fn":"keepFullToolOutput","args":[["a",1],{"a":"b"}],"ok":{"a":"b"}}
+{"fn":"keepFullToolOutput","args":[["a",1],true],"ok":true}
+{"fn":"keepFullToolOutput","args":[true,{"a":"b"}],"ok":{"a":"b"}}
+{"fn":"keepFullToolOutput","args":["x",null],"ok":null}
+{"fn":"keepFullToolOutput","args":[{"a":"b"},{}],"ok":{}}
+{"fn":"keepFullToolOutput","args":[["a",1],null],"ok":null}
+{"fn":"keepFullToolOutput","args":[true,true],"ok":true}
+{"fn":"keepFullToolOutput","args":[{},null],"ok":null}
+{"fn":"keepFullToolOutput","args":[0,true],"ok":true}
+{"fn":"keepFullToolOutput","args":[{"a":{"b":"c"}},true],"ok":true}
+{"fn":"keepFullToolOutput","args":["x","x"],"ok":"x"}
+{"fn":"keepFullToolOutput","args":[true,[]],"ok":[]}
+{"fn":"keepFullToolOutput","args":[null,[]],"ok":[]}
+{"fn":"keepFullToolOutput","args":["x",true],"ok":true}
+{"fn":"keepFullToolOutput","args":[{"a":{"b":"c"}},"x"],"ok":"x"}
+{"fn":"keepFullToolOutput","args":[true,"x"],"ok":"x"}
+{"fn":"keepFullToolOutput","args":[null,{"a":{"b":"c"}}],"ok":{"a":{"b":"c"}}}
+{"fn":"keepFullToolOutput","args":[{"a":"b"},true],"ok":true}
+{"fn":"keepFullToolOutput","args":[["a",1],{"a":{"b":"c"}}],"ok":{"a":{"b":"c"}}}
+{"fn":"keepFullToolOutput","args":[true,{"a":{"b":"c"}}],"ok":{"a":{"b":"c"}}}
+{"fn":"keepFullToolOutput","args":[[],0],"ok":0}
+{"fn":"keepFullToolOutput","args":[["a",1],["a",1]],"ok":["a",1]}
+{"fn":"keepFullToolOutput","args":[0,{"a":{"b":"c"}}],"ok":{"a":{"b":"c"}}}
+{"fn":"keepFullToolOutput","args":[{"a":{"b":"c"}},null],"ok":null}
+{"fn":"keepFullToolOutput","args":[[],true],"ok":true}
+{"fn":"keepFullToolOutput","args":[[],[]],"ok":[]}
+{"fn":"keepFullToolOutput","args":[[],{"a":"b"}],"ok":{"a":"b"}}
+{"fn":"keepFullToolOutput","args":[{"a":{"b":"c"}},0],"ok":0}
+{"fn":"keepFullToolOutput","args":["x","X"],"ok":"X"}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":{"b":"c"}}],[0,{"a":{"b":"c"}},0]],"ok":[{"a":{"b":"c"}}]}
+{"fn":"mergeLoadedToolOutput","args":[[],[null,["a",1],[]]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[0,{"a":{"b":"c"}}],[{"a":{"b":"c"}}]],"ok":[0,{"a":{"b":"c"}}]}
+{"fn":"mergeLoadedToolOutput","args":[[],[]],"ok":[]}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":"b"},{"a":"b"}],[]],"ok":[{"a":"b"},{"a":"b"}]}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":{"b":"c"}},{"a":"b"},"x"],[]],"ok":[{"a":{"b":"c"}},{"a":"b"},"x"]}
+{"fn":"mergeLoadedToolOutput","args":[[],[["a",1],"x"]],"ok":[]}
+{"fn":"mergeLoadedToolOutput","args":[{"a":{"b":"c"}},null],"error":"Cannot read properties of null (reading 'map')"}
+{"fn":"mergeLoadedToolOutput","args":[[],[{"a":{"b":"c"}},null,{"a":{"b":"c"}}]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[],[true]],"ok":[]}
+{"fn":"mergeLoadedToolOutput","args":[{},[{"a":{"b":"c"}}]],"ok":{}}
+{"fn":"mergeLoadedToolOutput","args":[[],[true,{"a":"b"}]],"ok":[]}
+{"fn":"mergeLoadedToolOutput","args":[[0],[{"a":"b"},[]]],"ok":[0]}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1],null],{"a":"b"}],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[[0],[]],"ok":[0]}
+{"fn":"mergeLoadedToolOutput","args":[[0,true,{"a":"b"}],[{"a":{"b":"c"}},null,["a",1]]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[],[{"a":{"b":"c"}}]],"ok":[]}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":{"b":"c"}}],[]],"ok":[{"a":{"b":"c"}}]}
+{"fn":"mergeLoadedToolOutput","args":[[null,["a",1],true],[{"a":"b"}]],"ok":[null,["a",1],true]}
+{"fn":"mergeLoadedToolOutput","args":[[0],[{},"x",0]],"ok":[0]}
+{"fn":"mergeLoadedToolOutput","args":[["x",null],[]],"ok":["x",null]}
+{"fn":"mergeLoadedToolOutput","args":[[true,null,{"a":"b"}],[]],"ok":[true,null,{"a":"b"}]}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1],null,{"a":{"b":"c"}}],[0]],"ok":[["a",1],null,{"a":{"b":"c"}}]}
+{"fn":"mergeLoadedToolOutput","args":[[true,true,0],{"a":{"b":"c"}}],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[["a",1],["x",0,true]],"ok":["a",1]}
+{"fn":"mergeLoadedToolOutput","args":[null,[true,{"a":{"b":"c"}},null]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[],[null,0,null]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[["x"],[]],"ok":["x"]}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":"b"},{"a":{"b":"c"}},"x"],[{"a":"b"},null,[]]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[true],true],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[["x",0,true],[]],"ok":["x",0,true]}
+{"fn":"mergeLoadedToolOutput","args":[[{}],[null,[],[]]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[null,{"a":{"b":"c"}},{"a":{"b":"c"}}],[]],"ok":[null,{"a":{"b":"c"}},{"a":{"b":"c"}}]}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":"b"},[]],[[]]],"ok":[{"a":"b"},[]]}
+{"fn":"mergeLoadedToolOutput","args":[[0],[0]],"ok":[0]}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":{"b":"c"}}],[{}]],"ok":[{"a":{"b":"c"}}]}
+{"fn":"mergeLoadedToolOutput","args":[[0,[]],[]],"ok":[0,[]]}
+{"fn":"mergeLoadedToolOutput","args":[[[],null,{"a":"b"}],[[],{}]],"ok":[[],null,{"a":"b"}]}
+{"fn":"mergeLoadedToolOutput","args":[[null,{}],[{"a":"b"}]],"ok":[null,{}]}
+{"fn":"mergeLoadedToolOutput","args":[null,[true,{"a":"b"},true]],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1]],[{"a":{"b":"c"}},null,true]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[["x",0,{"a":"b"}],0],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1],null],[[]]],"ok":[["a",1],null]}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1]],[]],"ok":[["a",1]]}
+{"fn":"mergeLoadedToolOutput","args":[[[],0],[{},{"a":"b"}]],"ok":[[],0]}
+{"fn":"mergeLoadedToolOutput","args":[[0,{"a":"b"}],["x",null]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[{"a":"b"},[true,{"a":"b"}]],"ok":{"a":"b"}}
+{"fn":"mergeLoadedToolOutput","args":[[0],[0,[]]],"ok":[0]}
+{"fn":"mergeLoadedToolOutput","args":[[[],0],["x"]],"ok":[[],0]}
+{"fn":"mergeLoadedToolOutput","args":[[],[null]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[[],{},0],["x",["a",1]]],"ok":[[],{},0]}
+{"fn":"mergeLoadedToolOutput","args":[[true,null,0],[[]]],"ok":[true,null,0]}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":"b"}],[null]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[],[{"a":"b"}]],"ok":[]}
+{"fn":"mergeLoadedToolOutput","args":[[],[{},0,true]],"ok":[]}
+{"fn":"mergeLoadedToolOutput","args":[true,[]],"ok":true}
+{"fn":"mergeLoadedToolOutput","args":[[],{"a":{"b":"c"}}],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[[],null],"error":"Cannot read properties of null (reading 'map')"}
+{"fn":"mergeLoadedToolOutput","args":[[true],[null]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":"b"}],["a",1]],"ok":[{"a":"b"}]}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":{"b":"c"}},{}],0],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[[{},null,{}],[{"a":{"b":"c"}}]],"ok":[{},null,{}]}
+{"fn":"mergeLoadedToolOutput","args":[["x",0],[{},"x",{}]],"ok":["x",0]}
+{"fn":"mergeLoadedToolOutput","args":[[{}],[{"a":"b"},{},null]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[true],{"a":"b"}],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":{"b":"c"}},null,{"a":{"b":"c"}}],[0]],"ok":[{"a":{"b":"c"}},null,{"a":{"b":"c"}}]}
+{"fn":"mergeLoadedToolOutput","args":[[],true],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":{"b":"c"}},{},"x"],true],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":"b"}],[0,true,{"a":{"b":"c"}}]],"ok":[{"a":"b"}]}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1],"x"],[0,["a",1]]],"ok":[["a",1],"x"]}
+{"fn":"mergeLoadedToolOutput","args":[[{},[]],[null]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[null],[]],"ok":[null]}
+{"fn":"mergeLoadedToolOutput","args":[true,[["a",1],["a",1],{}]],"ok":true}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1]],0],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":"b"},["a",1]],[]],"ok":[{"a":"b"},["a",1]]}
+{"fn":"mergeLoadedToolOutput","args":[[true,true],["x",[],0]],"ok":[true,true]}
+{"fn":"mergeLoadedToolOutput","args":[[],["x"]],"ok":[]}
+{"fn":"mergeLoadedToolOutput","args":["x",[[]]],"ok":"x"}
+{"fn":"mergeLoadedToolOutput","args":[[[],"x"],[{"a":{"b":"c"}},null,true]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[0,[[],{"a":{"b":"c"}},0]],"ok":0}
+{"fn":"mergeLoadedToolOutput","args":[true,["x"]],"ok":true}
+{"fn":"mergeLoadedToolOutput","args":[[null,{},null],[true]],"ok":[null,{},null]}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1],["a",1]],["x",null,[]]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[[],{"a":{"b":"c"}}],[true]],"ok":[[],{"a":{"b":"c"}}]}
+{"fn":"mergeLoadedToolOutput","args":[[0,true],[{},{},"x"]],"ok":[0,true]}
+{"fn":"mergeLoadedToolOutput","args":[[null,0],["x",{}]],"ok":[null,0]}
+{"fn":"mergeLoadedToolOutput","args":[[[]],[]],"ok":[[]]}
+{"fn":"mergeLoadedToolOutput","args":[[],{}],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[[true],[{"a":{"b":"c"}}]],"ok":[true]}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":"b"}],[[]]],"ok":[{"a":"b"}]}
+{"fn":"mergeLoadedToolOutput","args":[[0],[[]]],"ok":[0]}
+{"fn":"mergeLoadedToolOutput","args":[[null],[null,"x"]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[0,{"a":{"b":"c"}}],[["a",1],null,"x"]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[[]],[[]]],"ok":[[]]}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1],{"a":{"b":"c"}}],[]],"ok":[["a",1],{"a":{"b":"c"}}]}
+{"fn":"mergeLoadedToolOutput","args":[[0,{"a":{"b":"c"}},["a",1]],[{}]],"ok":[0,{"a":{"b":"c"}},["a",1]]}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1]],[0]],"ok":[["a",1]]}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":"b"},true],[null]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[],0],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[0,{}],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":"b"},{"a":{"b":"c"}},{"a":"b"}],[]],"ok":[{"a":"b"},{"a":{"b":"c"}},{"a":"b"}]}
+{"fn":"mergeLoadedToolOutput","args":[[],[{"a":{"b":"c"}},"x"]],"ok":[]}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":"b"},[],{}],["x",["a",1],{"a":{"b":"c"}}]],"ok":[{"a":"b"},[],{}]}
+{"fn":"mergeLoadedToolOutput","args":[["a",1],[]],"ok":["a",1]}
+{"fn":"mergeLoadedToolOutput","args":[[true],[{},{}]],"ok":[true]}
+{"fn":"mergeLoadedToolOutput","args":[[null,{},"x"],[{},true,[]]],"ok":[null,{},"x"]}
+{"fn":"mergeLoadedToolOutput","args":[[],[{"a":{"b":"c"}},0,0]],"ok":[]}
+{"fn":"mergeLoadedToolOutput","args":[["x",{"a":{"b":"c"}},null],null],"error":"Cannot read properties of null (reading 'map')"}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":{"b":"c"}},0],[{},{"a":{"b":"c"}},{}]],"ok":[{"a":{"b":"c"}},0]}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":{"b":"c"}}],[0,0]],"ok":[{"a":{"b":"c"}}]}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1]],{}],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1],["a",1]],["x",["a",1],{"a":"b"}]],"ok":[["a",1],["a",1]]}
+{"fn":"mergeLoadedToolOutput","args":[[0,["a",1]],[{"a":{"b":"c"}}]],"ok":[0,["a",1]]}
+{"fn":"mergeLoadedToolOutput","args":[[true,0,["a",1]],[["a",1],null]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[{}],["x",true,[]]],"ok":[{}]}
+{"fn":"mergeLoadedToolOutput","args":[["x"],[null,true]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[],"x"],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[[],[{}]],"ok":[]}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1],{"a":{"b":"c"}}],"x"],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":{"b":"c"}},null],[0,{"a":"b"},{"a":{"b":"c"}}]],"ok":[{"a":{"b":"c"}},null]}
+{"fn":"mergeLoadedToolOutput","args":[[true,null,[]],[]],"ok":[true,null,[]]}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1]],null],"error":"Cannot read properties of null (reading 'map')"}
+{"fn":"mergeLoadedToolOutput","args":[[0,{"a":{"b":"c"}}],{"a":{"b":"c"}}],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[[0],{"a":{"b":"c"}}],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":{"b":"c"}},{"a":"b"}],[]],"ok":[{"a":{"b":"c"}},{"a":"b"}]}
+{"fn":"mergeLoadedToolOutput","args":[[null,true],[[],0,{"a":"b"}]],"ok":[null,true]}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1],{"a":{"b":"c"}},0],{"a":"b"}],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[[[],true],[{"a":{"b":"c"}}]],"ok":[[],true]}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":{"b":"c"}},0],[]],"ok":[{"a":{"b":"c"}},0]}
+{"fn":"mergeLoadedToolOutput","args":["x",[]],"ok":"x"}
+{"fn":"mergeLoadedToolOutput","args":[["x",0],[{"a":"b"}]],"ok":["x",0]}
+{"fn":"mergeLoadedToolOutput","args":[[true,{"a":"b"}],[]],"ok":[true,{"a":"b"}]}
+{"fn":"mergeLoadedToolOutput","args":[[null],["x",{"a":{"b":"c"}},{"a":{"b":"c"}}]],"ok":[null]}
+{"fn":"mergeLoadedToolOutput","args":[[null,{"a":{"b":"c"}}],[{"a":"b"},0,{"a":{"b":"c"}}]],"ok":[null,{"a":{"b":"c"}}]}
+{"fn":"mergeLoadedToolOutput","args":[[true],[{"a":"b"},{"a":"b"},null]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[["a",1],[0,"x"]],"ok":["a",1]}
+{"fn":"mergeLoadedToolOutput","args":[["x",true,0],[0]],"ok":["x",true,0]}
+{"fn":"mergeLoadedToolOutput","args":[[],[[],"x","x"]],"ok":[]}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1],null],[0,null]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[],[[],"x"]],"ok":[]}
+{"fn":"mergeLoadedToolOutput","args":[[true,{},"x"],["x"]],"ok":[true,{},"x"]}
+{"fn":"mergeLoadedToolOutput","args":[[{},[]],[{"a":"b"},{"a":"b"},["a",1]]],"ok":[{},[]]}
+{"fn":"mergeLoadedToolOutput","args":[[[],["a",1]],[{},"x"]],"ok":[[],["a",1]]}
+{"fn":"mergeLoadedToolOutput","args":[[],["a",1]],"ok":[]}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":"b"},"x"],"x"],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[[0,[],"x"],[]],"ok":[0,[],"x"]}
+{"fn":"mergeLoadedToolOutput","args":[["a",1],[[],"x",{"a":{"b":"c"}}]],"ok":["a",1]}
+{"fn":"mergeLoadedToolOutput","args":[[null],"x"],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[[0,0,{}],[]],"ok":[0,0,{}]}
+{"fn":"mergeLoadedToolOutput","args":[[],[true,null]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":"b"},"x"],[[],[],["a",1]]],"ok":[{"a":"b"},"x"]}
+{"fn":"mergeLoadedToolOutput","args":[[{},true],[{},null,0]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[[],"x","x"],0],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[[0],[0,"x",{"a":{"b":"c"}}]],"ok":[0]}
+{"fn":"mergeLoadedToolOutput","args":[[{},{"a":"b"},{"a":{"b":"c"}}],[[],0]],"ok":[{},{"a":"b"},{"a":{"b":"c"}}]}
+{"fn":"mergeLoadedToolOutput","args":[[null,{}],[]],"ok":[null,{}]}
+{"fn":"mergeLoadedToolOutput","args":[[true,null,"x"],["x",0]],"ok":[true,null,"x"]}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":"b"},{"a":"b"},true],["x","x"]],"ok":[{"a":"b"},{"a":"b"},true]}
+{"fn":"mergeLoadedToolOutput","args":[{},[{"a":{"b":"c"}},{"a":"b"},{}]],"ok":{}}
+{"fn":"mergeLoadedToolOutput","args":[{},["x",[],null]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[["x",0],["a",1]],"ok":["x",0]}
+{"fn":"mergeLoadedToolOutput","args":[{"a":{"b":"c"}},[0]],"ok":{"a":{"b":"c"}}}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1],null],[{"a":{"b":"c"}}]],"ok":[["a",1],null]}
+{"fn":"mergeLoadedToolOutput","args":[["x",true,"x"],0],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1],[]],[]],"ok":[["a",1],[]]}
+{"fn":"mergeLoadedToolOutput","args":[[],[0]],"ok":[]}
+{"fn":"mergeLoadedToolOutput","args":[[null,"x",[]],[]],"ok":[null,"x",[]]}
+{"fn":"mergeLoadedToolOutput","args":[[],[true,0]],"ok":[]}
+{"fn":"mergeLoadedToolOutput","args":[[{},true,"x"],[{"a":{"b":"c"}},["a",1],{}]],"ok":[{},true,"x"]}
+{"fn":"mergeLoadedToolOutput","args":[[null,true,true],[{"a":"b"},{},"x"]],"ok":[null,true,true]}
+{"fn":"mergeLoadedToolOutput","args":[[0],[{"a":{"b":"c"}}]],"ok":[0]}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1],"x",true],[true]],"ok":[["a",1],"x",true]}
+{"fn":"mergeLoadedToolOutput","args":[[null,{"a":{"b":"c"}}],"x"],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[["x",{"a":"b"}],[["a",1],{"a":"b"}]],"ok":["x",{"a":"b"}]}
+{"fn":"mergeLoadedToolOutput","args":[["x"],{"a":"b"}],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[{"a":{"b":"c"}},["a",1]],"ok":{"a":{"b":"c"}}}
+{"fn":"mergeLoadedToolOutput","args":[[{}],[[],0,["a",1]]],"ok":[{}]}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":{"b":"c"}},true],[{}]],"ok":[{"a":{"b":"c"}},true]}
+{"fn":"mergeLoadedToolOutput","args":[[null,{"a":{"b":"c"}}],[]],"ok":[null,{"a":{"b":"c"}}]}
+{"fn":"mergeLoadedToolOutput","args":[["x",true,{"a":{"b":"c"}}],["x",{}]],"ok":["x",true,{"a":{"b":"c"}}]}
+{"fn":"mergeLoadedToolOutput","args":[null,[{"a":"b"}]],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"mergeLoadedToolOutput","args":[true,["x","x",[]]],"ok":true}
+{"fn":"mergeLoadedToolOutput","args":[[null,"x","x"],[]],"ok":[null,"x","x"]}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1],"x"],[]],"ok":[["a",1],"x"]}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":"b"}],[0,{"a":{"b":"c"}}]],"ok":[{"a":"b"}]}
+{"fn":"mergeLoadedToolOutput","args":[{"a":"b"},[["a",1],"x",["a",1]]],"ok":{"a":"b"}}
+{"fn":"mergeLoadedToolOutput","args":[[{},["a",1],"x"],[true]],"ok":[{},["a",1],"x"]}
+{"fn":"mergeLoadedToolOutput","args":[[[],0],["x",{"a":"b"},{"a":"b"}]],"ok":[[],0]}
+{"fn":"mergeLoadedToolOutput","args":[[{}],[{},null]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[true,["a",1],"x"],[]],"ok":[true,["a",1],"x"]}
+{"fn":"mergeLoadedToolOutput","args":[["x",["a",1]],["x",true]],"ok":["x",["a",1]]}
+{"fn":"mergeLoadedToolOutput","args":[[],[{"a":"b"},{"a":{"b":"c"}}]],"ok":[]}
+{"fn":"mergeLoadedToolOutput","args":[[{"a":{"b":"c"}},[],{"a":"b"}],[]],"ok":[{"a":{"b":"c"}},[],{"a":"b"}]}
+{"fn":"mergeLoadedToolOutput","args":[[true],[true,"x"]],"ok":[true]}
+{"fn":"mergeLoadedToolOutput","args":[[[],["a",1]],[true]],"ok":[[],["a",1]]}
+{"fn":"mergeLoadedToolOutput","args":[[0],[["a",1],null,"x"]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[null,"x"],[null,{},{"a":{"b":"c"}}]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1],true],0],"error":"full.map is not a function"}
+{"fn":"mergeLoadedToolOutput","args":[[["a",1]],[{"a":"b"},"x",[]]],"ok":[["a",1]]}
+{"fn":"mergeLoadedToolOutput","args":[[[],[]],[true,null,{"a":"b"}]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"isToolOutputOmitted","args":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":42}}],"ok":true}
+{"fn":"isToolOutputOmitted","args":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"m":1}}}],"ok":false}
+{"fn":"isToolOutputOmitted","args":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":1}}],"ok":false}
+{"fn":"isToolOutputOmitted","args":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"running","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true}}],"ok":false}
+{"fn":"isToolOutputOmitted","args":[{"type":"tool"}],"ok":false}
+{"fn":"getOmittedToolOutputBytes","args":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":42}}],"ok":42}
+{"fn":"getOmittedToolOutputBytes","args":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":0}}],"ok":0}
+{"fn":"getOmittedToolOutputBytes","args":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":-1}}],"ok":{"$undefined":true}}
+{"fn":"getOmittedToolOutputBytes","args":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":1.5}}],"ok":1.5}
+{"fn":"getOmittedToolOutputBytes","args":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":"7"}}],"ok":{"$undefined":true}}
+{"fn":"getOmittedToolOutputBytes","args":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true}}],"ok":{"$undefined":true}}
+{"fn":"getOmittedToolOutputBytes","args":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":{"$num":"NaN"}}}],"ok":{"$undefined":true}}
+{"fn":"getOmittedToolOutputBytes","args":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":{"$num":"Infinity"}}}],"ok":{"$undefined":true}}
+{"fn":"getOmittedToolOutputBytes","args":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":{"$num":"-0"}}}],"ok":{"$num":"-0"}}
+{"fn":"getOmittedToolOutputBytes","args":[{"state":{}}],"ok":{"$undefined":true}}
+{"fn":"keepFullToolOutput","args":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"m":1}}},{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":42}}],"ok":{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"m":1}}}}
+{"fn":"keepFullToolOutput","args":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"m":1}}},{"id":"p2","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true}}],"ok":{"id":"p2","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true}}}
+{"fn":"keepFullToolOutput","args":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":42}},{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":42}}],"ok":{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":42}}}
+{"fn":"keepFullToolOutput","args":[{"$undefined":true},{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":42}}],"ok":{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":42}}}
+{"fn":"keepFullToolOutput","args":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"m":1}}},{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"m":1}}}],"ok":{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"m":1}}}}
+{"fn":"keepFullToolOutput","args":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"m":1}}},{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":3}}],"ok":{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"m":1}}}}
+{"fn":"keepFullToolOutput","args":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2}}},{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true}}],"ok":{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2}}}}
+{"fn":"keepFullToolOutput","args":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2}},"x":1},{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true},"x":2}],"ok":{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"$undefined":true}},"x":2}}
+{"fn":"keepFullToolOutput","args":[{"id":3,"type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"X","title":"t","time":{"start":1,"end":2}}},{"id":3,"type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true}}],"ok":{"id":3,"type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"X","title":"t","time":{"start":1,"end":2}}}}
+{"fn":"keepFullToolOutput","args":[{"id":{"$num":"NaN"},"type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"X","title":"t","time":{"start":1,"end":2}}},{"id":{"$num":"NaN"},"type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true}}],"ok":{"id":{"$num":"NaN"},"type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true}}}
+{"fn":"keepFullToolOutput","args":[{"id":{"a":1},"type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"X","title":"t","time":{"start":1,"end":2}}},{"id":{"a":1},"type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true}}],"ok":{"id":{"a":1},"type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true}}}
+{"fn":"keepFullToolOutput","args":[{"id":"p9","type":"tool","callID":"c","tool":"read","state":{"status":"completed","input":{},"title":"t","output":"O","metadata":{}}},{"id":"p9","type":"tool","callID":"c","tool":"read","state":{"status":"completed","input":{},"title":"t","outputOmitted":true,"outputBytes":1,"output":"","metadata":{}}}],"ok":{"id":"p9","type":"tool","callID":"c","tool":"read","state":{"status":"completed","input":{},"title":"t","output":"O","metadata":{}}}}
+{"fn":"keepFullToolOutput","args":[{"id":"p9","type":"tool","callID":"c","tool":"read","state":{"status":"completed","input":{},"title":"t","output":"O"}},{"id":"p9","type":"tool","callID":"c","tool":"read","state":{"status":"completed","input":{},"title":"t","outputOmitted":true,"outputBytes":1,"output":""}}],"ok":{"id":"p9","type":"tool","callID":"c","tool":"read","state":{"status":"completed","input":{},"title":"t","output":"O"}}}
+{"fn":"mergeLoadedToolOutput","args":[[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":42}},{"id":"p2","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2}}}],[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"m":1}}}]],"ok":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"m":1}}},{"id":"p2","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2}}}]}
+{"fn":"mergeLoadedToolOutput","args":[[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":42}}],[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"m":1}}},{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"SECOND","title":"t","time":{"start":1,"end":2}}}]],"ok":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"SECOND","title":"t","time":{"start":1,"end":2}}}]}
+{"fn":"mergeLoadedToolOutput","args":[[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":42}}],[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":42}}]],"ok":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":42}}]}
+{"fn":"mergeLoadedToolOutput","args":[[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"m":1}}}],[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"m":1}}}]],"ok":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"m":1}}}]}
+{"fn":"mergeLoadedToolOutput","args":["abc",[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"m":1}}}]],"ok":"abc"}
+{"fn":"mergeLoadedToolOutput","args":[{"length":1},[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"m":1}}}]],"ok":{"length":1}}
+{"fn":"mergeLoadedToolOutput","args":[[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":42}},{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":42}}],[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"m":1}}}]],"ok":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"m":1}}},{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"m":1}}}]}
+{"fn":"mergeLoadedToolOutput","args":[[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":42}}],[]],"ok":[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":42}}]}
+{"fn":"mergeLoadedToolOutput","args":[[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":42}}],[null]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"mergeLoadedToolOutput","args":[null,[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"FULL","title":"t","time":{"start":1,"end":2},"metadata":{"m":1}}}]],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"mergeLoadedToolOutput","args":[[{"id":"p1","type":"tool","callID":"c1","tool":"read","state":{"status":"completed","input":{},"output":"","title":"t","time":{"start":1,"end":2},"outputOmitted":true,"outputBytes":42}}],"x"],"error":"full.map is not a function"}

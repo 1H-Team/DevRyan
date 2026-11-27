@@ -1,0 +1,19 @@
+{
+  "unit": "tools/",
+  "files": 2,
+  "fingerprint": "1016eebc9ab8a081",
+  "cases": 228,
+  "cases_hash": "adb25c7478a5522d",
+  "coverage": {
+    "lines": 50,
+    "reached": 20,
+    "files": [
+      {
+        "file": "tools/manifest.ts",
+        "lines": 50,
+        "reached": 20,
+        "missed": "14-16, 20-25, 34-48, 50-55"
+      }
+    ]
+  }
+}

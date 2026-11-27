@@ -499,7 +499,6 @@ function notifyMessageSent(sessionId: string): void {
 
 export type { SyntheticContextPart } from "./input-store"
 export type { SessionMemoryState } from "./viewport-store"
-export type { VoiceStatus, VoiceMode } from "./voice-store"
 
 export type NewSessionDraftState = {
   open: boolean
@@ -783,10 +782,6 @@ export type SessionUIState = {
   ) => void
   getStarterAssistantMessage: (sessionId: string) => StarterAssistantMessage | undefined
   clearStarterAssistantPendingContext: (sessionId: string) => void
-
-  // Non-Git mode: dismissed signature hash per session, hides bar until new turn arrives
-  pendingChangesBarDismissed: Map<string, string>
-  dismissPendingChangesBar: (sessionId: string, signature: string | null) => void
 
   // Actions — UI state management
   setCurrentSession: (id: string | null, directoryHint?: string | null, options?: SelectionOptions) => void
@@ -1751,7 +1746,6 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   sessionCompletionIndicator: new Map(),
   starterAssistantMessages: new Map(),
   ...readPersistedPlanMessageState(),
-  pendingChangesBarDismissed: new Map(),
 
   claimPendingSendAbort: (key, controller = new AbortController()) => {
     if (!key) return controller
@@ -2471,16 +2465,6 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
   getWorktreeMetadata: (sessionId) => get().worktreeMetadata.get(sessionId),
 
-  dismissPendingChangesBar: (sessionId, signature) => {
-    const map = new Map(get().pendingChangesBarDismissed);
-    if (signature === null) {
-      map.delete(sessionId);
-    } else {
-      map.set(sessionId, signature);
-    }
-    set({ pendingChangesBarDismissed: map });
-  },
-
   // ---------------------------------------------------------------------------
   // sendMessage — calls SDK, reads domain data from sync
   // ---------------------------------------------------------------------------
@@ -2500,12 +2484,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       hasCurrentSession: Boolean(get().currentSessionId),
       inputMode: inputMode ?? "normal",
     })
-    // Clear non-Git changed-files bar on new user message for current session
     const sid = get().currentSessionId;
     if (sid) {
-      const map = new Map(get().pendingChangesBarDismissed);
-      map.delete(sid);
-      set({ pendingChangesBarDismissed: map });
       get().clearSessionTurnCompletion(sid)
     }
 
@@ -2935,9 +2915,6 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       sessionId,
       inputMode: inputMode ?? "normal",
     })
-    const map = new Map(get().pendingChangesBarDismissed)
-    map.delete(sessionId)
-    set({ pendingChangesBarDismissed: map })
     get().clearSessionTurnCompletion(sessionId)
 
     const trimmedAgent = typeof agent === "string" && agent.trim().length > 0 ? agent.trim() : undefined
@@ -3658,7 +3635,6 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         (planKey) => planKey.startsWith(`${id}:`),
       )
       const starterAssistantMessages = deleteMapKey(state.starterAssistantMessages, id)
-      const pendingChangesBarDismissed = deleteMapKey(state.pendingChangesBarDismissed, id)
       const clearsAbortPrompt = state.abortPromptSessionId === id
       const planStateChanged = (
         planModeUserMessages !== state.planModeUserMessages
@@ -3689,7 +3665,6 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         || sessionCompletionIndicator !== state.sessionCompletionIndicator
         || planStateChanged
         || starterAssistantMessages !== state.starterAssistantMessages
-        || pendingChangesBarDismissed !== state.pendingChangesBarDismissed
         || clearsAbortPrompt
       )
       if (!changed) return state
@@ -3708,7 +3683,6 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         ...(implementedPlanRequests !== state.implementedPlanRequests ? { implementedPlanRequests } : {}),
         ...(externallyHandedOffPlanRequests !== state.externallyHandedOffPlanRequests ? { externallyHandedOffPlanRequests } : {}),
         ...(starterAssistantMessages !== state.starterAssistantMessages ? { starterAssistantMessages } : {}),
-        ...(pendingChangesBarDismissed !== state.pendingChangesBarDismissed ? { pendingChangesBarDismissed } : {}),
         ...(clearsAbortPrompt ? { abortPromptSessionId: null, abortPromptExpiresAt: null } : {}),
       }
     })

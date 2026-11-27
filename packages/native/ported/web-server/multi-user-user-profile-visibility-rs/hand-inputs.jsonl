@@ -1,0 +1,6 @@
+{"fn": "buildUserManagementProfileQuery", "args": ["admin"]}
+{"fn": "buildUserManagementProfileQuery", "args": ["user"]}
+{"fn": "buildUserManagementProfileQuery", "args": []}
+{"fn": "buildUserManagementProfileQuery", "args": ["Admin"]}
+{"fn": "buildUserManagementProfileQuery", "args": [5]}
+{"fn": "buildUserManagementProfileQuery", "args": [[]]}

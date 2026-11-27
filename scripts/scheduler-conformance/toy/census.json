@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "target": "target.json",
+  "partial": true,
+  "members": [
+    "abortPort", "arm", "authorize", "copy", "echo", "fail", "flags", "gate", "getTask", "initialize", "later", "laterAt", "memo", "open",
+    "ownWork", "pause", "queueOwn", "settleAfter", "stop", "submit", "twoTimers", "waitForAbort", "waitForSignals"
+  ],
+  "control": ["markAccepted"],
+  "ports": ["executor.start", "executor.abort", "executor.watch", "persistence.load", "persistence.save", "publishEvent", "onMutationTiming", "persistence.putShard"],
+  "data": [],
+  "options": ["cancelTimeout", "createLeaseToken", "createTaskId", "executor", "expireUnacknowledged", "now", "onMutationTiming", "persistence", "publishEvent", "scheduleTimeout"],
+  "inputs": [
+    "in call", "in control", "in callback", "in fire", "in abort", "in answer", "in read", "in clock", "in draw", "in env", "in step",
+    "out port", "out abort", "out timer.set", "out timer.clear", "out return", "out throw", "out settle"
+  ],
+  "places": ["rest", "during", "group", "return", "with", "settle"],
+  "launch": [],
+  "gaps": []
+}

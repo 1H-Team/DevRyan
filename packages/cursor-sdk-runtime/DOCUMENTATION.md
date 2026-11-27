@@ -106,7 +106,7 @@ cache-hit metadata only; they contain no prompt, response or credential content.
 
 ## Verification
 
-`bun test packages/cursor-sdk-runtime` exercises deterministic SDK fixtures and
+`node scripts/test-isolation-guard.mjs bun test packages/cursor-sdk-runtime` (or `bun run --cwd packages/cursor-sdk-runtime test`) exercises deterministic SDK fixtures and
 worker processes without live providers or installed-app state.
 `stream-contract.test.js` runs the real direct, persistent and one-shot adapters
 through repetition, whitespace, Unicode pipe chunks, delayed mirrored callbacks,

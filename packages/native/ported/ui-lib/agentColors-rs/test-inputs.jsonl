@@ -1,0 +1,24 @@
+{"fn":"getAgentIconColor","args":["builder"]}
+{"fn":"getAgentIconColor","args":["  BUILDER  "]}
+{"fn":"getAgentIconColor","args":["council"]}
+{"fn":"getAgentIconColor","args":["  COUNCIL  "]}
+{"fn":"getAgentIconColor","args":["orchestrator"]}
+{"fn":"getAgentIconColor","args":["  ORCHESTRATOR  "]}
+{"fn":"getAgentIconColor","args":["designer"]}
+{"fn":"getAgentIconColor","args":["  DESIGNER  "]}
+{"fn":"getAgentIconColor","args":["fixer"]}
+{"fn":"getAgentIconColor","args":["  FIXER  "]}
+{"fn":"getAgentIconColor","args":["explorer"]}
+{"fn":"getAgentIconColor","args":["  EXPLORER  "]}
+{"fn":"getAgentIconColor","args":["librarian"]}
+{"fn":"getAgentIconColor","args":["  LIBRARIAN  "]}
+{"fn":"getAgentIconColor","args":["oracle"]}
+{"fn":"getAgentIconColor","args":["  ORACLE  "]}
+{"fn":"getAgentIconColor","args":["build"]}
+{"fn":"getAgentIconColor","args":["  BUILD  "]}
+{"fn":"getAgentColor","args":["fixer"]}
+{"fn":"getAgentColor","args":["explorer"]}
+{"fn":"getAgentIconColor","args":[{"$undefined":true}]}
+{"fn":"getAgentColor","args":[{"$undefined":true}]}
+{"fn":"getAgentIconColor","args":["custom-agent"]}
+{"fn":"getAgentColor","args":["custom-agent"]}

@@ -1,0 +1,25 @@
+{
+  "unit": "session-recency.ts",
+  "files": 1,
+  "fingerprint": "76f6fa2289634727",
+  "cases": 2880,
+  "cases_hash": "412f92bacf42d2fe",
+  "coverage": {
+    "lines": 255,
+    "reached": 235,
+    "files": [
+      {
+        "file": "display-session.ts",
+        "lines": 127,
+        "reached": 107,
+        "missed": "43-47, 122-126, 130-131, 135-142"
+      },
+      {
+        "file": "session-recency.ts",
+        "lines": 128,
+        "reached": 128,
+        "missed": ""
+      }
+    ]
+  }
+}

@@ -5,7 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { openApplicationStopStream } from './package-application-stop-stream.mjs';
 
-const temporaryRoot = await fs.realpath(os.tmpdir());
+await fs.realpath(os.tmpdir());
 
 async function runDriver({ mode = 'upgrade', cleanupFails = false, settleStop = false, rollbackFails = false,
   parts = [{ type: 'text', text: '1. Synthetic cancellation case.\n' }], oldText = false,

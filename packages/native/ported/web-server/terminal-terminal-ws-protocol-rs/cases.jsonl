@@ -1,0 +1,382 @@
+{"fn":"pruneRebindTimestamps","args":[null,[],{"a":"b"}],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[[],null,["a",1]],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[0,0,0],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["x",{"a":"b"},true],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["x",["a",1],[]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[null,0,{}],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[["a",1],true,null],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[null,[],[]],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[null,{},null],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[null,{"a":{"b":"c"}},true],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[{"a":"b"},[],[]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"a":"b"},{},{}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"a":{"b":"c"}},true,["a",1]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"a":{"b":"c"}},{"a":{"b":"c"}},null],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[null,{},{}],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[{"a":"b"},{},0],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[[],{},{}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[[],{"a":"b"},{"a":{"b":"c"}}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[0,[],0],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[0,0,{"a":"b"}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[["a",1],[],["a",1]],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[true,{"a":"b"},{}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[["a",1],[],null],"ok":[1]}
+{"fn":"pruneRebindTimestamps","args":[true,{"a":"b"},{"a":{"b":"c"}}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["x",0,true],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{},"x",["a",1]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"a":"b"},0,true],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"a":"b"},{"a":"b"},[]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[["a",1],{"a":{"b":"c"}},["a",1]],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[{"a":{"b":"c"}},null,0],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[true,true,{}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["x",0,{}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[[],["a",1],true],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[true,{},[]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[0,{},null],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[[],0,{"a":{"b":"c"}}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[{},{"a":"b"},{}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[[],{"a":{"b":"c"}},{"a":{"b":"c"}}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[{"a":"b"},{"a":{"b":"c"}},0],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[["a",1],true,{"a":"b"}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[[],["a",1],"x"],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[["a",1],0,{}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[["a",1],0,null],"ok":[1]}
+{"fn":"pruneRebindTimestamps","args":[["a",1],{},true],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[true,{"a":"b"},"x"],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[null,{},[]],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[["a",1],"x",{}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[null,[],"x"],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[{"a":{"b":"c"}},[],["a",1]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[0,{},{}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["x",0,{"a":"b"}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{},{},true],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{},null,{"a":{"b":"c"}}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[null,null,true],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[["a",1],["a",1],{"a":"b"}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[[],{},true],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[["a",1],true,{}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":["x",["a",1],["a",1]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["x",{"a":{"b":"c"}},0],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[["a",1],{},{}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[{"a":"b"},true,null],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[null,{},{"a":{"b":"c"}}],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[0,null,null],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[[],"x",0],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[["a",1],true,"x"],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[{"a":"b"},"x",0],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[[],0,"x"],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[true,null,null],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[true,{"a":"b"},true],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[null,0,null],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[null,{},{"a":"b"}],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[null,true,null],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[0,null,{"a":"b"}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[0,[],{"a":{"b":"c"}}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[true,null,0],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[0,{"a":"b"},0],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"a":"b"},{"a":"b"},true],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"a":{"b":"c"}},[],{"a":{"b":"c"}}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[true,{"a":"b"},["a",1]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[[],{"a":"b"},{"a":"b"}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[null,{"a":{"b":"c"}},["a",1]],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[[],[],{}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[{"a":{"b":"c"}},{"a":"b"},null],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"a":{"b":"c"}},[],0],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[["a",1],{"a":{"b":"c"}},{"a":{"b":"c"}}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[{"a":{"b":"c"}},null,true],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[0,0,[]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[[],[],[]],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[{},"x",0],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[[],[],"x"],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[{"a":"b"},0,["a",1]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["x",["a",1],{"a":"b"}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["x",{},true],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[["a",1],null,{"a":{"b":"c"}}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[{"a":"b"},null,0],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{},{"a":{"b":"c"}},true],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[[],{},{"a":"b"}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[null,{"a":{"b":"c"}},[]],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[0,{"a":{"b":"c"}},["a",1]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["x","x",{"a":{"b":"c"}}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["x",true,"x"],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{},[],"x"],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"a":{"b":"c"}},0,true],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[null,"x",{"a":{"b":"c"}}],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[0,[],[]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{},{},["a",1]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[true,{"a":{"b":"c"}},[]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[null,{"a":{"b":"c"}},null],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[{},{"a":"b"},true],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[0,true,0],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["x",true,["a",1]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["x",{"a":{"b":"c"}},["a",1]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"a":{"b":"c"}},0,null],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[["a",1],{"a":{"b":"c"}},true],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[true,{"a":{"b":"c"}},["a",1]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[["a",1],null,0],"ok":[1]}
+{"fn":"pruneRebindTimestamps","args":["x",true,{}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"a":"b"},{"a":{"b":"c"}},{}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["x",null,null],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[[],["a",1],[]],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[{"a":{"b":"c"}},["a",1],"x"],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["x",{},"x"],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["x","x",{}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{},{},null],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[true,["a",1],{"a":{"b":"c"}}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[0,{},0],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{},{},{}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[0,"x",0],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{},{"a":{"b":"c"}},[]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["x",{"a":{"b":"c"}},"x"],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[0,["a",1],"x"],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"a":{"b":"c"}},{},[]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[["a",1],"x",true],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[{},0,true],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[true,"x",{"a":{"b":"c"}}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[null,"x",true],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[null,null,"x"],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[{},true,true],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[["a",1],{},null],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[true,{},0],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[["a",1],{"a":"b"},true],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[{"a":{"b":"c"}},[],{}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[null,{},"x"],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[{"a":"b"},"x",{"a":"b"}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[0,null,"x"],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[true,[],null],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{},0,{"a":"b"}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[0,[],["a",1]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[true,[],{"a":"b"}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[0,"x","x"],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[true,0,{"a":{"b":"c"}}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"a":"b"},["a",1],["a",1]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{},["a",1],{"a":"b"}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[[],true,"x"],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":["x",[],null],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[["a",1],["a",1],[]],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[0,true,{"a":{"b":"c"}}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"a":"b"},{"a":{"b":"c"}},{"a":"b"}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[["a",1],[],true],"ok":[1]}
+{"fn":"pruneRebindTimestamps","args":[{"a":"b"},["a",1],{"a":{"b":"c"}}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[[],{"a":"b"},["a",1]],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[{"a":"b"},{"a":{"b":"c"}},true],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[[],{},"x"],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[true,0,"x"],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"a":{"b":"c"}},[],"x"],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["x",null,true],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[0,"x",true],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[null,{"a":"b"},true],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[{"a":"b"},{},null],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{},null,true],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[0,null,{}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"a":"b"},{"a":"b"},["a",1]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"a":{"b":"c"}},"x",true],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[[],true,{}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[0,{"a":"b"},["a",1]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[0,["a",1],[]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{},true,null],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[null,[],0],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[{"a":{"b":"c"}},{},{"a":"b"}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["x",0,"x"],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[null,true,{"a":{"b":"c"}}],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[{"a":{"b":"c"}},"x",0],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"a":{"b":"c"}},[],true],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[[],{"a":"b"},{}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":["x","x","x"],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[0,{"a":{"b":"c"}},0],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[0,"x",null],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[true,"x",[]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["x","x",true],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[[],{"a":{"b":"c"}},[]],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[[],"x",{"a":{"b":"c"}}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[["a",1],[],{}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[null,"x",{"a":"b"}],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[{"a":"b"},{"a":"b"},{}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[0,true,"x"],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[true,{"a":"b"},{"a":"b"}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[[],["a",1],{}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[0,"x",{}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{},{},[]],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"a":{"b":"c"}},"x",null],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6},[],{"a":"b"}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7},[],{"a":"b"}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[[3,1,2],[],{"a":"b"}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[{},[],{"a":"b"}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[null,{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6},{"a":"b"}],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[null,{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7},{"a":"b"}],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[null,[3,1,2],{"a":"b"}],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[null,[],{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[null,[],{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[null,[],[3,1,2]],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[null,[],{}],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"isRebindRateLimited","args":[{},[]],"ok":false}
+{"fn":"isRebindRateLimited","args":[[],true],"ok":false}
+{"fn":"isRebindRateLimited","args":[{},true],"ok":false}
+{"fn":"isRebindRateLimited","args":[{},0],"ok":false}
+{"fn":"isRebindRateLimited","args":[true,true],"ok":false}
+{"fn":"isRebindRateLimited","args":[true,"x"],"ok":false}
+{"fn":"isRebindRateLimited","args":[["a",1],0],"ok":true}
+{"fn":"isRebindRateLimited","args":[{},null],"ok":false}
+{"fn":"isRebindRateLimited","args":[0,"x"],"ok":false}
+{"fn":"isRebindRateLimited","args":[["a",1],{}],"ok":false}
+{"fn":"isRebindRateLimited","args":[["a",1],{"a":"b"}],"ok":false}
+{"fn":"isRebindRateLimited","args":[{"a":{"b":"c"}},{"a":"b"}],"ok":false}
+{"fn":"isRebindRateLimited","args":["x",{}],"ok":false}
+{"fn":"isRebindRateLimited","args":[{"a":"b"},{"a":"b"}],"ok":false}
+{"fn":"isRebindRateLimited","args":[{"a":{"b":"c"}},null],"ok":false}
+{"fn":"isRebindRateLimited","args":[[],null],"ok":true}
+{"fn":"isRebindRateLimited","args":["x",["a",1]],"ok":false}
+{"fn":"isRebindRateLimited","args":[true,null],"ok":false}
+{"fn":"isRebindRateLimited","args":[[],0],"ok":true}
+{"fn":"isRebindRateLimited","args":[["a",1],null],"ok":true}
+{"fn":"isRebindRateLimited","args":[{"a":{"b":"c"}},true],"ok":false}
+{"fn":"isRebindRateLimited","args":[0,null],"ok":false}
+{"fn":"isRebindRateLimited","args":[["a",1],[]],"ok":true}
+{"fn":"isRebindRateLimited","args":[null,["a",1]],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"isRebindRateLimited","args":["x",{"a":{"b":"c"}}],"ok":false}
+{"fn":"isRebindRateLimited","args":[{"a":"b"},{}],"ok":false}
+{"fn":"isRebindRateLimited","args":[{"a":"b"},0],"ok":false}
+{"fn":"isRebindRateLimited","args":[null,{}],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"isRebindRateLimited","args":[[],{"a":"b"}],"ok":false}
+{"fn":"isRebindRateLimited","args":[0,["a",1]],"ok":false}
+{"fn":"isRebindRateLimited","args":[true,{"a":{"b":"c"}}],"ok":false}
+{"fn":"isRebindRateLimited","args":[{"a":"b"},[]],"ok":false}
+{"fn":"isRebindRateLimited","args":[0,[]],"ok":false}
+{"fn":"isRebindRateLimited","args":[{"a":{"b":"c"}},"x"],"ok":false}
+{"fn":"isRebindRateLimited","args":[0,{"a":"b"}],"ok":false}
+{"fn":"isRebindRateLimited","args":[["a",1],"x"],"ok":false}
+{"fn":"isRebindRateLimited","args":["x",null],"ok":true}
+{"fn":"isRebindRateLimited","args":[[],{}],"ok":false}
+{"fn":"isRebindRateLimited","args":[[],"x"],"ok":false}
+{"fn":"isRebindRateLimited","args":[{},["a",1]],"ok":false}
+{"fn":"isRebindRateLimited","args":[{"a":"b"},true],"ok":false}
+{"fn":"isRebindRateLimited","args":[true,0],"ok":false}
+{"fn":"isRebindRateLimited","args":[{},{"a":"b"}],"ok":false}
+{"fn":"isRebindRateLimited","args":[["a",1],["a",1]],"ok":false}
+{"fn":"isRebindRateLimited","args":["x","x"],"ok":false}
+{"fn":"isRebindRateLimited","args":[[],{"a":{"b":"c"}}],"ok":false}
+{"fn":"isRebindRateLimited","args":[{"a":"b"},["a",1]],"ok":false}
+{"fn":"isRebindRateLimited","args":["x",true],"ok":true}
+{"fn":"isRebindRateLimited","args":[true,["a",1]],"ok":false}
+{"fn":"isRebindRateLimited","args":[true,{"a":"b"}],"ok":false}
+{"fn":"isRebindRateLimited","args":[[],["a",1]],"ok":false}
+{"fn":"isRebindRateLimited","args":["x",{"a":"b"}],"ok":false}
+{"fn":"isRebindRateLimited","args":[null,{"a":{"b":"c"}}],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"isRebindRateLimited","args":[{"a":"b"},{"a":{"b":"c"}}],"ok":false}
+{"fn":"isRebindRateLimited","args":[null,0],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"isRebindRateLimited","args":[{"a":"b"},"x"],"ok":false}
+{"fn":"isRebindRateLimited","args":[["a",1],true],"ok":true}
+{"fn":"isRebindRateLimited","args":[{"a":"b"},null],"ok":false}
+{"fn":"isRebindRateLimited","args":[{"a":{"b":"c"}},["a",1]],"ok":false}
+{"fn":"isRebindRateLimited","args":["x",0],"ok":true}
+{"fn":"isRebindRateLimited","args":[true,[]],"ok":false}
+{"fn":"isRebindRateLimited","args":[0,{}],"ok":false}
+{"fn":"isRebindRateLimited","args":[{"a":{"b":"c"}},{"a":{"b":"c"}}],"ok":false}
+{"fn":"isRebindRateLimited","args":[null,null],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"isRebindRateLimited","args":[{"a":{"b":"c"}},[]],"ok":false}
+{"fn":"isRebindRateLimited","args":[null,{"a":"b"}],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"isRebindRateLimited","args":[{},"x"],"ok":false}
+{"fn":"isRebindRateLimited","args":[null,"x"],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"isRebindRateLimited","args":[true,{}],"ok":false}
+{"fn":"isRebindRateLimited","args":[null,true],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"isRebindRateLimited","args":[{},{}],"ok":false}
+{"fn":"isRebindRateLimited","args":[{},{"a":{"b":"c"}}],"ok":false}
+{"fn":"isRebindRateLimited","args":[[],[]],"ok":true}
+{"fn":"isRebindRateLimited","args":[0,0],"ok":false}
+{"fn":"isRebindRateLimited","args":[null,[]],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"isRebindRateLimited","args":[{"a":{"b":"c"}},0],"ok":false}
+{"fn":"isRebindRateLimited","args":[0,true],"ok":false}
+{"fn":"isRebindRateLimited","args":[0,{"a":{"b":"c"}}],"ok":false}
+{"fn":"isRebindRateLimited","args":["x",[]],"ok":true}
+{"fn":"isRebindRateLimited","args":[["a",1],{"a":{"b":"c"}}],"ok":false}
+{"fn":"isRebindRateLimited","args":[{"a":{"b":"c"}},{}],"ok":false}
+{"fn":"isRebindRateLimited","args":["X","x"],"ok":false}
+{"fn":"isRebindRateLimited","args":["x","X"],"ok":false}
+{"fn":"isRebindRateLimited","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6},[]],"ok":false}
+{"fn":"isRebindRateLimited","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7},[]],"ok":false}
+{"fn":"isRebindRateLimited","args":[[3,1,2],[]],"ok":true}
+{"fn":"isRebindRateLimited","args":[{},{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":false}
+{"fn":"isRebindRateLimited","args":[{},{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":false}
+{"fn":"isRebindRateLimited","args":[{},[3,1,2]],"ok":false}
+{"fn":"pruneRebindTimestamps","args":[[1,5,9,10],10,5],"ok":[9,10]}
+{"fn":"pruneRebindTimestamps","args":[[1,5,9,10],10,"5"],"ok":[9,10]}
+{"fn":"pruneRebindTimestamps","args":[[1,5,9,10],"10",null],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[[1,5,9,10],10,{"$num":"NaN"}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[[1,5,9,10],10,[4]],"ok":[9,10]}
+{"fn":"isRebindRateLimited","args":[[1,5,9,10],3],"ok":true}
+{"fn":"isRebindRateLimited","args":[[1,5,9,10],0],"ok":true}
+{"fn":"isRebindRateLimited","args":[[1,5,9,10],"2"],"ok":true}
+{"fn":"isRebindRateLimited","args":[[1,5,9,10],null],"ok":true}
+{"fn":"isRebindRateLimited","args":[[1,5,9,10],{"$num":"NaN"}],"ok":false}
+{"fn":"isRebindRateLimited","args":[[1,5,9,10],[1]],"ok":true}
+{"fn":"pruneRebindTimestamps","args":[[],10,5],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[[],10,"5"],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[[],"10",null],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[[],10,{"$num":"NaN"}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[[],10,[4]],"ok":[]}
+{"fn":"isRebindRateLimited","args":[[],3],"ok":false}
+{"fn":"isRebindRateLimited","args":[[],0],"ok":true}
+{"fn":"isRebindRateLimited","args":[[],"2"],"ok":false}
+{"fn":"isRebindRateLimited","args":[[],null],"ok":true}
+{"fn":"isRebindRateLimited","args":[[],{"$num":"NaN"}],"ok":false}
+{"fn":"isRebindRateLimited","args":[[],[1]],"ok":false}
+{"fn":"pruneRebindTimestamps","args":[["5",null,[8],{}],10,5],"ok":[[8]]}
+{"fn":"pruneRebindTimestamps","args":[["5",null,[8],{}],10,"5"],"ok":[[8]]}
+{"fn":"pruneRebindTimestamps","args":[["5",null,[8],{}],"10",null],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[["5",null,[8],{}],10,{"$num":"NaN"}],"ok":[]}
+{"fn":"pruneRebindTimestamps","args":[["5",null,[8],{}],10,[4]],"ok":[[8]]}
+{"fn":"isRebindRateLimited","args":[["5",null,[8],{}],3],"ok":true}
+{"fn":"isRebindRateLimited","args":[["5",null,[8],{}],0],"ok":true}
+{"fn":"isRebindRateLimited","args":[["5",null,[8],{}],"2"],"ok":true}
+{"fn":"isRebindRateLimited","args":[["5",null,[8],{}],null],"ok":true}
+{"fn":"isRebindRateLimited","args":[["5",null,[8],{}],{"$num":"NaN"}],"ok":false}
+{"fn":"isRebindRateLimited","args":[["5",null,[8],{}],[1]],"ok":true}
+{"fn":"pruneRebindTimestamps","args":[null,10,5],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[null,10,"5"],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[null,"10",null],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[null,10,{"$num":"NaN"}],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"pruneRebindTimestamps","args":[null,10,[4]],"error":"Cannot read properties of null (reading 'filter')"}
+{"fn":"isRebindRateLimited","args":[null,3],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"isRebindRateLimited","args":[null,0],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"isRebindRateLimited","args":[null,"2"],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"isRebindRateLimited","args":[null,null],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"isRebindRateLimited","args":[null,{"$num":"NaN"}],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"isRebindRateLimited","args":[null,[1]],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"pruneRebindTimestamps","args":["str",10,5],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["str",10,"5"],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["str","10",null],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["str",10,{"$num":"NaN"}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":["str",10,[4]],"error":"timestamps.filter is not a function"}
+{"fn":"isRebindRateLimited","args":["str",3],"ok":true}
+{"fn":"isRebindRateLimited","args":["str",0],"ok":true}
+{"fn":"isRebindRateLimited","args":["str","2"],"ok":true}
+{"fn":"isRebindRateLimited","args":["str",null],"ok":true}
+{"fn":"isRebindRateLimited","args":["str",{"$num":"NaN"}],"ok":false}
+{"fn":"isRebindRateLimited","args":["str",[1]],"ok":true}
+{"fn":"pruneRebindTimestamps","args":[{"length":3},10,5],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"length":3},10,"5"],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"length":3},"10",null],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"length":3},10,{"$num":"NaN"}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[{"length":3},10,[4]],"error":"timestamps.filter is not a function"}
+{"fn":"isRebindRateLimited","args":[{"length":3},3],"ok":true}
+{"fn":"isRebindRateLimited","args":[{"length":3},0],"ok":true}
+{"fn":"isRebindRateLimited","args":[{"length":3},"2"],"ok":true}
+{"fn":"isRebindRateLimited","args":[{"length":3},null],"ok":true}
+{"fn":"isRebindRateLimited","args":[{"length":3},{"$num":"NaN"}],"ok":false}
+{"fn":"isRebindRateLimited","args":[{"length":3},[1]],"ok":true}
+{"fn":"pruneRebindTimestamps","args":[5,10,5],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[5,10,"5"],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[5,"10",null],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[5,10,{"$num":"NaN"}],"error":"timestamps.filter is not a function"}
+{"fn":"pruneRebindTimestamps","args":[5,10,[4]],"error":"timestamps.filter is not a function"}
+{"fn":"isRebindRateLimited","args":[5,3],"ok":false}
+{"fn":"isRebindRateLimited","args":[5,0],"ok":false}
+{"fn":"isRebindRateLimited","args":[5,"2"],"ok":false}
+{"fn":"isRebindRateLimited","args":[5,null],"ok":false}
+{"fn":"isRebindRateLimited","args":[5,{"$num":"NaN"}],"ok":false}
+{"fn":"isRebindRateLimited","args":[5,[1]],"ok":false}
+{"fn":"pruneRebindTimestamps","args":[[100,200,950,999],1000,100],"ok":[950,999]}
+{"fn":"pruneRebindTimestamps","args":[[920,950,999],1000,100],"ok":[920,950,999]}
+{"fn":"isRebindRateLimited","args":[[1,2,3],4],"ok":false}
+{"fn":"isRebindRateLimited","args":[[],1],"ok":false}
+{"fn":"isRebindRateLimited","args":[[1,2,3,4],4],"ok":true}

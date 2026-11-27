@@ -1,0 +1,19 @@
+{
+  "unit": "managed-plugins.js",
+  "files": 1,
+  "fingerprint": "a8f17173c123075f",
+  "cases": 429,
+  "cases_hash": "a721b4e6f75168a0",
+  "coverage": {
+    "lines": 356,
+    "reached": 303,
+    "files": [
+      {
+        "file": "managed-plugins.js",
+        "lines": 356,
+        "reached": 303,
+        "missed": "331-383"
+      }
+    ]
+  }
+}

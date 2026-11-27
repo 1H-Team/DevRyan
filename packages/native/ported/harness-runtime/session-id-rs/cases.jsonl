@@ -1,0 +1,80 @@
+{"fn":"resolveRecordSessionID","args":[0],"ok":""}
+{"fn":"resolveRecordSessionID","args":[[]],"ok":""}
+{"fn":"resolveRecordSessionID","args":["x"],"ok":""}
+{"fn":"resolveRecordSessionID","args":[{}],"ok":""}
+{"fn":"resolveRecordSessionID","args":[["a",1]],"ok":""}
+{"fn":"resolveRecordSessionID","args":[{"a":"b"}],"ok":""}
+{"fn":"resolveRecordSessionID","args":[null],"ok":""}
+{"fn":"resolveRecordSessionID","args":[{"a":{"b":"c"}}],"ok":""}
+{"fn":"resolveRecordSessionID","args":[true],"ok":""}
+{"fn":"resolveRecordSessionID","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":""}
+{"fn":"resolveRecordSessionID","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":""}
+{"fn":"resolveRecordSessionID","args":[[3,1,2]],"ok":""}
+{"fn":"resolveSessionRelation","args":[[]],"ok":null}
+{"fn":"resolveSessionRelation","args":[["a",1]],"ok":null}
+{"fn":"resolveSessionRelation","args":[{"a":{"b":"c"}}],"ok":null}
+{"fn":"resolveSessionRelation","args":[true],"ok":null}
+{"fn":"resolveSessionRelation","args":[0],"ok":null}
+{"fn":"resolveSessionRelation","args":["x"],"ok":null}
+{"fn":"resolveSessionRelation","args":[{"a":"b"}],"ok":null}
+{"fn":"resolveSessionRelation","args":[null],"ok":null}
+{"fn":"resolveSessionRelation","args":[{}],"ok":null}
+{"fn":"resolveSessionRelation","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":null}
+{"fn":"resolveSessionRelation","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":null}
+{"fn":"resolveSessionRelation","args":[[3,1,2]],"ok":null}
+{"fn":"resolveRecordSessionID","args":[{"sessionID":" s1 "}],"ok":"s1"}
+{"fn":"resolveSessionRelation","args":[{"sessionID":" s1 "}],"ok":null}
+{"fn":"resolveRecordSessionID","args":[{"sessionID":"","payload":{"sessionID":"s2"}}],"ok":"s2"}
+{"fn":"resolveSessionRelation","args":[{"sessionID":"","payload":{"sessionID":"s2"}}],"ok":null}
+{"fn":"resolveRecordSessionID","args":[{"payload":{"properties":{"sessionID":"s3"}}}],"ok":"s3"}
+{"fn":"resolveSessionRelation","args":[{"payload":{"properties":{"sessionID":"s3"}}}],"ok":null}
+{"fn":"resolveRecordSessionID","args":[{"payload":{"properties":{"info":{"sessionID":"s4"}}}}],"ok":"s4"}
+{"fn":"resolveSessionRelation","args":[{"payload":{"properties":{"info":{"sessionID":"s4"}}}}],"ok":null}
+{"fn":"resolveRecordSessionID","args":[{"usageObservation":{"sessionID":"u1"}}],"ok":"u1"}
+{"fn":"resolveSessionRelation","args":[{"usageObservation":{"sessionID":"u1"}}],"ok":null}
+{"fn":"resolveRecordSessionID","args":[{"payload":{"properties":{"part":{"sessionID":"p1"}}}}],"ok":"p1"}
+{"fn":"resolveSessionRelation","args":[{"payload":{"properties":{"part":{"sessionID":"p1"}}}}],"ok":null}
+{"fn":"resolveRecordSessionID","args":[{"payload":{"type":"devryan:managed-task","properties":{"owner":"devryan","task":{"owner":"devryan","rootSessionId":" root ","childSessionId":"child"}}}}],"ok":"root"}
+{"fn":"resolveSessionRelation","args":[{"payload":{"type":"devryan:managed-task","properties":{"owner":"devryan","task":{"owner":"devryan","rootSessionId":" root ","childSessionId":"child"}}}}],"ok":{"sessionID":"child","parentID":"root"}}
+{"fn":"resolveRecordSessionID","args":[{"payload":{"type":"openchamber:managed-task","properties":{"owner":"devryan","task":{"owner":"devryan","rootSessionId":" root ","childSessionId":"child"}}}}],"ok":"root"}
+{"fn":"resolveSessionRelation","args":[{"payload":{"type":"openchamber:managed-task","properties":{"owner":"devryan","task":{"owner":"devryan","rootSessionId":" root ","childSessionId":"child"}}}}],"ok":{"sessionID":"child","parentID":"root"}}
+{"fn":"resolveRecordSessionID","args":[{"payload":{"type":"devryan:managed-task","properties":{"owner":"other","task":{"owner":"devryan","rootSessionId":" root ","childSessionId":"child"}}}}],"ok":""}
+{"fn":"resolveSessionRelation","args":[{"payload":{"type":"devryan:managed-task","properties":{"owner":"other","task":{"owner":"devryan","rootSessionId":" root ","childSessionId":"child"}}}}],"ok":null}
+{"fn":"resolveRecordSessionID","args":[{"payload":{"type":"devryan:managed-task","properties":{"owner":"devryan","task":{"owner":"x","rootSessionId":" root ","childSessionId":"child"}}}}],"ok":""}
+{"fn":"resolveSessionRelation","args":[{"payload":{"type":"devryan:managed-task","properties":{"owner":"devryan","task":{"owner":"x","rootSessionId":" root ","childSessionId":"child"}}}}],"ok":null}
+{"fn":"resolveRecordSessionID","args":[{"sessionID":"root","payload":{"type":"devryan:managed-task","properties":{"owner":"devryan","task":{"owner":"devryan","rootSessionId":"root","childSessionId":"child"}}}}],"ok":"root"}
+{"fn":"resolveSessionRelation","args":[{"sessionID":"root","payload":{"type":"devryan:managed-task","properties":{"owner":"devryan","task":{"owner":"devryan","rootSessionId":"root","childSessionId":"child"}}}}],"ok":{"sessionID":"child","parentID":"root"}}
+{"fn":"resolveRecordSessionID","args":[{"sessionID":"other","payload":{"type":"devryan:managed-task","properties":{"owner":"devryan","task":{"owner":"devryan","rootSessionId":"root","childSessionId":"child"}}}}],"ok":"other"}
+{"fn":"resolveSessionRelation","args":[{"sessionID":"other","payload":{"type":"devryan:managed-task","properties":{"owner":"devryan","task":{"owner":"devryan","rootSessionId":"root","childSessionId":"child"}}}}],"ok":null}
+{"fn":"resolveRecordSessionID","args":[{"payload":{"type":" devryan:managed-task-removed ","properties":{"owner":"devryan","rootSessionId":" r2 "}}}],"ok":"r2"}
+{"fn":"resolveSessionRelation","args":[{"payload":{"type":" devryan:managed-task-removed ","properties":{"owner":"devryan","rootSessionId":" r2 "}}}],"ok":null}
+{"fn":"resolveRecordSessionID","args":[{"payload":{"type":"openchamber:managed-task-removed","properties":{"owner":"devryan","rootSessionId":"r3"}}}],"ok":"r3"}
+{"fn":"resolveSessionRelation","args":[{"payload":{"type":"openchamber:managed-task-removed","properties":{"owner":"devryan","rootSessionId":"r3"}}}],"ok":null}
+{"fn":"resolveRecordSessionID","args":[{"payload":{"type":"session.updated","properties":{"info":{"id":" i1 ","parentID":"par"}}}}],"ok":"i1"}
+{"fn":"resolveSessionRelation","args":[{"payload":{"type":"session.updated","properties":{"info":{"id":" i1 ","parentID":"par"}}}}],"ok":{"sessionID":"i1","parentID":"par"}}
+{"fn":"resolveRecordSessionID","args":[{"payload":{"type":"session.created","properties":{"info":{"sessionID":"i2","parentId":"p2"}}}}],"ok":"i2"}
+{"fn":"resolveSessionRelation","args":[{"payload":{"type":"session.created","properties":{"info":{"sessionID":"i2","parentId":"p2"}}}}],"ok":{"sessionID":"i2","parentID":"p2"}}
+{"fn":"resolveRecordSessionID","args":[{"payload":{"type":"session.x","properties":{"info":{"id":"a","parentID":""}}}}],"ok":"a"}
+{"fn":"resolveSessionRelation","args":[{"payload":{"type":"session.x","properties":{"info":{"id":"a","parentID":""}}}}],"ok":null}
+{"fn":"resolveRecordSessionID","args":[{"payload":{"type":"message.updated","properties":{"info":{"id":"x"}}}}],"ok":""}
+{"fn":"resolveSessionRelation","args":[{"payload":{"type":"message.updated","properties":{"info":{"id":"x"}}}}],"ok":null}
+{"fn":"resolveRecordSessionID","args":[{"type":"lifecycle","event":"session_title_generation","sessionID":"parent","payload":{"helperSessionID":"helper"}}],"ok":"parent"}
+{"fn":"resolveSessionRelation","args":[{"type":"lifecycle","event":"session_title_generation","sessionID":"parent","payload":{"helperSessionID":"helper"}}],"ok":{"sessionID":"helper","parentID":"parent"}}
+{"fn":"resolveRecordSessionID","args":[{"type":"lifecycle","event":"session_title_generation","sessionID":"same","payload":{"helperSessionID":"same"}}],"ok":"same"}
+{"fn":"resolveSessionRelation","args":[{"type":"lifecycle","event":"session_title_generation","sessionID":"same","payload":{"helperSessionID":"same"}}],"ok":null}
+{"fn":"resolveRecordSessionID","args":[{"payload":{"type":"devryan:managed-task","properties":{"owner":"devryan","task":{"owner":"devryan","rootSessionId":" root ","childSessionId":" root "}}}}],"ok":"root"}
+{"fn":"resolveSessionRelation","args":[{"payload":{"type":"devryan:managed-task","properties":{"owner":"devryan","task":{"owner":"devryan","rootSessionId":" root ","childSessionId":" root "}}}}],"ok":null}
+{"fn":"resolveRecordSessionID","args":[{"payload":{"type":"devryan:managed-task","properties":{"owner":"devryan","task":{"owner":"devryan","rootSessionId":" root ","childSessionId":""}}}}],"ok":"root"}
+{"fn":"resolveSessionRelation","args":[{"payload":{"type":"devryan:managed-task","properties":{"owner":"devryan","task":{"owner":"devryan","rootSessionId":" root ","childSessionId":""}}}}],"ok":null}
+{"fn":"resolveRecordSessionID","args":[null],"ok":""}
+{"fn":"resolveSessionRelation","args":[null],"ok":null}
+{"fn":"resolveRecordSessionID","args":[{"$undefined":true}],"ok":""}
+{"fn":"resolveSessionRelation","args":[{"$undefined":true}],"ok":null}
+{"fn":"resolveRecordSessionID","args":["x"],"ok":""}
+{"fn":"resolveSessionRelation","args":["x"],"ok":null}
+{"fn":"resolveRecordSessionID","args":[{}],"ok":""}
+{"fn":"resolveSessionRelation","args":[{}],"ok":null}
+{"fn":"resolveRecordSessionID","args":[{"payload":{"type":5}}],"ok":""}
+{"fn":"resolveSessionRelation","args":[{"payload":{"type":5}}],"ok":null}
+{"fn":"resolveRecordSessionID","args":[{"payload":null}],"ok":""}
+{"fn":"resolveSessionRelation","args":[{"payload":null}],"ok":null}

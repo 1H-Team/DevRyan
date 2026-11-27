@@ -1,0 +1,166 @@
+{"fn": "eventPayloadBytes", "args": [{"type": "openchamber:x", "a": 1}]}
+{"fn": "serializeEventPayload", "args": [{"type": "openchamber:x", "a": 1}]}
+{"fn": "serializeEventPayload", "args": [{"type": "openchamber:x", "a": 1}, "devryan"]}
+{"fn": "serializeEventPayload", "args": [{"type": "openchamber:x", "a": 1}, null]}
+{"fn": "serializeEventPayload", "args": [{"type": "openchamber:x", "a": 1}, "x"]}
+{"fn": "eventPayloadBytes", "args": [{"type": "devryan:y", "b": [1, null, {"$undefined": true}]}]}
+{"fn": "serializeEventPayload", "args": [{"type": "devryan:y", "b": [1, null, {"$undefined": true}]}]}
+{"fn": "serializeEventPayload", "args": [{"type": "devryan:y", "b": [1, null, {"$undefined": true}]}, "devryan"]}
+{"fn": "serializeEventPayload", "args": [{"type": "devryan:y", "b": [1, null, {"$undefined": true}]}, null]}
+{"fn": "serializeEventPayload", "args": [{"type": "devryan:y", "b": [1, null, {"$undefined": true}]}, "x"]}
+{"fn": "eventPayloadBytes", "args": [{"type": "other"}]}
+{"fn": "serializeEventPayload", "args": [{"type": "other"}]}
+{"fn": "serializeEventPayload", "args": [{"type": "other"}, "devryan"]}
+{"fn": "serializeEventPayload", "args": [{"type": "other"}, null]}
+{"fn": "serializeEventPayload", "args": [{"type": "other"}, "x"]}
+{"fn": "eventPayloadBytes", "args": []}
+{"fn": "serializeEventPayload", "args": [null]}
+{"fn": "serializeEventPayload", "args": [null, "devryan"]}
+{"fn": "serializeEventPayload", "args": [null, null]}
+{"fn": "serializeEventPayload", "args": [null, "x"]}
+{"fn": "eventPayloadBytes", "args": [0]}
+{"fn": "serializeEventPayload", "args": [0]}
+{"fn": "serializeEventPayload", "args": [0, "devryan"]}
+{"fn": "serializeEventPayload", "args": [0, null]}
+{"fn": "serializeEventPayload", "args": [0, "x"]}
+{"fn": "eventPayloadBytes", "args": [""]}
+{"fn": "serializeEventPayload", "args": [""]}
+{"fn": "serializeEventPayload", "args": ["", "devryan"]}
+{"fn": "serializeEventPayload", "args": ["", null]}
+{"fn": "serializeEventPayload", "args": ["", "x"]}
+{"fn": "eventPayloadBytes", "args": [false]}
+{"fn": "serializeEventPayload", "args": [false]}
+{"fn": "serializeEventPayload", "args": [false, "devryan"]}
+{"fn": "serializeEventPayload", "args": [false, null]}
+{"fn": "serializeEventPayload", "args": [false, "x"]}
+{"fn": "eventPayloadBytes", "args": ["str"]}
+{"fn": "serializeEventPayload", "args": ["str"]}
+{"fn": "serializeEventPayload", "args": ["str", "devryan"]}
+{"fn": "serializeEventPayload", "args": ["str", null]}
+{"fn": "serializeEventPayload", "args": ["str", "x"]}
+{"fn": "eventPayloadBytes", "args": [5]}
+{"fn": "serializeEventPayload", "args": [5]}
+{"fn": "serializeEventPayload", "args": [5, "devryan"]}
+{"fn": "serializeEventPayload", "args": [5, null]}
+{"fn": "serializeEventPayload", "args": [5, "x"]}
+{"fn": "eventPayloadBytes", "args": [{"$num": "NaN"}]}
+{"fn": "serializeEventPayload", "args": [{"$num": "NaN"}]}
+{"fn": "serializeEventPayload", "args": [{"$num": "NaN"}, "devryan"]}
+{"fn": "serializeEventPayload", "args": [{"$num": "NaN"}, null]}
+{"fn": "serializeEventPayload", "args": [{"$num": "NaN"}, "x"]}
+{"fn": "eventPayloadBytes", "args": [{"$num": "-0"}]}
+{"fn": "serializeEventPayload", "args": [{"$num": "-0"}]}
+{"fn": "serializeEventPayload", "args": [{"$num": "-0"}, "devryan"]}
+{"fn": "serializeEventPayload", "args": [{"$num": "-0"}, null]}
+{"fn": "serializeEventPayload", "args": [{"$num": "-0"}, "x"]}
+{"fn": "eventPayloadBytes", "args": [[1, {"$num": "Infinity"}]]}
+{"fn": "serializeEventPayload", "args": [[1, {"$num": "Infinity"}]]}
+{"fn": "serializeEventPayload", "args": [[1, {"$num": "Infinity"}], "devryan"]}
+{"fn": "serializeEventPayload", "args": [[1, {"$num": "Infinity"}], null]}
+{"fn": "serializeEventPayload", "args": [[1, {"$num": "Infinity"}], "x"]}
+{"fn": "eventPayloadBytes", "args": [{"a": {"$undefined": true}, "b": "é😀\u0001\"\\\n"}]}
+{"fn": "serializeEventPayload", "args": [{"a": {"$undefined": true}, "b": "é😀\u0001\"\\\n"}]}
+{"fn": "serializeEventPayload", "args": [{"a": {"$undefined": true}, "b": "é😀\u0001\"\\\n"}, "devryan"]}
+{"fn": "serializeEventPayload", "args": [{"a": {"$undefined": true}, "b": "é😀\u0001\"\\\n"}, null]}
+{"fn": "serializeEventPayload", "args": [{"a": {"$undefined": true}, "b": "é😀\u0001\"\\\n"}, "x"]}
+{"fn": "eventPayloadBytes", "args": [{"m": {"$map": [["a", 1]]}, "s": {"$set": [1]}, "d": {"$date": "2020-01-01T00:00:00.000Z"}}]}
+{"fn": "serializeEventPayload", "args": [{"m": {"$map": [["a", 1]]}, "s": {"$set": [1]}, "d": {"$date": "2020-01-01T00:00:00.000Z"}}]}
+{"fn": "serializeEventPayload", "args": [{"m": {"$map": [["a", 1]]}, "s": {"$set": [1]}, "d": {"$date": "2020-01-01T00:00:00.000Z"}}, "devryan"]}
+{"fn": "serializeEventPayload", "args": [{"m": {"$map": [["a", 1]]}, "s": {"$set": [1]}, "d": {"$date": "2020-01-01T00:00:00.000Z"}}, null]}
+{"fn": "serializeEventPayload", "args": [{"m": {"$map": [["a", 1]]}, "s": {"$set": [1]}, "d": {"$date": "2020-01-01T00:00:00.000Z"}}, "x"]}
+{"fn": "eventPayloadBytes", "args": [{"x": {"$utf16": [55296, 65]}}]}
+{"fn": "serializeEventPayload", "args": [{"x": {"$utf16": [55296, 65]}}]}
+{"fn": "serializeEventPayload", "args": [{"x": {"$utf16": [55296, 65]}}, "devryan"]}
+{"fn": "serializeEventPayload", "args": [{"x": {"$utf16": [55296, 65]}}, null]}
+{"fn": "serializeEventPayload", "args": [{"x": {"$utf16": [55296, 65]}}, "x"]}
+{"fn": "eventPayloadBytes", "args": [{"$bigint": "5"}]}
+{"fn": "serializeEventPayload", "args": [{"$bigint": "5"}]}
+{"fn": "serializeEventPayload", "args": [{"$bigint": "5"}, "devryan"]}
+{"fn": "serializeEventPayload", "args": [{"$bigint": "5"}, null]}
+{"fn": "serializeEventPayload", "args": [{"$bigint": "5"}, "x"]}
+{"fn": "eventPayloadBytes", "args": [{"2": 1, "1": 2, "a": 3}]}
+{"fn": "serializeEventPayload", "args": [{"2": 1, "1": 2, "a": 3}]}
+{"fn": "serializeEventPayload", "args": [{"2": 1, "1": 2, "a": 3}, "devryan"]}
+{"fn": "serializeEventPayload", "args": [{"2": 1, "1": 2, "a": 3}, null]}
+{"fn": "serializeEventPayload", "args": [{"2": 1, "1": 2, "a": 3}, "x"]}
+{"fn": "eventPayloadBytes", "args": [[]]}
+{"fn": "serializeEventPayload", "args": [[]]}
+{"fn": "serializeEventPayload", "args": [[], "devryan"]}
+{"fn": "serializeEventPayload", "args": [[], null]}
+{"fn": "serializeEventPayload", "args": [[], "x"]}
+{"fn": "eventPayloadBytes", "args": [{}]}
+{"fn": "serializeEventPayload", "args": [{}]}
+{"fn": "serializeEventPayload", "args": [{}, "devryan"]}
+{"fn": "serializeEventPayload", "args": [{}, null]}
+{"fn": "serializeEventPayload", "args": [{}, "x"]}
+{"fn": "eventEntryBytes", "args": []}
+{"fn": "eventEntryBytes", "args": [{}]}
+{"fn": "eventEntryBytes", "args": [{"payload": {"a": 1}, "directory": "/é", "eventId": "e1"}]}
+{"fn": "eventEntryBytes", "args": [{"payload": null}]}
+{"fn": "eventEntryBytes", "args": [{"directory": 5, "eventId": null}]}
+{"fn": "eventEntryBytes", "args": ["str"]}
+{"fn": "eventEntryBytes", "args": [{"payload": {"$bigint": "1"}}]}
+{"fn": "serializeEventPayload", "args": [{"type": "message.part.updated", "properties": {"part": {"id": "p", "text": "héllo \"quoted\"   🚀", "n": [1, null, true]}}}]}
+{"fn": "serializeEventPayload", "args": [{"type": "message.part.updated", "properties": {"part": {"id": "p", "text": "héllo \"quoted\"   🚀", "n": [1, null, true]}}}, "devryan"]}
+{"fn": "eventPayloadBytes", "args": [{"type": "message.part.updated", "properties": {"part": {"id": "p", "text": "héllo \"quoted\"   🚀", "n": [1, null, true]}}}]}
+{"fn": "eventEntryBytes", "args": [{"payload": {"type": "message.part.updated", "properties": {"part": {"id": "p", "text": "héllo \"quoted\"   🚀", "n": [1, null, true]}}}}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "evt-1", "payload": {"type": "message.part.updated", "properties": {"part": {"id": "p", "text": "héllo \"quoted\"   🚀", "n": [1, null, true]}}}}]}
+{"fn": "eventEntryBytes", "args": [{"directory": "/repo", "payload": {"type": "message.part.updated", "properties": {"part": {"id": "p", "text": "héllo \"quoted\"   🚀", "n": [1, null, true]}}}}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "evt-1", "directory": "/repo", "payload": {"type": "message.part.updated", "properties": {"part": {"id": "p", "text": "héllo \"quoted\"   🚀", "n": [1, null, true]}}}}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "", "directory": "", "payload": {"type": "message.part.updated", "properties": {"part": {"id": "p", "text": "héllo \"quoted\"   🚀", "n": [1, null, true]}}}}]}
+{"fn": "serializeEventPayload", "args": [{"type": "openchamber:heartbeat", "timestamp": 1}]}
+{"fn": "serializeEventPayload", "args": [{"type": "openchamber:heartbeat", "timestamp": 1}, "devryan"]}
+{"fn": "eventPayloadBytes", "args": [{"type": "openchamber:heartbeat", "timestamp": 1}]}
+{"fn": "eventEntryBytes", "args": [{"payload": {"type": "openchamber:heartbeat", "timestamp": 1}}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "evt-1", "payload": {"type": "openchamber:heartbeat", "timestamp": 1}}]}
+{"fn": "eventEntryBytes", "args": [{"directory": "/repo", "payload": {"type": "openchamber:heartbeat", "timestamp": 1}}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "evt-1", "directory": "/repo", "payload": {"type": "openchamber:heartbeat", "timestamp": 1}}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "", "directory": "", "payload": {"type": "openchamber:heartbeat", "timestamp": 1}}]}
+{"fn": "serializeEventPayload", "args": [{}]}
+{"fn": "serializeEventPayload", "args": [{}, "devryan"]}
+{"fn": "eventPayloadBytes", "args": [{}]}
+{"fn": "eventEntryBytes", "args": [{"payload": {}}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "evt-1", "payload": {}}]}
+{"fn": "eventEntryBytes", "args": [{"directory": "/repo", "payload": {}}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "evt-1", "directory": "/repo", "payload": {}}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "", "directory": "", "payload": {}}]}
+{"fn": "serializeEventPayload", "args": [[]]}
+{"fn": "serializeEventPayload", "args": [[], "devryan"]}
+{"fn": "eventPayloadBytes", "args": [[]]}
+{"fn": "eventEntryBytes", "args": [{"payload": []}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "evt-1", "payload": []}]}
+{"fn": "eventEntryBytes", "args": [{"directory": "/repo", "payload": []}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "evt-1", "directory": "/repo", "payload": []}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "", "directory": "", "payload": []}]}
+{"fn": "serializeEventPayload", "args": ["text"]}
+{"fn": "serializeEventPayload", "args": ["text", "devryan"]}
+{"fn": "eventPayloadBytes", "args": ["text"]}
+{"fn": "eventEntryBytes", "args": [{"payload": "text"}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "evt-1", "payload": "text"}]}
+{"fn": "eventEntryBytes", "args": [{"directory": "/repo", "payload": "text"}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "evt-1", "directory": "/repo", "payload": "text"}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "", "directory": "", "payload": "text"}]}
+{"fn": "serializeEventPayload", "args": [0]}
+{"fn": "serializeEventPayload", "args": [0, "devryan"]}
+{"fn": "eventPayloadBytes", "args": [0]}
+{"fn": "eventEntryBytes", "args": [{"payload": 0}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "evt-1", "payload": 0}]}
+{"fn": "eventEntryBytes", "args": [{"directory": "/repo", "payload": 0}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "evt-1", "directory": "/repo", "payload": 0}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "", "directory": "", "payload": 0}]}
+{"fn": "serializeEventPayload", "args": [null]}
+{"fn": "serializeEventPayload", "args": [null, "devryan"]}
+{"fn": "eventPayloadBytes", "args": [null]}
+{"fn": "eventEntryBytes", "args": [{"payload": null}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "evt-1", "payload": null}]}
+{"fn": "eventEntryBytes", "args": [{"directory": "/repo", "payload": null}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "evt-1", "directory": "/repo", "payload": null}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "", "directory": "", "payload": null}]}
+{"fn": "serializeEventPayload", "args": [{"$undefined": true}]}
+{"fn": "serializeEventPayload", "args": [{"$undefined": true}, "devryan"]}
+{"fn": "eventPayloadBytes", "args": [{"$undefined": true}]}
+{"fn": "eventEntryBytes", "args": [{"payload": {"$undefined": true}}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "evt-1", "payload": {"$undefined": true}}]}
+{"fn": "eventEntryBytes", "args": [{"directory": "/repo", "payload": {"$undefined": true}}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "evt-1", "directory": "/repo", "payload": {"$undefined": true}}]}
+{"fn": "eventEntryBytes", "args": [{"eventId": "", "directory": "", "payload": {"$undefined": true}}]}

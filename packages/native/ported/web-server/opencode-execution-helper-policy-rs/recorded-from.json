@@ -1,0 +1,19 @@
+{
+  "unit": "execution-helper-policy.js",
+  "files": 1,
+  "fingerprint": "a451ee7f1775811e",
+  "cases": 147,
+  "cases_hash": "595c531c6285f9c4",
+  "coverage": {
+    "lines": 30,
+    "reached": 30,
+    "files": [
+      {
+        "file": "execution-helper-policy.js",
+        "lines": 30,
+        "reached": 30,
+        "missed": ""
+      }
+    ]
+  }
+}

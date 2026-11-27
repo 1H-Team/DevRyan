@@ -1,8 +1,14 @@
 import fs from 'node:fs/promises';
+import { assertTestIsolation } from '../../../scripts/test-isolation-check.mjs';
 import path from 'node:path';
 import { git } from '../lib/session-changes-git.js';
 import { changeKey, openChangeStore } from '../lib/session-changes-store.js';
 import { changedEntries } from '../lib/session-changes-snapshot.js';
+
+// A `bun test` started inside a source subfolder reads no bunfig.toml, so the
+// test isolation preload never ran there: this shared setup stops such a run
+// with the same explanation (scripts/test-isolation-check.mjs).
+assertTestIsolation({ selectors: false });
 
 // Storage/restore stress tests execute every mutation themselves in disposable
 // repositories. Their fixture executor can therefore attest those raw blobs,

@@ -1,0 +1,67 @@
+{
+  "unit": "providers/",
+  "files": 18,
+  "fingerprint": "a3277b1042e8a463",
+  "cases": 7144,
+  "cases_hash": "719319c6b23f5079",
+  "coverage": {
+    "lines": 843,
+    "reached": 516,
+    "files": [
+      {
+        "file": "providers/chatThinking.ts",
+        "lines": 44,
+        "reached": 12,
+        "missed": "15-31, 34-48"
+      },
+      {
+        "file": "providers/cursorAcp.ts",
+        "lines": 38,
+        "reached": 38,
+        "missed": ""
+      },
+      {
+        "file": "providers/cursorThinking.ts",
+        "lines": 201,
+        "reached": 87,
+        "missed": "84, 88-94, 96-98, 102-110, 114-115, 119-132, 134-138, 142-148, 150-162, 164-171, 173-185, 189-197, 199-208, 210-214, 216-223"
+      },
+      {
+        "file": "providers/display.ts",
+        "lines": 28,
+        "reached": 28,
+        "missed": ""
+      },
+      {
+        "file": "providers/logoPresentation.ts",
+        "lines": 17,
+        "reached": 17,
+        "missed": ""
+      },
+      {
+        "file": "providers/modelAvailability.ts",
+        "lines": 68,
+        "reached": 66,
+        "missed": "68-69"
+      },
+      {
+        "file": "providers/modelIdentity.ts",
+        "lines": 22,
+        "reached": 22,
+        "missed": ""
+      },
+      {
+        "file": "providers/modelVisibility.ts",
+        "lines": 123,
+        "reached": 99,
+        "missed": "113-124, 126-127, 134-143"
+      },
+      {
+        "file": "providers/variantControls.ts",
+        "lines": 302,
+        "reached": 147,
+        "missed": "60-66, 70-85, 87-100, 143, 164-167, 191-197, 199-202, 204-219, 221-223, 225-233, 259-265, 267-280, 282-285, 287-293, 297-305, 307-323, 325-332, 334-337, 339-342"
+      }
+    ]
+  }
+}

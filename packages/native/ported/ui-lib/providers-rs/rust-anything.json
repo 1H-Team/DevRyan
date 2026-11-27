@@ -1,0 +1,679 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "providers/",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "providers-rs",
+  "exports": [
+    {
+      "name": "resolveChatThinkingLevel",
+      "file": "providers/chatThinking.ts",
+      "line": 7,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "string | null | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "levels",
+          "ts_type": "readonly string[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "modelDefault",
+          "ts_type": "string",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "string | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isCursorAcpProvider",
+      "file": "providers/cursorAcp.ts",
+      "line": 13,
+      "params": [
+        {
+          "name": "provider",
+          "ts_type": "{ id?: string } | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getCursorAcpBaseModelId",
+      "file": "providers/cursorAcp.ts",
+      "line": 17,
+      "params": [
+        {
+          "name": "modelId",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getCursorAcpFastModelId",
+      "file": "providers/cursorAcp.ts",
+      "line": 23,
+      "params": [
+        {
+          "name": "modelId",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "findCursorAcpModel",
+      "file": "providers/cursorAcp.ts",
+      "line": 27,
+      "params": [
+        {
+          "name": "provider",
+          "ts_type": "CursorAcpProviderLike<({\n  id?: string;\n})> | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "modelId",
+          "ts_type": "string | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "shouldHideCursorAcpFastModel",
+      "file": "providers/cursorAcp.ts",
+      "line": 37,
+      "params": [
+        {
+          "name": "provider",
+          "ts_type": "CursorAcpProviderLike<({\n  id?: string;\n})> | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "modelId",
+          "ts_type": "string | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "parseCursorAcpVariantKey",
+      "file": "providers/cursorThinking.ts",
+      "line": 53,
+      "params": [
+        {
+          "name": "variant",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "{\n    effort?: string;\n    thinking: boolean;\n    canonical?: string;\n} | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "normalizeCursorAcpVariantKey",
+      "file": "providers/cursorThinking.ts",
+      "line": 81,
+      "params": [
+        {
+          "name": "variant",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isAnthropicOAuthProviderId",
+      "file": "providers/display.ts",
+      "line": 13,
+      "params": [
+        {
+          "name": "providerId",
+          "ts_type": "string | null | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getProviderDisplayName",
+      "file": "providers/display.ts",
+      "line": 17,
+      "params": [
+        {
+          "name": "provider",
+          "ts_type": "ProviderLike",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "shouldPreserveProviderLogoColor",
+      "file": "providers/logoPresentation.ts",
+      "line": 9,
+      "params": [
+        {
+          "name": "providerId",
+          "ts_type": "string | null | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isProviderModelAvailable",
+      "file": "providers/modelAvailability.ts",
+      "line": 13,
+      "params": [
+        {
+          "name": "model",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "resolveAvailableProviderModel",
+      "file": "providers/modelAvailability.ts",
+      "line": 22,
+      "params": [
+        {
+          "name": "providers",
+          "ts_type": "readonly {\n  id: string;\n  models?: Array<{ id: string } & ({\n  available?: boolean;\n  unavailableReason?: 'auth_type_unsupported' | 'runtime_unsupported' | 'account_models_unavailable' | 'plan_usage_disabled' | 'reauthorization_required';\n  requiredAuthType?: 'api';\n})>;\n}[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "preferredProviderId",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        },
+        {
+          "name": "preferredModelId",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "{ providerId: string; modelId: string } | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getProviderModelUnavailability",
+      "file": "providers/modelAvailability.ts",
+      "line": 50,
+      "params": [
+        {
+          "name": "model",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{ message: string; retryable: boolean } | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getProviderModelUnavailableMessage",
+      "file": "providers/modelAvailability.ts",
+      "line": 59,
+      "params": [
+        {
+          "name": "model",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getModelDisplayName",
+      "file": "providers/modelIdentity.ts",
+      "line": 14,
+      "params": [
+        {
+          "name": "model",
+          "ts_type": "Record<string, unknown> & {\n  id?: string;\n  providerID?: string;\n  providerId?: string;\n  name?: string;\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getExecutionProviderId",
+      "file": "providers/modelIdentity.ts",
+      "line": 22,
+      "params": [
+        {
+          "name": "providerId",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "model",
+          "ts_type": "Record<string, unknown> & {\n  id?: string;\n  providerID?: string;\n  providerId?: string;\n  name?: string;\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getHiddenModelRefsForProviderModel",
+      "file": "providers/modelVisibility.ts",
+      "line": 52,
+      "params": [
+        {
+          "name": "providerID",
+          "ts_type": "string | null | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "model",
+          "ts_type": "Record<string, unknown> & {\n  id?: string;\n  providerID?: string;\n  providerId?: string;\n} | null | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "({\n  canonical: {\n  providerID: string;\n  modelID: string;\n} | null;\n  aliases: {\n  providerID: string;\n  modelID: string;\n}[];\n})",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isHiddenModelRef",
+      "file": "providers/modelVisibility.ts",
+      "line": 83,
+      "params": [
+        {
+          "name": "hiddenModels",
+          "ts_type": "{\n  providerID: string;\n  modelID: string;\n}[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "providerID",
+          "ts_type": "string | null | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "modelID",
+          "ts_type": "string | null | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isHiddenProviderModelRef",
+      "file": "providers/modelVisibility.ts",
+      "line": 100,
+      "params": [
+        {
+          "name": "hiddenModels",
+          "ts_type": "{\n  providerID: string;\n  modelID: string;\n}[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "providerID",
+          "ts_type": "string | null | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "model",
+          "ts_type": "Record<string, unknown> & {\n  id?: string;\n  providerID?: string;\n  providerId?: string;\n} | null | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getModelDefaultThinkingLevel",
+      "file": "providers/variantControls.ts",
+      "line": 18,
+      "params": [
+        {
+          "name": "provider",
+          "ts_type": "ProviderLike | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "modelId",
+          "ts_type": "string | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "resolveThinkingVariant",
+      "file": "providers/variantControls.ts",
+      "line": 103,
+      "params": [
+        {
+          "name": "variant",
+          "ts_type": "string | null | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "variants",
+          "ts_type": "readonly string[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "context",
+          "ts_type": "{\n    providerId?: string;\n}",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "string | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getFastModelBaseId",
+      "file": "providers/variantControls.ts",
+      "line": 134,
+      "params": [
+        {
+          "name": "modelId",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "findProviderModel",
+      "file": "providers/variantControls.ts",
+      "line": 170,
+      "params": [
+        {
+          "name": "provider",
+          "ts_type": "ProviderLike<unknown> | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "modelId",
+          "ts_type": "string | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "shouldHidePairedFastModel",
+      "file": "providers/variantControls.ts",
+      "line": 180,
+      "params": [
+        {
+          "name": "provider",
+          "ts_type": "ProviderLike<unknown> | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "modelId",
+          "ts_type": "string | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "resolveProviderModelVariant",
+      "file": "providers/variantControls.ts",
+      "line": 236,
+      "params": [
+        {
+          "name": "provider",
+          "ts_type": "ProviderLike | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "modelId",
+          "ts_type": "string | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "variant",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "string | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "getChatThinkingState",
+      "file": "providers/chatThinking.ts",
+      "line": 14,
+      "reason": "through getOrderedThinkingVariants (ICU collation: sorts with localeCompare or Intl.Collator)"
+    },
+    {
+      "name": "resolveChatThinkingVariant",
+      "file": "providers/chatThinking.ts",
+      "line": 33,
+      "reason": "through getOrderedThinkingVariants (ICU collation: sorts with localeCompare or Intl.Collator)"
+    },
+    {
+      "name": "getCursorAcpVariantState",
+      "file": "providers/cursorThinking.ts",
+      "line": 141,
+      "reason": "through getOrderedThinkingVariants (ICU collation: sorts with localeCompare or Intl.Collator)"
+    },
+    {
+      "name": "resolveCursorAcpVariantSelection",
+      "file": "providers/cursorThinking.ts",
+      "line": 188,
+      "reason": "through getOrderedThinkingVariants (ICU collation: sorts with localeCompare or Intl.Collator)"
+    },
+    {
+      "name": "filterHiddenProviderModels",
+      "file": "providers/modelVisibility.ts",
+      "line": 109,
+      "reason": "takes a callback"
+    },
+    {
+      "name": "filterVisibleProviderModelsForPicker",
+      "file": "providers/modelVisibility.ts",
+      "line": 130,
+      "reason": "takes a callback"
+    },
+    {
+      "name": "comparePickerLabels",
+      "file": "providers/sorting.ts",
+      "line": 22,
+      "reason": "ICU collation: sorts with localeCompare or Intl.Collator"
+    },
+    {
+      "name": "sortProvidersByDisplayName",
+      "file": "providers/sorting.ts",
+      "line": 30,
+      "reason": "ICU collation: sorts with localeCompare or Intl.Collator"
+    },
+    {
+      "name": "sortModelsByDisplayName",
+      "file": "providers/sorting.ts",
+      "line": 44,
+      "reason": "ICU collation: sorts with localeCompare or Intl.Collator"
+    },
+    {
+      "name": "sortProviderTreeForPicker",
+      "file": "providers/sorting.ts",
+      "line": 56,
+      "reason": "ICU collation: sorts with localeCompare or Intl.Collator"
+    },
+    {
+      "name": "getOrderedThinkingVariants",
+      "file": "providers/variantControls.ts",
+      "line": 69,
+      "reason": "ICU collation: sorts with localeCompare or Intl.Collator (unranked variants)"
+    },
+    {
+      "name": "getModelVariantControlState",
+      "file": "providers/variantControls.ts",
+      "line": 190,
+      "reason": "through getOrderedThinkingVariants (ICU collation: sorts with localeCompare or Intl.Collator)"
+    },
+    {
+      "name": "getModelVariantDisplayState",
+      "file": "providers/variantControls.ts",
+      "line": 258,
+      "reason": "through getOrderedThinkingVariants (ICU collation: sorts with localeCompare or Intl.Collator)"
+    },
+    {
+      "name": "resolveModelVariantSelection",
+      "file": "providers/variantControls.ts",
+      "line": 296,
+      "reason": "through getOrderedThinkingVariants (ICU collation: sorts with localeCompare or Intl.Collator)"
+    }
+  ]
+}

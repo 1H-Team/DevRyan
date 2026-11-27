@@ -1,0 +1,229 @@
+{"fn":"openCodeBaseVersion","args":["a:b:c"],"ok":"a:b:c"}
+{"fn":"openCodeBaseVersion","args":[{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"openCodeBaseVersion","args":["line1\nline2"],"ok":"line1\nline2"}
+{"fn":"openCodeBaseVersion","args":["key_name-1src/a/b.ts"],"ok":"key_name-1src/a/b.ts"}
+{"fn":"openCodeBaseVersion","args":[],"ok":{"$undefined":true}}
+{"fn":"openCodeBaseVersion","args":["src/a/b.ts"],"ok":"src/a/b.ts"}
+{"fn":"openCodeBaseVersion","args":["a"],"ok":"a"}
+{"fn":"openCodeBaseVersion","args":[".leading"],"ok":".leading"}
+{"fn":"openCodeBaseVersion","args":["trailing.tab\tseparated"],"ok":"trailing.tab\tseparated"}
+{"fn":"openCodeBaseVersion","args":["abc"],"ok":"abc"}
+{"fn":"openCodeBaseVersion","args":["emoji 👍🏽 mix"],"ok":"emoji 👍🏽 mix"}
+{"fn":"openCodeBaseVersion","args":[":"],"ok":":"}
+{"fn":"openCodeBaseVersion","args":["{name} has {count} items"],"ok":"{name} has {count} items"}
+{"fn":"openCodeBaseVersion","args":["ΣΊΣΥΦΟΣ"],"ok":"ΣΊΣΥΦΟΣ"}
+{"fn":"openCodeBaseVersion","args":["hellostraße"],"ok":"hellostraße"}
+{"fn":"openCodeBaseVersion","args":["ab"],"ok":"ab"}
+{"fn":"openCodeBaseVersion","args":["aba..b"],"ok":"aba..b"}
+{"fn":"openCodeBaseVersion","args":["./x/**/*.json"],"ok":"./x/**/*.json"}
+{"fn":"openCodeBaseVersion","args":["  padded  "],"ok":"  padded  "}
+{"fn":"openCodeBaseVersion","args":["Hello World"],"ok":"Hello World"}
+{"fn":"openCodeBaseVersion","args":["İstanbul日本語のテキスト"],"ok":"İstanbul日本語のテキスト"}
+{"fn":"openCodeBaseVersion","args":["./x/**/*.jsontab\tseparated"],"ok":"./x/**/*.jsontab\tseparated"}
+{"fn":"openCodeBaseVersion","args":["HELLO"],"ok":"HELLO"}
+{"fn":"openCodeBaseVersion","args":["a..b"],"ok":"a..b"}
+{"fn":"openCodeBaseVersion","args":["😀"],"ok":"😀"}
+{"fn":"openCodeBaseVersion","args":["HELLOhello world"],"ok":"HELLOhello world"}
+{"fn":"openCodeBaseVersion","args":["ns:key.path"],"ok":"ns:key.path"}
+{"fn":"openCodeBaseVersion","args":["😀HELLO"],"ok":"😀HELLO"}
+{"fn":"openCodeBaseVersion","args":["line1\nline2ünïcödé"],"ok":"line1\nline2ünïcödé"}
+{"fn":"openCodeBaseVersion","args":["﻿bom"],"ok":"﻿bom"}
+{"fn":"openCodeBaseVersion","args":["straße"],"ok":"straße"}
+{"fn":"openCodeBaseVersion","args":["tab\tseparatedtrailing."],"ok":"tab\tseparatedtrailing."}
+{"fn":"openCodeBaseVersion","args":["HELLOkey_name-1"],"ok":"HELLOkey_name-1"}
+{"fn":"openCodeBaseVersion","args":["日本語のテキスト"],"ok":"日本語のテキスト"}
+{"fn":"openCodeBaseVersion","args":["ünïcödé"],"ok":"ünïcödé"}
+{"fn":"openCodeBaseVersion","args":["é"],"ok":"é"}
+{"fn":"openCodeBaseVersion","args":["a😀b😀c"],"ok":"a😀b😀c"}
+{"fn":"openCodeBaseVersion","args":["key_name-1"],"ok":"key_name-1"}
+{"fn":"openCodeBaseVersion","args":["trailing."],"ok":"trailing."}
+{"fn":"openCodeBaseVersion","args":["a😀b😀ca:b:c"],"ok":"a😀b😀ca:b:c"}
+{"fn":"openCodeBaseVersion","args":["tab\tseparated"],"ok":"tab\tseparated"}
+{"fn":"openCodeBaseVersion","args":["a.b.ctrailing."],"ok":"a.b.ctrailing."}
+{"fn":"openCodeBaseVersion","args":["ns:key.pathline1\nline2"],"ok":"ns:key.pathline1\nline2"}
+{"fn":"openCodeBaseVersion","args":["ünïcödé😀"],"ok":"ünïcödé😀"}
+{"fn":"openCodeBaseVersion","args":[":Hello World"],"ok":":Hello World"}
+{"fn":"openCodeBaseVersion","args":["a.b.c"],"ok":"a.b.c"}
+{"fn":"openCodeBaseVersion","args":["aa.b.c"],"ok":"aa.b.c"}
+{"fn":"openCodeBaseVersion","args":[".leading😀"],"ok":".leading😀"}
+{"fn":"openCodeBaseVersion","args":["日本語のテキストa😀b😀c"],"ok":"日本語のテキストa😀b😀c"}
+{"fn":"openCodeBaseVersion","args":[""],"ok":""}
+{"fn":"openCodeBaseVersion","args":["src/a/b.tsHELLO"],"ok":"src/a/b.tsHELLO"}
+{"fn":"openCodeBaseVersion","args":["hello"],"ok":"hello"}
+{"fn":"openCodeBaseVersion","args":["hello world"],"ok":"hello world"}
+{"fn":"openCodeBaseVersion","args":["İstanbul"],"ok":"İstanbul"}
+{"fn":"openCodeBaseVersion","args":["straßeline1\nline2"],"ok":"straßeline1\nline2"}
+{"fn":"openCodeBaseVersion","args":["é./x/**/*.json"],"ok":"é./x/**/*.json"}
+{"fn":"openCodeBaseVersion","args":["src/a/b.tsHello World"],"ok":"src/a/b.tsHello World"}
+{"fn":"openCodeBaseVersion","args":["Hello World日本語のテキスト"],"ok":"Hello World日本語のテキスト"}
+{"fn":"openCodeBaseVersion","args":["  padded  {name} has {count} items"],"ok":"  padded  {name} has {count} items"}
+{"fn":"openCodeBaseVersion","args":["é﻿bom"],"ok":"é﻿bom"}
+{"fn":"openCodeBaseVersion","args":["ΣΊΣΥΦΟΣa😀b😀c"],"ok":"ΣΊΣΥΦΟΣa😀b😀c"}
+{"fn":"openCodeBaseVersion","args":["İstanbula.b.c"],"ok":"İstanbula.b.c"}
+{"fn":"openCodeBaseVersion","args":[".leadingé"],"ok":".leadingé"}
+{"fn":"openCodeBaseVersion","args":["helloa.b.c"],"ok":"helloa.b.c"}
+{"fn":"openCodeBaseVersion","args":["a..b:"],"ok":"a..b:"}
+{"fn":"openCodeBaseVersion","args":["  padded  日本語のテキスト"],"ok":"  padded  日本語のテキスト"}
+{"fn":"openCodeBaseVersion","args":["abstraße"],"ok":"abstraße"}
+{"fn":"openCodeBaseVersion","args":["éhello world"],"ok":"éhello world"}
+{"fn":"openCodeBaseVersion","args":["tab\tseparated  padded  "],"ok":"tab\tseparated  padded  "}
+{"fn":"openCodeBaseVersion","args":["日本語のテキストünïcödé"],"ok":"日本語のテキストünïcödé"}
+{"fn":"openCodeBaseVersion","args":["emoji 👍🏽 mixsrc/a/b.ts"],"ok":"emoji 👍🏽 mixsrc/a/b.ts"}
+{"fn":"openCodeBaseVersion","args":["./x/**/*.jsona😀b😀c"],"ok":"./x/**/*.jsona😀b😀c"}
+{"fn":"openCodeBaseVersion","args":["absrc/a/b.ts"],"ok":"absrc/a/b.ts"}
+{"fn":"openCodeBaseVersion","args":[":😀"],"ok":":😀"}
+{"fn":"openCodeBaseVersion","args":["tab\tseparatedhello world"],"ok":"tab\tseparatedhello world"}
+{"fn":"openCodeBaseVersion","args":["hello worldstraße"],"ok":"hello worldstraße"}
+{"fn":"openCodeBaseVersion","args":["abcstraße"],"ok":"abcstraße"}
+{"fn":"openCodeBaseVersion","args":["ΣΊΣΥΦΟΣ./x/**/*.json"],"ok":"ΣΊΣΥΦΟΣ./x/**/*.json"}
+{"fn":"openCodeBaseVersion","args":["trailing.hello"],"ok":"trailing.hello"}
+{"fn":"openCodeBaseVersion","args":["abcabc"],"ok":"abcabc"}
+{"fn":"openCodeBaseVersion","args":["./x/**/*.jsona.b.c"],"ok":"./x/**/*.jsona.b.c"}
+{"fn":"openCodeBaseVersion","args":["hello worlda😀b😀c"],"ok":"hello worlda😀b😀c"}
+{"fn":"openCodeBaseVersion","args":["abc./x/**/*.json"],"ok":"abc./x/**/*.json"}
+{"fn":"openCodeBaseVersion","args":["abHello World"],"ok":"abHello World"}
+{"fn":"openCodeBaseVersion","args":[".leading{name} has {count} items"],"ok":".leading{name} has {count} items"}
+{"fn":"openCodeBaseVersion","args":["a😀b😀cstraße"],"ok":"a😀b😀cstraße"}
+{"fn":"openCodeBaseVersion","args":["hello worldsrc/a/b.ts"],"ok":"hello worldsrc/a/b.ts"}
+{"fn":"openCodeBaseVersion","args":["hello worldabc"],"ok":"hello worldabc"}
+{"fn":"openCodeBaseVersion","args":["emoji 👍🏽 mix日本語のテキスト"],"ok":"emoji 👍🏽 mix日本語のテキスト"}
+{"fn":"openCodeBaseVersion","args":["😀ünïcödé"],"ok":"😀ünïcödé"}
+{"fn":"openCodeBaseVersion","args":["abhello world"],"ok":"abhello world"}
+{"fn":"openCodeBaseVersion","args":["aa😀b😀c"],"ok":"aa😀b😀c"}
+{"fn":"openCodeBaseVersion","args":["a😀b😀ca.b.c"],"ok":"a😀b😀ca.b.c"}
+{"fn":"openCodeBaseVersion","args":["İstanbula"],"ok":"İstanbula"}
+{"fn":"openCodeBaseVersion","args":["abc.leading"],"ok":"abc.leading"}
+{"fn":"openCodeBaseVersion","args":["  padded  ﻿bom"],"ok":"  padded  ﻿bom"}
+{"fn":"openCodeBaseVersion","args":["a:b:c./x/**/*.json"],"ok":"a:b:c./x/**/*.json"}
+{"fn":"openCodeBaseVersion","args":["é.leading"],"ok":"é.leading"}
+{"fn":"openCodeBaseVersion","args":["./x/**/*.json  padded  "],"ok":"./x/**/*.json  padded  "}
+{"fn":"openCodeBaseVersion","args":[":.leading"],"ok":":.leading"}
+{"fn":"openCodeBaseVersion","args":["emoji 👍🏽 mix  padded  "],"ok":"emoji 👍🏽 mix  padded  "}
+{"fn":"openCodeBaseVersion","args":["hellotab\tseparated"],"ok":"hellotab\tseparated"}
+{"fn":"openCodeBaseVersion","args":["日本語のテキストHELLO"],"ok":"日本語のテキストHELLO"}
+{"fn":"openCodeBaseVersion","args":["😀{name} has {count} items"],"ok":"😀{name} has {count} items"}
+{"fn":"openCodeBaseVersion","args":["a.b.cHello World"],"ok":"a.b.cHello World"}
+{"fn":"openCodeBaseVersion","args":["trailing.:"],"ok":"trailing.:"}
+{"fn":"openCodeBaseVersion","args":["éa😀b😀c"],"ok":"éa😀b😀c"}
+{"fn":"openCodeBaseVersion","args":["éİstanbul"],"ok":"éİstanbul"}
+{"fn":"openCodeBaseVersion","args":["line1\nline2a.b.c"],"ok":"line1\nline2a.b.c"}
+{"fn":"openCodeBaseVersion","args":["tab\tseparatedtab\tseparated"],"ok":"tab\tseparatedtab\tseparated"}
+{"fn":"openCodeBaseVersion","args":["  padded  a..b"],"ok":"  padded  a..b"}
+{"fn":"openCodeBaseVersion","args":["tab\tseparatedab"],"ok":"tab\tseparatedab"}
+{"fn":"openCodeBaseVersion","args":["İstanbulhello"],"ok":"İstanbulhello"}
+{"fn":"openCodeBaseVersion","args":["{name} has {count} items./x/**/*.json"],"ok":"{name} has {count} items./x/**/*.json"}
+{"fn":"openCodeBaseVersion","args":[":ünïcödé"],"ok":":ünïcödé"}
+{"fn":"openCodeBaseVersion","args":["ünïcödéa.b.c"],"ok":"ünïcödéa.b.c"}
+{"fn":"openCodeBaseVersion","args":["😀﻿bom"],"ok":"😀﻿bom"}
+{"fn":"openCodeBaseVersion","args":["abcns:key.path"],"ok":"abcns:key.path"}
+{"fn":"openCodeBaseVersion","args":["ahello world"],"ok":"ahello world"}
+{"fn":"openCodeBaseVersion","args":["abns:key.path"],"ok":"abns:key.path"}
+{"fn":"openCodeBaseVersion","args":["ab日本語のテキスト"],"ok":"ab日本語のテキスト"}
+{"fn":"openCodeBaseVersion","args":["straße:"],"ok":"straße:"}
+{"fn":"openCodeBaseVersion","args":["日本語のテキストé"],"ok":"日本語のテキストé"}
+{"fn":"openCodeBaseVersion","args":["éünïcödé"],"ok":"éünïcödé"}
+{"fn":"openCodeBaseVersion","args":["HELLO{name} has {count} items"],"ok":"HELLO{name} has {count} items"}
+{"fn":"openCodeBaseVersion","args":["  padded  ΣΊΣΥΦΟΣ"],"ok":"  padded  ΣΊΣΥΦΟΣ"}
+{"fn":"openCodeBaseVersion","args":["a:b:ca:b:c"],"ok":"a:b:ca:b:c"}
+{"fn":"openCodeBaseVersion","args":["a😀b😀cabc"],"ok":"a😀b😀cabc"}
+{"fn":"openCodeBaseVersion","args":[":  padded  "],"ok":":  padded  "}
+{"fn":"openCodeBaseVersion","args":["trailing.ünïcödé"],"ok":"trailing.ünïcödé"}
+{"fn":"openCodeBaseVersion","args":["trailing.straße"],"ok":"trailing.straße"}
+{"fn":"openCodeBaseVersion","args":["ab:"],"ok":"ab:"}
+{"fn":"openCodeBaseVersion","args":["emoji 👍🏽 mix.leading"],"ok":"emoji 👍🏽 mix.leading"}
+{"fn":"openCodeBaseVersion","args":["  padded  ./x/**/*.json"],"ok":"  padded  ./x/**/*.json"}
+{"fn":"openCodeBaseVersion","args":["trailing.key_name-1"],"ok":"trailing.key_name-1"}
+{"fn":"openCodeBaseVersion","args":["astraße"],"ok":"astraße"}
+{"fn":"openCodeBaseVersion","args":["abc﻿bom"],"ok":"abc﻿bom"}
+{"fn":"openCodeBaseVersion","args":["日本語のテキストHello World"],"ok":"日本語のテキストHello World"}
+{"fn":"openCodeBaseVersion","args":["﻿bomHello World"],"ok":"﻿bomHello World"}
+{"fn":"openCodeBaseVersion","args":["aba:b:c"],"ok":"aba:b:c"}
+{"fn":"openCodeBaseVersion","args":["  padded  a"],"ok":"  padded  a"}
+{"fn":"openCodeBaseVersion","args":["a😀b😀cab"],"ok":"a😀b😀cab"}
+{"fn":"openCodeBaseVersion","args":["{name} has {count} itemsa..b"],"ok":"{name} has {count} itemsa..b"}
+{"fn":"openCodeBaseVersion","args":["a:b:ctab\tseparated"],"ok":"a:b:ctab\tseparated"}
+{"fn":"openCodeBaseVersion","args":["日本語のテキストtab\tseparated"],"ok":"日本語のテキストtab\tseparated"}
+{"fn":"openCodeBaseVersion","args":["a😀b😀cİstanbul"],"ok":"a😀b😀cİstanbul"}
+{"fn":"openCodeBaseVersion","args":["﻿bom日本語のテキスト"],"ok":"﻿bom日本語のテキスト"}
+{"fn":"openCodeBaseVersion","args":["a.b.cünïcödé"],"ok":"a.b.cünïcödé"}
+{"fn":"openCodeBaseVersion","args":["  padded  a😀b😀c"],"ok":"  padded  a😀b😀c"}
+{"fn":"openCodeBaseVersion","args":["日本語のテキスト  padded  "],"ok":"日本語のテキスト  padded  "}
+{"fn":"openCodeBaseVersion","args":["line1\nline2./x/**/*.json"],"ok":"line1\nline2./x/**/*.json"}
+{"fn":"openCodeBaseVersion","args":["ΣΊΣΥΦΟΣünïcödé"],"ok":"ΣΊΣΥΦΟΣünïcödé"}
+{"fn":"openCodeBaseVersion","args":["ns:key.pathemoji 👍🏽 mix"],"ok":"ns:key.pathemoji 👍🏽 mix"}
+{"fn":"openCodeBaseVersion","args":["line1\nline2a"],"ok":"line1\nline2a"}
+{"fn":"openCodeBaseVersion","args":[":HELLO"],"ok":":HELLO"}
+{"fn":"openCodeBaseVersion","args":["hello world./x/**/*.json"],"ok":"hello world./x/**/*.json"}
+{"fn":"openCodeBaseVersion","args":["HELLOa"],"ok":"HELLOa"}
+{"fn":"openCodeBaseVersion","args":["a.b.cHELLO"],"ok":"a.b.cHELLO"}
+{"fn":"openCodeBaseVersion","args":["日本語のテキストhello"],"ok":"日本語のテキストhello"}
+{"fn":"openCodeBaseVersion","args":["HELLOemoji 👍🏽 mix"],"ok":"HELLOemoji 👍🏽 mix"}
+{"fn":"openCodeBaseVersion","args":["a.b.cΣΊΣΥΦΟΣ"],"ok":"a.b.cΣΊΣΥΦΟΣ"}
+{"fn":"openCodeBaseVersion","args":["src/a/b.ts  padded  "],"ok":"src/a/b.ts  padded  "}
+{"fn":"openCodeBaseVersion","args":["trailing.abc"],"ok":"trailing.abc"}
+{"fn":"openCodeBaseVersion","args":["{name} has {count} itemsabc"],"ok":"{name} has {count} itemsabc"}
+{"fn":"openCodeBaseVersion","args":["straßea"],"ok":"straßea"}
+{"fn":"openCodeBaseVersion","args":["HELLOa:b:c"],"ok":"HELLOa:b:c"}
+{"fn":"openCodeBaseVersion","args":["HELLOab"],"ok":"HELLOab"}
+{"fn":"openCodeBaseVersion","args":["日本語のテキストemoji 👍🏽 mix"],"ok":"日本語のテキストemoji 👍🏽 mix"}
+{"fn":"openCodeBaseVersion","args":["trailing.ΣΊΣΥΦΟΣ"],"ok":"trailing.ΣΊΣΥΦΟΣ"}
+{"fn":"openCodeBaseVersion","args":["tab\tseparateda..b"],"ok":"tab\tseparateda..b"}
+{"fn":"openCodeBaseVersion","args":["straßeHello World"],"ok":"straßeHello World"}
+{"fn":"openCodeBaseVersion","args":["a😀b😀ctab\tseparated"],"ok":"a😀b😀ctab\tseparated"}
+{"fn":"openCodeBaseVersion","args":["a:b:c  padded  "],"ok":"a:b:c  padded  "}
+{"fn":"openCodeBaseVersion","args":["日本語のテキスト.leading"],"ok":"日本語のテキスト.leading"}
+{"fn":"openCodeBaseVersion","args":["abc😀"],"ok":"abc😀"}
+{"fn":"openCodeBaseVersion","args":["line1\nline2ns:key.path"],"ok":"line1\nline2ns:key.path"}
+{"fn":"openCodeBaseVersion","args":["line1\nline2ab"],"ok":"line1\nline2ab"}
+{"fn":"openCodeBaseVersion","args":["hello worldİstanbul"],"ok":"hello worldİstanbul"}
+{"fn":"openCodeBaseVersion","args":["ünïcödé{name} has {count} items"],"ok":"ünïcödé{name} has {count} items"}
+{"fn":"openCodeBaseVersion","args":["Hello Worlda"],"ok":"Hello Worlda"}
+{"fn":"openCodeBaseVersion","args":["a..b﻿bom"],"ok":"a..b﻿bom"}
+{"fn":"openCodeBaseVersion","args":["éa.b.c"],"ok":"éa.b.c"}
+{"fn":"openCodeBaseVersion","args":["日本語のテキストabc"],"ok":"日本語のテキストabc"}
+{"fn":"openCodeBaseVersion","args":["abİstanbul"],"ok":"abİstanbul"}
+{"fn":"openCodeBaseVersion","args":["ΣΊΣΥΦΟΣabc"],"ok":"ΣΊΣΥΦΟΣabc"}
+{"fn":"openCodeBaseVersion","args":["key_name-1a..b"],"ok":"key_name-1a..b"}
+{"fn":"openCodeBaseVersion","args":["hello world日本語のテキスト"],"ok":"hello world日本語のテキスト"}
+{"fn":"openCodeBaseVersion","args":["emoji 👍🏽 mixünïcödé"],"ok":"emoji 👍🏽 mixünïcödé"}
+{"fn":"openCodeBaseVersion","args":["a.b.c.leading"],"ok":"a.b.c.leading"}
+{"fn":"openCodeBaseVersion","args":["éa..b"],"ok":"éa..b"}
+{"fn":"openCodeBaseVersion","args":["日本語のテキスト{name} has {count} items"],"ok":"日本語のテキスト{name} has {count} items"}
+{"fn":"openCodeBaseVersion","args":["HELLO./x/**/*.json"],"ok":"HELLO./x/**/*.json"}
+{"fn":"openCodeBaseVersion","args":["src/a/b.ts./x/**/*.json"],"ok":"src/a/b.ts./x/**/*.json"}
+{"fn":"openCodeBaseVersion","args":["key_name-1.leading"],"ok":"key_name-1.leading"}
+{"fn":"openCodeBaseVersion","args":["HELLOünïcödé"],"ok":"HELLOünïcödé"}
+{"fn":"openCodeBaseVersion","args":["  padded  HELLO"],"ok":"  padded  HELLO"}
+{"fn":"openCodeBaseVersion","args":["straßeab"],"ok":"straßeab"}
+{"fn":"openCodeBaseVersion","args":["ünïcödéhello world"],"ok":"ünïcödéhello world"}
+{"fn":"openCodeBaseVersion","args":["hello worldtab\tseparated"],"ok":"hello worldtab\tseparated"}
+{"fn":"openCodeBaseVersion","args":["emoji 👍🏽 mixΣΊΣΥΦΟΣ"],"ok":"emoji 👍🏽 mixΣΊΣΥΦΟΣ"}
+{"fn":"openCodeBaseVersion","args":["héllo wörld"],"ok":"héllo wörld"}
+{"fn":"openCodeBaseVersion","args":["👍🏽 thumbs"],"ok":"👍🏽 thumbs"}
+{"fn":"openCodeBaseVersion","args":["日本語"],"ok":"日本語"}
+{"fn":"openCodeBaseVersion","args":["ılık ırmak"],"ok":"ılık ırmak"}
+{"fn":"openCodeBaseVersion","args":["👨‍👩‍👧 family"],"ok":"👨‍👩‍👧 family"}
+{"fn":"openCodeBaseVersion","args":["a b"],"ok":"a b"}
+{"fn":"openCodeBaseVersion","args":["a😀b"],"ok":"a😀b"}
+{"fn":"openCodeBaseVersion","args":["a²b x½ y①"],"ok":"a²b x½ y①"}
+{"fn":"openCodeBaseVersion","args":["aⅠb Ⅻ"],"ok":"aⅠb Ⅻ"}
+{"fn":"openCodeBaseVersion","args":["a𐐀b 𝐀bc"],"ok":"a𐐀b 𝐀bc"}
+{"fn":"openCodeBaseVersion","args":["कि ٣٤"],"ok":"कि ٣٤"}
+{"fn":"openCodeBaseVersion","args":["2.0.20"],"ok":"2.0.20"}
+{"fn":"openCodeBaseVersion","args":["1.18.33-devryan.1"],"ok":"1.18.33"}
+{"fn":"openCodeBaseVersion","args":[null],"ok":null}
+{"fn":"openCodeBaseVersion","args":["1.2.3-devryan."],"ok":"1.2.3-devryan."}
+{"fn":"openCodeBaseVersion","args":["1.2-devryan.1"],"ok":"1.2-devryan.1"}
+{"fn":"openCodeBaseVersion","args":["1.2.3-devryan.1\n"],"ok":"1.2.3-devryan.1\n"}
+{"fn":"openCodeBaseVersion","args":["x1.2.3-devryan.1"],"ok":"x1.2.3-devryan.1"}
+{"fn":"openCodeBaseVersion","args":["1.2.3-devryan.1a"],"ok":"1.2.3-devryan.1a"}
+{"fn":"openCodeBaseVersion","args":["01.02.03-devryan.007"],"ok":"01.02.03"}
+{"fn":"openCodeBaseVersion","args":["1.2.3-DEVRYAN.1"],"ok":"1.2.3-DEVRYAN.1"}
+{"fn":"openCodeBaseVersion","args":["1.2.3-devryan.1-devryan.2"],"ok":"1.2.3-devryan.1-devryan.2"}
+{"fn":"openCodeBaseVersion","args":[""],"ok":""}
+{"fn":"openCodeBaseVersion","args":[5],"error":"value?.match is not a function"}
+{"fn":"openCodeBaseVersion","args":[["1.2.3-devryan.1"]],"error":"value?.match is not a function"}
+{"fn":"openCodeBaseVersion","args":[{"a":1}],"error":"value?.match is not a function"}
+{"fn":"openCodeBaseVersion","args":[true],"error":"value?.match is not a function"}
+{"fn":"openCodeBaseVersion","args":[{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"openCodeBaseVersion","args":["١.2.3-devryan.1"],"ok":"١.2.3-devryan.1"}

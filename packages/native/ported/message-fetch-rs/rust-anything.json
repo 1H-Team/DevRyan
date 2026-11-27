@@ -1,0 +1,121 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "message-fetch.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "message-fetch-rs",
+  "exports": [
+    {
+      "name": "hasMessageRecordInfo",
+      "file": "message-fetch.ts",
+      "line": 16,
+      "params": [
+        {
+          "name": "record",
+          "ts_type": "{\n  info?: Message\n  parts?: Part[]\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "record is {\n  info?: Message\n  parts?: Part[]\n} & {\n  info: Message\n}",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "normalizeMessageFetchLimit",
+      "file": "message-fetch.ts",
+      "line": 20,
+      "params": [
+        {
+          "name": "limit",
+          "ts_type": "number | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "fallback",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "number",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "normalizeSessionMessagePageLimit",
+      "file": "message-fetch.ts",
+      "line": 27,
+      "params": [
+        {
+          "name": "limit",
+          "ts_type": "number | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "number",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "resolveRetainedMessageLimit",
+      "file": "message-fetch.ts",
+      "line": 31,
+      "params": [
+        {
+          "name": "input",
+          "ts_type": "{\n  requestedLimit: number | undefined\n  materializedCount: number\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "number",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "resolveMessagePagePagination",
+      "file": "message-fetch.ts",
+      "line": 41,
+      "params": [
+        {
+          "name": "input",
+          "ts_type": "{\n  requestedLimit: number\n  returnedCount: number\n  cursor: string | undefined\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{ cursor: string | undefined; complete: boolean }",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "normalizeFetchedMessageRecords",
+      "file": "message-fetch.ts",
+      "line": 79,
+      "reason": "calls the part-delta normalizers (ported in part-delta-rs); duplicating them here breaks the unit size bound and the crates are standalone"
+    },
+    {
+      "name": "unwrapMessageRecordsResult",
+      "file": "message-fetch.ts",
+      "line": 97,
+      "reason": "calls the part-delta normalizers (ported in part-delta-rs); duplicating them here breaks the unit size bound and the crates are standalone, and it throws through sdk-result's error builder"
+    }
+  ]
+}

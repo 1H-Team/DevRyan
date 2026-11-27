@@ -1,0 +1,294 @@
+{"fn": "describeExecutionFailure", "args": ["local_execution_timeout"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["local_execution_timeout"]}
+{"fn": "describeExecutionFailure", "args": ["xlocal_execution_timeout"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["xlocal_execution_timeout"]}
+{"fn": "describeExecutionFailure", "args": ["local_execution_timeout_"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["local_execution_timeout_"]}
+{"fn": "describeExecutionFailure", "args": ["err: local_execution_timeout."]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["err: local_execution_timeout."]}
+{"fn": "describeExecutionFailure", "args": ["élocal_execution_timeouté"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["élocal_execution_timeouté"]}
+{"fn": "describeExecutionFailure", "args": ["local_execution_timeout cleanup unconfirmed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["local_execution_timeout cleanup unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["1local_execution_timeout"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["1local_execution_timeout"]}
+{"fn": "describeExecutionFailure", "args": ["-local_execution_timeout-"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["-local_execution_timeout-"]}
+{"fn": "describeExecutionFailure", "args": ["execution_preparation_stalled"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["execution_preparation_stalled"]}
+{"fn": "describeExecutionFailure", "args": ["xexecution_preparation_stalled"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["xexecution_preparation_stalled"]}
+{"fn": "describeExecutionFailure", "args": ["execution_preparation_stalled_"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["execution_preparation_stalled_"]}
+{"fn": "describeExecutionFailure", "args": ["err: execution_preparation_stalled."]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["err: execution_preparation_stalled."]}
+{"fn": "describeExecutionFailure", "args": ["éexecution_preparation_stalledé"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["éexecution_preparation_stalledé"]}
+{"fn": "describeExecutionFailure", "args": ["execution_preparation_stalled cleanup unconfirmed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["execution_preparation_stalled cleanup unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["1execution_preparation_stalled"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["1execution_preparation_stalled"]}
+{"fn": "describeExecutionFailure", "args": ["-execution_preparation_stalled-"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["-execution_preparation_stalled-"]}
+{"fn": "describeExecutionFailure", "args": ["workspace_changing"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["workspace_changing"]}
+{"fn": "describeExecutionFailure", "args": ["xworkspace_changing"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["xworkspace_changing"]}
+{"fn": "describeExecutionFailure", "args": ["workspace_changing_"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["workspace_changing_"]}
+{"fn": "describeExecutionFailure", "args": ["err: workspace_changing."]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["err: workspace_changing."]}
+{"fn": "describeExecutionFailure", "args": ["éworkspace_changingé"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["éworkspace_changingé"]}
+{"fn": "describeExecutionFailure", "args": ["workspace_changing cleanup unconfirmed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["workspace_changing cleanup unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["1workspace_changing"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["1workspace_changing"]}
+{"fn": "describeExecutionFailure", "args": ["-workspace_changing-"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["-workspace_changing-"]}
+{"fn": "describeExecutionFailure", "args": ["execution_artifacts_unavailable"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["execution_artifacts_unavailable"]}
+{"fn": "describeExecutionFailure", "args": ["xexecution_artifacts_unavailable"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["xexecution_artifacts_unavailable"]}
+{"fn": "describeExecutionFailure", "args": ["execution_artifacts_unavailable_"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["execution_artifacts_unavailable_"]}
+{"fn": "describeExecutionFailure", "args": ["err: execution_artifacts_unavailable."]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["err: execution_artifacts_unavailable."]}
+{"fn": "describeExecutionFailure", "args": ["éexecution_artifacts_unavailableé"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["éexecution_artifacts_unavailableé"]}
+{"fn": "describeExecutionFailure", "args": ["execution_artifacts_unavailable cleanup unconfirmed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["execution_artifacts_unavailable cleanup unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["1execution_artifacts_unavailable"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["1execution_artifacts_unavailable"]}
+{"fn": "describeExecutionFailure", "args": ["-execution_artifacts_unavailable-"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["-execution_artifacts_unavailable-"]}
+{"fn": "describeExecutionFailure", "args": ["execution_owner_termination_unconfirmed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["execution_owner_termination_unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["xexecution_owner_termination_unconfirmed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["xexecution_owner_termination_unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["execution_owner_termination_unconfirmed_"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["execution_owner_termination_unconfirmed_"]}
+{"fn": "describeExecutionFailure", "args": ["err: execution_owner_termination_unconfirmed."]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["err: execution_owner_termination_unconfirmed."]}
+{"fn": "describeExecutionFailure", "args": ["éexecution_owner_termination_unconfirmedé"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["éexecution_owner_termination_unconfirmedé"]}
+{"fn": "describeExecutionFailure", "args": ["execution_owner_termination_unconfirmed cleanup unconfirmed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["execution_owner_termination_unconfirmed cleanup unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["1execution_owner_termination_unconfirmed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["1execution_owner_termination_unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["-execution_owner_termination_unconfirmed-"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["-execution_owner_termination_unconfirmed-"]}
+{"fn": "describeExecutionFailure", "args": ["execution_owner_lost"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["execution_owner_lost"]}
+{"fn": "describeExecutionFailure", "args": ["xexecution_owner_lost"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["xexecution_owner_lost"]}
+{"fn": "describeExecutionFailure", "args": ["execution_owner_lost_"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["execution_owner_lost_"]}
+{"fn": "describeExecutionFailure", "args": ["err: execution_owner_lost."]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["err: execution_owner_lost."]}
+{"fn": "describeExecutionFailure", "args": ["éexecution_owner_losté"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["éexecution_owner_losté"]}
+{"fn": "describeExecutionFailure", "args": ["execution_owner_lost cleanup unconfirmed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["execution_owner_lost cleanup unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["1execution_owner_lost"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["1execution_owner_lost"]}
+{"fn": "describeExecutionFailure", "args": ["-execution_owner_lost-"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["-execution_owner_lost-"]}
+{"fn": "describeExecutionFailure", "args": ["execution_owner_unavailable"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["execution_owner_unavailable"]}
+{"fn": "describeExecutionFailure", "args": ["xexecution_owner_unavailable"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["xexecution_owner_unavailable"]}
+{"fn": "describeExecutionFailure", "args": ["execution_owner_unavailable_"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["execution_owner_unavailable_"]}
+{"fn": "describeExecutionFailure", "args": ["err: execution_owner_unavailable."]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["err: execution_owner_unavailable."]}
+{"fn": "describeExecutionFailure", "args": ["éexecution_owner_unavailableé"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["éexecution_owner_unavailableé"]}
+{"fn": "describeExecutionFailure", "args": ["execution_owner_unavailable cleanup unconfirmed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["execution_owner_unavailable cleanup unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["1execution_owner_unavailable"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["1execution_owner_unavailable"]}
+{"fn": "describeExecutionFailure", "args": ["-execution_owner_unavailable-"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["-execution_owner_unavailable-"]}
+{"fn": "describeExecutionFailure", "args": ["payload_too_large"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["payload_too_large"]}
+{"fn": "describeExecutionFailure", "args": ["xpayload_too_large"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["xpayload_too_large"]}
+{"fn": "describeExecutionFailure", "args": ["payload_too_large_"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["payload_too_large_"]}
+{"fn": "describeExecutionFailure", "args": ["err: payload_too_large."]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["err: payload_too_large."]}
+{"fn": "describeExecutionFailure", "args": ["épayload_too_largeé"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["épayload_too_largeé"]}
+{"fn": "describeExecutionFailure", "args": ["payload_too_large cleanup unconfirmed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["payload_too_large cleanup unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["1payload_too_large"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["1payload_too_large"]}
+{"fn": "describeExecutionFailure", "args": ["-payload_too_large-"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["-payload_too_large-"]}
+{"fn": "describeExecutionFailure", "args": ["skill_source_mismatch"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["skill_source_mismatch"]}
+{"fn": "describeExecutionFailure", "args": ["xskill_source_mismatch"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["xskill_source_mismatch"]}
+{"fn": "describeExecutionFailure", "args": ["skill_source_mismatch_"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["skill_source_mismatch_"]}
+{"fn": "describeExecutionFailure", "args": ["err: skill_source_mismatch."]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["err: skill_source_mismatch."]}
+{"fn": "describeExecutionFailure", "args": ["éskill_source_mismatché"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["éskill_source_mismatché"]}
+{"fn": "describeExecutionFailure", "args": ["skill_source_mismatch cleanup unconfirmed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["skill_source_mismatch cleanup unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["1skill_source_mismatch"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["1skill_source_mismatch"]}
+{"fn": "describeExecutionFailure", "args": ["-skill_source_mismatch-"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["-skill_source_mismatch-"]}
+{"fn": "describeExecutionFailure", "args": ["native_skill_unreviewed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["native_skill_unreviewed"]}
+{"fn": "describeExecutionFailure", "args": ["xnative_skill_unreviewed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["xnative_skill_unreviewed"]}
+{"fn": "describeExecutionFailure", "args": ["native_skill_unreviewed_"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["native_skill_unreviewed_"]}
+{"fn": "describeExecutionFailure", "args": ["err: native_skill_unreviewed."]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["err: native_skill_unreviewed."]}
+{"fn": "describeExecutionFailure", "args": ["énative_skill_unreviewedé"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["énative_skill_unreviewedé"]}
+{"fn": "describeExecutionFailure", "args": ["native_skill_unreviewed cleanup unconfirmed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["native_skill_unreviewed cleanup unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["1native_skill_unreviewed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["1native_skill_unreviewed"]}
+{"fn": "describeExecutionFailure", "args": ["-native_skill_unreviewed-"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["-native_skill_unreviewed-"]}
+{"fn": "describeExecutionFailure", "args": ["storage_unavailable"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["storage_unavailable"]}
+{"fn": "describeExecutionFailure", "args": ["xstorage_unavailable"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["xstorage_unavailable"]}
+{"fn": "describeExecutionFailure", "args": ["storage_unavailable_"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["storage_unavailable_"]}
+{"fn": "describeExecutionFailure", "args": ["err: storage_unavailable."]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["err: storage_unavailable."]}
+{"fn": "describeExecutionFailure", "args": ["éstorage_unavailableé"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["éstorage_unavailableé"]}
+{"fn": "describeExecutionFailure", "args": ["storage_unavailable cleanup unconfirmed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["storage_unavailable cleanup unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["1storage_unavailable"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["1storage_unavailable"]}
+{"fn": "describeExecutionFailure", "args": ["-storage_unavailable-"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["-storage_unavailable-"]}
+{"fn": "describeExecutionFailure", "args": ["mutation_runtime_missing"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["mutation_runtime_missing"]}
+{"fn": "describeExecutionFailure", "args": ["xmutation_runtime_missing"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["xmutation_runtime_missing"]}
+{"fn": "describeExecutionFailure", "args": ["mutation_runtime_missing_"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["mutation_runtime_missing_"]}
+{"fn": "describeExecutionFailure", "args": ["err: mutation_runtime_missing."]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["err: mutation_runtime_missing."]}
+{"fn": "describeExecutionFailure", "args": ["émutation_runtime_missingé"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["émutation_runtime_missingé"]}
+{"fn": "describeExecutionFailure", "args": ["mutation_runtime_missing cleanup unconfirmed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["mutation_runtime_missing cleanup unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["1mutation_runtime_missing"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["1mutation_runtime_missing"]}
+{"fn": "describeExecutionFailure", "args": ["-mutation_runtime_missing-"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["-mutation_runtime_missing-"]}
+{"fn": "describeExecutionFailure", "args": ["mutation_runtime_unsupported"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["mutation_runtime_unsupported"]}
+{"fn": "describeExecutionFailure", "args": ["xmutation_runtime_unsupported"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["xmutation_runtime_unsupported"]}
+{"fn": "describeExecutionFailure", "args": ["mutation_runtime_unsupported_"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["mutation_runtime_unsupported_"]}
+{"fn": "describeExecutionFailure", "args": ["err: mutation_runtime_unsupported."]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["err: mutation_runtime_unsupported."]}
+{"fn": "describeExecutionFailure", "args": ["émutation_runtime_unsupportedé"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["émutation_runtime_unsupportedé"]}
+{"fn": "describeExecutionFailure", "args": ["mutation_runtime_unsupported cleanup unconfirmed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["mutation_runtime_unsupported cleanup unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["1mutation_runtime_unsupported"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["1mutation_runtime_unsupported"]}
+{"fn": "describeExecutionFailure", "args": ["-mutation_runtime_unsupported-"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["-mutation_runtime_unsupported-"]}
+{"fn": "describeExecutionFailure", "args": ["session_retention_in_progress"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["session_retention_in_progress"]}
+{"fn": "describeExecutionFailure", "args": ["xsession_retention_in_progress"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["xsession_retention_in_progress"]}
+{"fn": "describeExecutionFailure", "args": ["session_retention_in_progress_"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["session_retention_in_progress_"]}
+{"fn": "describeExecutionFailure", "args": ["err: session_retention_in_progress."]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["err: session_retention_in_progress."]}
+{"fn": "describeExecutionFailure", "args": ["ésession_retention_in_progressé"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["ésession_retention_in_progressé"]}
+{"fn": "describeExecutionFailure", "args": ["session_retention_in_progress cleanup unconfirmed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["session_retention_in_progress cleanup unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["1session_retention_in_progress"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["1session_retention_in_progress"]}
+{"fn": "describeExecutionFailure", "args": ["-session_retention_in_progress-"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["-session_retention_in_progress-"]}
+{"fn": "describeExecutionFailure", "args": ["mutation_history_captured"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["mutation_history_captured"]}
+{"fn": "describeExecutionFailure", "args": ["xmutation_history_captured"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["xmutation_history_captured"]}
+{"fn": "describeExecutionFailure", "args": ["mutation_history_captured_"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["mutation_history_captured_"]}
+{"fn": "describeExecutionFailure", "args": ["err: mutation_history_captured."]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["err: mutation_history_captured."]}
+{"fn": "describeExecutionFailure", "args": ["émutation_history_capturedé"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["émutation_history_capturedé"]}
+{"fn": "describeExecutionFailure", "args": ["mutation_history_captured cleanup unconfirmed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["mutation_history_captured cleanup unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["1mutation_history_captured"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["1mutation_history_captured"]}
+{"fn": "describeExecutionFailure", "args": ["-mutation_history_captured-"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["-mutation_history_captured-"]}
+{"fn": "describeExecutionFailure", "args": ["mutation_recovery_pending"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["mutation_recovery_pending"]}
+{"fn": "describeExecutionFailure", "args": ["xmutation_recovery_pending"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["xmutation_recovery_pending"]}
+{"fn": "describeExecutionFailure", "args": ["mutation_recovery_pending_"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["mutation_recovery_pending_"]}
+{"fn": "describeExecutionFailure", "args": ["err: mutation_recovery_pending."]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["err: mutation_recovery_pending."]}
+{"fn": "describeExecutionFailure", "args": ["émutation_recovery_pendingé"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["émutation_recovery_pendingé"]}
+{"fn": "describeExecutionFailure", "args": ["mutation_recovery_pending cleanup unconfirmed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["mutation_recovery_pending cleanup unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["1mutation_recovery_pending"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["1mutation_recovery_pending"]}
+{"fn": "describeExecutionFailure", "args": ["-mutation_recovery_pending-"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["-mutation_recovery_pending-"]}
+{"fn": "describeExecutionFailure", "args": ["native_slim_retry_primary_fenced"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["native_slim_retry_primary_fenced"]}
+{"fn": "describeExecutionFailure", "args": ["xnative_slim_retry_primary_fenced"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["xnative_slim_retry_primary_fenced"]}
+{"fn": "describeExecutionFailure", "args": ["native_slim_retry_primary_fenced_"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["native_slim_retry_primary_fenced_"]}
+{"fn": "describeExecutionFailure", "args": ["err: native_slim_retry_primary_fenced."]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["err: native_slim_retry_primary_fenced."]}
+{"fn": "describeExecutionFailure", "args": ["énative_slim_retry_primary_fencedé"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["énative_slim_retry_primary_fencedé"]}
+{"fn": "describeExecutionFailure", "args": ["native_slim_retry_primary_fenced cleanup unconfirmed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["native_slim_retry_primary_fenced cleanup unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["1native_slim_retry_primary_fenced"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["1native_slim_retry_primary_fenced"]}
+{"fn": "describeExecutionFailure", "args": ["-native_slim_retry_primary_fenced-"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["-native_slim_retry_primary_fenced-"]}
+{"fn": "describeExecutionFailure", "args": ["execution_recovery_unavailable"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["execution_recovery_unavailable"]}
+{"fn": "describeExecutionFailure", "args": ["xexecution_recovery_unavailable"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["xexecution_recovery_unavailable"]}
+{"fn": "describeExecutionFailure", "args": ["execution_recovery_unavailable_"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["execution_recovery_unavailable_"]}
+{"fn": "describeExecutionFailure", "args": ["err: execution_recovery_unavailable."]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["err: execution_recovery_unavailable."]}
+{"fn": "describeExecutionFailure", "args": ["éexecution_recovery_unavailableé"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["éexecution_recovery_unavailableé"]}
+{"fn": "describeExecutionFailure", "args": ["execution_recovery_unavailable cleanup unconfirmed"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["execution_recovery_unavailable cleanup unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["1execution_recovery_unavailable"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["1execution_recovery_unavailable"]}
+{"fn": "describeExecutionFailure", "args": ["-execution_recovery_unavailable-"]}
+{"fn": "describeExecutionRecoveryFailure", "args": ["-execution_recovery_unavailable-"]}
+{"fn": "describeExecutionFailure", "args": ["payload_too_large and local_execution_timeout"]}
+{"fn": "describeExecutionFailure", "args": ["provider error"]}
+{"fn": "describeExecutionFailure", "args": [""]}
+{"fn": "describeExecutionFailure", "args": ["cleanup unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["local_execution_timeout; execution did not start; cleanup unconfirmed"]}
+{"fn": "describeExecutionFailure", "args": ["storage_unavailable skill_source_mismatch"]}

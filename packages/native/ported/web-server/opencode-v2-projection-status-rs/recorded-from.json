@@ -1,0 +1,19 @@
+{
+  "unit": "status.js",
+  "files": 1,
+  "fingerprint": "e415f31523f4ad42",
+  "cases": 810,
+  "cases_hash": "953c265870cfee0c",
+  "coverage": {
+    "lines": 177,
+    "reached": 147,
+    "files": [
+      {
+        "file": "status.js",
+        "lines": 177,
+        "reached": 147,
+        "missed": "146-162, 166, 181-192"
+      }
+    ]
+  }
+}

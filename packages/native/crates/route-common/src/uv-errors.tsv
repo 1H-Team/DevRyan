@@ -1,0 +1,74 @@
+# libuv's name and message of each system error code, as Node (util.getSystemErrorMap) gives them.
+# Node writes a file-system error as "<name>: <message>, <syscall> '<path>'". Checked against the running Node
+# by scripts/backend-conformance/rust-candidate.test.mjs.
+E2BIG	argument list too long
+EACCES	permission denied
+EADDRINUSE	address already in use
+EADDRNOTAVAIL	address not available
+EAFNOSUPPORT	address family not supported
+EAGAIN	resource temporarily unavailable
+EALREADY	connection already in progress
+EBADF	bad file descriptor
+EBUSY	resource busy or locked
+ECANCELED	operation canceled
+ECHARSET	invalid Unicode character
+ECONNABORTED	software caused connection abort
+ECONNREFUSED	connection refused
+ECONNRESET	connection reset by peer
+EDESTADDRREQ	destination address required
+EEXIST	file already exists
+EFAULT	bad address in system call argument
+EFBIG	file too large
+EFTYPE	inappropriate file type or format
+EHOSTDOWN	host is down
+EHOSTUNREACH	host is unreachable
+EILSEQ	illegal byte sequence
+EINTR	interrupted system call
+EINVAL	invalid argument
+EIO	i/o error
+EISCONN	socket is already connected
+EISDIR	illegal operation on a directory
+ELOOP	too many symbolic links encountered
+EMFILE	too many open files
+EMLINK	too many links
+EMSGSIZE	message too long
+ENAMETOOLONG	name too long
+ENETDOWN	network is down
+ENETUNREACH	network is unreachable
+ENFILE	file table overflow
+ENOBUFS	no buffer space available
+ENODATA	no data available
+ENODEV	no such device
+ENOENT	no such file or directory
+ENOEXEC	exec format error
+ENOMEM	not enough memory
+ENONET	machine is not on the network
+ENOPROTOOPT	protocol not available
+ENOSPC	no space left on device
+ENOSYS	function not implemented
+ENOTCONN	socket is not connected
+ENOTDIR	not a directory
+ENOTEMPTY	directory not empty
+ENOTSOCK	socket operation on non-socket
+ENOTSUP	operation not supported on socket
+ENOTTY	inappropriate ioctl for device
+ENXIO	no such device or address
+EOF	end of file
+EOVERFLOW	value too large for defined data type
+EPERM	operation not permitted
+EPIPE	broken pipe
+EPROTO	protocol error
+EPROTONOSUPPORT	protocol not supported
+EPROTOTYPE	protocol wrong type for socket
+ERANGE	result too large
+EREMOTEIO	remote I/O error
+EROFS	read-only file system
+ESHUTDOWN	cannot send after transport endpoint shutdown
+ESOCKTNOSUPPORT	socket type not supported
+ESPIPE	invalid seek
+ESRCH	no such process
+ETIMEDOUT	connection timed out
+ETXTBSY	text file is busy
+EUNATCH	protocol driver not attached
+EXDEV	cross-device link not permitted
+UNKNOWN	unknown error

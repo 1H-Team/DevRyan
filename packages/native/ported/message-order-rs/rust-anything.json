@@ -1,0 +1,150 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "message-order.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "message-order-rs",
+  "exports": [
+    {
+      "name": "compareMessagesChronologically",
+      "file": "message-order.ts",
+      "line": 16,
+      "params": [
+        {
+          "name": "left",
+          "ts_type": "Pick<Message, \"id\"> & {\n  time?: { created?: unknown }\n}",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "right",
+          "ts_type": "Pick<Message, \"id\"> & {\n  time?: { created?: unknown }\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "number",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "sortMessagesChronologically",
+      "file": "message-order.ts",
+      "line": 24,
+      "params": [
+        {
+          "name": "messages",
+          "ts_type": "readonly unknown[]",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown[]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "insertMessageChronologically",
+      "file": "message-order.ts",
+      "line": 28,
+      "params": [
+        {
+          "name": "messages",
+          "ts_type": "readonly unknown[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "message",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown[]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "findMessageIndex",
+      "file": "message-order.ts",
+      "line": 44,
+      "params": [
+        {
+          "name": "messages",
+          "ts_type": "readonly (Pick<Message, \"id\">)[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "messageID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "number",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "messagesBefore",
+      "file": "message-order.ts",
+      "line": 53,
+      "params": [
+        {
+          "name": "messages",
+          "ts_type": "readonly (Pick<Message, \"id\">)[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "markerID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "readonly (Pick<Message, \"id\">)[]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "messagesFrom",
+      "file": "message-order.ts",
+      "line": 63,
+      "params": [
+        {
+          "name": "messages",
+          "ts_type": "readonly (Pick<Message, \"id\">)[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "markerID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "readonly (Pick<Message, \"id\">)[]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

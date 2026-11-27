@@ -1,0 +1,10 @@
+{"fn":"createHarnessSuccess","args":[{"summary":"Warmup completed","nextActions":["Open diagnostics"],"artifacts":["/tmp/report.json"]}]}
+{"fn":"createHarnessResult","args":["success",{"summary":"Warmup completed","nextActions":["Open diagnostics"],"artifacts":["/tmp/report.json"]}]}
+{"fn":"createHarnessWarning","args":[{"summary":"MCP status timed out","recovery":{"rootCauseHint":"MCP server did not answer within the warmup budget","safeRetry":"Retry after the server reports ready","stopCondition":"Stop retrying if the server stays unavailable after restart","retryable":true}}]}
+{"fn":"createHarnessResult","args":["warning",{"summary":"MCP status timed out","recovery":{"rootCauseHint":"MCP server did not answer within the warmup budget","safeRetry":"Retry after the server reports ready","stopCondition":"Stop retrying if the server stays unavailable after restart","retryable":true}}]}
+{"fn":"createHarnessError","args":[{"summary":"Invalid skill source","recovery":{"rootCauseHint":"The source URL could not be parsed","safeRetry":"Retry with a GitHub owner/repo source","stopCondition":"Stop if the source is not a GitHub repository","retryable":false}}]}
+{"fn":"createHarnessResult","args":["error",{"summary":"Invalid skill source","recovery":{"rootCauseHint":"The source URL could not be parsed","safeRetry":"Retry with a GitHub owner/repo source","stopCondition":"Stop if the source is not a GitHub repository","retryable":false}}]}
+{"fn":"createHarnessSuccess","args":[{"summary":"Catalog loaded","nextActions":["Install a skill"]}]}
+{"fn":"createHarnessResult","args":["success",{"summary":"Catalog loaded","nextActions":["Install a skill"]}]}
+{"fn":"withHarnessResult","args":[{"status":"ready","ok":true,"items":[{"name":"existing"}]},{"status":"success","summary":"Catalog loaded","nextActions":["Install a skill"],"artifacts":[],"recovery":null}]}
+{"fn":"createHarnessResult","args":["success",{"status":"success","summary":"Catalog loaded","nextActions":["Install a skill"],"artifacts":[],"recovery":null}]}

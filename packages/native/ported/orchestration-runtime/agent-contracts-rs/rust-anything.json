@@ -1,0 +1,66 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/orchestration-runtime",
+  "unit": "agent-contracts.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "agent-contracts-rs",
+  "exports": [
+    {
+      "name": "managedTaskMayWrite",
+      "file": "agent-contracts.js",
+      "line": 41,
+      "params": [
+        {
+          "name": "task",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "normalizeManagedAgentContractRole",
+      "file": "agent-contracts.js",
+      "line": 44,
+      "params": [
+        {
+          "name": "agent",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "buildManagedAgentContract",
+      "file": "agent-contracts.js",
+      "line": 53,
+      "params": [
+        {
+          "name": "arg0",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

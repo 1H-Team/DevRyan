@@ -1,0 +1,4 @@
+bin.name = "devryan"
+args = ["logs", "--no-follow"]
+status.code = 1
+fs.sandbox = true

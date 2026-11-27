@@ -1,0 +1,54 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/native/ported/orchestration-runtime/abort-sources-rs/scenario-js",
+  "unit": "abort-sources-scenario.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "abort-sources-scenario-rs",
+  "exports": [
+    {
+      "name": "normalizeAbortSourceOf",
+      "file": "abort-sources-scenario.js",
+      "line": 5,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "runAbortSourceRegistry",
+      "file": "abort-sources-scenario.js",
+      "line": 14,
+      "params": [
+        {
+          "name": "options",
+          "ts_type": "{ ttlMs?: number, maximumSessions?: number }",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "steps",
+          "ts_type": "{ op: string, at: number, arg?: unknown }[]",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown[]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

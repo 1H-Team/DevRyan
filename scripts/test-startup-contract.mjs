@@ -8,14 +8,16 @@ import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { runTestUnits, summarizeTestUnits, testConcurrency } from './test-pool.mjs';
+import { NODE_ISOLATION_ARGS } from './test-isolation-guard.mjs';
+import { prepareScriptTestEnvironment } from './test-scripts.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
 export const STARTUP_CONTRACT_GROUPS = Object.freeze([
-  { name: 'electron', owner: 'electron', command: 'node', args: ['--test', 'packages/electron/tests/startup-retry.test.mjs', 'packages/electron/tests/early-startup.test.mjs',
+  { name: 'electron', owner: 'electron', command: 'node', args: [...NODE_ISOLATION_ARGS, '--test', 'packages/electron/tests/startup-retry.test.mjs', 'packages/electron/tests/early-startup.test.mjs',
     'packages/electron/tests/runtime-service-startup.test.mjs', 'packages/electron/tests/runtime-service-source.test.mjs', 'packages/electron/tests/windows-preview.test.mjs',
     'packages/electron/tests/runtime-service.test.mjs', 'packages/electron/tests/runtime-bundle-bootstrap.test.mjs'] },
-  { name: 'scripts', owner: 'scripts', command: 'node', args: ['--test', 'scripts/qa/native-startup-benchmark.test.mjs',
+  { name: 'scripts', owner: 'scripts', command: 'node', args: [...NODE_ISOLATION_ARGS, '--test', 'scripts/qa/native-startup-benchmark.test.mjs',
     'scripts/qa/host-readiness.test.mjs', 'scripts/opencode-v2-native/artifacts.test.mjs'] },
   { name: 'shared', owner: 'shared', command: 'bun', args: ['test', 'packages/shared-runtime/startup-diagnostics.test.js'] },
   { name: 'harness', owner: 'harness', command: 'bun', args: ['test', 'packages/harness-runtime/lib/session-reboot-recovery.test.js'] },
@@ -60,9 +62,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const groups = startupContractGroups({ coveredBy });
   if (coveredBy.length) console.log(`Startup contract: ${coveredBy.join(', ')} group(s) run in their owner suites.`);
   if (groups.length) {
-    const outcome = await runTestUnits(groups.map((group) => ({ ...group, name: `startup:${group.name}`, cwd: root })),
-      { concurrency: testConcurrency(), label: 'test:startup', cwd: root });
-    summarizeTestUnits(outcome, { label: 'test:startup' });
-    process.exitCode = outcome.passed ? 0 : 1;
+    // Every group runs in the private environment of scripts/test-isolation-guard.mjs.
+    const { env, cleanup } = prepareScriptTestEnvironment(root);
+    try {
+      const outcome = await runTestUnits(groups.map((group) => ({ ...group, name: `startup:${group.name}`, cwd: root, env })),
+        { concurrency: testConcurrency(), label: 'test:startup', cwd: root, cleanup });
+      summarizeTestUnits(outcome, { label: 'test:startup' });
+      process.exitCode = outcome.passed ? 0 : 1;
+    } finally { cleanup(); }
   }
 }

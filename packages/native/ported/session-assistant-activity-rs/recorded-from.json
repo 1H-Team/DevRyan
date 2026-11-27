@@ -1,0 +1,31 @@
+{
+  "unit": "session-assistant-activity.ts",
+  "files": 1,
+  "fingerprint": "60e4e3c8c3ed8053",
+  "cases": 230,
+  "cases_hash": "85dce4e760766486",
+  "coverage": {
+    "lines": 193,
+    "reached": 97,
+    "files": [
+      {
+        "file": "message-order.ts",
+        "lines": 60,
+        "reached": 27,
+        "missed": "8-10, 13-14, 17-22, 25-26, 29-42, 64-69"
+      },
+      {
+        "file": "revert-transactions.ts",
+        "lines": 98,
+        "reached": 35,
+        "missed": "26-28, 31-33, 36-45, 48-50, 57-64, 66-69, 72-87, 90-105"
+      },
+      {
+        "file": "session-assistant-activity.ts",
+        "lines": 35,
+        "reached": 35,
+        "missed": ""
+      }
+    ]
+  }
+}

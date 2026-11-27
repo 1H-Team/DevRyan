@@ -1,0 +1,47 @@
+{"fn":"requiredCheckCommandIssue","args":["npm test"]}
+{"fn":"requiredCheckCommandIssue","args":["false"]}
+{"fn":"requiredCheckCommandIssue","args":["npm test && echo done"]}
+{"fn":"requiredCheckCommandIssue","args":["cd \"directory with spaces\" && npm test"]}
+{"fn":"requiredCheckCommandIssue","args":["bun test \"test;literal|name.test.js\""]}
+{"fn":"requiredCheckCommandIssue","args":["bun test 'literal$(name).test.js'"]}
+{"fn":"requiredCheckCommandIssue","args":["bun test test\\;literal.test.js"]}
+{"fn":"requiredCheckCommandIssue","args":["TEST_MODE=unit npm test"]}
+{"fn":"requiredCheckCommandIssue","args":["npm run test -- \"a && b\""]}
+{"fn":"requiredCheckCommandIssue","args":["bun test \"literal\\$name.test.js\""]}
+{"fn":"requiredCheckCommandIssue","args":[""]}
+{"fn":"requiredCheckCommandIssue","args":[" "]}
+{"fn":"requiredCheckCommandIssue","args":["npm test; echo done"]}
+{"fn":"requiredCheckCommandIssue","args":["false; echo done"]}
+{"fn":"requiredCheckCommandIssue","args":["npm test\necho done"]}
+{"fn":"requiredCheckCommandIssue","args":["npm test\r\necho done"]}
+{"fn":"requiredCheckCommandIssue","args":["npm test || echo done"]}
+{"fn":"requiredCheckCommandIssue","args":["npm test | cat"]}
+{"fn":"requiredCheckCommandIssue","args":["npm test &"]}
+{"fn":"requiredCheckCommandIssue","args":["npm test & echo done"]}
+{"fn":"requiredCheckCommandIssue","args":["echo $(npm test)"]}
+{"fn":"requiredCheckCommandIssue","args":["echo `npm test`"]}
+{"fn":"requiredCheckCommandIssue","args":["npm test > /tmp/result"]}
+{"fn":"requiredCheckCommandIssue","args":["(npm test)"]}
+{"fn":"requiredCheckCommandIssue","args":["! npm test"]}
+{"fn":"requiredCheckCommandIssue","args":["sh -c \"false; echo done\""]}
+{"fn":"requiredCheckCommandIssue","args":["/bin/bash -lc \"npm test\""]}
+{"fn":"requiredCheckCommandIssue","args":["env sh -c \"npm test\""]}
+{"fn":"requiredCheckCommandIssue","args":["cmd.exe /c \"exit /b 1 & echo done\""]}
+{"fn":"requiredCheckCommandIssue","args":["PowerShell -Command \"exit 0\""]}
+{"fn":"requiredCheckCommandIssue","args":["pwsh -File check.ps1"]}
+{"fn":"requiredCheckCommandIssue","args":["command zsh -c \"npm test\""]}
+{"fn":"requiredCheckCommandIssue","args":["eval \"false; echo done\""]}
+{"fn":"requiredCheckCommandIssue","args":["source check.sh"]}
+{"fn":"requiredCheckCommandIssue","args":[". check.sh"]}
+{"fn":"requiredCheckCommandIssue","args":["trap \"exit 0\" EXIT && false"]}
+{"fn":"requiredCheckCommandIssue","args":["builtin eval \"false; echo done\""]}
+{"fn":"requiredCheckCommandIssue","args":["env -S 'bash -c false;echo done'"]}
+{"fn":"requiredCheckCommandIssue","args":["coproc npm test"]}
+{"fn":"requiredCheckCommandIssue","args":["npm test # && false"]}
+{"fn":"requiredCheckCommandIssue","args":["npm test &&"]}
+{"fn":"requiredCheckCommandIssue","args":["&& npm test"]}
+{"fn":"requiredCheckCommandIssue","args":["npm test && && echo done"]}
+{"fn":"requiredCheckCommandIssue","args":["bun test \"unterminated"]}
+{"fn":"requiredCheckCommandIssue","args":["bun test trailing\\"]}
+{"fn":"requiredCheckCommandIssue","args":["echo \"$STATUS\""]}
+{"fn":"requiredCheckCommandIssue","args":["npm test\\\necho done"]}

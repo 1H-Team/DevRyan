@@ -1,0 +1,18 @@
+{"fn": "currentHunkPatch", "args": ["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n@@ -5 +5 @@\n-c\n+d", "diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n"]}
+{"fn": "currentHunkPatch", "args": ["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n@@ -5 +5 @@\n-c\n+d", "diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -5 +5 @@\n-c\n+d\n"]}
+{"fn": "currentHunkPatch", "args": ["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n@@ -5 +5 @@\n-c\n+d", "diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -5 +5 @@\n-c\n+d"]}
+{"fn": "currentHunkPatch", "args": ["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n@@ -5 +5 @@\n-c\n+d", "x"]}
+{"fn": "currentHunkPatch", "args": ["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n@@ -5 +5 @@\n-c\n+d", "diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n@@ -1 +1 @@\n-a\n+b\n"]}
+{"fn": "currentHunkPatch", "args": ["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n@@ -5 +5 @@\n-c\n+d", null]}
+{"fn": "currentHunkPatch", "args": ["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n@@ -5 +5 @@\n-c\n+d", 5]}
+{"fn": "currentHunkPatch", "args": ["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\nold mode 100644\n@@ -1 +1 @@\n-a\n+b\n", "diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n"]}
+{"fn": "currentHunkPatch", "args": ["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n", "diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n"]}
+{"fn": "currentHunkPatch", "args": [null, "diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n"]}
+{"fn": "currentHunkPatch", "args": [5, "diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n"]}
+{"fn": "currentHunkPatch", "args": [["@@ x"], "diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n"]}
+{"fn": "currentHunkPatch", "args": ["diff --git a\r@@ q", ""]}
+{"fn": "currentHunkPatch", "args": ["diff --git a/f b/f\r\nindex 1..2 100644\r\n--- a/f\r\n+++ b/f\r\n@@ -1 +1 @@\r\n-a\r\n+b\r\n@@ -5 +5 @@\r\n-c\r\n+d", "diff --git a/f b/f\r\nindex 1..2 100644\r\n--- a/f\r\n+++ b/f\r\n@@ -1 +1 @@\r\n-a\r\n+b\r\n"]}
+{"fn": "currentHunkPatch", "args": ["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n@@ -5 +5 @@\n-c\n+d", "diff --git a\n@@ x\n@@ y"]}
+{"fn": "currentHunkPatch", "args": ["@@ a\n", "diff --git b\n@@ c\n"]}
+{"fn": "currentHunkPatch", "args": ["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n@@ -5 +5 @@\n-c\n+d\u2028@@ z", "diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ z\n"]}
+{"fn": "currentHunkPatch", "args": ["@@ only\n", "@@ only\n"]}

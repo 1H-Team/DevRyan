@@ -1,0 +1,113 @@
+{"fn": "parseProjectEnvironment", "args": ["\ufeff# project defaults\nexport VITE_ORIGIN=https://example.test # comment\nNEXT_PUBLIC_LABEL=\"line\\nvalue # retained\"\nPUBLIC_LITERAL='literal # retained'\nREACT_APP_EMPTY=\nINVALID KEY=ignored\nVITE_ORIGIN=https://override.test"]}
+{"fn": "parseProjectEnvironment", "args": ["A=1\r\nB=2\rC=3\nD=4"]}
+{"fn": "parseProjectEnvironment", "args": ["  export   E=5 "]}
+{"fn": "parseProjectEnvironment", "args": ["exportF=6"]}
+{"fn": "parseProjectEnvironment", "args": ["export\tG=7"]}
+{"fn": "parseProjectEnvironment", "args": ["export =8"]}
+{"fn": "parseProjectEnvironment", "args": ["=9"]}
+{"fn": "parseProjectEnvironment", "args": ["1A=x"]}
+{"fn": "parseProjectEnvironment", "args": ["_A=x"]}
+{"fn": "parseProjectEnvironment", "args": ["A_1=  spaced  "]}
+{"fn": "parseProjectEnvironment", "args": ["A=#c"]}
+{"fn": "parseProjectEnvironment", "args": ["A=a#b#c"]}
+{"fn": "parseProjectEnvironment", "args": ["A=\"unterminated"]}
+{"fn": "parseProjectEnvironment", "args": ["A=\"a\\\"b\""]}
+{"fn": "parseProjectEnvironment", "args": ["A=\"a\\x\\n\\t\\r\\\\\""]}
+{"fn": "parseProjectEnvironment", "args": ["A='a\\'b\\\\c\\n'"]}
+{"fn": "parseProjectEnvironment", "args": ["A=`t\\`t\\q`"]}
+{"fn": "parseProjectEnvironment", "args": ["A=\"v\" # ok"]}
+{"fn": "parseProjectEnvironment", "args": ["A=\"v\" junk"]}
+{"fn": "parseProjectEnvironment", "args": ["A=\"v\"#ok"]}
+{"fn": "parseProjectEnvironment", "args": ["A=''"]}
+{"fn": "parseProjectEnvironment", "args": ["A=\"\""]}
+{"fn": "parseProjectEnvironment", "args": ["A=\""]}
+{"fn": "parseProjectEnvironment", "args": ["__proto__=x\nB=1"]}
+{"fn": "parseProjectEnvironment", "args": ["constructor=c\ntoString=t"]}
+{"fn": "parseProjectEnvironment", "args": ["A=1\nA=2\nB=3\nA=4"]}
+{"fn": "parseProjectEnvironment", "args": ["# only"]}
+{"fn": "parseProjectEnvironment", "args": ["\ufeff\ufeffA=1"]}
+{"fn": "parseProjectEnvironment", "args": ["A=\u00a0v\u00a0"]}
+{"fn": "parseProjectEnvironment", "args": ["A=v\u2028B=w"]}
+{"fn": "parseProjectEnvironment", "args": ["A\u3000=1"]}
+{"fn": "parseProjectEnvironment", "args": [{"$utf16": [65, 61, 55296, 120]}]}
+{"fn": "parseProjectEnvironment", "args": ["\u00c4=1"]}
+{"fn": "parseProjectEnvironment", "args": ["A = b = c"]}
+{"fn": "parseProjectEnvironment", "args": ["export export H=1"]}
+{"fn": "parseProjectEnvironment", "args": ["A=\"multi\nB=2\""]}
+{"fn": "parseProjectEnvironment", "args": ["A=x\\"]}
+{"fn": "parseProjectEnvironment", "args": ["A=\"x\\\""]}
+{"fn": "parseProjectEnvironment", "args": [{"$undefined": true}]}
+{"fn": "parseProjectEnvironment", "args": [null]}
+{"fn": "parseProjectEnvironment", "args": [""]}
+{"fn": "parseProjectEnvironment", "args": [0]}
+{"fn": "parseProjectEnvironment", "args": [1]}
+{"fn": "parseProjectEnvironment", "args": [false]}
+{"fn": "parseProjectEnvironment", "args": [true]}
+{"fn": "parseProjectEnvironment", "args": [["A=1", "B=2"]]}
+{"fn": "parseProjectEnvironment", "args": [{"a": 1}]}
+{"fn": "parseProjectEnvironment", "args": [{"$map": []}]}
+{"fn": "parseProjectEnvironment", "args": [{"$num": "NaN"}]}
+{"fn": "parseProjectEnvironment", "args": [{"$bigint": "0"}]}
+{"fn": "parseProjectEnvironment", "args": [{"$bigint": "5"}]}
+{"fn": "parseProjectEnvironment", "args": []}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_SUPABASE_URL"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["NEXT_PUBLIC_SUPABASE_URL"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["PUBLIC_ASSET_URL"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["REACT_APP_API_URL"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["GATSBY_API_URL"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["NUXT_PUBLIC_API_URL"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["EXPO_PUBLIC_API_URL"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["SUPABASE_URL"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["SUPABASE_ANON_KEY"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["SUPABASE_PUBLISHABLE_KEY"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["SUPABASE_SECRET_KEY"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_SUPABASE_SERVICE_ROLE_KEY"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["NEXT_PUBLIC_DATABASE_URL"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["PUBLIC_OPENAI_API_KEY"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["REACT_APP_GITHUB_ACCESS_TOKEN"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_SESSION_SECRET"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["DEVRYAN_UI_PASSWORD"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["UNPREFIXED_VALUE"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_PASSWORD"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_XPASSWORD"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_PASSWORD_HINT"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_PRIVATE_KEY"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_CLIENT_SECRET"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_JWT_SECRET"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_DIRECT_URL"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_AWS_SECRET"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_AWS_SECRET_KEY"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_STRIPE_API_KEY"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_STRIPE_PUBLISHABLE_KEY"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_VERCEL_AUTH_TOKEN"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_CLOUDFLARE_ACCESS_TOKEN"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_GITLAB_SECRET"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_MYOPENAI_API_KEY"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_OPENAI_API_KEY_ID"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_SECRET_KEY"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_SECRETKEY"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_secret_key"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["vite_x"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["Vite_x"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["PUBLIC_"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["SUPABASE_URL_X"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["X_SUPABASE_URL"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_SERVICE_ROLE_KEY"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["SERVICE_ROLE_KEY"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["PASSWORD"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_API_KEY"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_TOKEN"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_ANTHROPIC_AUTH_TOKEN"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE-X"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE X"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": [""]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["1VITE_X"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_X\n"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": ["VITE_\u00c4"]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": [5]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": [null]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": [{"$undefined": true}]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": [["VITE_X"]]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": [{"$utf16": [86, 73, 84, 69, 95, 55296]}]}
+{"fn": "isBrowserPublicProjectEnvironmentKey", "args": []}

@@ -1,0 +1,61 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "subtask-agent.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "subtask-agent-rs",
+  "exports": [
+    {
+      "name": "resolveUserMessageVariant",
+      "file": "subtask-agent.ts",
+      "line": 36,
+      "params": [
+        {
+          "name": "message",
+          "ts_type": "{\n  id?: unknown\n  role?: unknown\n  agent?: unknown\n  mode?: unknown\n  providerID?: unknown\n  modelID?: unknown\n  model?: {\n    providerID?: unknown\n    modelID?: unknown\n    variant?: unknown\n  }\n  variant?: unknown\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string | null | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "resolveSubtaskAgentFromMessages",
+      "file": "subtask-agent.ts",
+      "line": 44,
+      "params": [
+        {
+          "name": "messages",
+          "ts_type": "readonly {\n  id?: unknown\n  role?: unknown\n  agent?: unknown\n  mode?: unknown\n  providerID?: unknown\n  modelID?: unknown\n  model?: {\n    providerID?: unknown\n    modelID?: unknown\n    variant?: unknown\n  }\n  variant?: unknown\n}[]",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "resolveLatestUserChoiceFromMessages",
+      "file": "subtask-agent.ts",
+      "line": 60,
+      "reason": "takes or returns a function"
+    },
+    {
+      "name": "createLatestUserChoiceSelector",
+      "file": "subtask-agent.ts",
+      "line": 102,
+      "reason": "returns a closure over module-lifetime selector state"
+    }
+  ]
+}

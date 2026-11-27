@@ -1,0 +1,12 @@
+{"fn":"parseSseEventEnvelope","args":["id: evt-1\nevent: message\ndata: {\"directory\":\"/tmp/project\",\"payload\":{\"type\":\"session.updated\"}}\n"]}
+{"fn":"parseSseEventEnvelope","args":["data: {\"type\":\"openchamber:notification\",\"properties\":{\"directory\":\"/tmp/project\"}}\n"]}
+{"fn":"parseSseEventEnvelope","args":["event: message\n"]}
+{"fn":"parseSseEventEnvelope","args":["data: {oops}\n"]}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"openchamber:heartbeat","timestamp":1},{"dialect":null,"eventId":"evt-2","directory":"/tmp/project"}]}
+{"fn":"toUpstreamV2SseEvent","args":[{"kind":"event","eventId":"evt_1","directory":"/tmp/p","envelope":{"id":"evt_1","created":1,"type":"session.renamed","location":{"directory":"/tmp/p"},"data":{"sessionID":"ses_1","title":"T"}}}]}
+{"fn":"toUpstreamV2SseEvent","args":[{"kind":"comment"}]}
+{"fn":"toUpstreamV2SseEvent","args":[{"kind":"event","eventId":"evt_2","directory":null,"envelope":{"id":"evt_2","type":"server.connected","data":{}}}]}
+{"fn":"toUpstreamV2SseEvent","args":[null]}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"devryan.stream.gap","properties":{"scope":"global","reason":"upstream_reconnect"}},{"eventId":"ignored","directory":"global"}]}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"devryan.stream.gap","properties":{"scope":"global"}}]}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"devryan.stream.gap","properties":{"scope":"global"}},{"dialect":null}]}

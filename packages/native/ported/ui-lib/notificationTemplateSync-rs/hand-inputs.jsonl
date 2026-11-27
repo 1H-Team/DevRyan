@@ -1,0 +1,123 @@
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"incoming": "IN"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$undefined": true}, "incoming": "IN"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "a", "incoming": "IN"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "b", "incoming": "IN"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 1, "incoming": "IN"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "NaN"}, "incoming": "IN"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "-0"}, "incoming": "IN"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 0, "incoming": "IN"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"x": 1}, "incoming": "IN"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": [1], "incoming": "IN"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": true, "incoming": "IN"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"incoming": "IN", "baseline": {"$undefined": true}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$undefined": true}, "incoming": "IN", "baseline": {"$undefined": true}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "a", "incoming": "IN", "baseline": {"$undefined": true}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "b", "incoming": "IN", "baseline": {"$undefined": true}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 1, "incoming": "IN", "baseline": {"$undefined": true}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "NaN"}, "incoming": "IN", "baseline": {"$undefined": true}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "-0"}, "incoming": "IN", "baseline": {"$undefined": true}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 0, "incoming": "IN", "baseline": {"$undefined": true}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"x": 1}, "incoming": "IN", "baseline": {"$undefined": true}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": [1], "incoming": "IN", "baseline": {"$undefined": true}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": true, "incoming": "IN", "baseline": {"$undefined": true}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"incoming": "IN", "baseline": "a"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$undefined": true}, "incoming": "IN", "baseline": "a"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "a", "incoming": "IN", "baseline": "a"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "b", "incoming": "IN", "baseline": "a"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 1, "incoming": "IN", "baseline": "a"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "NaN"}, "incoming": "IN", "baseline": "a"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "-0"}, "incoming": "IN", "baseline": "a"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 0, "incoming": "IN", "baseline": "a"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"x": 1}, "incoming": "IN", "baseline": "a"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": [1], "incoming": "IN", "baseline": "a"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": true, "incoming": "IN", "baseline": "a"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"incoming": "IN", "baseline": "b"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$undefined": true}, "incoming": "IN", "baseline": "b"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "a", "incoming": "IN", "baseline": "b"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "b", "incoming": "IN", "baseline": "b"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 1, "incoming": "IN", "baseline": "b"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "NaN"}, "incoming": "IN", "baseline": "b"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "-0"}, "incoming": "IN", "baseline": "b"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 0, "incoming": "IN", "baseline": "b"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"x": 1}, "incoming": "IN", "baseline": "b"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": [1], "incoming": "IN", "baseline": "b"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": true, "incoming": "IN", "baseline": "b"}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"incoming": "IN", "baseline": 1}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$undefined": true}, "incoming": "IN", "baseline": 1}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "a", "incoming": "IN", "baseline": 1}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "b", "incoming": "IN", "baseline": 1}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 1, "incoming": "IN", "baseline": 1}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "NaN"}, "incoming": "IN", "baseline": 1}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "-0"}, "incoming": "IN", "baseline": 1}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 0, "incoming": "IN", "baseline": 1}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"x": 1}, "incoming": "IN", "baseline": 1}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": [1], "incoming": "IN", "baseline": 1}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": true, "incoming": "IN", "baseline": 1}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"incoming": "IN", "baseline": {"$num": "NaN"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$undefined": true}, "incoming": "IN", "baseline": {"$num": "NaN"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "a", "incoming": "IN", "baseline": {"$num": "NaN"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "b", "incoming": "IN", "baseline": {"$num": "NaN"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 1, "incoming": "IN", "baseline": {"$num": "NaN"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "NaN"}, "incoming": "IN", "baseline": {"$num": "NaN"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "-0"}, "incoming": "IN", "baseline": {"$num": "NaN"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 0, "incoming": "IN", "baseline": {"$num": "NaN"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"x": 1}, "incoming": "IN", "baseline": {"$num": "NaN"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": [1], "incoming": "IN", "baseline": {"$num": "NaN"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": true, "incoming": "IN", "baseline": {"$num": "NaN"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"incoming": "IN", "baseline": {"$num": "-0"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$undefined": true}, "incoming": "IN", "baseline": {"$num": "-0"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "a", "incoming": "IN", "baseline": {"$num": "-0"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "b", "incoming": "IN", "baseline": {"$num": "-0"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 1, "incoming": "IN", "baseline": {"$num": "-0"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "NaN"}, "incoming": "IN", "baseline": {"$num": "-0"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "-0"}, "incoming": "IN", "baseline": {"$num": "-0"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 0, "incoming": "IN", "baseline": {"$num": "-0"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"x": 1}, "incoming": "IN", "baseline": {"$num": "-0"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": [1], "incoming": "IN", "baseline": {"$num": "-0"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": true, "incoming": "IN", "baseline": {"$num": "-0"}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"incoming": "IN", "baseline": 0}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$undefined": true}, "incoming": "IN", "baseline": 0}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "a", "incoming": "IN", "baseline": 0}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "b", "incoming": "IN", "baseline": 0}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 1, "incoming": "IN", "baseline": 0}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "NaN"}, "incoming": "IN", "baseline": 0}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "-0"}, "incoming": "IN", "baseline": 0}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 0, "incoming": "IN", "baseline": 0}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"x": 1}, "incoming": "IN", "baseline": 0}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": [1], "incoming": "IN", "baseline": 0}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": true, "incoming": "IN", "baseline": 0}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"incoming": "IN", "baseline": {"x": 1}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$undefined": true}, "incoming": "IN", "baseline": {"x": 1}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "a", "incoming": "IN", "baseline": {"x": 1}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "b", "incoming": "IN", "baseline": {"x": 1}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 1, "incoming": "IN", "baseline": {"x": 1}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "NaN"}, "incoming": "IN", "baseline": {"x": 1}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "-0"}, "incoming": "IN", "baseline": {"x": 1}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 0, "incoming": "IN", "baseline": {"x": 1}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"x": 1}, "incoming": "IN", "baseline": {"x": 1}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": [1], "incoming": "IN", "baseline": {"x": 1}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": true, "incoming": "IN", "baseline": {"x": 1}}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"incoming": "IN", "baseline": [1]}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$undefined": true}, "incoming": "IN", "baseline": [1]}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "a", "incoming": "IN", "baseline": [1]}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "b", "incoming": "IN", "baseline": [1]}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 1, "incoming": "IN", "baseline": [1]}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "NaN"}, "incoming": "IN", "baseline": [1]}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "-0"}, "incoming": "IN", "baseline": [1]}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 0, "incoming": "IN", "baseline": [1]}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"x": 1}, "incoming": "IN", "baseline": [1]}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": [1], "incoming": "IN", "baseline": [1]}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": true, "incoming": "IN", "baseline": [1]}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"incoming": "IN", "baseline": true}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$undefined": true}, "incoming": "IN", "baseline": true}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "a", "incoming": "IN", "baseline": true}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": "b", "incoming": "IN", "baseline": true}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 1, "incoming": "IN", "baseline": true}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "NaN"}, "incoming": "IN", "baseline": true}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"$num": "-0"}, "incoming": "IN", "baseline": true}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": 0, "incoming": "IN", "baseline": true}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": {"x": 1}, "incoming": "IN", "baseline": true}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": [1], "incoming": "IN", "baseline": true}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [{"current": true, "incoming": "IN", "baseline": true}]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": [null]}
+{"fn": "resolveNotificationTemplatesFromSettingsSnapshot", "args": []}

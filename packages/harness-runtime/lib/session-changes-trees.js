@@ -33,10 +33,94 @@ export function parseTree(data, oidLength) {
   return entries;
 }
 
+// The rows `git ls-tree -r -l -z <tree>` prints, in its order, read from tree
+// objects instead of a Git process: `readTree(oid)` gives a tree's content
+// (null if absent or not a tree), `sizeOf(oid)` a blob's size (null if absent
+// or not a blob). Each row is { mode, type, oid, size, key } with `size` as
+// printed ('-' for a submodule) and `key` the path decoded as Git's output is.
+// `prefix` (ending in '/') names the path of `tree` inside a larger listing.
+//
+// Returns null, so the caller asks Git, whenever the answer might differ from
+// Git's: a mode Git would print otherwise, a malformed tree (including one not
+// in Git's order or with a repeated name, see `inGitOrder`), or any missing or
+// unreadable object (Git then fails, or prints `BAD`). The listing is complete
+// before it is returned, so a caller never has to take back rows it gave out.
+// Nothing is remembered between calls: every object is read again, as Git reads it.
+// Reads go out at most `batch` at a time, a level of the tree after another,
+// so one listing never queues more than that on a shared reader.
+const LISTED_MODES = new Map([['100644', 'blob'], ['100755', 'blob'], ['120000', 'blob'], ['160000', 'commit']]);
+const ASCII = /^[\x00-\x7f]*$/;
+const decodeName = (name) => ASCII.test(name) ? name : Buffer.from(name, 'latin1').toString();
+// Whether parsed tree entries are strictly in Git's order (bytewise, a
+// subtree's name compared as if it ended in '/') with no name twice. Git walks
+// a tree on that assumption: with a pathspec it stops at the first entry past
+// the path, and with a repeated name it can match more than one entry. Only a
+// tree that passes is answered here; any other is left to Git. Names are
+// latin1 strings, so `<` on them compares bytes.
+export function inGitOrder(entries) {
+  const names = new Set();
+  let last = null;
+  for (const entry of entries) {
+    const key = sortName(entry);
+    if (last !== null && !(last < key) || names.has(entry.name)) return false;
+    names.add(entry.name); last = key;
+  }
+  return true;
+}
+export async function listTreeRows({ tree, oidLength, readTree, sizeOf, prefix = '', batch = 256 }) {
+  const inBatches = async (items, read) => {
+    const results = [];
+    for (let at = 0; at < items.length; at += batch) results.push(...await Promise.all(items.slice(at, at + batch).map(read)));
+    return results;
+  };
+  const parsed = new Map(), sizes = new Map();
+  let frontier = [{ oid: tree, path: prefix }];
+  while (frontier.length) {
+    const unread = [...new Set(frontier.map((node) => node.oid))].filter((oid) => !parsed.has(oid));
+    const contents = await inBatches(unread, readTree);
+    for (const [index, data] of contents.entries()) {
+      if (!data) return null;
+      let entries;
+      try { entries = parseTree(data, oidLength); } catch { return null; }
+      if (!inGitOrder(entries)) return null;
+      parsed.set(unread[index], entries);
+    }
+    const next = [];
+    for (const node of frontier) for (const entry of parsed.get(node.oid)) {
+      const name = node.path + entry.name;
+      if (entry.mode === TREE_MODE) { next.push({ oid: entry.oid, path: `${name}/` }); continue; }
+      const type = LISTED_MODES.get(entry.mode);
+      if (!type) return null;
+      if (type === 'blob') sizes.set(entry.oid, null);
+    }
+    frontier = next;
+  }
+  const blobs = [...sizes.keys()];
+  for (const [index, size] of (await inBatches(blobs, sizeOf)).entries()) {
+    if (size === null) return null;
+    sizes.set(blobs[index], size);
+  }
+  const rows = [];
+  const emit = (oid, path) => {
+    for (const entry of parsed.get(oid)) {
+      const name = path + entry.name;
+      if (entry.mode === TREE_MODE) { emit(entry.oid, `${name}/`); continue; }
+      const type = LISTED_MODES.get(entry.mode);
+      rows.push({ mode: entry.mode, type, oid: entry.oid, size: type === 'blob' ? sizes.get(entry.oid) : '-', key: decodeName(name) });
+    }
+  };
+  emit(tree, prefix);
+  return rows;
+}
+// One row as `ls-tree -l -z` prints it, without the terminating NUL.
+export const listedRowText = (row) => `${row.mode} ${row.type} ${row.oid} ${String(row.size).padStart(7)}\t${row.key}`;
+
 // Git orders tree entries bytewise, comparing a subtree's name as if it ended in '/'.
 const sortName = (entry) => entry.mode === TREE_MODE ? `${entry.name}/` : entry.name;
 export function serializeTree(entries) {
-  const sorted = [...entries].sort((a, b) => Buffer.compare(Buffer.from(sortName(a), 'latin1'), Buffer.from(sortName(b), 'latin1')));
+  // Each entry's sort key is encoded once; the stable sort sees the same comparisons.
+  const sorted = entries.map((entry) => ({ entry, name: Buffer.from(sortName(entry), 'latin1') }))
+    .sort((a, b) => Buffer.compare(a.name, b.name)).map(({ entry }) => entry);
   return Buffer.concat(sorted.flatMap((entry) => [Buffer.from(`${entry.mode} ${entry.name}\0`, 'latin1'), Buffer.from(entry.oid, 'hex')]));
 }
 
@@ -72,9 +156,16 @@ export async function writeLooseObject(gitDir, type, content, oidLength) {
       const current = cause.code === 'EINVAL' ? await fs.stat(directory).catch(() => null) : null;
       const removed = cause.code === 'ENOENT' || cause.code === 'EINVAL' && (!created || !current || current.ino !== created.ino || current.dev !== created.dev);
       if (!removed || attempt >= 5) throw cause;
-    } finally { await fs.rm(temporary, { force: true }); }
+    } finally { await removeTemporaryFile(temporary); }
   }
 }
+
+// `fs.rm(file, { force: true })` without its `lstat`, for a temporary regular
+// file the caller itself created: a missing file is fine, anything else throws.
+// Windows keeps `fs.rm`: `unlink` of a read-only file (loose-object temporaries
+// are 0o444) fails there with EPERM, which `fs.rm` handles. Behaviour there is unchanged.
+export const removeTemporaryFile = (file) => process.platform === 'win32' ? fs.rm(file, { force: true })
+  : fs.unlink(file).catch((cause) => { if (cause.code !== 'ENOENT') throw cause; });
 
 // `changes`: key → serialized JSON (a new blob), `{ oid }` (an existing blob)
 // or null (removal), for keys of the form `a/b/c.json`. Returns the new root

@@ -1,0 +1,27 @@
+[package]
+name = "devryan-front"
+version = "0.1.0"
+description = "Loopback pass-through front for devryan serve, with supervision of the server as a child (tests and QA only)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "devryan-front"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[[test]]
+name = "supervision"
+harness = false
+
+[dependencies]
+httparse.workspace = true
+libc.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

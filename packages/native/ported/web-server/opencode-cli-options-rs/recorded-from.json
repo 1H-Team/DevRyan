@@ -1,0 +1,19 @@
+{
+  "unit": "cli-options.js",
+  "files": 1,
+  "fingerprint": "4bb186494efbccc3",
+  "cases": 97,
+  "cases_hash": "2e8ae07d7e66978b",
+  "coverage": {
+    "lines": 113,
+    "reached": 113,
+    "files": [
+      {
+        "file": "cli-options.js",
+        "lines": 113,
+        "reached": 113,
+        "missed": ""
+      }
+    ]
+  }
+}

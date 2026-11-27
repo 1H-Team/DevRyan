@@ -1,0 +1,5 @@
+bin.name = "devryan"
+args = ["tunnel", "profile", "remove", "--name", "staging"]
+status.code = 0
+fs.sandbox = true
+fs.base = "profile-remove-existing-two.in"

@@ -25,7 +25,7 @@ export const resolveGoogleOAuthClient = () => ({
   clientSecret: GEMINI_GOOGLE_CLIENT_SECRET
 });
 
-export const resolveGeminiCliAuth = (auth) => {
+const resolveGeminiCliAuth = (auth) => {
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['google', 'google.oauth']));
   const entryObject = asObject(entry);
   if (!entryObject) {

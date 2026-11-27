@@ -1,0 +1,119 @@
+{"fn": "asObject", "args": [null]}
+{"fn": "asNonEmptyString", "args": [null]}
+{"fn": "toNumber", "args": [null]}
+{"fn": "normalizeTimestamp", "args": [null]}
+{"fn": "asObject", "args": [0]}
+{"fn": "asNonEmptyString", "args": [0]}
+{"fn": "toNumber", "args": [0]}
+{"fn": "normalizeTimestamp", "args": [0]}
+{"fn": "asObject", "args": [1]}
+{"fn": "asNonEmptyString", "args": [1]}
+{"fn": "toNumber", "args": [1]}
+{"fn": "normalizeTimestamp", "args": [1]}
+{"fn": "asObject", "args": ["x"]}
+{"fn": "asNonEmptyString", "args": ["x"]}
+{"fn": "toNumber", "args": ["x"]}
+{"fn": "normalizeTimestamp", "args": ["x"]}
+{"fn": "asObject", "args": [""]}
+{"fn": "asNonEmptyString", "args": [""]}
+{"fn": "toNumber", "args": [""]}
+{"fn": "normalizeTimestamp", "args": [""]}
+{"fn": "asObject", "args": [{}]}
+{"fn": "asNonEmptyString", "args": [{}]}
+{"fn": "toNumber", "args": [{}]}
+{"fn": "normalizeTimestamp", "args": [{}]}
+{"fn": "asObject", "args": [[]]}
+{"fn": "asNonEmptyString", "args": [[]]}
+{"fn": "toNumber", "args": [[]]}
+{"fn": "normalizeTimestamp", "args": [[]]}
+{"fn": "asObject", "args": [[1]]}
+{"fn": "asNonEmptyString", "args": [[1]]}
+{"fn": "toNumber", "args": [[1]]}
+{"fn": "normalizeTimestamp", "args": [[1]]}
+{"fn": "asObject", "args": [{"$map": []}]}
+{"fn": "asNonEmptyString", "args": [{"$map": []}]}
+{"fn": "toNumber", "args": [{"$map": []}]}
+{"fn": "normalizeTimestamp", "args": [{"$map": []}]}
+{"fn": "asObject", "args": [{"$num": "NaN"}]}
+{"fn": "asNonEmptyString", "args": [{"$num": "NaN"}]}
+{"fn": "toNumber", "args": [{"$num": "NaN"}]}
+{"fn": "normalizeTimestamp", "args": [{"$num": "NaN"}]}
+{"fn": "asObject", "args": [true]}
+{"fn": "asNonEmptyString", "args": [true]}
+{"fn": "toNumber", "args": [true]}
+{"fn": "normalizeTimestamp", "args": [true]}
+{"fn": "asObject", "args": [false]}
+{"fn": "asNonEmptyString", "args": [false]}
+{"fn": "toNumber", "args": [false]}
+{"fn": "normalizeTimestamp", "args": [false]}
+{"fn": "asObject", "args": [" 12 "]}
+{"fn": "asNonEmptyString", "args": [" 12 "]}
+{"fn": "toNumber", "args": [" 12 "]}
+{"fn": "normalizeTimestamp", "args": [" 12 "]}
+{"fn": "asObject", "args": ["0x1f"]}
+{"fn": "asNonEmptyString", "args": ["0x1f"]}
+{"fn": "toNumber", "args": ["0x1f"]}
+{"fn": "normalizeTimestamp", "args": ["0x1f"]}
+{"fn": "asObject", "args": ["1e3"]}
+{"fn": "asNonEmptyString", "args": ["1e3"]}
+{"fn": "toNumber", "args": ["1e3"]}
+{"fn": "normalizeTimestamp", "args": ["1e3"]}
+{"fn": "asObject", "args": ["Infinity"]}
+{"fn": "asNonEmptyString", "args": ["Infinity"]}
+{"fn": "toNumber", "args": ["Infinity"]}
+{"fn": "normalizeTimestamp", "args": ["Infinity"]}
+{"fn": "asObject", "args": ["abc"]}
+{"fn": "asNonEmptyString", "args": ["abc"]}
+{"fn": "toNumber", "args": ["abc"]}
+{"fn": "normalizeTimestamp", "args": ["abc"]}
+{"fn": "asObject", "args": [{"$num": "Infinity"}]}
+{"fn": "asNonEmptyString", "args": [{"$num": "Infinity"}]}
+{"fn": "toNumber", "args": [{"$num": "Infinity"}]}
+{"fn": "normalizeTimestamp", "args": [{"$num": "Infinity"}]}
+{"fn": "asObject", "args": [{"$num": "-0"}]}
+{"fn": "asNonEmptyString", "args": [{"$num": "-0"}]}
+{"fn": "toNumber", "args": [{"$num": "-0"}]}
+{"fn": "normalizeTimestamp", "args": [{"$num": "-0"}]}
+{"fn": "asObject", "args": [-5]}
+{"fn": "asNonEmptyString", "args": [-5]}
+{"fn": "toNumber", "args": [-5]}
+{"fn": "normalizeTimestamp", "args": [-5]}
+{"fn": "asObject", "args": [1.5]}
+{"fn": "asNonEmptyString", "args": [1.5]}
+{"fn": "toNumber", "args": [1.5]}
+{"fn": "normalizeTimestamp", "args": [1.5]}
+{"fn": "asObject", "args": ["  "]}
+{"fn": "asNonEmptyString", "args": ["  "]}
+{"fn": "toNumber", "args": ["  "]}
+{"fn": "normalizeTimestamp", "args": ["  "]}
+{"fn": "asObject", "args": ["　ab﻿"]}
+{"fn": "asNonEmptyString", "args": ["　ab﻿"]}
+{"fn": "toNumber", "args": ["　ab﻿"]}
+{"fn": "normalizeTimestamp", "args": ["　ab﻿"]}
+{"fn": "asObject", "args": [{"$utf16": [32, 55296, 32]}]}
+{"fn": "asNonEmptyString", "args": [{"$utf16": [32, 55296, 32]}]}
+{"fn": "toNumber", "args": [{"$utf16": [32, 55296, 32]}]}
+{"fn": "normalizeTimestamp", "args": [{"$utf16": [32, 55296, 32]}]}
+{"fn": "normalizeTimestamp", "args": [500000000000.0]}
+{"fn": "normalizeTimestamp", "args": [1000000000000.0]}
+{"fn": "normalizeTimestamp", "args": [10000000000000.0]}
+{"fn": "normalizeTimestamp", "args": [999999999999.9]}
+{"fn": "resolveWindowSeconds", "args": [null]}
+{"fn": "resolveWindowSeconds", "args": [{}]}
+{"fn": "resolveWindowSeconds", "args": [{"number": 2, "unit": 3}]}
+{"fn": "resolveWindowSeconds", "args": [{"number": 2, "unit": "3"}]}
+{"fn": "resolveWindowSeconds", "args": [{"number": "2", "unit": 3}]}
+{"fn": "resolveWindowSeconds", "args": [{"number": 0, "unit": 3}]}
+{"fn": "resolveWindowSeconds", "args": [{"number": 2, "unit": 1}]}
+{"fn": "resolveWindowSeconds", "args": [{"number": 2, "unit": [3]}]}
+{"fn": "resolveWindowSeconds", "args": [{"number": 2, "unit": "constructor"}]}
+{"fn": "resolveWindowSeconds", "args": [{"number": 2, "unit": "__proto__"}]}
+{"fn": "resolveWindowSeconds", "args": [{"number": 2, "unit": "toString"}]}
+{"fn": "resolveWindowSeconds", "args": [{"number": [4], "unit": 3}]}
+{"fn": "resolveWindowSeconds", "args": [{"number": true, "unit": 3}]}
+{"fn": "resolveWindowSeconds", "args": [{"number": "x", "unit": 3}]}
+{"fn": "resolveWindowSeconds", "args": [{"number": 2}]}
+{"fn": "resolveWindowSeconds", "args": ["str"]}
+{"fn": "resolveWindowSeconds", "args": [{"number": {"a": 1}, "unit": 3}]}
+{"fn": "resolveWindowSeconds", "args": [{"number": 2, "unit": 3.0}]}
+{"fn": "resolveWindowSeconds", "args": [{"number": 2, "unit": "3.0"}]}

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createCapabilityAbsentError,
-  isCapabilityAbsentError,
   OPENCODE_CAPABILITY_ABSENT,
   OPENCODE_GENERATION_INVALID,
   resolveOpenCodeGeneration,
@@ -31,8 +30,6 @@ describe('createCapabilityAbsentError', () => {
     const error = createCapabilityAbsentError('conversation_revert');
     expect(error).toMatchObject({ code: OPENCODE_CAPABILITY_ABSENT, status: 409, capability: 'conversation_revert', generation: 2 });
     expect(error.message).toBe('OpenCode 2 does not provide conversation_revert yet');
-    expect(isCapabilityAbsentError(error)).toBe(true);
-    expect(isCapabilityAbsentError(new Error('other'))).toBe(false);
     expect(createCapabilityAbsentError('x', { status: 501 }).status).toBe(501);
   });
 });

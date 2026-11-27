@@ -1,0 +1,62 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [],
+  "product": [],
+  "engine": [
+    {
+      "site": "Object.values (<anonymous>)",
+      "class": "TypeError",
+      "sample": "Cannot convert undefined or null to object"
+    },
+    {
+      "site": "packages/ui/src/sync/pending-part-deltas.ts:120",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'type')"
+    },
+    {
+      "site": "packages/ui/src/sync/pending-part-deltas.ts:132",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'messageID')"
+    },
+    {
+      "site": "packages/ui/src/sync/pending-part-deltas.ts:299",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'length')"
+    },
+    {
+      "site": "packages/ui/src/sync/pending-part-deltas.ts:305",
+      "class": "TypeError",
+      "sample": "pendingDeltas is not iterable"
+    },
+    {
+      "site": "packages/ui/src/sync/pending-part-deltas.ts:329",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'length')"
+    },
+    {
+      "site": "packages/ui/src/sync/pending-part-deltas.ts:333",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'id')"
+    },
+    {
+      "site": "packages/ui/src/sync/pending-part-deltas.ts:343",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'field')"
+    },
+    {
+      "site": "packages/ui/src/sync/pending-part-deltas.ts:349",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'sanitizeAssistantText')"
+    },
+    {
+      "site": "packages/ui/src/sync/pending-part-deltas.ts:370",
+      "class": "TypeError",
+      "sample": "messages.some is not a function"
+    },
+    {
+      "site": "packages/ui/src/sync/pending-part-deltas.ts:383",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'm')"
+    }
+  ]
+}

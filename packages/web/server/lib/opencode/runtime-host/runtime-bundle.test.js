@@ -24,11 +24,13 @@ import { REVIEWED_NATIVE_CLONE_RELEASES } from './native-bundle-compatibility.js
 import { nativeUpgradeBundleID } from './runtime-bundle-lifecycle.js';
 import { readStartupBundleUpgradeFailure, recordStartupBundleUpgradeFailure } from './bundle-startup-upgrade-status.js';
 import { TARGET_OPENCODE_VERSION } from '../version-policy.js';
+import { executionArtifacts } from '../execution-artifacts.js';
 import { BUNDLE_DOCUMENT_MAX_BYTES } from './bundle-document-limits.js';
 import { readStartupFindings, recordStartupFindings, resetStartupFindings, startupNotices } from './startup-notices.js';
 import { NATIVE_MANAGED_SUBAGENT_JOB_CONTRACT } from './native-managed-job-contract.js';
 import { createManagedTaskRecord } from '../../../../../orchestration-runtime/contract.js';
 import { createManagedTaskResultEnvelope } from '../../../../../orchestration-runtime/result-envelope.js';
+import { AGED_PROFILE_SCENARIO_NAMES, AGED_PROFILE_SOURCE_BUNDLE_ID, agedFindingRows, recoverAgedCursorIntents, seedAgedNativeDatabase, writeAgedProfile } from '../../../../../../scripts/opencode-v2-native/aged-profile-fixture.mjs';
 
 // Every prepared row: inline immutable rows plus the hash-bound data sidecar.
 const preparedRows=async file=>{const manifest=JSON.parse(await fs.readFile(file,'utf8'));
@@ -1124,10 +1126,17 @@ test('a selected unheld launch prunes unreferenced artifact sets, sweeps drafts 
   withQuiescedSource:async()=>{throw Error('fixture no checkpoint');},verifyArtifacts:async()=>{}}).verify({bundleID:'default-native',phase:'resume'})).resolves.toMatchObject({integrity:'verified'});
 });
 // Release fixtures with the reviewed core graphs; launches verify only manifest bytes.
-const pinnedRelease=async(f,version)=>{
+// `launcher`: also ship the built execution launcher, for the owner probe of cold lease recovery.
+const builtLauncher=executionArtifacts(path.resolve(import.meta.dirname,'../../../../runtime/darwin-arm64')).launcher;
+const pinnedRelease=async(f,version,{launcher=false}={})=>{
  const directory=path.join(f.root,'pinned-'+version),files=[];await fs.mkdir(directory);
  for(const name of ['DevRyan-controller','DevRyan-writer']){const bytes=Buffer.from(`fixture ${name} ${version}\n`);await fs.writeFile(path.join(directory,name),bytes);await fs.chmod(path.join(directory,name),0o755);
   files.push({path:name,sha256:sha256(bytes),size:bytes.length,mode:0o755});}
+ if(launcher){
+  const bytes=await fs.readFile(builtLauncher).catch(error=>{throw Object.assign(Error(`${builtLauncher} is missing: run bun scripts/build-native-runtime.mjs`),{cause:error});});
+  const name=path.basename(builtLauncher);await fs.writeFile(path.join(directory,name),bytes);await fs.chmod(path.join(directory,name),0o755);
+  files.push({path:name,sha256:sha256(bytes),size:bytes.length,mode:0o755});
+ }
  await fs.writeFile(path.join(directory,'native-bundle.json'),JSON.stringify({schema:1,opencodeVersion:version,files,
   inputs:{reviewedPlugins:[],coreDigest:REVIEWED_NATIVE_CLONE_RELEASES[version]??'0'.repeat(64)},
   compiledContracts:['devryan-v2-clone/1',NATIVE_BUNDLE_CREDENTIAL_CONTRACT,'devryan.bundle.credential-owners/2']})+'\n');return directory;
@@ -1139,8 +1148,8 @@ const launchPinned=async(f,home,artifactDirectory,credentialProcess)=>{
  return provisionDefaultNativeBundle({env:{PATH:process.env.PATH},home,cwd:f.seed.projectMap[0].targetDirectory,artifactDirectory,runMigration:f.runMigration,credentialProcess,
   verifyArtifacts:verifyPinned});
 };
-const startupUpgradeFixture=async name=>{
- const f=await fixture(),home=path.join(f.root,name),older=await pinnedRelease(f,'2.0.20'),pinned=await pinnedRelease(f,TARGET_OPENCODE_VERSION);
+const startupUpgradeFixture=async(name,{launcher=false}={})=>{
+ const f=await fixture(),home=path.join(f.root,name),older=await pinnedRelease(f,'2.0.20',{launcher}),pinned=await pinnedRelease(f,TARGET_OPENCODE_VERSION);
  const captures=[];
  const credentialProcess=async({descriptor,action,assertHeld})=>{await assertHeld();expect(action.action).toBe('capture');captures.push(descriptor.bundleID);return captureCredentials();};
  const controlRoot=await launchPinned(f,home,older);recordStartupBundleUpgradeFailure(null);
@@ -1584,6 +1593,62 @@ test('default startup never downgrades and never upgrades to an unpinned shipped
   createLifecycle:()=>{throw Error('a newer selected runtime is never replaced');},log:{}});
  expect(refused).toEqual({status:'failed',code:'bundle_runtime_newer_than_application'});expect(newer.binding().selection.revision).toBe(1);
 },60_000);
+// Aged-profile corpus (scripts/opencode-v2-native/aged-profile-fixture.mjs): the
+// shapes behind past upgrade and startup lockouts, written by the product's own
+// writers into the selected bundle. Default startup settles what it may, clones
+// across the OpenCode pin and selects the candidate, reporting the history it
+// set aside; the selection never stays behind.
+const agedStartupUpgrade=async(home,scenarios,{files=0}={})=>{
+ resetStartupFindings();
+ // The claimed process lease is settled only after the real execution launcher
+ // probes its dead owner, so the selected bundle's artifacts carry it.
+ const u=await startupUpgradeFixture(home,{launcher:true}),launch=u.binding().descriptor.launch;
+ const profile=await writeAgedProfile({webDataDirectory:launch.webDataDirectory,directory:u.f.seed.projectMap[0].targetDirectory,scenarios,files});
+ const native=resolveSqliteDriver().open(launch.opencodeDatabasePath);try{seedAgedNativeDatabase(native,profile);}finally{native.close();}
+ expect(await u.launch(u.pinned)).toBe(u.controlRoot);
+ expect(readStartupBundleUpgradeFailure()).toBe(null);expect(u.binding().selection).toMatchObject({revision:2,previousBundleID:AGED_PROFILE_SOURCE_BUNDLE_ID,transition:'activate'});
+ // One row per record: a missing or extra finding for any single record fails.
+ const rows=source=>[...new Set(readStartupFindings().filter(row=>row.source===source).map(row=>`${row.code} ${row.key}`))].sort();
+ expect(rows('bundle_verifier')).toEqual(agedFindingRows(profile.expected.findings));
+ expect(rows('bundle_copy')).toEqual(agedFindingRows(profile.expected.copyFindings));
+ const upgraded=u.binding().descriptor,expected=profile.expected;
+ const ledger=web=>{const root=path.join(web,'harness','session-mutations',changeKey(profile.directory));return openChangeStore(root,path.join(root,'git'));};
+ const stores=expected.settledLeases.length||expected.cancelledReverts.length?await Promise.all([ledger(launch.webDataDirectory),ledger(upgraded.launch.webDataDirectory)]):[];
+ // Startup recovery settled the in-flight leftovers before the strict gate, in the source and the copy.
+ for(const store of stores){
+  for(const {key,...state} of expected.settledLeases)expect(await store.get(key)).toMatchObject({...state,cleaned:true,cleanupPending:false});
+  for(const {key,sessionKey} of expected.cancelledReverts){
+   expect(await store.get(key)).toMatchObject({state:'cancelled',phase:'cancelled'});expect(await store.get(sessionKey)).toMatchObject({pending:null});}
+ }
+ // The clone leaves exactly the archived session's undeliverable notice behind.
+ const copied=resolveSqliteDriver().open(upgraded.launch.opencodeDatabasePath,{readonly:true});
+ try{expect(copied.prepare('SELECT id FROM session_inbox ORDER BY id').all().map(row=>row.id))
+  .toEqual(profile.native.inbox.map(row=>row.id).filter(id=>!expected.droppedInbox.includes(id)).sort());}
+ finally{copied.close();}
+ // Derived ledger links stay in the source and never reach the candidate.
+ for(const link of expected.derivedLinks){
+  expect((await fs.lstat(path.join(launch.webDataDirectory,link))).isSymbolicLink()).toBe(true);
+  await expect(fs.lstat(path.join(upgraded.launch.webDataDirectory,link))).rejects.toMatchObject({code:'ENOENT'});
+ }
+ // The upgraded owner adopts the Cursor intents its source bundle stamped.
+ expect(upgraded.sourceBundleID).toBe(AGED_PROFILE_SOURCE_BUNDLE_ID);
+ expect(await recoverAgedCursorIntents({webDataDirectory:upgraded.launch.webDataDirectory,directory:profile.directory,ownerID:upgraded.bundleID,sourceOwnerID:upgraded.sourceBundleID}))
+  .toEqual({settled:expected.cursorIntents,isolated:[],remaining:[]});
+ resetStartupFindings();
+ return {u,profile,launch,upgraded:upgraded.launch};
+};
+// One selected bundle holds every scenario, as an aged installation does. The
+// bulk scenario's loose ledger objects are copied as rows of the sidecar, never
+// of a sealed document (the incident's 139,493 inline rows passed 32 MiB).
+test('the whole aged-profile corpus in one selected bundle upgrades at startup and its sealed documents carry no file rows',async()=>{
+ const files=100,{upgraded}=await agedStartupUpgrade('aged-corpus-home',AGED_PROFILE_SCENARIO_NAMES,{files});
+ const bundle=path.dirname(upgraded.webDataDirectory),rows=await preparedRows(path.join(bundle,'prepared.json'));
+ expect(rows.filter(row=>/^web-data\/harness\/session-mutations\/[a-f0-9]{64}\/git\/objects\/[a-f0-9]{2}\//.test(row.path)).length).toBeGreaterThanOrEqual(files);
+ expect(rows.some(row=>row.path.includes('/codex-usage/aged-account/.tmp/'))).toBe(false);
+ // A row inline costs at least its path and hash; neither sealed document holds them.
+ const inline=rows.reduce((total,row)=>total+row.path.length+row.sha256.length,0);
+ for(const file of ['prepared.json','sources/preparation.json'])expect((await fs.stat(path.join(bundle,file))).size*4).toBeLessThan(inline);
+},90_000);
 test('a startup upgrade killed during its copy leaves an unsealed candidate that the next launch replaces',async()=>{
  const u=await startupUpgradeFixture('startup-interrupted-home'),shipped=sha256(await fs.readFile(path.join(u.pinned,'native-bundle.json')));
  const candidate=path.join(u.controlRoot,'bundles',nativeUpgradeBundleID(shipped,1));

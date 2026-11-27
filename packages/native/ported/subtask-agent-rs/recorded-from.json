@@ -1,0 +1,19 @@
+{
+  "unit": "subtask-agent.ts",
+  "files": 1,
+  "fingerprint": "8f18c1b0aa5f9446",
+  "cases": 424,
+  "cases_hash": "9c573d19df7eb813",
+  "coverage": {
+    "lines": 117,
+    "reached": 52,
+    "files": [
+      {
+        "file": "subtask-agent.ts",
+        "lines": 117,
+        "reached": 52,
+        "missed": "61-73, 75-97, 99-100, 103-105, 107-113, 115-122, 124-128, 130-133"
+      }
+    ]
+  }
+}

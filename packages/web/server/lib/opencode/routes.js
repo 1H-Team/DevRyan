@@ -10,7 +10,6 @@ import {
   GITHUB_COPILOT_PROVIDER_ID,
   getProviderIntegrationLookupIds,
   hasGitHubCopilotProviderModels,
-  isGitHubCopilotProviderId,
   listProviderCredentialEnvKeys,
   mergeGitHubCopilotProvider,
 } from './provider-integrations.js';
@@ -73,8 +72,6 @@ const removeAntigravityAccounts = async (listAccountsPaths) => {
 export const registerOpenCodeRoutes = (app, dependencies) => {
   const recordDiagnostic = dependencies.recordDiagnostic ?? (() => {});
   const {
-    crypto,
-    clientReloadDelayMs,
     getOpenCodeResolutionSnapshot,
     // Injected in tests; defaults to global fetch for the fixed npm registry lookup.
     openCodeUpdateCheckFetch,
@@ -108,8 +105,6 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     standardSessionTitleRuntime: injectedStandardSessionTitleRuntime = null,
     xaiToolCatalogRuntime = null,
     globalAgentsMdRuntime: injectedGlobalAgentsMdRuntime = null,
-    resolveZenModel = async () => undefined,
-    resolveZenModelNonBlocking = () => ({}),
     authLibrary: injectedAuthLibrary = null,
   } = dependencies;
 
@@ -490,36 +485,6 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     } catch (error) {
       console.error('Failed to read Cursor runtime status:', error);
       return res.status(error.statusCode ?? error.status ?? 500).json({ error: error.message || 'Failed to read Cursor runtime status', code: error.code });
-    }
-  });
-
-  app.post('/api/provider/cursor-acp/workspace', async (req, res) => {
-    try {
-      const requestedDirectory = typeof req.body?.directory === 'string'
-        ? req.body.directory.trim()
-        : typeof req.body?.path === 'string'
-          ? req.body.path.trim()
-          : '';
-      if (!requestedDirectory) {
-        return res.status(400).json({ success: false, error: 'Directory is required.' });
-      }
-
-      const validated = await validateDirectoryPath(requestedDirectory);
-      if (!validated.ok) {
-        return res.status(400).json({ success: false, error: validated.error });
-      }
-
-      const targetDirectory = normalizeWorkspaceDirectory(validated.directory);
-      return res.json({
-        success: true,
-        sdkManaged: true,
-        changed: false,
-        restarted: false,
-        path: targetDirectory,
-      });
-    } catch (error) {
-      console.error('Failed to repair Cursor workspace:', error);
-      return res.status(500).json({ success: false, error: error.message || 'Failed to repair Cursor workspace' });
     }
   });
 

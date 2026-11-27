@@ -1,0 +1,97 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/terminal",
+  "unit": "terminal-ws-protocol.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "terminal-ws-protocol-rs",
+  "exports": [
+    {
+      "name": "pruneRebindTimestamps",
+      "file": "terminal-ws-protocol.js",
+      "line": 63,
+      "params": [
+        {
+          "name": "timestamps",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "now",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "windowMs",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isRebindRateLimited",
+      "file": "terminal-ws-protocol.js",
+      "line": 66,
+      "params": [
+        {
+          "name": "timestamps",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "maxPerWindow",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "parseRequestPathname",
+      "file": "terminal-ws-protocol.js",
+      "line": 5,
+      "reason": "WHATWG URL parsing"
+    },
+    {
+      "name": "normalizeTerminalWsMessageToBuffer",
+      "file": "terminal-ws-protocol.js",
+      "line": 17,
+      "reason": "Buffer values"
+    },
+    {
+      "name": "normalizeTerminalWsMessageToText",
+      "file": "terminal-ws-protocol.js",
+      "line": 29,
+      "reason": "Buffer values"
+    },
+    {
+      "name": "readTerminalWsControlFrame",
+      "file": "terminal-ws-protocol.js",
+      "line": 37,
+      "reason": "Buffer values"
+    },
+    {
+      "name": "createTerminalWsControlFrame",
+      "file": "terminal-ws-protocol.js",
+      "line": 58,
+      "reason": "Buffer values"
+    }
+  ]
+}

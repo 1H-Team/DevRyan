@@ -1,0 +1,37 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/ui-auth",
+  "unit": "session-cookie.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "session-cookie-rs",
+  "exports": [
+    {
+      "name": "requestUiSessionCookieName",
+      "file": "session-cookie.js",
+      "line": 9,
+      "params": [
+        {
+          "name": "req",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "uiSessionCookieName",
+      "file": "session-cookie.js",
+      "line": 3,
+      "reason": "throws a TypeError, and the bindings throw only plain Error"
+    }
+  ]
+}

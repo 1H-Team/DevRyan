@@ -1,0 +1,97 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/orchestration-runtime",
+  "unit": "xai-tool-catalog.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "xai-tool-catalog-rs",
+  "exports": [
+    {
+      "name": "deriveXaiDuplicateToolOverrides",
+      "file": "xai-tool-catalog.js",
+      "line": 50,
+      "params": [
+        {
+          "name": "catalog",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "haveEquivalentToolSchemas",
+      "file": "xai-tool-catalog.js",
+      "line": 44,
+      "params": [
+        {
+          "name": "left",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "right",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isXaiProviderID",
+      "file": "xai-tool-catalog.js",
+      "line": 12,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "listXaiModelIds",
+      "file": "xai-tool-catalog.js",
+      "line": 70,
+      "params": [
+        {
+          "name": "providerPayload",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "createXaiToolCatalogCache",
+      "file": "xai-tool-catalog.js",
+      "line": 89,
+      "reason": "returns an object of closures"
+    }
+  ]
+}

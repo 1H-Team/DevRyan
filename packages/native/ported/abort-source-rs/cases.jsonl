@@ -1,0 +1,11 @@
+{"fn":"abortSourceHeaders","args":[],"ok":{"$undefined":true}}
+{"fn":"abortSourceHeaders","args":[true],"ok":{"headers":{"X-DevRyan-Abort-Source":true}}}
+{"fn":"abortSourceHeaders","args":[null],"ok":{"$undefined":true}}
+{"fn":"abortSourceHeaders","args":[{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"abortSourceHeaders","args":[[]],"ok":{"headers":{"X-DevRyan-Abort-Source":[]}}}
+{"fn":"abortSourceHeaders","args":[{}],"ok":{"headers":{"X-DevRyan-Abort-Source":{}}}}
+{"fn":"abortSourceHeaders","args":[{"a":{"b":"c"}}],"ok":{"headers":{"X-DevRyan-Abort-Source":{"a":{"b":"c"}}}}}
+{"fn":"abortSourceHeaders","args":[["a",1]],"ok":{"headers":{"X-DevRyan-Abort-Source":["a",1]}}}
+{"fn":"abortSourceHeaders","args":["x"],"ok":{"headers":{"X-DevRyan-Abort-Source":"x"}}}
+{"fn":"abortSourceHeaders","args":[{"a":"b"}],"ok":{"headers":{"X-DevRyan-Abort-Source":{"a":"b"}}}}
+{"fn":"abortSourceHeaders","args":[0],"ok":{"$undefined":true}}

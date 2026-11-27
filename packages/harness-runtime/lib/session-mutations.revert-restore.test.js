@@ -1,14 +1,12 @@
-import { afterEach, describe, expect, spyOn } from 'bun:test';
-import { createHash, randomUUID } from 'node:crypto';
+import { afterEach, expect } from 'bun:test';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { git } from './session-changes-git.js';
 import { createSessionMutationRuntime } from './session-mutations.js';
 import { createSessionChangeRuntime } from './session-changes.js';
 import { openChangeStore, changeKey } from './session-changes-store.js';
-import { withExecutionAdmission } from './execution-admission.js';
-import { cleanupRoots, fixture, ledgerState, manyFiles, roots, SMALL_BATCHES, test, withEnv } from '../test/session-mutations-fixture.js';
+import { cleanupRoots, fixture, test } from '../test/session-mutations-fixture.js';
 
 afterEach(cleanupRoots);
 test('an uncommitted prompt intent preserves existing Redo and cannot authorize execution', async () => {

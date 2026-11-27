@@ -1,0 +1,36 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/git",
+  "unit": "generation-diagnostics.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "generation-diagnostics-rs",
+  "exports": [
+    {
+      "name": "buildGitGenerationTimingRecord",
+      "file": "generation-diagnostics.js",
+      "line": 2,
+      "params": [
+        {
+          "name": "req",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "payload",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

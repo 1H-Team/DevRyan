@@ -1,4 +1,4 @@
-const PORCELAIN_ROW = /^([ =*+!\-])\t([^\t]*):([^\t]*)\t(.*)$/;
+const PORCELAIN_ROW = /^([ =*+!-])\t([^\t]*):([^\t]*)\t(.*)$/;
 
 export const PUSH_HOOK_SUMMARY_MAX = 160;
 export const PUSH_HOOK_DETAILS_LINES = 60;

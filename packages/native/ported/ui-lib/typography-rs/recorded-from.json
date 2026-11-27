@@ -1,0 +1,19 @@
+{
+  "unit": "typography.ts",
+  "files": 1,
+  "fingerprint": "0025d31f89f1782d",
+  "cases": 23,
+  "cases_hash": "abb55a713aa4b7f4",
+  "coverage": {
+    "lines": 225,
+    "reached": 205,
+    "files": [
+      {
+        "file": "typography.ts",
+        "lines": 225,
+        "reached": 205,
+        "missed": "219-224, 228-233, 237-243, 247"
+      }
+    ]
+  }
+}

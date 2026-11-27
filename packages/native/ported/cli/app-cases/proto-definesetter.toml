@@ -1,0 +1,4 @@
+bin.name = "devryan"
+args = ["__defineSetter__"]
+status.code = 1
+fs.sandbox = true

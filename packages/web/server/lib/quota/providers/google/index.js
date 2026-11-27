@@ -6,23 +6,8 @@
  */
 
 export {
-  resolveGoogleOAuthClient,
-  resolveGeminiCliAuth,
   resolveGoogleAuthSources,
-  DEFAULT_PROJECT_ID
 } from './auth.js';
-
-export {
-  resolveGoogleWindow,
-  transformQuotaBucket,
-  transformModelData
-} from './transforms.js';
-
-export {
-  refreshGoogleAccessToken,
-  fetchGoogleQuotaBuckets,
-  fetchGoogleModels
-} from './api.js';
 
 import { buildResult } from '../../utils/index.js';
 import {

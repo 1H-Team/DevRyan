@@ -1,0 +1,259 @@
+// The Rust-free contract of the product's Cargo workspace (packages/native):
+// the pin, the check steps, the missing-toolchain failure, exact dependency
+// pins, the lockfile, the licence policy and the documentation of every crate.
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { describe, test } from 'node:test';
+import YAML from 'yaml';
+import { CRATE_DIR, readToolchainFile } from './build-ledger-core.mjs';
+import { CARGO_DENY_VERSION, NATIVE_DIR, advisorySteps, cargoDenyInstallCommand, locateNativeToolchain, nativeInstallCommand, nativeSteps, readNativeToolchain, repositoryRoot }
+  from './check-native.mjs';
+import { parseExpression, readAllowList, satisfied, violations } from './check-native-licenses.mjs';
+import { PACKAGE_VERSIONS } from '../packages/native/crates/config-text/tests/config-text-format.mjs';
+import { renderVectors, stripVersion } from '../packages/native/crates/config-text/tests/config-text-tools.mjs';
+import { PLANTED_BUGS, plantingProblems } from '../packages/native/crates/config-text/tests/config-text-planted-bugs.mjs';
+import { GENERATOR as jsoncVectors } from '../packages/native/crates/config-text/tests/generate-config-jsonc.mjs';
+import { GENERATOR as jsoncEditVectors } from '../packages/native/crates/config-text/tests/generate-config-jsonc-edits.mjs';
+import { GENERATOR as yamlParseVectors } from '../packages/native/crates/config-text/tests/generate-config-yaml-parse.mjs';
+import { GENERATOR as yamlStringifyVectors } from '../packages/native/crates/config-text/tests/generate-config-yaml-stringify.mjs';
+import { GENERATOR as frontMatterVectors } from '../packages/native/crates/config-text/tests/generate-config-front-matter.mjs';
+import { vectorProblems as routeVectorProblems } from '../packages/native/crates/route-magic-prompts/tests/generate-vectors.mjs';
+import { vectorProblems as sessionFoldersVectorProblems } from '../packages/native/crates/route-session-folders/tests/generate-vectors.mjs';
+import { VECTOR_FILES as schedulerPolicyVectorFiles, renderVectors as renderSchedulerPolicyVectors } from '../packages/native/crates/scheduler-policy/tests/generate-vectors.mjs';
+import { PLANTED_BUGS as SCHEDULER_POLICY_PLANTS, plantingProblems as schedulerPolicyPlantingProblems }
+  from '../packages/native/crates/scheduler-policy/tests/scheduler-policy-planted-bugs.mjs';
+import { PLANTED_BUGS as SCHEDULER_CORE_PLANTS, PLANT_SCENARIOS as SCHEDULER_CORE_PLANT_SCENARIOS, plantingProblems as schedulerCorePlantingProblems }
+  from '../packages/native/crates/scheduler-core/tests/scheduler-core-plants.mjs';
+
+const read = file => readFileSync(path.join(repositoryRoot, NATIVE_DIR, file), 'utf8');
+const tracked = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '--', NATIVE_DIR], { cwd: repositoryRoot, encoding: 'utf8' }).split('\n').filter(Boolean);
+
+/** `[workspace.dependencies]` as name -> version requirement. */
+function workspaceDependencies(manifest) {
+  const section = /^\[workspace\.dependencies\]\n([\s\S]*?)(?=^\[|(?![\s\S]))/m.exec(manifest)?.[1] ?? '';
+  return Object.fromEntries([...section.matchAll(/^([A-Za-z0-9_-]+)\s*=\s*(?:\{[^}]*version\s*=\s*"([^"]+)"[^}]*\}|"([^"]+)")/gm)].map(match => [match[1], match[2] ?? match[3]]));
+}
+
+/**
+ * The advisories `[advisories] ignore` lists, as { id, reason }; throws on an
+ * entry that is not `{ id = "RUSTSEC-YYYY-NNNN", reason = "<why>" }`.
+ */
+function ignoredAdvisories(deny) {
+  const section = /^\[advisories\]\n([\s\S]*?)(?=^\[|(?![\s\S]))/m.exec(deny)?.[1];
+  if (section === undefined) throw new Error('deny.toml has no [advisories] section');
+  const list = /^ignore\s*=\s*\[([\s\S]*?)\]\s*$/m.exec(section.replace(/^\s*#.*$/gm, ''))?.[1];
+  if (list === undefined) throw new Error('[advisories] has no ignore list');
+  const entries = [];
+  let rest = list;
+  for (const match of list.matchAll(/\{([^}]*)\}/g)) {
+    const id = /\bid\s*=\s*"(RUSTSEC-\d{4}-\d{4})"/.exec(match[1])?.[1];
+    const reason = /\breason\s*=\s*"([^"]*)"/.exec(match[1])?.[1]?.trim();
+    if (!id) throw new Error(`ignored advisory without a RUSTSEC id: {${match[1]}}`);
+    if (!reason) throw new Error(`ignored advisory ${id} has no reason`);
+    entries.push({ id, reason });
+    rest = rest.replace(match[0], '');
+  }
+  if (rest.replace(/[\s,]/g, '')) throw new Error(`ignored advisories must be { id, reason } tables, found: ${rest.trim()}`);
+  return entries;
+}
+
+/** Lockfile packages as { name, version, source }. */
+function lockPackages(lock) {
+  return lock.split('[[package]]').slice(1).map(block => ({
+    name: /^name = "([^"]+)"/m.exec(block)?.[1], version: /^version = "([^"]+)"/m.exec(block)?.[1], source: /^source = "([^"]+)"/m.exec(block)?.[1] ?? null,
+  }));
+}
+
+describe('packages/native Cargo workspace', () => {
+  test('pins one exact Rust release, the same one the ledger core pins', () => {
+    const toolchain = readNativeToolchain();
+    assert.match(toolchain.channel, /^\d+\.\d+\.\d+$/);
+    assert.deepEqual(toolchain.components, ['rustfmt', 'clippy']);
+    assert.equal(toolchain.channel, readToolchainFile().channel, `${NATIVE_DIR} and ${CRATE_DIR} pin the same Rust`);
+    assert.equal(nativeInstallCommand(toolchain), `rustup toolchain install ${toolchain.channel} --profile minimal --component rustfmt,clippy`);
+  });
+
+  test('checks formatting, clippy with warnings denied and the tests, locked and offline after one fetch', () => {
+    const steps = nativeSteps().map(step => step.join(' '));
+    assert.deepEqual(steps, ['fetch --locked', 'licences', 'fmt --all --check', 'clippy --locked --offline --workspace --all-targets -- -D warnings', 'test --locked --offline --workspace']);
+    assert.match(nativeSteps({ deny: true }).at(-1).join(' '), /^deny .*check licenses advisories sources$/);
+  });
+
+  test('a missing toolchain fails with the command that installs it', () => {
+    const toolchain = { channel: '1.99.1', components: ['rustfmt', 'clippy'], targets: [] };
+    assert.throws(() => locateNativeToolchain(toolchain, { run: () => ({ status: 1, stdout: '' }) }),
+      /Rust 1\.99\.1 is not installed\. .*\n {2}rustup toolchain install 1\.99\.1 --profile minimal --component rustfmt,clippy$/s);
+    assert.throws(() => locateNativeToolchain(toolchain, { run: () => ({ error: Object.assign(new Error('x'), { code: 'ENOENT' }) }) }), /rustup is not installed/);
+  });
+
+  test('every third-party crate is pinned exactly, locked, from crates.io and documented', () => {
+    const manifest = read('Cargo.toml');
+    const dependencies = workspaceDependencies(manifest);
+    assert.ok(Object.keys(dependencies).length > 0);
+    for (const [name, version] of Object.entries(dependencies)) assert.match(version, /^=\d+\.\d+\.\d+$/, `${name} must be pinned with =x.y.z`);
+    // Member crates take dependencies from the workspace only.
+    const members = tracked.filter(file => /^packages\/native\/crates\/[^/]+\/Cargo\.toml$/.test(file));
+    assert.ok(members.length > 0);
+    for (const member of members) {
+      const section = /^\[(?:dev-)?dependencies\]\n([\s\S]*?)(?=^\[|(?![\s\S]))/gm;
+      for (const match of readFileSync(path.join(repositoryRoot, member), 'utf8').matchAll(section)) {
+        for (const line of match[1].split('\n').filter(row => /^[A-Za-z0-9_-]+\s*[.=]/.test(row))) assert.match(line, /^[A-Za-z0-9_-]+\.workspace = true$/, `${member}: ${line}`);
+      }
+    }
+    assert.ok(tracked.includes(`${NATIVE_DIR}/Cargo.lock`), 'Cargo.lock is tracked');
+    const packages = lockPackages(read('Cargo.lock'));
+    for (const item of packages) assert.ok(item.source === null || item.source === 'registry+https://github.com/rust-lang/crates.io-index', `${item.name} comes from ${item.source}`);
+    for (const [name, version] of Object.entries(dependencies)) assert.ok(packages.some(item => item.name === name && `=${item.version}` === version), `Cargo.lock holds ${name} ${version}`);
+    const documentation = read('DOCUMENTATION.md');
+    for (const [name, version] of Object.entries(dependencies)) assert.ok(documentation.includes(`\`${name}\` ${version.slice(1)}`), `DOCUMENTATION.md names ${name} ${version.slice(1)}`);
+  });
+
+  test('the licence policy allows only permissive licences and crates.io', () => {
+    const deny = read('deny.toml');
+    const allow = /^allow\s*=\s*\[([\s\S]*?)\]/m.exec(deny)?.[1] ?? '';
+    const licences = [...allow.matchAll(/"([^"]+)"/g)].map(match => match[1]);
+    assert.ok(licences.includes('MIT') && licences.includes('Apache-2.0'));
+    for (const licence of licences) assert.doesNotMatch(licence, /GPL|AGPL|LGPL|SSPL|BUSL|CC-BY-NC/i, licence);
+    assert.match(deny, /unknown-registry\s*=\s*"deny"/);
+    assert.match(deny, /unknown-git\s*=\s*"deny"/);
+  });
+
+  test('the licence check reads its allow list from deny.toml and evaluates SPDX expressions', () => {
+    const allowList = readAllowList(read('deny.toml'));
+    const policy = [...(/^allow\s*=\s*\[([\s\S]*?)\]/m.exec(read('deny.toml'))?.[1] ?? '').matchAll(/"([^"]+)"/g)].map(match => match[1]);
+    assert.deepEqual(allowList, policy, 'one list, the one cargo-deny reads');
+    const allow = new Set(allowList);
+    const ok = expression => satisfied(parseExpression(expression), allow);
+    for (const expression of ['MIT', 'MIT OR Apache-2.0', 'Unlicense OR MIT', 'MIT/Apache-2.0', '(MIT OR Apache-2.0) AND Unicode-3.0', 'Apache-2.0 WITH LLVM-exception',
+      'Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT']) assert.ok(ok(expression), expression);
+    for (const expression of ['GPL-3.0', 'MIT AND GPL-2.0', 'Unlicense', 'LGPL-2.1 OR MPL-2.0', 'GPL-2.0 WITH Classpath-exception-2.0']) assert.equal(ok(expression), false, expression);
+    assert.throws(() => parseExpression('MIT OR'), /ends early/);
+    assert.throws(() => parseExpression('(MIT'), /missing \)/);
+    // A planted violation of each kind is reported with the package that has it.
+    const metadata = { packages: [
+      { name: 'fine', version: '1.0.0', license: 'MIT OR Apache-2.0' },
+      { name: 'copyleft', version: '2.0.0', license: 'MIT AND GPL-3.0' },
+      { name: 'unlicensed', version: '0.1.0', license: null, license_file: 'LICENSE.txt' },
+      { name: 'garbled', version: '0.2.0', license: 'MIT OR OR' },
+    ] };
+    const found = violations(metadata, allowList);
+    assert.equal(found.length, 3, found.join('\n'));
+    assert.match(found[0], /^copyleft 2\.0\.0: MIT AND GPL-3\.0 is not allowed/);
+    assert.match(found[1], /^unlicensed 0\.1\.0: no licence expression \(only a licence file, LICENSE\.txt\)/);
+    assert.match(found[2], /^garbled 0\.2\.0: licence expression/);
+  });
+
+  test('CI checks advisories with a pinned cargo-deny from a pinned cache, and every ignored advisory has a reason', () => {
+    const text = readFileSync(path.join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8');
+    const steps = YAML.parse(text).jobs.static.steps;
+    const index = predicate => steps.findIndex(predicate);
+    const gate = index(step => step.id === 'native');
+    assert.ok(gate >= 0, 'the static job decides once whether packages/native is checked');
+    assert.match(steps[gate].run, /paths="packages\/native scripts\/check-native\.mjs scripts\/check-native-licenses\.mjs \.github\/workflows\/ci\.yml packages\/harness-runtime\/native\/ledger-core\/src\/js\/number\.rs packages\/harness-runtime\/native\/ledger-core\/tests\/numbers\.tsv packages\/harness-runtime\/native\/ledger-core\/tests\/json\.tsv"/);
+    // The ledger core's files the client engine compiles in (`#[path]`) or reads as vectors are in that filter.
+    const engineNumber = readFileSync(path.join(repositoryRoot, 'packages/native/crates/client-engine/src/js/number.rs'), 'utf8');
+    assert.match(engineNumber, /#\[path = "\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/harness-runtime\/native\/ledger-core\/src\/js\/number\.rs"\]/);
+    assert.match(steps[gate].run, /echo "run=false" >> "\$GITHUB_OUTPUT"[\s\S]*echo "run=true" >> "\$GITHUB_OUTPUT"/);
+    const gated = "steps.native.outputs.run == 'true'";
+    const check = index(step => typeof step.run === 'string' && /^node scripts\/check-native\.mjs$/m.test(step.run));
+    const cache = index(step => typeof step.uses === 'string' && step.uses.startsWith('actions/cache@'));
+    const advisories = index(step => typeof step.run === 'string' && step.run.includes('scripts/check-native.mjs --advisories'));
+    assert.ok(gate < check && check < cache && cache < advisories, `order: gate, check (installs Rust), cache, advisories (${[gate, check, cache, advisories]})`);
+    for (const at of [check, cache, advisories]) assert.equal(steps[at].if, gated, steps[at].name);
+    assert.ok(steps[check].run.includes(nativeInstallCommand(readNativeToolchain())));
+    // The cache action is pinned to a full commit, with its release named beside it.
+    const [, hash] = /^actions\/cache@([0-9a-f]{40})$/.exec(steps[cache].uses) ?? [];
+    assert.ok(hash, `${steps[cache].uses} is not pinned to a full commit hash`);
+    assert.match(text, new RegExp(`uses: actions/cache@${hash} # v\\d+\\.\\d+\\.\\d+\\n`));
+    assert.match(text, new RegExp(`release v\\d+\\.\\d+\\.\\d+\\n\\s*# \\(${hash},`), 'the comment names the release and the hash');
+    // Its key changes with the cargo-deny release and the Rust that builds it; it holds what the step installs.
+    assert.equal(steps[cache].with.key, `cargo-deny-${CARGO_DENY_VERSION}-rust-${readNativeToolchain().channel}-\${{ runner.os }}-\${{ runner.arch }}`);
+    assert.equal(steps[cache].with.path, '~/.cache/devryan-cargo-deny');
+    assert.equal(steps[advisories].run, 'CARGO_DENY_ROOT="$HOME/.cache/devryan-cargo-deny" node scripts/check-native.mjs --advisories');
+    assert.equal(steps[advisories]['continue-on-error'], undefined, 'a new advisory fails the job');
+    assert.ok(steps[advisories].name.includes(`cargo deny ${CARGO_DENY_VERSION}`) && steps[cache].name.includes(CARGO_DENY_VERSION));
+    // The check fetches the advisory database (no --offline) and checks the same policy as --deny.
+    assert.deepEqual(advisorySteps().map(step => step.join(' ')), ['fetch --locked', 'deny --locked check licenses advisories sources']);
+    assert.equal(nativeSteps({ deny: true }).at(-1).filter(arg => arg !== '--offline').join(' '), advisorySteps().at(-1).join(' '));
+    assert.deepEqual(cargoDenyInstallCommand('/r'), ['install', 'cargo-deny', '--version', CARGO_DENY_VERSION, '--locked', '--root', '/r']);
+    // Every advisory ignored on purpose is in deny.toml with its reason.
+    const ignored = ignoredAdvisories(read('deny.toml'));
+    assert.equal(new Set(ignored.map(entry => entry.id)).size, ignored.length, 'each advisory is ignored once');
+    const policy = list => `[advisories]\nversion = 2\nignore = [\n${list}\n]\n\n[licenses]\n`;
+    assert.deepEqual(ignoredAdvisories(policy('  { id = "RUSTSEC-2026-0001", reason = "not reachable: we never call x" },')),
+      [{ id: 'RUSTSEC-2026-0001', reason: 'not reachable: we never call x' }]);
+    assert.deepEqual(ignoredAdvisories(policy('')), []);
+    assert.throws(() => ignoredAdvisories(policy('  "RUSTSEC-2026-0001",')), /must be \{ id, reason \} tables/);
+    assert.throws(() => ignoredAdvisories(policy('  { id = "RUSTSEC-2026-0001" },')), /RUSTSEC-2026-0001 has no reason/);
+    assert.throws(() => ignoredAdvisories(policy('  { id = "RUSTSEC-2026-0001", reason = " " },')), /has no reason/);
+    assert.throws(() => ignoredAdvisories(policy('  { reason = "x" },')), /without a RUSTSEC id/);
+  });
+
+  test('the config-text vectors are what the installed jsonc-parser and yaml give the generators', () => {
+    // The crate is held to these files byte for byte (its cargo tests read
+    // them); a package update that changes behaviour fails here, without Rust.
+    for (const generator of [jsoncVectors, jsoncEditVectors, yamlParseVectors, yamlStringifyVectors, frontMatterVectors]) {
+      const file = `crates/config-text/tests/${generator.file}`;
+      assert.ok(tracked.includes(`${NATIVE_DIR}/${file}`), `${file} is tracked`);
+      const current = stripVersion(read(file)) === stripVersion(renderVectors(generator));
+      assert.ok(current, `${file} is not what jsonc-parser ${PACKAGE_VERSIONS.jsonc} and yaml ${PACKAGE_VERSIONS.yaml} give; if the change is intended, regenerate it with:\n  node ${NATIVE_DIR}/crates/config-text/tests/${generator.script}\nand make the crate match (cargo test -p devryan-config-text).`);
+    }
+  });
+
+  test('the route-magic-prompts vectors are what the JavaScript they port gives', async () => {
+    // tests/vectors.rs holds the crate to these files; each stored row's output is recomputed from its stored input
+    // by the group's runtime module, the product's request decoding under Express, and Express's ETag and fresh.
+    for (const file of ['runtime.tsv', 'bodies.tsv', 'answers.tsv']) assert.ok(tracked.includes(`${NATIVE_DIR}/crates/route-magic-prompts/tests/${file}`), `${file} is tracked`);
+    assert.deepEqual(await routeVectorProblems(), [], `if the change is intended, regenerate with:\n  node ${NATIVE_DIR}/crates/route-magic-prompts/tests/generate-vectors.mjs\nand make the crate match (cargo test -p devryan-route-magic-prompts)`);
+  });
+
+  test('the route-session-folders vectors are what the JavaScript they port gives', async () => {
+    // tests/vectors.rs holds the crate to these files; each stored row's output is recomputed from its stored input by
+    // the product's request decoding and the group's registrar under Express, and by harness-runtime's cleanup.
+    for (const file of ['requests.tsv', 'cleanup.tsv']) assert.ok(tracked.includes(`${NATIVE_DIR}/crates/route-session-folders/tests/${file}`), `${file} is tracked`);
+    assert.deepEqual(await sessionFoldersVectorProblems(), [], `if the change is intended, regenerate with:\n  node ${NATIVE_DIR}/crates/route-session-folders/tests/generate-vectors.mjs\nand make the crate match (cargo test -p devryan-route-session-folders)`);
+  });
+
+  test('every planted config-text bug still has its one planting site', () => {
+    assert.ok(PLANTED_BUGS.length >= 15, 'at least fifteen planted bugs');
+    assert.equal(new Set(PLANTED_BUGS.map(([id]) => id)).size, PLANTED_BUGS.length, 'planted bug ids are unique');
+    assert.deepEqual(plantingProblems(), []);
+  });
+
+  test('the scheduler-policy vectors are what packages/orchestration-runtime gives the generator', async () => {
+    // The crate is held to these files row for row (its cargo test reads
+    // them); a change to the JavaScript policy modules fails here, without Rust.
+    const rendered = await renderSchedulerPolicyVectors();
+    assert.deepEqual([...rendered.keys()], schedulerPolicyVectorFiles);
+    for (const [name, text] of rendered) {
+      const file = `crates/scheduler-policy/tests/vectors/${name}`;
+      assert.ok(tracked.includes(`${NATIVE_DIR}/${file}`), `${file} is tracked`);
+      assert.ok(read(file) === text, `${file} is not what packages/orchestration-runtime gives; if the change is intended, regenerate it with:\n  node ${NATIVE_DIR}/crates/scheduler-policy/tests/generate-vectors.mjs\nand make the crate match (cargo test -p devryan-scheduler-policy).`);
+    }
+  });
+
+  test('every planted scheduler-policy bug still has its one planting site', () => {
+    assert.ok(SCHEDULER_POLICY_PLANTS.length >= 150, 'at least one hundred and fifty planted bugs');
+    assert.equal(new Set(SCHEDULER_POLICY_PLANTS.map(([id]) => id)).size, SCHEDULER_POLICY_PLANTS.length, 'planted bug ids are unique');
+    const perFunction = new Map();
+    for (const [, , , , target] of SCHEDULER_POLICY_PLANTS) perFunction.set(target, (perFunction.get(target) ?? 0) + 1);
+    const thin = [...perFunction].filter(([target, count]) => count < 3 && !['DUPLICATE_DISPATCH_WINDOW_MS', 'scheduler random IDs'].includes(target));
+    assert.deepEqual(thin, [], 'every ported function has at least three planted bugs');
+    assert.deepEqual(schedulerPolicyPlantingProblems(), []);
+  });
+
+  test('every planted scheduler-core bug still has its one planting site and names a plant scenario', () => {
+    assert.ok(SCHEDULER_CORE_PLANTS.length >= 15, 'at least fifteen planted bugs');
+    assert.equal(new Set(SCHEDULER_CORE_PLANTS.map(([id]) => id)).size, SCHEDULER_CORE_PLANTS.length, 'planted bug ids are unique');
+    for (const [id, , , , expected] of SCHEDULER_CORE_PLANTS) assert.ok(SCHEDULER_CORE_PLANT_SCENARIOS.includes(expected.split(':')[0]), `${id} names a scenario the plants run on`);
+    assert.deepEqual(schedulerCorePlantingProblems(), []);
+  });
+
+  test('builds stay out of git and nothing here is a workspace package', () => {
+    assert.match(read('.gitignore'), /^\/target\/$/m);
+    assert.ok(!tracked.some(file => file.includes('/target/')), 'no build output is tracked');
+    assert.equal(existsSync(path.join(repositoryRoot, NATIVE_DIR, 'package.json')), false, 'packages/native is not a Bun workspace package');
+  });
+});

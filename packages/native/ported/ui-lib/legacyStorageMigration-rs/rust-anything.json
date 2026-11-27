@@ -1,0 +1,43 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "legacyStorageMigration.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "legacystoragemigration-rs",
+  "exports": [
+    {
+      "name": "devRyanStorageKey",
+      "file": "legacyStorageMigration.ts",
+      "line": 10,
+      "params": [
+        {
+          "name": "legacyKey",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "migrateLegacyStorageKeys",
+      "file": "legacyStorageMigration.ts",
+      "line": 13,
+      "reason": "calls methods of a Storage object and writes to it"
+    },
+    {
+      "name": "migrateLegacyBrowserStorage",
+      "file": "legacyStorageMigration.ts",
+      "line": 32,
+      "reason": "reads browser storage globals"
+    }
+  ]
+}

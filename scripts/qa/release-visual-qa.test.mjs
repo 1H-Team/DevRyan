@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { qaPackagedAppEnvironment } from './launch-environment.mjs';
-import { captureScreenshot, connectStallMessage, electronLogFiles, relaunchDiagnostics, ownerCleanupTimedOut, ownerDiagnostics, ownerQuitForShippedCleanupTimeout, openSettingsAbout, expectedUpdate, gradeVisualQa, STEPS, versionPredates, installedReceiptComplete, observeInstalledDownload, observeInstalledRestart, parseVisualQaArgs, publicRelease, publicReleaseResponse, setQaLaunchEnvironment, visualQaHostRefusal } from './release-visual-qa.mjs';
+import { captureScreenshot, connectStallMessage, dmgStepVerdict, failedStepMessage, electronLogFiles, relaunchDiagnostics, ownerCleanupTimedOut, ownerDiagnostics, ownerQuitForShippedCleanupTimeout, openSettingsAbout, expectedUpdate, gradeVisualQa, STEPS, versionPredates, installedReceiptComplete, observeInstalledDownload, observeInstalledRestart, parseVisualQaArgs, publicRelease, publicReleaseResponse, setQaLaunchEnvironment, visualQaHostRefusal } from './release-visual-qa.mjs';
 
 test('isolated LaunchServices environment restores prior values and unwinds a partial setup', async () => {
   const keys = ['HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME', 'TMPDIR', 'DEVRYAN_ELECTRON_USER_DATA_DIR'];
@@ -246,4 +246,26 @@ test('relaunch diagnostics keep the unified log, recent DevRyan crash reports an
   assert.equal(detail.launchdEnvironment.HOME, '<run>/upgrade/home');
   assert.equal(detail.launchdEnvironment.TMPDIR, '(unset)');
   assert.equal(calls.filter(command => command === '/usr/bin/log').length, 1);
+});
+
+test('a failed DMG step says why: an already published version whose asset differs names both identities', () => {
+  const sha = 'c'.repeat(64), other = 'd'.repeat(64);
+  assert.deepEqual(dmgStepVerdict({ version: '2.0.9', sha, manifest: { sha256: sha }, publishedDigest: null }),
+    { passed: true, detail: { manifest: true, published: 'unpublished' }, reason: '' });
+  assert.deepEqual(dmgStepVerdict({ version: '2.0.9', sha, manifest: null, publishedDigest: `sha256:${sha}` }),
+    { passed: true, detail: { manifest: 'not given', published: true }, reason: '' });
+  const republished = dmgStepVerdict({ version: '2.0.9', sha, manifest: { sha256: sha }, publishedDigest: `sha256:${other}` });
+  assert.equal(republished.passed, false);
+  assert.deepEqual(republished.detail, { manifest: true, published: false });
+  assert.equal(failedStepMessage('dmg', republished.detail, republished.reason), `[visual-qa] FAIL dmg: v2.0.9 is already published and the candidate differs from the published asset DevRyan-2.0.9-arm64.dmg: candidate sha256:${sha}, published sha256:${other}. A published version is final: bump the patch version (an owner-authorized replacement removes the old release before this run)`);
+  const unmanifested = dmgStepVerdict({ version: '2.0.9', sha, manifest: { sha256: other } });
+  assert.equal(unmanifested.passed, false);
+  assert.equal(unmanifested.reason, `the candidate sha256:${sha} differs from release-manifest.json sha256:${other}`);
+  // A manifest without a digest still fails, as before.
+  assert.equal(dmgStepVerdict({ version: '2.0.9', sha, manifest: {} }).passed, false);
+});
+
+test('a failed step without a reason logs its detail', () => {
+  assert.equal(failedStepMessage('ready', { errorToasts: 2 }), '[visual-qa] FAIL ready: {"errorToasts":2}');
+  assert.equal(failedStepMessage('stopped'), '[visual-qa] FAIL stopped');
 });

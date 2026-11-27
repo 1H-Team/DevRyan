@@ -1,0 +1,37 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [],
+  "product": [],
+  "engine": [
+    {
+      "site": "packages/ui/src/sync/session-user-activity.ts:61",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading '9')"
+    },
+    {
+      "site": "packages/ui/src/sync/session-user-activity.ts:73",
+      "class": "TypeError",
+      "sample": "Cannot read properties of undefined (reading 'find')"
+    },
+    {
+      "site": "packages/ui/src/sync/session-user-activity.ts:74",
+      "class": "TypeError",
+      "sample": "Cannot read properties of undefined (reading 'ses')"
+    },
+    {
+      "site": "packages/ui/src/sync/session-user-activity.ts:82",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'role')"
+    },
+    {
+      "site": "packages/ui/src/sync/session-user-activity.ts:84",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'session')"
+    },
+    {
+      "site": "packages/ui/src/sync/session-user-activity.ts:90",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'ses')"
+    }
+  ]
+}

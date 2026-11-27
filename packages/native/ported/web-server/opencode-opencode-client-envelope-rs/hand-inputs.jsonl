@@ -1,0 +1,81 @@
+{"fn": "unwrapV1Payload", "args": []}
+{"fn": "unwrapData", "args": []}
+{"fn": "unwrapPage", "args": []}
+{"fn": "unwrapList", "args": []}
+{"fn": "unwrapV1Payload", "args": [{"$undefined": true}]}
+{"fn": "unwrapData", "args": [{"$undefined": true}]}
+{"fn": "unwrapPage", "args": [{"$undefined": true}]}
+{"fn": "unwrapList", "args": [{"$undefined": true}]}
+{"fn": "unwrapV1Payload", "args": [{"data": [1]}]}
+{"fn": "unwrapData", "args": [{"data": [1]}]}
+{"fn": "unwrapPage", "args": [{"data": [1]}]}
+{"fn": "unwrapList", "args": [{"data": [1]}]}
+{"fn": "unwrapV1Payload", "args": [{"data": null}]}
+{"fn": "unwrapData", "args": [{"data": null}]}
+{"fn": "unwrapPage", "args": [{"data": null}]}
+{"fn": "unwrapList", "args": [{"data": null}]}
+{"fn": "unwrapV1Payload", "args": [{"x": 1}]}
+{"fn": "unwrapData", "args": [{"x": 1}]}
+{"fn": "unwrapPage", "args": [{"x": 1}]}
+{"fn": "unwrapList", "args": [{"x": 1}]}
+{"fn": "unwrapV1Payload", "args": [{"data": {"$undefined": true}}]}
+{"fn": "unwrapData", "args": [{"data": {"$undefined": true}}]}
+{"fn": "unwrapPage", "args": [{"data": {"$undefined": true}}]}
+{"fn": "unwrapList", "args": [{"data": {"$undefined": true}}]}
+{"fn": "unwrapV1Payload", "args": [[1]]}
+{"fn": "unwrapData", "args": [[1]]}
+{"fn": "unwrapPage", "args": [[1]]}
+{"fn": "unwrapList", "args": [[1]]}
+{"fn": "unwrapV1Payload", "args": ["s"]}
+{"fn": "unwrapData", "args": ["s"]}
+{"fn": "unwrapPage", "args": ["s"]}
+{"fn": "unwrapList", "args": ["s"]}
+{"fn": "unwrapV1Payload", "args": [5]}
+{"fn": "unwrapData", "args": [5]}
+{"fn": "unwrapPage", "args": [5]}
+{"fn": "unwrapList", "args": [5]}
+{"fn": "unwrapV1Payload", "args": [{"$map": [["data", 1]]}]}
+{"fn": "unwrapData", "args": [{"$map": [["data", 1]]}]}
+{"fn": "unwrapPage", "args": [{"$map": [["data", 1]]}]}
+{"fn": "unwrapList", "args": [{"$map": [["data", 1]]}]}
+{"fn": "unwrapV1Payload", "args": [{"location": {}, "data": {"a": 1}}]}
+{"fn": "unwrapData", "args": [{"location": {}, "data": {"a": 1}}]}
+{"fn": "unwrapPage", "args": [{"location": {}, "data": {"a": 1}}]}
+{"fn": "unwrapList", "args": [{"location": {}, "data": {"a": 1}}]}
+{"fn": "unwrapV1Payload", "args": [{"data": [1], "cursor": {"next": "n", "previous": ""}}]}
+{"fn": "unwrapData", "args": [{"data": [1], "cursor": {"next": "n", "previous": ""}}]}
+{"fn": "unwrapPage", "args": [{"data": [1], "cursor": {"next": "n", "previous": ""}}]}
+{"fn": "unwrapList", "args": [{"data": [1], "cursor": {"next": "n", "previous": ""}}]}
+{"fn": "unwrapV1Payload", "args": [{"data": [1], "cursor": {"next": 5}}]}
+{"fn": "unwrapData", "args": [{"data": [1], "cursor": {"next": 5}}]}
+{"fn": "unwrapPage", "args": [{"data": [1], "cursor": {"next": 5}}]}
+{"fn": "unwrapList", "args": [{"data": [1], "cursor": {"next": 5}}]}
+{"fn": "unwrapV1Payload", "args": [{"data": [1], "cursor": "c"}]}
+{"fn": "unwrapData", "args": [{"data": [1], "cursor": "c"}]}
+{"fn": "unwrapPage", "args": [{"data": [1], "cursor": "c"}]}
+{"fn": "unwrapList", "args": [{"data": [1], "cursor": "c"}]}
+{"fn": "unwrapV1Payload", "args": [{"data": [1], "cursor": null}]}
+{"fn": "unwrapData", "args": [{"data": [1], "cursor": null}]}
+{"fn": "unwrapPage", "args": [{"data": [1], "cursor": null}]}
+{"fn": "unwrapList", "args": [{"data": [1], "cursor": null}]}
+{"fn": "unwrapV1Payload", "args": [{"data": "x"}]}
+{"fn": "unwrapData", "args": [{"data": "x"}]}
+{"fn": "unwrapPage", "args": [{"data": "x"}]}
+{"fn": "unwrapList", "args": [{"data": "x"}]}
+{"fn": "unwrapV1Payload", "args": [{"data": [], "cursor": {"next": null, "other": "o"}}]}
+{"fn": "unwrapData", "args": [{"data": [], "cursor": {"next": null, "other": "o"}}]}
+{"fn": "unwrapPage", "args": [{"data": [], "cursor": {"next": null, "other": "o"}}]}
+{"fn": "unwrapList", "args": [{"data": [], "cursor": {"next": null, "other": "o"}}]}
+{"fn": "unwrapV1Payload", "args": [{"data": [], "cursor": [1]}]}
+{"fn": "unwrapData", "args": [{"data": [], "cursor": [1]}]}
+{"fn": "unwrapPage", "args": [{"data": [], "cursor": [1]}]}
+{"fn": "unwrapList", "args": [{"data": [], "cursor": [1]}]}
+{"fn": "unwrapV1Payload", "args": [{"data": [], "cursor": {"next": ""}}]}
+{"fn": "unwrapData", "args": [{"data": [], "cursor": {"next": ""}}]}
+{"fn": "unwrapPage", "args": [{"data": [], "cursor": {"next": ""}}]}
+{"fn": "unwrapList", "args": [{"data": [], "cursor": {"next": ""}}]}
+{"fn": "unwrapV1Payload", "args": [{"data": [], "cursor": {"$map": []}}]}
+{"fn": "unwrapData", "args": [{"data": [], "cursor": {"$map": []}}]}
+{"fn": "unwrapPage", "args": [{"data": [], "cursor": {"$map": []}}]}
+{"fn": "unwrapList", "args": [{"data": [], "cursor": {"$map": []}}]}
+{"fn": "unwrapData", "args": [null]}

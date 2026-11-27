@@ -1,0 +1,543 @@
+{"fn":"stripCommitComments","args":["{name} has {count} itemsabc"],"ok":"{name} has {count} itemsabc"}
+{"fn":"stripCommitComments","args":["{name} has {count} items"],"ok":"{name} has {count} items"}
+{"fn":"stripCommitComments","args":["HELLO"],"ok":"HELLO"}
+{"fn":"stripCommitComments","args":["./x/**/*.json"],"ok":"./x/**/*.json"}
+{"fn":"stripCommitComments","args":["﻿bom"],"ok":"bom"}
+{"fn":"stripCommitComments","args":["straße"],"ok":"straße"}
+{"fn":"stripCommitComments","args":["Hello World"],"ok":"Hello World"}
+{"fn":"stripCommitComments","args":["a..b"],"ok":"a..b"}
+{"fn":"stripCommitComments","args":["日本語のテキスト"],"ok":"日本語のテキスト"}
+{"fn":"stripCommitComments","args":["ΣΊΣΥΦΟΣ.leading"],"ok":"ΣΊΣΥΦΟΣ.leading"}
+{"fn":"stripCommitComments","args":["a:b:c:"],"ok":"a:b:c:"}
+{"fn":"stripCommitComments","args":["İstanbul"],"ok":"İstanbul"}
+{"fn":"stripCommitComments","args":["ab"],"ok":"ab"}
+{"fn":"stripCommitComments","args":["abc"],"ok":"abc"}
+{"fn":"stripCommitComments","args":["  padded  ab"],"ok":"padded  ab"}
+{"fn":"stripCommitComments","args":["a😀b😀c"],"ok":"a😀b😀c"}
+{"fn":"stripCommitComments","args":["line1\nline2key_name-1"],"ok":"line1\nline2key_name-1"}
+{"fn":"stripCommitComments","args":["a.b.c"],"ok":"a.b.c"}
+{"fn":"stripCommitComments","args":["trailing."],"ok":"trailing."}
+{"fn":"stripCommitComments","args":["atrailing."],"ok":"atrailing."}
+{"fn":"stripCommitComments","args":["line1\nline2"],"ok":"line1\nline2"}
+{"fn":"stripCommitComments","args":[".leading"],"ok":".leading"}
+{"fn":"stripCommitComments","args":[".leadingline1\nline2"],"ok":".leadingline1\nline2"}
+{"fn":"stripCommitComments","args":["hello"],"ok":"hello"}
+{"fn":"stripCommitComments","args":["ünïcödé"],"ok":"ünïcödé"}
+{"fn":"stripCommitComments","args":["tab\tseparated"],"ok":"tab\tseparated"}
+{"fn":"stripCommitComments","args":["ns:key.path"],"ok":"ns:key.path"}
+{"fn":"stripCommitComments","args":["tab\tseparated﻿bom"],"ok":"tab\tseparated﻿bom"}
+{"fn":"stripCommitComments","args":[""],"ok":""}
+{"fn":"stripCommitComments","args":["ΣΊΣΥΦΟΣ"],"ok":"ΣΊΣΥΦΟΣ"}
+{"fn":"stripCommitComments","args":["src/a/b.ts"],"ok":"src/a/b.ts"}
+{"fn":"stripCommitComments","args":["hello world"],"ok":"hello world"}
+{"fn":"stripCommitComments","args":["é"],"ok":"é"}
+{"fn":"stripCommitComments","args":["﻿bomemoji 👍🏽 mix"],"ok":"bomemoji 👍🏽 mix"}
+{"fn":"stripCommitComments","args":["Hello World./x/**/*.json"],"ok":"Hello World./x/**/*.json"}
+{"fn":"stripCommitComments","args":["emoji 👍🏽 mix"],"ok":"emoji 👍🏽 mix"}
+{"fn":"stripCommitComments","args":["😀"],"ok":"😀"}
+{"fn":"stripCommitComments","args":["line1\nline2  padded  "],"ok":"line1\nline2  padded"}
+{"fn":"stripCommitComments","args":["a"],"ok":"a"}
+{"fn":"stripCommitComments","args":["helloünïcödé"],"ok":"helloünïcödé"}
+{"fn":"stripCommitComments","args":["a:b:cİstanbul"],"ok":"a:b:cİstanbul"}
+{"fn":"stripCommitComments","args":[".leading./x/**/*.json"],"ok":".leading./x/**/*.json"}
+{"fn":"stripCommitComments","args":[":"],"ok":":"}
+{"fn":"stripCommitComments","args":["key_name-1"],"ok":"key_name-1"}
+{"fn":"stripCommitComments","args":[":İstanbul"],"ok":":İstanbul"}
+{"fn":"stripCommitComments","args":["  padded  "],"ok":"padded"}
+{"fn":"stripCommitComments","args":["Hello Worldab"],"ok":"Hello Worldab"}
+{"fn":"stripCommitComments","args":["key_name-1😀"],"ok":"key_name-1😀"}
+{"fn":"stripCommitComments","args":["abhello world"],"ok":"abhello world"}
+{"fn":"stripCommitComments","args":[":key_name-1"],"ok":":key_name-1"}
+{"fn":"stripCommitComments","args":["src/a/b.tsemoji 👍🏽 mix"],"ok":"src/a/b.tsemoji 👍🏽 mix"}
+{"fn":"stripCommitComments","args":["trailing.a😀b😀c"],"ok":"trailing.a😀b😀c"}
+{"fn":"stripCommitComments","args":["a:b:c"],"ok":"a:b:c"}
+{"fn":"stripCommitComments","args":["./x/**/*.jsonstraße"],"ok":"./x/**/*.jsonstraße"}
+{"fn":"stripCommitComments","args":["abİstanbul"],"ok":"abİstanbul"}
+{"fn":"stripCommitComments","args":["./x/**/*.jsontab\tseparated"],"ok":"./x/**/*.jsontab\tseparated"}
+{"fn":"stripCommitComments","args":["helloa😀b😀c"],"ok":"helloa😀b😀c"}
+{"fn":"stripCommitComments","args":["::"],"ok":"::"}
+{"fn":"stripCommitComments","args":["ababc"],"ok":"ababc"}
+{"fn":"stripCommitComments","args":["a..babc"],"ok":"a..babc"}
+{"fn":"stripCommitComments","args":["straße  padded  "],"ok":"straße  padded"}
+{"fn":"stripCommitComments","args":["src/a/b.tsa.b.c"],"ok":"src/a/b.tsa.b.c"}
+{"fn":"stripCommitComments","args":["ünïcödéhello"],"ok":"ünïcödéhello"}
+{"fn":"stripCommitComments","args":["./x/**/*.jsona"],"ok":"./x/**/*.jsona"}
+{"fn":"stripCommitComments","args":["a..b./x/**/*.json"],"ok":"a..b./x/**/*.json"}
+{"fn":"stripCommitComments","args":["😀a:b:c"],"ok":"😀a:b:c"}
+{"fn":"stripCommitComments","args":["hello worldemoji 👍🏽 mix"],"ok":"hello worldemoji 👍🏽 mix"}
+{"fn":"stripCommitComments","args":["./x/**/*.json  padded  "],"ok":"./x/**/*.json  padded"}
+{"fn":"stripCommitComments","args":["日本語のテキストa..b"],"ok":"日本語のテキストa..b"}
+{"fn":"stripCommitComments","args":["src/a/b.tstrailing."],"ok":"src/a/b.tstrailing."}
+{"fn":"stripCommitComments","args":["a😀b😀c{name} has {count} items"],"ok":"a😀b😀c{name} has {count} items"}
+{"fn":"stripCommitComments","args":["﻿bom./x/**/*.json"],"ok":"bom./x/**/*.json"}
+{"fn":"stripCommitComments","args":[".leading﻿bom"],"ok":".leading﻿bom"}
+{"fn":"stripCommitComments","args":["hello worlda.b.c"],"ok":"hello worlda.b.c"}
+{"fn":"stripCommitComments","args":["Hello Worldhello world"],"ok":"Hello Worldhello world"}
+{"fn":"stripCommitComments","args":["hellotrailing."],"ok":"hellotrailing."}
+{"fn":"stripCommitComments","args":[":  padded  "],"ok":":  padded"}
+{"fn":"stripCommitComments","args":["😀ΣΊΣΥΦΟΣ"],"ok":"😀ΣΊΣΥΦΟΣ"}
+{"fn":"stripCommitComments","args":["src/a/b.tskey_name-1"],"ok":"src/a/b.tskey_name-1"}
+{"fn":"stripCommitComments","args":["ünïcödéHello World"],"ok":"ünïcödéHello World"}
+{"fn":"stripCommitComments","args":["a.b.chello world"],"ok":"a.b.chello world"}
+{"fn":"stripCommitComments","args":["emoji 👍🏽 mix日本語のテキスト"],"ok":"emoji 👍🏽 mix日本語のテキスト"}
+{"fn":"stripCommitComments","args":["  padded  src/a/b.ts"],"ok":"padded  src/a/b.ts"}
+{"fn":"stripCommitComments","args":[".leading{name} has {count} items"],"ok":".leading{name} has {count} items"}
+{"fn":"stripCommitComments","args":["abns:key.path"],"ok":"abns:key.path"}
+{"fn":"stripCommitComments","args":["ΣΊΣΥΦΟΣ😀"],"ok":"ΣΊΣΥΦΟΣ😀"}
+{"fn":"stripCommitComments","args":["aa..b"],"ok":"aa..b"}
+{"fn":"stripCommitComments","args":["key_name-1ns:key.path"],"ok":"key_name-1ns:key.path"}
+{"fn":"stripCommitComments","args":["Hello WorldHello World"],"ok":"Hello WorldHello World"}
+{"fn":"stripCommitComments","args":["İstanbulünïcödé"],"ok":"İstanbulünïcödé"}
+{"fn":"stripCommitComments","args":["ΣΊΣΥΦΟΣ  padded  "],"ok":"ΣΊΣΥΦΟΣ  padded"}
+{"fn":"stripCommitComments","args":["a😀b😀chello"],"ok":"a😀b😀chello"}
+{"fn":"stripCommitComments","args":["./x/**/*.jsonkey_name-1"],"ok":"./x/**/*.jsonkey_name-1"}
+{"fn":"stripCommitComments","args":["a..b﻿bom"],"ok":"a..b﻿bom"}
+{"fn":"stripCommitComments","args":["key_name-1emoji 👍🏽 mix"],"ok":"key_name-1emoji 👍🏽 mix"}
+{"fn":"stripCommitComments","args":["HELLOa😀b😀c"],"ok":"HELLOa😀b😀c"}
+{"fn":"stripCommitComments","args":["ΣΊΣΥΦΟΣ./x/**/*.json"],"ok":"ΣΊΣΥΦΟΣ./x/**/*.json"}
+{"fn":"stripCommitComments","args":["İstanbulabc"],"ok":"İstanbulabc"}
+{"fn":"stripCommitComments","args":["{name} has {count} items  padded  "],"ok":"{name} has {count} items  padded"}
+{"fn":"stripCommitComments","args":["line1\nline2emoji 👍🏽 mix"],"ok":"line1\nline2emoji 👍🏽 mix"}
+{"fn":"stripCommitComments","args":["﻿boma"],"ok":"boma"}
+{"fn":"stripCommitComments","args":["İstanbul😀"],"ok":"İstanbul😀"}
+{"fn":"stripCommitComments","args":["tab\tseparated:"],"ok":"tab\tseparated:"}
+{"fn":"stripCommitComments","args":["src/a/b.ts日本語のテキスト"],"ok":"src/a/b.ts日本語のテキスト"}
+{"fn":"stripCommitComments","args":["﻿bomtrailing."],"ok":"bomtrailing."}
+{"fn":"stripCommitComments","args":["İstanbulline1\nline2"],"ok":"İstanbulline1\nline2"}
+{"fn":"stripCommitComments","args":["  padded  Hello World"],"ok":"padded  Hello World"}
+{"fn":"stripCommitComments","args":["a.b.c./x/**/*.json"],"ok":"a.b.c./x/**/*.json"}
+{"fn":"stripCommitComments","args":["hello worldhello world"],"ok":"hello worldhello world"}
+{"fn":"stripCommitComments","args":["straßeline1\nline2"],"ok":"straßeline1\nline2"}
+{"fn":"stripCommitComments","args":["emoji 👍🏽 mixa😀b😀c"],"ok":"emoji 👍🏽 mixa😀b😀c"}
+{"fn":"stripCommitComments","args":["hello world./x/**/*.json"],"ok":"hello world./x/**/*.json"}
+{"fn":"stripCommitComments","args":["a..bemoji 👍🏽 mix"],"ok":"a..bemoji 👍🏽 mix"}
+{"fn":"stripCommitComments","args":[":tab\tseparated"],"ok":":tab\tseparated"}
+{"fn":"stripCommitComments","args":["a.b.cΣΊΣΥΦΟΣ"],"ok":"a.b.cΣΊΣΥΦΟΣ"}
+{"fn":"stripCommitComments","args":["İstanbul./x/**/*.json"],"ok":"İstanbul./x/**/*.json"}
+{"fn":"stripCommitComments","args":["helloé"],"ok":"helloé"}
+{"fn":"stripCommitComments","args":["aabc"],"ok":"aabc"}
+{"fn":"stripCommitComments","args":["src/a/b.ts.leading"],"ok":"src/a/b.ts.leading"}
+{"fn":"stripCommitComments","args":["absrc/a/b.ts"],"ok":"absrc/a/b.ts"}
+{"fn":"stripCommitComments","args":["key_name-1ab"],"ok":"key_name-1ab"}
+{"fn":"stripCommitComments","args":["hello world日本語のテキスト"],"ok":"hello world日本語のテキスト"}
+{"fn":"stripCommitComments","args":["abcemoji 👍🏽 mix"],"ok":"abcemoji 👍🏽 mix"}
+{"fn":"stripCommitComments","args":["😀key_name-1"],"ok":"😀key_name-1"}
+{"fn":"stripCommitComments","args":["line1\nline2﻿bom"],"ok":"line1\nline2﻿bom"}
+{"fn":"stripCommitComments","args":["ΣΊΣΥΦΟΣns:key.path"],"ok":"ΣΊΣΥΦΟΣns:key.path"}
+{"fn":"stripCommitComments","args":["emoji 👍🏽 mix😀"],"ok":"emoji 👍🏽 mix😀"}
+{"fn":"stripCommitComments","args":["﻿bomünïcödé"],"ok":"bomünïcödé"}
+{"fn":"stripCommitComments","args":["ns:key.pathemoji 👍🏽 mix"],"ok":"ns:key.pathemoji 👍🏽 mix"}
+{"fn":"stripCommitComments","args":["ab日本語のテキスト"],"ok":"ab日本語のテキスト"}
+{"fn":"stripCommitComments","args":["a..bhello"],"ok":"a..bhello"}
+{"fn":"stripCommitComments","args":["straßehello"],"ok":"straßehello"}
+{"fn":"stripCommitComments","args":["﻿bomabc"],"ok":"bomabc"}
+{"fn":"stripCommitComments","args":["a😀b😀cİstanbul"],"ok":"a😀b😀cİstanbul"}
+{"fn":"stripCommitComments","args":["ünïcödé{name} has {count} items"],"ok":"ünïcödé{name} has {count} items"}
+{"fn":"stripCommitComments","args":["abc:"],"ok":"abc:"}
+{"fn":"stripCommitComments","args":["emoji 👍🏽 mixHello World"],"ok":"emoji 👍🏽 mixHello World"}
+{"fn":"stripCommitComments","args":["﻿bom﻿bom"],"ok":"bom﻿bom"}
+{"fn":"stripCommitComments","args":["  padded  {name} has {count} items"],"ok":"padded  {name} has {count} items"}
+{"fn":"stripCommitComments","args":["İstanbulé"],"ok":"İstanbulé"}
+{"fn":"stripCommitComments","args":["tab\tseparated  padded  "],"ok":"tab\tseparated  padded"}
+{"fn":"stripCommitComments","args":["  padded    padded  "],"ok":"padded    padded"}
+{"fn":"stripCommitComments","args":["hello worldİstanbul"],"ok":"hello worldİstanbul"}
+{"fn":"stripCommitComments","args":["helloa"],"ok":"helloa"}
+{"fn":"stripCommitComments","args":["éa😀b😀c"],"ok":"éa😀b😀c"}
+{"fn":"stripCommitComments","args":["HELLOé"],"ok":"HELLOé"}
+{"fn":"stripCommitComments","args":["ΣΊΣΥΦΟΣstraße"],"ok":"ΣΊΣΥΦΟΣstraße"}
+{"fn":"stripCommitComments","args":["trailing.a"],"ok":"trailing.a"}
+{"fn":"stripCommitComments","args":["line1\nline2a:b:c"],"ok":"line1\nline2a:b:c"}
+{"fn":"stripCommitComments","args":["{name} has {count} itemsHELLO"],"ok":"{name} has {count} itemsHELLO"}
+{"fn":"stripCommitComments","args":["a.b.cHello World"],"ok":"a.b.cHello World"}
+{"fn":"stripCommitComments","args":["src/a/b.ts  padded  "],"ok":"src/a/b.ts  padded"}
+{"fn":"stripCommitComments","args":["  padded  key_name-1"],"ok":"padded  key_name-1"}
+{"fn":"stripCommitComments","args":["abc  padded  "],"ok":"abc  padded"}
+{"fn":"stripCommitComments","args":["日本語のテキストHello World"],"ok":"日本語のテキストHello World"}
+{"fn":"stripCommitComments","args":["  padded  a..b"],"ok":"padded  a..b"}
+{"fn":"stripCommitComments","args":["hello worlda😀b😀c"],"ok":"hello worlda😀b😀c"}
+{"fn":"stripCommitComments","args":["{name} has {count} itemsé"],"ok":"{name} has {count} itemsé"}
+{"fn":"stripCommitComments","args":["abca😀b😀c"],"ok":"abca😀b😀c"}
+{"fn":"stripCommitComments","args":["trailing.trailing."],"ok":"trailing.trailing."}
+{"fn":"stripCommitComments","args":["emoji 👍🏽 mixemoji 👍🏽 mix"],"ok":"emoji 👍🏽 mixemoji 👍🏽 mix"}
+{"fn":"stripCommitComments","args":["ab.leading"],"ok":"ab.leading"}
+{"fn":"stripCommitComments","args":["key_name-1line1\nline2"],"ok":"key_name-1line1\nline2"}
+{"fn":"stripCommitComments","args":["a..bé"],"ok":"a..bé"}
+{"fn":"stripCommitComments","args":[":é"],"ok":":é"}
+{"fn":"stripCommitComments","args":["ns:key.pathline1\nline2"],"ok":"ns:key.pathline1\nline2"}
+{"fn":"stripCommitComments","args":["src/a/b.tshello"],"ok":"src/a/b.tshello"}
+{"fn":"stripCommitComments","args":["a😀b😀c日本語のテキスト"],"ok":"a😀b😀c日本語のテキスト"}
+{"fn":"stripCommitComments","args":["{name} has {count} itemssrc/a/b.ts"],"ok":"{name} has {count} itemssrc/a/b.ts"}
+{"fn":"stripCommitComments","args":["src/a/b.tsa..b"],"ok":"src/a/b.tsa..b"}
+{"fn":"stripCommitComments","args":["key_name-1ünïcödé"],"ok":"key_name-1ünïcödé"}
+{"fn":"stripCommitComments","args":["日本語のテキストsrc/a/b.ts"],"ok":"日本語のテキストsrc/a/b.ts"}
+{"fn":"stripCommitComments","args":["abcé"],"ok":"abcé"}
+{"fn":"stripCommitComments","args":["src/a/b.tsline1\nline2"],"ok":"src/a/b.tsline1\nline2"}
+{"fn":"stripCommitComments","args":["line1\nline2日本語のテキスト"],"ok":"line1\nline2日本語のテキスト"}
+{"fn":"stripCommitComments","args":[".leadinga..b"],"ok":".leadinga..b"}
+{"fn":"stripCommitComments","args":[":😀"],"ok":":😀"}
+{"fn":"stripCommitComments","args":["日本語のテキストab"],"ok":"日本語のテキストab"}
+{"fn":"stripCommitComments","args":["a..bab"],"ok":"a..bab"}
+{"fn":"stripCommitComments","args":["line1\nline2abc"],"ok":"line1\nline2abc"}
+{"fn":"stripCommitComments","args":["a.b.c😀"],"ok":"a.b.c😀"}
+{"fn":"stripCommitComments","args":[":a..b"],"ok":":a..b"}
+{"fn":"stripCommitComments","args":["İstanbula😀b😀c"],"ok":"İstanbula😀b😀c"}
+{"fn":"stripCommitComments","args":["{name} has {count} items{name} has {count} items"],"ok":"{name} has {count} items{name} has {count} items"}
+{"fn":"stripCommitComments","args":["straße﻿bom"],"ok":"straße﻿bom"}
+{"fn":"stripCommitComments","args":["ns:key.pathab"],"ok":"ns:key.pathab"}
+{"fn":"stripCommitComments","args":[".leading😀"],"ok":".leading😀"}
+{"fn":"stripCommitComments","args":["ΣΊΣΥΦΟΣa😀b😀c"],"ok":"ΣΊΣΥΦΟΣa😀b😀c"}
+{"fn":"stripCommitComments","args":["éa:b:c"],"ok":"éa:b:c"}
+{"fn":"stripCommitComments","args":["line1\nline2HELLO"],"ok":"line1\nline2HELLO"}
+{"fn":"stripCommitComments","args":[".leadingünïcödé"],"ok":".leadingünïcödé"}
+{"fn":"stripCommitComments","args":["abcns:key.path"],"ok":"abcns:key.path"}
+{"fn":"stripCommitComments","args":["éab"],"ok":"éab"}
+{"fn":"stripCommitComments","args":["abkey_name-1"],"ok":"abkey_name-1"}
+{"fn":"stripCommitComments","args":["日本語のテキストé"],"ok":"日本語のテキストé"}
+{"fn":"stripCommitComments","args":["{name} has {count} items.leading"],"ok":"{name} has {count} items.leading"}
+{"fn":"stripCommitComments","args":["hello日本語のテキスト"],"ok":"hello日本語のテキスト"}
+{"fn":"stripCommitComments","args":[".leadinga"],"ok":".leadinga"}
+{"fn":"stripCommitComments","args":["abca.b.c"],"ok":"abca.b.c"}
+{"fn":"stripCommitComments","args":["{name} has {count} itemsa.b.c"],"ok":"{name} has {count} itemsa.b.c"}
+{"fn":"stripCommitComments","args":["héllo wörld"],"ok":"héllo wörld"}
+{"fn":"stripCommitComments","args":["👍🏽 thumbs"],"ok":"👍🏽 thumbs"}
+{"fn":"stripCommitComments","args":["日本語"],"ok":"日本語"}
+{"fn":"stripCommitComments","args":["ılık ırmak"],"ok":"ılık ırmak"}
+{"fn":"stripCommitComments","args":["👨‍👩‍👧 family"],"ok":"👨‍👩‍👧 family"}
+{"fn":"stripCommitComments","args":["a b"],"ok":"a b"}
+{"fn":"stripCommitComments","args":["a😀b"],"ok":"a😀b"}
+{"fn":"stripCommitComments","args":["a²b x½ y①"],"ok":"a²b x½ y①"}
+{"fn":"stripCommitComments","args":["aⅠb Ⅻ"],"ok":"aⅠb Ⅻ"}
+{"fn":"stripCommitComments","args":["a𐐀b 𝐀bc"],"ok":"a𐐀b 𝐀bc"}
+{"fn":"stripCommitComments","args":["कि ٣٤"],"ok":"कि ٣٤"}
+{"fn":"stripCommitComments","args":["Iı İi"],"ok":"Iı İi"}
+{"fn":"stripCommitComments","args":["K K k"],"ok":"K K k"}
+{"fn":"stripCommitComments","args":["ſ s S"],"ok":"ſ s S"}
+{"fn":"stripCommitComments","args":["x‍y 👨‍👩‍👧"],"ok":"x‍y 👨‍👩‍👧"}
+{"fn":"stripCommitComments","args":["a b c　d"],"ok":"a b c　d"}
+{"fn":"stripCommitComments","args":["١٢٣ ٤٥"],"ok":"١٢٣ ٤٥"}
+{"fn":"stripCommitComments","args":["𝟘𝟙 ²³"],"ok":"𝟘𝟙 ²³"}
+{"fn":"stripCommitComments","args":["snake_case foo-bar o'neil"],"ok":"snake_case foo-bar o'neil"}
+{"fn":"stripCommitComments","args":["ǅungla Ǆ"],"ok":"ǅungla Ǆ"}
+{"fn":"stripCommitComments","args":["one\r\ntwo threefour"],"ok":"one\ntwo threefour"}
+{"fn":"stripCommitComments","args":["café café"],"ok":"café café"}
+{"fn":"stripCommitComments","args":["ΣΑΣ σας ς"],"ok":"ΣΑΣ σας ς"}
+{"fn":"validateCommitMessage","args":["hello worldhello world"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"hello worldhello world"}}
+{"fn":"validateCommitMessage","args":["é"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"é"}}
+{"fn":"validateCommitMessage","args":["İstanbul"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"İstanbul"}}
+{"fn":"validateCommitMessage","args":["Hello World"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"Hello World"}}
+{"fn":"validateCommitMessage","args":["{name} has {count} itemskey_name-1"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"{name} has {count} itemskey_name-1"}}
+{"fn":"validateCommitMessage","args":["line1\nline2"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"line1\nline2"}}
+{"fn":"validateCommitMessage","args":["a😀b😀ctrailing."],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a😀b😀ctrailing."}}
+{"fn":"validateCommitMessage","args":["trailing."],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"trailing."}}
+{"fn":"validateCommitMessage","args":["ns:key.path"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ns:key.path"}}
+{"fn":"validateCommitMessage","args":["emoji 👍🏽 mix"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"emoji 👍🏽 mix"}}
+{"fn":"validateCommitMessage","args":["abc"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"abc"}}
+{"fn":"validateCommitMessage","args":["key_name-1"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"key_name-1"}}
+{"fn":"validateCommitMessage","args":[".leading"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":".leading"}}
+{"fn":"validateCommitMessage","args":["ΣΊΣΥΦΟΣ"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ΣΊΣΥΦΟΣ"}}
+{"fn":"validateCommitMessage","args":["﻿bom"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"bom"}}
+{"fn":"validateCommitMessage","args":[""],"ok":{"valid":false,"errors":["Commit message is empty"],"cleaned":""}}
+{"fn":"validateCommitMessage","args":["a.b.cabc"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a.b.cabc"}}
+{"fn":"validateCommitMessage","args":["tab\tseparated"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"tab\tseparated"}}
+{"fn":"validateCommitMessage","args":["😀"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"😀"}}
+{"fn":"validateCommitMessage","args":["a.b.c"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a.b.c"}}
+{"fn":"validateCommitMessage","args":["{name} has {count} items﻿bom"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"{name} has {count} items﻿bom"}}
+{"fn":"validateCommitMessage","args":["hello world"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"hello world"}}
+{"fn":"validateCommitMessage","args":[":"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":":"}}
+{"fn":"validateCommitMessage","args":["ab"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ab"}}
+{"fn":"validateCommitMessage","args":["日本語のテキスト"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"日本語のテキスト"}}
+{"fn":"validateCommitMessage","args":["src/a/b.ts"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"src/a/b.ts"}}
+{"fn":"validateCommitMessage","args":["HELLO"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"HELLO"}}
+{"fn":"validateCommitMessage","args":["{name} has {count} items"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"{name} has {count} items"}}
+{"fn":"validateCommitMessage","args":["Hello Worldemoji 👍🏽 mix"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"Hello Worldemoji 👍🏽 mix"}}
+{"fn":"validateCommitMessage","args":["straße﻿bom"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"straße﻿bom"}}
+{"fn":"validateCommitMessage","args":["hello"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"hello"}}
+{"fn":"validateCommitMessage","args":["straße"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"straße"}}
+{"fn":"validateCommitMessage","args":["a😀b😀cline1\nline2"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a😀b😀cline1\nline2"}}
+{"fn":"validateCommitMessage","args":["./x/**/*.json"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"./x/**/*.json"}}
+{"fn":"validateCommitMessage","args":["a😀b😀c"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a😀b😀c"}}
+{"fn":"validateCommitMessage","args":["helloa"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"helloa"}}
+{"fn":"validateCommitMessage","args":["Hello Worldünïcödé"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"Hello Worldünïcödé"}}
+{"fn":"validateCommitMessage","args":["étrailing."],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"étrailing."}}
+{"fn":"validateCommitMessage","args":["﻿bom😀"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"bom😀"}}
+{"fn":"validateCommitMessage","args":["straßetrailing."],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"straßetrailing."}}
+{"fn":"validateCommitMessage","args":["trailing.İstanbul"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"trailing.İstanbul"}}
+{"fn":"validateCommitMessage","args":["emoji 👍🏽 mixstraße"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"emoji 👍🏽 mixstraße"}}
+{"fn":"validateCommitMessage","args":["src/a/b.tstab\tseparated"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"src/a/b.tstab\tseparated"}}
+{"fn":"validateCommitMessage","args":["HELLOünïcödé"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"HELLOünïcödé"}}
+{"fn":"validateCommitMessage","args":[".leadingkey_name-1"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":".leadingkey_name-1"}}
+{"fn":"validateCommitMessage","args":["abemoji 👍🏽 mix"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"abemoji 👍🏽 mix"}}
+{"fn":"validateCommitMessage","args":["a..b"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a..b"}}
+{"fn":"validateCommitMessage","args":["日本語のテキストline1\nline2"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"日本語のテキストline1\nline2"}}
+{"fn":"validateCommitMessage","args":["key_name-1ab"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"key_name-1ab"}}
+{"fn":"validateCommitMessage","args":["a..bns:key.path"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a..bns:key.path"}}
+{"fn":"validateCommitMessage","args":["a:b:cline1\nline2"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a:b:cline1\nline2"}}
+{"fn":"validateCommitMessage","args":["  padded  😀"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"padded  😀"}}
+{"fn":"validateCommitMessage","args":["  padded  ab"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"padded  ab"}}
+{"fn":"validateCommitMessage","args":["éstraße"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"éstraße"}}
+{"fn":"validateCommitMessage","args":[":src/a/b.ts"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":":src/a/b.ts"}}
+{"fn":"validateCommitMessage","args":[".leading:"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":".leading:"}}
+{"fn":"validateCommitMessage","args":["  padded  "],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"padded"}}
+{"fn":"validateCommitMessage","args":["a"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a"}}
+{"fn":"validateCommitMessage","args":["ünïcödé"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ünïcödé"}}
+{"fn":"validateCommitMessage","args":["a:b:c"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a:b:c"}}
+{"fn":"validateCommitMessage","args":["abns:key.path"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"abns:key.path"}}
+{"fn":"validateCommitMessage","args":["a:b:ca:b:c"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a:b:ca:b:c"}}
+{"fn":"validateCommitMessage","args":["straßea"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"straßea"}}
+{"fn":"validateCommitMessage","args":["HELLOline1\nline2"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"HELLOline1\nline2"}}
+{"fn":"validateCommitMessage","args":["  padded  é"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"padded  é"}}
+{"fn":"validateCommitMessage","args":["aba😀b😀c"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"aba😀b😀c"}}
+{"fn":"validateCommitMessage","args":["﻿bomns:key.path"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"bomns:key.path"}}
+{"fn":"validateCommitMessage","args":["😀:"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"😀:"}}
+{"fn":"validateCommitMessage","args":["{name} has {count} itemsns:key.path"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"{name} has {count} itemsns:key.path"}}
+{"fn":"validateCommitMessage","args":[".leading{name} has {count} items"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":".leading{name} has {count} items"}}
+{"fn":"validateCommitMessage","args":["./x/**/*.jsonHELLO"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"./x/**/*.jsonHELLO"}}
+{"fn":"validateCommitMessage","args":["line1\nline2:"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"line1\nline2:"}}
+{"fn":"validateCommitMessage","args":["﻿bomHello World"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"bomHello World"}}
+{"fn":"validateCommitMessage","args":["trailing.straße"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"trailing.straße"}}
+{"fn":"validateCommitMessage","args":["HELLOstraße"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"HELLOstraße"}}
+{"fn":"validateCommitMessage","args":["trailing.日本語のテキスト"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"trailing.日本語のテキスト"}}
+{"fn":"validateCommitMessage","args":["straße{name} has {count} items"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"straße{name} has {count} items"}}
+{"fn":"validateCommitMessage","args":["日本語のテキストabc"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"日本語のテキストabc"}}
+{"fn":"validateCommitMessage","args":["a😀b😀ca.b.c"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a😀b😀ca.b.c"}}
+{"fn":"validateCommitMessage","args":["😀😀"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"😀😀"}}
+{"fn":"validateCommitMessage","args":["emoji 👍🏽 mixline1\nline2"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"emoji 👍🏽 mixline1\nline2"}}
+{"fn":"validateCommitMessage","args":["😀straße"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"😀straße"}}
+{"fn":"validateCommitMessage","args":["a.b.c😀"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a.b.c😀"}}
+{"fn":"validateCommitMessage","args":["İstanbula..b"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"İstanbula..b"}}
+{"fn":"validateCommitMessage","args":["straßeline1\nline2"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"straßeline1\nline2"}}
+{"fn":"validateCommitMessage","args":["ünïcödéHELLO"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ünïcödéHELLO"}}
+{"fn":"validateCommitMessage","args":[".leading./x/**/*.json"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":".leading./x/**/*.json"}}
+{"fn":"validateCommitMessage","args":["ünïcödé:"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ünïcödé:"}}
+{"fn":"validateCommitMessage","args":["hello world./x/**/*.json"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"hello world./x/**/*.json"}}
+{"fn":"validateCommitMessage","args":["ΣΊΣΥΦΟΣ  padded  "],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ΣΊΣΥΦΟΣ  padded"}}
+{"fn":"validateCommitMessage","args":["hello worldtab\tseparated"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"hello worldtab\tseparated"}}
+{"fn":"validateCommitMessage","args":["helloΣΊΣΥΦΟΣ"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"helloΣΊΣΥΦΟΣ"}}
+{"fn":"validateCommitMessage","args":["a日本語のテキスト"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a日本語のテキスト"}}
+{"fn":"validateCommitMessage","args":["key_name-1ns:key.path"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"key_name-1ns:key.path"}}
+{"fn":"validateCommitMessage","args":["straße:"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"straße:"}}
+{"fn":"validateCommitMessage","args":["{name} has {count} itemsa..b"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"{name} has {count} itemsa..b"}}
+{"fn":"validateCommitMessage","args":["a:b:cİstanbul"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a:b:cİstanbul"}}
+{"fn":"validateCommitMessage","args":["ns:key.pathünïcödé"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ns:key.pathünïcödé"}}
+{"fn":"validateCommitMessage","args":["{name} has {count} itemsemoji 👍🏽 mix"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"{name} has {count} itemsemoji 👍🏽 mix"}}
+{"fn":"validateCommitMessage","args":["tab\tseparatedns:key.path"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"tab\tseparatedns:key.path"}}
+{"fn":"validateCommitMessage","args":["Hello Worldabc"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"Hello Worldabc"}}
+{"fn":"validateCommitMessage","args":["﻿bomünïcödé"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"bomünïcödé"}}
+{"fn":"validateCommitMessage","args":["a:b:ca..b"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a:b:ca..b"}}
+{"fn":"validateCommitMessage","args":["emoji 👍🏽 mix:"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"emoji 👍🏽 mix:"}}
+{"fn":"validateCommitMessage","args":["ΣΊΣΥΦΟΣtrailing."],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ΣΊΣΥΦΟΣtrailing."}}
+{"fn":"validateCommitMessage","args":["line1\nline2HELLO"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"line1\nline2HELLO"}}
+{"fn":"validateCommitMessage","args":["😀HELLO"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"😀HELLO"}}
+{"fn":"validateCommitMessage","args":["ünïcödéa.b.c"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ünïcödéa.b.c"}}
+{"fn":"validateCommitMessage","args":["ns:key.path.leading"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ns:key.path.leading"}}
+{"fn":"validateCommitMessage","args":["emoji 👍🏽 mix.leading"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"emoji 👍🏽 mix.leading"}}
+{"fn":"validateCommitMessage","args":["😀ab"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"😀ab"}}
+{"fn":"validateCommitMessage","args":["日本語のテキストstraße"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"日本語のテキストstraße"}}
+{"fn":"validateCommitMessage","args":["abcline1\nline2"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"abcline1\nline2"}}
+{"fn":"validateCommitMessage","args":["hello worldHELLO"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"hello worldHELLO"}}
+{"fn":"validateCommitMessage","args":["a..bemoji 👍🏽 mix"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a..bemoji 👍🏽 mix"}}
+{"fn":"validateCommitMessage","args":["a:b:cΣΊΣΥΦΟΣ"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a:b:cΣΊΣΥΦΟΣ"}}
+{"fn":"validateCommitMessage","args":["日本語のテキストHello World"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"日本語のテキストHello World"}}
+{"fn":"validateCommitMessage","args":["hello worldİstanbul"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"hello worldİstanbul"}}
+{"fn":"validateCommitMessage","args":["😀  padded  "],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"😀  padded"}}
+{"fn":"validateCommitMessage","args":["src/a/b.tssrc/a/b.ts"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"src/a/b.tssrc/a/b.ts"}}
+{"fn":"validateCommitMessage","args":["hello.leading"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"hello.leading"}}
+{"fn":"validateCommitMessage","args":["trailing.a:b:c"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"trailing.a:b:c"}}
+{"fn":"validateCommitMessage","args":["﻿boma:b:c"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"boma:b:c"}}
+{"fn":"validateCommitMessage","args":["HELLOns:key.path"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"HELLOns:key.path"}}
+{"fn":"validateCommitMessage","args":["straße./x/**/*.json"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"straße./x/**/*.json"}}
+{"fn":"validateCommitMessage","args":["日本語のテキストtab\tseparated"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"日本語のテキストtab\tseparated"}}
+{"fn":"validateCommitMessage","args":[":﻿bom"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":":﻿bom"}}
+{"fn":"validateCommitMessage","args":["ünïcödétab\tseparated"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ünïcödétab\tseparated"}}
+{"fn":"validateCommitMessage","args":["a.b.ca:b:c"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a.b.ca:b:c"}}
+{"fn":"validateCommitMessage","args":["İstanbul./x/**/*.json"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"İstanbul./x/**/*.json"}}
+{"fn":"validateCommitMessage","args":["hellokey_name-1"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"hellokey_name-1"}}
+{"fn":"validateCommitMessage","args":[":😀"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":":😀"}}
+{"fn":"validateCommitMessage","args":["ab😀"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ab😀"}}
+{"fn":"validateCommitMessage","args":["éa..b"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"éa..b"}}
+{"fn":"validateCommitMessage","args":["  padded  hello world"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"padded  hello world"}}
+{"fn":"validateCommitMessage","args":[".leadingHello World"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":".leadingHello World"}}
+{"fn":"validateCommitMessage","args":["src/a/b.tsünïcödé"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"src/a/b.tsünïcödé"}}
+{"fn":"validateCommitMessage","args":["helloabc"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"helloabc"}}
+{"fn":"validateCommitMessage","args":["emoji 👍🏽 mixé"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"emoji 👍🏽 mixé"}}
+{"fn":"validateCommitMessage","args":[".leadingHELLO"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":".leadingHELLO"}}
+{"fn":"validateCommitMessage","args":["a:b:cstraße"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a:b:cstraße"}}
+{"fn":"validateCommitMessage","args":["a..b{name} has {count} items"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a..b{name} has {count} items"}}
+{"fn":"validateCommitMessage","args":["abcabc"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"abcabc"}}
+{"fn":"validateCommitMessage","args":["Hello WorldHELLO"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"Hello WorldHELLO"}}
+{"fn":"validateCommitMessage","args":["trailing../x/**/*.json"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"trailing../x/**/*.json"}}
+{"fn":"validateCommitMessage","args":["key_name-1{name} has {count} items"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"key_name-1{name} has {count} items"}}
+{"fn":"validateCommitMessage","args":["src/a/b.tsa"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"src/a/b.tsa"}}
+{"fn":"validateCommitMessage","args":["straßeİstanbul"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"straßeİstanbul"}}
+{"fn":"validateCommitMessage","args":["tab\tseparated.leading"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"tab\tseparated.leading"}}
+{"fn":"validateCommitMessage","args":["ΣΊΣΥΦΟΣa.b.c"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ΣΊΣΥΦΟΣa.b.c"}}
+{"fn":"validateCommitMessage","args":["helloİstanbul"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"helloİstanbul"}}
+{"fn":"validateCommitMessage","args":["line1\nline2a.b.c"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"line1\nline2a.b.c"}}
+{"fn":"validateCommitMessage","args":["a.b.c:"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a.b.c:"}}
+{"fn":"validateCommitMessage","args":["😀ünïcödé"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"😀ünïcödé"}}
+{"fn":"validateCommitMessage","args":["a.b.c﻿bom"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a.b.c﻿bom"}}
+{"fn":"validateCommitMessage","args":["İstanbulline1\nline2"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"İstanbulline1\nline2"}}
+{"fn":"validateCommitMessage","args":["hellohello world"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"hellohello world"}}
+{"fn":"validateCommitMessage","args":["ünïcödéline1\nline2"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ünïcödéline1\nline2"}}
+{"fn":"validateCommitMessage","args":[".leadingé"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":".leadingé"}}
+{"fn":"validateCommitMessage","args":["trailing.{name} has {count} items"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"trailing.{name} has {count} items"}}
+{"fn":"validateCommitMessage","args":[".leadingemoji 👍🏽 mix"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":".leadingemoji 👍🏽 mix"}}
+{"fn":"validateCommitMessage","args":[".leadingünïcödé"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":".leadingünïcödé"}}
+{"fn":"validateCommitMessage","args":["a:"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a:"}}
+{"fn":"validateCommitMessage","args":["HELLO:"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"HELLO:"}}
+{"fn":"validateCommitMessage","args":["ns:key.path{name} has {count} items"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ns:key.path{name} has {count} items"}}
+{"fn":"validateCommitMessage","args":["ünïcödéa..b"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ünïcödéa..b"}}
+{"fn":"validateCommitMessage","args":["abc./x/**/*.json"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"abc./x/**/*.json"}}
+{"fn":"validateCommitMessage","args":["a😀b😀cİstanbul"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a😀b😀cİstanbul"}}
+{"fn":"validateCommitMessage","args":["😀line1\nline2"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"😀line1\nline2"}}
+{"fn":"validateCommitMessage","args":["a😀b😀ca:b:c"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a😀b😀ca:b:c"}}
+{"fn":"validateCommitMessage","args":["Hello World.leading"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"Hello World.leading"}}
+{"fn":"validateCommitMessage","args":["emoji 👍🏽 mixsrc/a/b.ts"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"emoji 👍🏽 mixsrc/a/b.ts"}}
+{"fn":"validateCommitMessage","args":["trailing.﻿bom"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"trailing.﻿bom"}}
+{"fn":"validateCommitMessage","args":[":abc"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":":abc"}}
+{"fn":"validateCommitMessage","args":["HELLOemoji 👍🏽 mix"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"HELLOemoji 👍🏽 mix"}}
+{"fn":"validateCommitMessage","args":["a😀b😀cHELLO"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a😀b😀cHELLO"}}
+{"fn":"validateCommitMessage","args":["hello worldtrailing."],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"hello worldtrailing."}}
+{"fn":"validateCommitMessage","args":["hello world﻿bom"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"hello world﻿bom"}}
+{"fn":"validateCommitMessage","args":["😀a..b"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"😀a..b"}}
+{"fn":"validateCommitMessage","args":["key_name-1é"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"key_name-1é"}}
+{"fn":"validateCommitMessage","args":["Hello World日本語のテキスト"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"Hello World日本語のテキスト"}}
+{"fn":"validateCommitMessage","args":["İstanbula😀b😀c"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"İstanbula😀b😀c"}}
+{"fn":"validateCommitMessage","args":["key_name-1a.b.c"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"key_name-1a.b.c"}}
+{"fn":"validateCommitMessage","args":["ΣΊΣΥΦΟΣünïcödé"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ΣΊΣΥΦΟΣünïcödé"}}
+{"fn":"validateCommitMessage","args":["tab\tseparatedab"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"tab\tseparatedab"}}
+{"fn":"validateCommitMessage","args":["  padded  src/a/b.ts"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"padded  src/a/b.ts"}}
+{"fn":"validateCommitMessage","args":["src/a/b.ts.leading"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"src/a/b.ts.leading"}}
+{"fn":"validateCommitMessage","args":["tab\tseparatedhello world"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"tab\tseparatedhello world"}}
+{"fn":"validateCommitMessage","args":["aa"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"aa"}}
+{"fn":"validateCommitMessage","args":["line1\nline2😀"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"line1\nline2😀"}}
+{"fn":"validateCommitMessage","args":["./x/**/*.jsonİstanbul"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"./x/**/*.jsonİstanbul"}}
+{"fn":"validateCommitMessage","args":["line1\nline2hello"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"line1\nline2hello"}}
+{"fn":"validateCommitMessage","args":["a.b.cünïcödé"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a.b.cünïcödé"}}
+{"fn":"validateCommitMessage","args":["ΣΊΣΥΦΟΣsrc/a/b.ts"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ΣΊΣΥΦΟΣsrc/a/b.ts"}}
+{"fn":"validateCommitMessage","args":["src/a/b.tsa..b"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"src/a/b.tsa..b"}}
+{"fn":"validateCommitMessage","args":["Hello World:"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"Hello World:"}}
+{"fn":"validateCommitMessage","args":["emoji 👍🏽 mixns:key.path"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"emoji 👍🏽 mixns:key.path"}}
+{"fn":"validateCommitMessage","args":[":日本語のテキスト"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":":日本語のテキスト"}}
+{"fn":"validateCommitMessage","args":["emoji 👍🏽 mixabc"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"emoji 👍🏽 mixabc"}}
+{"fn":"validateCommitMessage","args":["﻿boma"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"boma"}}
+{"fn":"validateCommitMessage","args":["héllo wörld"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"héllo wörld"}}
+{"fn":"validateCommitMessage","args":["👍🏽 thumbs"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"👍🏽 thumbs"}}
+{"fn":"validateCommitMessage","args":["日本語"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"日本語"}}
+{"fn":"validateCommitMessage","args":["ılık ırmak"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ılık ırmak"}}
+{"fn":"validateCommitMessage","args":["👨‍👩‍👧 family"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"👨‍👩‍👧 family"}}
+{"fn":"validateCommitMessage","args":["a b"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a b"}}
+{"fn":"validateCommitMessage","args":["a😀b"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a😀b"}}
+{"fn":"validateCommitMessage","args":["a²b x½ y①"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a²b x½ y①"}}
+{"fn":"validateCommitMessage","args":["aⅠb Ⅻ"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"aⅠb Ⅻ"}}
+{"fn":"validateCommitMessage","args":["a𐐀b 𝐀bc"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a𐐀b 𝐀bc"}}
+{"fn":"validateCommitMessage","args":["कि ٣٤"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"कि ٣٤"}}
+{"fn":"validateCommitMessage","args":["Iı İi"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"Iı İi"}}
+{"fn":"validateCommitMessage","args":["K K k"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"K K k"}}
+{"fn":"validateCommitMessage","args":["ſ s S"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ſ s S"}}
+{"fn":"validateCommitMessage","args":["x‍y 👨‍👩‍👧"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"x‍y 👨‍👩‍👧"}}
+{"fn":"validateCommitMessage","args":["a b c　d"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"a b c　d"}}
+{"fn":"validateCommitMessage","args":["١٢٣ ٤٥"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"١٢٣ ٤٥"}}
+{"fn":"validateCommitMessage","args":["𝟘𝟙 ²³"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"𝟘𝟙 ²³"}}
+{"fn":"validateCommitMessage","args":["snake_case foo-bar o'neil"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"snake_case foo-bar o'neil"}}
+{"fn":"validateCommitMessage","args":["ǅungla Ǆ"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ǅungla Ǆ"}}
+{"fn":"validateCommitMessage","args":["one\r\ntwo threefour"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"one\ntwo threefour"}}
+{"fn":"validateCommitMessage","args":["café café"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"café café"}}
+{"fn":"validateCommitMessage","args":["ΣΑΣ σας ς"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"ΣΑΣ σας ς"}}
+{"fn":"buildCommitMsgHookScript","args":[],"ok":"#!/usr/bin/env bash\n# Conventional Commit validator (managed by DevRyan)\n# Installed via global core.hooksPath. Edit at ~/.config/git/hooks/commit-msg.\nset -euo pipefail\n\nmsg_file=\"${1:-}\"\nif [ -z \"${msg_file}\" ] || [ ! -f \"${msg_file}\" ]; then\n  exit 0\nfi\n\n# Match git's default commit.cleanup=strip: drop comment-only lines and trim.\ncleaned=\"$(grep -v '^[[:space:]]*#' \"${msg_file}\" | awk 'NF {found=1} found' | awk 'NF || prev {print; prev=NF}' | sed -e :a -e '/^\\n*$/{$d;N;ba' -e '}')\"\n\nif [ -z \"${cleaned}\" ]; then\n  echo \"✖ commit-msg: empty commit message after stripping comments\" >&2\n  exit 1\nfi\n\nsubject=\"$(printf '%s\\n' \"${cleaned}\" | head -n 1)\"\nsubject_len=${#subject}\nmax_len=72\n\nerrors=()\n\nif [ \"${subject_len}\" -gt \"${max_len}\" ]; then\n  errors+=(\"subject is ${subject_len} chars; keep it ≤ ${max_len}\")\nfi\n\n# type(scope)!: summary | type(scope): summary | type!: summary | type: summary\nsubject_re='^(feat|fix|refactor|perf|docs|test|build|ci|chore|style|revert)(\\([a-z0-9][a-z0-9_-]*\\))?(!)?:[[:space:]]+[^[:space:]].*$'\nif ! [[ \"${subject}\" =~ ${subject_re} ]]; then\n  errors+=(\"subject must match 'type(scope): summary' or 'type: summary' using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert\")\nfi\n\n# Reject trailing period on summary.\nif [[ \"${subject}\" =~ \\.[[:space:]]*$ ]]; then\n  errors+=(\"subject summary must not end with a period\")\nfi\n\nif [ \"${#errors[@]}\" -gt 0 ]; then\n  echo \"✖ commit-msg validation failed:\" >&2\n  for err in \"${errors[@]}\"; do\n    echo \"   - ${err}\" >&2\n  done\n  echo \"\" >&2\n  echo \"Allowed types: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert\" >&2\n  echo \"Subject:       ${subject}\" >&2\n  exit 1\nfi\n\nexit 0\n"}
+{"fn":"validateCommitMessage","args":["feat: add thing"],"ok":{"valid":true,"errors":[],"cleaned":"feat: add thing"}}
+{"fn":"stripCommitComments","args":["feat: add thing"],"ok":"feat: add thing"}
+{"fn":"validateCommitMessage","args":["feat(ui): add thing"],"ok":{"valid":true,"errors":[],"cleaned":"feat(ui): add thing"}}
+{"fn":"stripCommitComments","args":["feat(ui): add thing"],"ok":"feat(ui): add thing"}
+{"fn":"validateCommitMessage","args":["feat(ui)!: break"],"ok":{"valid":true,"errors":[],"cleaned":"feat(ui)!: break"}}
+{"fn":"stripCommitComments","args":["feat(ui)!: break"],"ok":"feat(ui)!: break"}
+{"fn":"validateCommitMessage","args":["feat!: break"],"ok":{"valid":true,"errors":[],"cleaned":"feat!: break"}}
+{"fn":"stripCommitComments","args":["feat!: break"],"ok":"feat!: break"}
+{"fn":"validateCommitMessage","args":["fix:  spaced"],"ok":{"valid":true,"errors":[],"cleaned":"fix:  spaced"}}
+{"fn":"stripCommitComments","args":["fix:  spaced"],"ok":"fix:  spaced"}
+{"fn":"validateCommitMessage","args":["fix:nospace"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"fix:nospace"}}
+{"fn":"stripCommitComments","args":["fix:nospace"],"ok":"fix:nospace"}
+{"fn":"validateCommitMessage","args":["fix: ends."],"ok":{"valid":false,"errors":["Subject summary must not end with a period"],"cleaned":"fix: ends."}}
+{"fn":"stripCommitComments","args":["fix: ends."],"ok":"fix: ends."}
+{"fn":"validateCommitMessage","args":["fix: ends. "],"ok":{"valid":false,"errors":["Subject summary must not end with a period"],"cleaned":"fix: ends."}}
+{"fn":"stripCommitComments","args":["fix: ends. "],"ok":"fix: ends."}
+{"fn":"validateCommitMessage","args":["Feat: x"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"Feat: x"}}
+{"fn":"stripCommitComments","args":["Feat: x"],"ok":"Feat: x"}
+{"fn":"validateCommitMessage","args":["feature: x"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"feature: x"}}
+{"fn":"stripCommitComments","args":["feature: x"],"ok":"feature: x"}
+{"fn":"validateCommitMessage","args":["feat(UI): x"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"feat(UI): x"}}
+{"fn":"stripCommitComments","args":["feat(UI): x"],"ok":"feat(UI): x"}
+{"fn":"validateCommitMessage","args":["feat(-x): x"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"feat(-x): x"}}
+{"fn":"stripCommitComments","args":["feat(-x): x"],"ok":"feat(-x): x"}
+{"fn":"validateCommitMessage","args":["feat(a_b-c): x"],"ok":{"valid":true,"errors":[],"cleaned":"feat(a_b-c): x"}}
+{"fn":"stripCommitComments","args":["feat(a_b-c): x"],"ok":"feat(a_b-c): x"}
+{"fn":"validateCommitMessage","args":["feat(): x"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"feat(): x"}}
+{"fn":"stripCommitComments","args":["feat(): x"],"ok":"feat(): x"}
+{"fn":"validateCommitMessage","args":["feat(a)(b): x"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"feat(a)(b): x"}}
+{"fn":"stripCommitComments","args":["feat(a)(b): x"],"ok":"feat(a)(b): x"}
+{"fn":"validateCommitMessage","args":["chore: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"],"ok":{"valid":false,"errors":["Subject is 87 chars; keep it ≤ 72"],"cleaned":"chore: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}
+{"fn":"stripCommitComments","args":["chore: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"],"ok":"chore: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}
+{"fn":"validateCommitMessage","args":["chore: x y"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"chore: x y"}}
+{"fn":"stripCommitComments","args":["chore: x y"],"ok":"chore: x y"}
+{"fn":"validateCommitMessage","args":["chore: x\ry"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"chore: x\ry"}}
+{"fn":"stripCommitComments","args":["chore: x\ry"],"ok":"chore: x\ry"}
+{"fn":"validateCommitMessage","args":["chore:　x"],"ok":{"valid":true,"errors":[],"cleaned":"chore:　x"}}
+{"fn":"stripCommitComments","args":["chore:　x"],"ok":"chore:　x"}
+{"fn":"validateCommitMessage","args":["chore:x"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"chore:x"}}
+{"fn":"stripCommitComments","args":["chore:x"],"ok":"chore:x"}
+{"fn":"validateCommitMessage","args":["# comment\nfeat: x\n# more"],"ok":{"valid":true,"errors":[],"cleaned":"feat: x"}}
+{"fn":"stripCommitComments","args":["# comment\nfeat: x\n# more"],"ok":"feat: x"}
+{"fn":"validateCommitMessage","args":["  # c\r\nfeat: x\r\n\r\nbody"],"ok":{"valid":true,"errors":[],"cleaned":"feat: x\n\nbody"}}
+{"fn":"stripCommitComments","args":["  # c\r\nfeat: x\r\n\r\nbody"],"ok":"feat: x\n\nbody"}
+{"fn":"validateCommitMessage","args":["\n\n  \n"],"ok":{"valid":false,"errors":["Commit message is empty"],"cleaned":""}}
+{"fn":"stripCommitComments","args":["\n\n  \n"],"ok":""}
+{"fn":"validateCommitMessage","args":[""],"ok":{"valid":false,"errors":["Commit message is empty"],"cleaned":""}}
+{"fn":"stripCommitComments","args":[""],"ok":""}
+{"fn":"validateCommitMessage","args":["#only"],"ok":{"valid":false,"errors":["Commit message is empty"],"cleaned":""}}
+{"fn":"stripCommitComments","args":["#only"],"ok":""}
+{"fn":"validateCommitMessage","args":["feat: x\n\nbody."],"ok":{"valid":true,"errors":[],"cleaned":"feat: x\n\nbody."}}
+{"fn":"stripCommitComments","args":["feat: x\n\nbody."],"ok":"feat: x\n\nbody."}
+{"fn":"validateCommitMessage","args":["revert: \"feat: x\""],"ok":{"valid":true,"errors":[],"cleaned":"revert: \"feat: x\""}}
+{"fn":"stripCommitComments","args":["revert: \"feat: x\""],"ok":"revert: \"feat: x\""}
+{"fn":"validateCommitMessage","args":["ci: 😀éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"],"ok":{"valid":false,"errors":["Subject is 76 chars; keep it ≤ 72"],"cleaned":"ci: 😀éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"}}
+{"fn":"stripCommitComments","args":["ci: 😀éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"],"ok":"ci: 😀éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"}
+{"fn":"validateCommitMessage","args":["style: ﻿x"],"ok":{"valid":true,"errors":[],"cleaned":"style: ﻿x"}}
+{"fn":"stripCommitComments","args":["style: ﻿x"],"ok":"style: ﻿x"}
+{"fn":"validateCommitMessage","args":["docs: x\t"],"ok":{"valid":true,"errors":[],"cleaned":"docs: x"}}
+{"fn":"stripCommitComments","args":["docs: x\t"],"ok":"docs: x"}
+{"fn":"validateCommitMessage","args":["perf: ."],"ok":{"valid":false,"errors":["Subject summary must not end with a period"],"cleaned":"perf: ."}}
+{"fn":"stripCommitComments","args":["perf: ."],"ok":"perf: ."}
+{"fn":"validateCommitMessage","args":["test(é): x"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"test(é): x"}}
+{"fn":"stripCommitComments","args":["test(é): x"],"ok":"test(é): x"}
+{"fn":"validateCommitMessage","args":["build(a b): x"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"build(a b): x"}}
+{"fn":"stripCommitComments","args":["build(a b): x"],"ok":"build(a b): x"}
+{"fn":"validateCommitMessage","args":["feat: a\r\nb"],"ok":{"valid":true,"errors":[],"cleaned":"feat: a\nb"}}
+{"fn":"stripCommitComments","args":["feat: a\r\nb"],"ok":"feat: a\nb"}
+{"fn":"validateCommitMessage","args":["x\r"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"x"}}
+{"fn":"stripCommitComments","args":["x\r"],"ok":"x"}
+{"fn":"validateCommitMessage","args":["\rfeat: x"],"ok":{"valid":true,"errors":[],"cleaned":"feat: x"}}
+{"fn":"stripCommitComments","args":["\rfeat: x"],"ok":"feat: x"}
+{"fn":"validateCommitMessage","args":["feat(ui): add "],"ok":{"valid":true,"errors":[],"cleaned":"feat(ui): add"}}
+{"fn":"stripCommitComments","args":["feat(ui): add "],"ok":"feat(ui): add"}
+{"fn":"buildCommitMsgHookScript","args":[],"ok":"#!/usr/bin/env bash\n# Conventional Commit validator (managed by DevRyan)\n# Installed via global core.hooksPath. Edit at ~/.config/git/hooks/commit-msg.\nset -euo pipefail\n\nmsg_file=\"${1:-}\"\nif [ -z \"${msg_file}\" ] || [ ! -f \"${msg_file}\" ]; then\n  exit 0\nfi\n\n# Match git's default commit.cleanup=strip: drop comment-only lines and trim.\ncleaned=\"$(grep -v '^[[:space:]]*#' \"${msg_file}\" | awk 'NF {found=1} found' | awk 'NF || prev {print; prev=NF}' | sed -e :a -e '/^\\n*$/{$d;N;ba' -e '}')\"\n\nif [ -z \"${cleaned}\" ]; then\n  echo \"✖ commit-msg: empty commit message after stripping comments\" >&2\n  exit 1\nfi\n\nsubject=\"$(printf '%s\\n' \"${cleaned}\" | head -n 1)\"\nsubject_len=${#subject}\nmax_len=72\n\nerrors=()\n\nif [ \"${subject_len}\" -gt \"${max_len}\" ]; then\n  errors+=(\"subject is ${subject_len} chars; keep it ≤ ${max_len}\")\nfi\n\n# type(scope)!: summary | type(scope): summary | type!: summary | type: summary\nsubject_re='^(feat|fix|refactor|perf|docs|test|build|ci|chore|style|revert)(\\([a-z0-9][a-z0-9_-]*\\))?(!)?:[[:space:]]+[^[:space:]].*$'\nif ! [[ \"${subject}\" =~ ${subject_re} ]]; then\n  errors+=(\"subject must match 'type(scope): summary' or 'type: summary' using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert\")\nfi\n\n# Reject trailing period on summary.\nif [[ \"${subject}\" =~ \\.[[:space:]]*$ ]]; then\n  errors+=(\"subject summary must not end with a period\")\nfi\n\nif [ \"${#errors[@]}\" -gt 0 ]; then\n  echo \"✖ commit-msg validation failed:\" >&2\n  for err in \"${errors[@]}\"; do\n    echo \"   - ${err}\" >&2\n  done\n  echo \"\" >&2\n  echo \"Allowed types: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert\" >&2\n  echo \"Subject:       ${subject}\" >&2\n  exit 1\nfi\n\nexit 0\n"}
+{"fn":"stripCommitComments","args":["feat(dashboard): add settings\n\n# comment that should disappear\nbody line\n"],"ok":"feat(dashboard): add settings\n\nbody line"}
+{"fn":"stripCommitComments","args":["# only comments\n#  another\n"],"ok":""}
+{"fn":"validateCommitMessage","args":["feat(dashboard): add settings page"],"ok":{"valid":true,"errors":[],"cleaned":"feat(dashboard): add settings page"}}
+{"fn":"stripCommitComments","args":["feat(dashboard): add settings page"],"ok":"feat(dashboard): add settings page"}
+{"fn":"validateCommitMessage","args":["chore: update deps"],"ok":{"valid":true,"errors":[],"cleaned":"chore: update deps"}}
+{"fn":"stripCommitComments","args":["chore: update deps"],"ok":"chore: update deps"}
+{"fn":"validateCommitMessage","args":["feat(dashboard)!: drop deprecated endpoint"],"ok":{"valid":true,"errors":[],"cleaned":"feat(dashboard)!: drop deprecated endpoint"}}
+{"fn":"stripCommitComments","args":["feat(dashboard)!: drop deprecated endpoint"],"ok":"feat(dashboard)!: drop deprecated endpoint"}
+{"fn":"validateCommitMessage","args":["perf(git): speed commit drafts\n\n- Batch selected Git diffs\n- Fall back within the latency budget"],"ok":{"valid":true,"errors":[],"cleaned":"perf(git): speed commit drafts\n\n- Batch selected Git diffs\n- Fall back within the latency budget"}}
+{"fn":"stripCommitComments","args":["perf(git): speed commit drafts\n\n- Batch selected Git diffs\n- Fall back within the latency budget"],"ok":"perf(git): speed commit drafts\n\n- Batch selected Git diffs\n- Fall back within the latency budget"}
+{"fn":"validateCommitMessage","args":[""],"ok":{"valid":false,"errors":["Commit message is empty"],"cleaned":""}}
+{"fn":"stripCommitComments","args":[""],"ok":""}
+{"fn":"validateCommitMessage","args":["frobnicate(dashboard): add things"],"ok":{"valid":false,"errors":["Subject must match \"type(scope): summary\" or \"type: summary\" using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert"],"cleaned":"frobnicate(dashboard): add things"}}
+{"fn":"stripCommitComments","args":["frobnicate(dashboard): add things"],"ok":"frobnicate(dashboard): add things"}
+{"fn":"validateCommitMessage","args":["feat: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"],"ok":{"valid":false,"errors":["Subject is 78 chars; keep it ≤ 72"],"cleaned":"feat: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}
+{"fn":"stripCommitComments","args":["feat: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"],"ok":"feat: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}
+{"fn":"validateCommitMessage","args":["fix(dashboard): correct alignment."],"ok":{"valid":false,"errors":["Subject summary must not end with a period"],"cleaned":"fix(dashboard): correct alignment."}}
+{"fn":"stripCommitComments","args":["fix(dashboard): correct alignment."],"ok":"fix(dashboard): correct alignment."}
+{"fn":"validateCommitMessage","args":["feat(dashboard): add card\n\n# template guidance below\n# allowed types: ...\n"],"ok":{"valid":true,"errors":[],"cleaned":"feat(dashboard): add card"}}
+{"fn":"stripCommitComments","args":["feat(dashboard): add card\n\n# template guidance below\n# allowed types: ...\n"],"ok":"feat(dashboard): add card"}
+{"fn":"buildCommitMsgHookScript","args":[],"ok":"#!/usr/bin/env bash\n# Conventional Commit validator (managed by DevRyan)\n# Installed via global core.hooksPath. Edit at ~/.config/git/hooks/commit-msg.\nset -euo pipefail\n\nmsg_file=\"${1:-}\"\nif [ -z \"${msg_file}\" ] || [ ! -f \"${msg_file}\" ]; then\n  exit 0\nfi\n\n# Match git's default commit.cleanup=strip: drop comment-only lines and trim.\ncleaned=\"$(grep -v '^[[:space:]]*#' \"${msg_file}\" | awk 'NF {found=1} found' | awk 'NF || prev {print; prev=NF}' | sed -e :a -e '/^\\n*$/{$d;N;ba' -e '}')\"\n\nif [ -z \"${cleaned}\" ]; then\n  echo \"✖ commit-msg: empty commit message after stripping comments\" >&2\n  exit 1\nfi\n\nsubject=\"$(printf '%s\\n' \"${cleaned}\" | head -n 1)\"\nsubject_len=${#subject}\nmax_len=72\n\nerrors=()\n\nif [ \"${subject_len}\" -gt \"${max_len}\" ]; then\n  errors+=(\"subject is ${subject_len} chars; keep it ≤ ${max_len}\")\nfi\n\n# type(scope)!: summary | type(scope): summary | type!: summary | type: summary\nsubject_re='^(feat|fix|refactor|perf|docs|test|build|ci|chore|style|revert)(\\([a-z0-9][a-z0-9_-]*\\))?(!)?:[[:space:]]+[^[:space:]].*$'\nif ! [[ \"${subject}\" =~ ${subject_re} ]]; then\n  errors+=(\"subject must match 'type(scope): summary' or 'type: summary' using one of: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert\")\nfi\n\n# Reject trailing period on summary.\nif [[ \"${subject}\" =~ \\.[[:space:]]*$ ]]; then\n  errors+=(\"subject summary must not end with a period\")\nfi\n\nif [ \"${#errors[@]}\" -gt 0 ]; then\n  echo \"✖ commit-msg validation failed:\" >&2\n  for err in \"${errors[@]}\"; do\n    echo \"   - ${err}\" >&2\n  done\n  echo \"\" >&2\n  echo \"Allowed types: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert\" >&2\n  echo \"Subject:       ${subject}\" >&2\n  exit 1\nfi\n\nexit 0\n"}

@@ -1,0 +1,261 @@
+{"fn":"normalizeMobileKeyboardMode","args":[{},"a😀b😀c"],"ok":"a😀b😀c"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"ab"],"ok":"ab"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,"a😀b😀c"],"ok":"a😀b😀c"}
+{"fn":"normalizeMobileKeyboardMode","args":[[],"a:b:c"],"ok":"a:b:c"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"tab\tseparatedabc"],"ok":"tab\tseparatedabc"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,"ünïcödé"],"ok":"ünïcödé"}
+{"fn":"normalizeMobileKeyboardMode","args":[[],"abc"],"ok":"abc"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"ΣΊΣΥΦΟΣ"],"ok":"ΣΊΣΥΦΟΣ"}
+{"fn":"normalizeMobileKeyboardMode","args":["x",{"$undefined":true}],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"a..b"],"ok":"a..b"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"﻿bom"],"ok":"﻿bom"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"😀"],"ok":"😀"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"  padded  "],"ok":"  padded  "}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"hellohello"],"ok":"hellohello"}
+{"fn":"normalizeMobileKeyboardMode","args":["x"],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,"a.b.chello"],"ok":"a.b.chello"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"a:b:c"],"ok":"a:b:c"}
+{"fn":"normalizeMobileKeyboardMode","args":[[],"﻿bom"],"ok":"﻿bom"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"straßens:key.path"],"ok":"straßens:key.path"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},{"$undefined":true}],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],""],"ok":""}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},":"],"ok":":"}
+{"fn":"normalizeMobileKeyboardMode","args":[[],"a😀b😀c"],"ok":"a😀b😀c"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,""],"ok":""}
+{"fn":"normalizeMobileKeyboardMode","args":[true],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":["x","ab"],"ok":"ab"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,"a..ba"],"ok":"a..ba"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"ünïcödé"],"ok":"ünïcödé"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"key_name-1a:b:c"],"ok":"key_name-1a:b:c"}
+{"fn":"normalizeMobileKeyboardMode","args":[null],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"a.b.cab"],"ok":"a.b.cab"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"a"],"ok":"a"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"straße"],"ok":"straße"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"tab\tseparated"],"ok":"tab\tseparated"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,".leading"],"ok":".leading"}
+{"fn":"normalizeMobileKeyboardMode","args":[0],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"a.b.chello world"],"ok":"a.b.chello world"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"a"],"ok":"a"}
+{"fn":"normalizeMobileKeyboardMode","args":[true,"😀"],"ok":"😀"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},""],"ok":""}
+{"fn":"normalizeMobileKeyboardMode","args":[[],"HELLOline1\nline2"],"ok":"HELLOline1\nline2"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"a./x/**/*.json"],"ok":"a./x/**/*.json"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"./x/**/*.json"],"ok":"./x/**/*.json"}
+{"fn":"normalizeMobileKeyboardMode","args":[true,"日本語のテキスト"],"ok":"日本語のテキスト"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,"ΣΊΣΥΦΟΣ"],"ok":"ΣΊΣΥΦΟΣ"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"ns:key.path"],"ok":"ns:key.path"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"é"],"ok":"é"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"hello worldline1\nline2"],"ok":"hello worldline1\nline2"}
+{"fn":"normalizeMobileKeyboardMode","args":["x","é"],"ok":"é"}
+{"fn":"normalizeMobileKeyboardMode","args":[true,"a..bkey_name-1"],"ok":"a..bkey_name-1"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"a😀b😀c"],"ok":"a😀b😀c"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"HELLO{name} has {count} items"],"ok":"HELLO{name} has {count} items"}
+{"fn":"normalizeMobileKeyboardMode","args":[true,"HELLO"],"ok":"HELLO"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"line1\nline2"],"ok":"line1\nline2"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,"a..bΣΊΣΥΦΟΣ"],"ok":"a..bΣΊΣΥΦΟΣ"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"hello world"],"ok":"hello world"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"a:b:c"],"ok":"a:b:c"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],":"],"ok":":"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"日本語のテキスト"],"ok":"日本語のテキスト"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"HELLO"],"ok":"HELLO"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}}],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"a.b.ca:b:c"],"ok":"a.b.ca:b:c"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"key_name-1"],"ok":"key_name-1"}
+{"fn":"normalizeMobileKeyboardMode","args":["A..B","a..b"],"ok":"a..b"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"./x/**/*.jsonemoji 👍🏽 mix"],"ok":"./x/**/*.jsonemoji 👍🏽 mix"}
+{"fn":"normalizeMobileKeyboardMode","args":["x","İstanbul"],"ok":"İstanbul"}
+{"fn":"normalizeMobileKeyboardMode","args":[[],":"],"ok":":"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,"abc"],"ok":"abc"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,"straße"],"ok":"straße"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,{"$undefined":true}],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"emoji 👍🏽 mix"],"ok":"emoji 👍🏽 mix"}
+{"fn":"normalizeMobileKeyboardMode","args":[[],".leading日本語のテキスト"],"ok":".leading日本語のテキスト"}
+{"fn":"normalizeMobileKeyboardMode","args":[[],"日本語のテキスト"],"ok":"日本語のテキスト"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"a..b"],"ok":"a..b"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"trailing.hello"],"ok":"trailing.hello"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"a.b.c"],"ok":"a.b.c"}
+{"fn":"normalizeMobileKeyboardMode","args":[true,"a😀b😀c"],"ok":"a😀b😀c"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"./x/**/*.json"],"ok":"./x/**/*.json"}
+{"fn":"normalizeMobileKeyboardMode","args":["x",""],"ok":""}
+{"fn":"normalizeMobileKeyboardMode","args":[0,"日本語のテキスト"],"ok":"日本語のテキスト"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"hello"],"ok":"hello"}
+{"fn":"normalizeMobileKeyboardMode","args":[[],{"$undefined":true}],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[[],"src/a/b.ts"],"ok":"src/a/b.ts"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,"emoji 👍🏽 mix"],"ok":"emoji 👍🏽 mix"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,"{name} has {count} items"],"ok":"{name} has {count} items"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"key_name-1"],"ok":"key_name-1"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"a"],"ok":"a"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"😀a:b:c"],"ok":"😀a:b:c"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"ns:key.path./x/**/*.json"],"ok":"ns:key.path./x/**/*.json"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],{"$undefined":true}],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"a😀b😀c"],"ok":"a😀b😀c"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"emoji 👍🏽 mix"],"ok":"emoji 👍🏽 mix"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"﻿bom:"],"ok":"﻿bom:"}
+{"fn":"normalizeMobileKeyboardMode","args":[[],"a..b"],"ok":"a..b"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"key_name-1./x/**/*.json"],"ok":"key_name-1./x/**/*.json"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1]],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"aabc"],"ok":"aabc"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,"src/a/b.ts"],"ok":"src/a/b.ts"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,{"$undefined":true}],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"é"],"ok":"é"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"ns:key.pathtrailing."],"ok":"ns:key.pathtrailing."}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"hello😀"],"ok":"hello😀"}
+{"fn":"normalizeMobileKeyboardMode","args":[{}],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[true,{"$undefined":true}],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},".leading"],"ok":".leading"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"a..b"],"ok":"a..b"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"./x/**/*.json"],"ok":"./x/**/*.json"}
+{"fn":"normalizeMobileKeyboardMode","args":[true,"  padded  "],"ok":"  padded  "}
+{"fn":"normalizeMobileKeyboardMode","args":[true,"line1\nline2"],"ok":"line1\nline2"}
+{"fn":"normalizeMobileKeyboardMode","args":["x","a:b:c"],"ok":"a:b:c"}
+{"fn":"normalizeMobileKeyboardMode","args":["x",":hello world"],"ok":":hello world"}
+{"fn":"normalizeMobileKeyboardMode","args":[true,".leading"],"ok":".leading"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,"tab\tseparated"],"ok":"tab\tseparated"}
+{"fn":"normalizeMobileKeyboardMode","args":["x",":HELLO"],"ok":":HELLO"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,"hello"],"ok":"hello"}
+{"fn":"normalizeMobileKeyboardMode","args":[true,"a.b.c"],"ok":"a.b.c"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"a..b"],"ok":"a..b"}
+{"fn":"normalizeMobileKeyboardMode","args":[[],"emoji 👍🏽 mix"],"ok":"emoji 👍🏽 mix"}
+{"fn":"normalizeMobileKeyboardMode","args":["x","x"],"ok":"x"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"a.b.c"],"ok":"a.b.c"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"src/a/b.tsline1\nline2"],"ok":"src/a/b.tsline1\nline2"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"{name} has {count} items"],"ok":"{name} has {count} items"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"tab\tseparated"],"ok":"tab\tseparated"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},{"$undefined":true}],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"ΣΊΣΥΦΟΣ"],"ok":"ΣΊΣΥΦΟΣ"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"trailing.src/a/b.ts"],"ok":"trailing.src/a/b.ts"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"a:b:c"],"ok":"a:b:c"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,"ab"],"ok":"ab"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"straßea.b.c"],"ok":"straßea.b.c"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"tab\tseparated"],"ok":"tab\tseparated"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"a:b:c"],"ok":"a:b:c"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"abé"],"ok":"abé"}
+{"fn":"normalizeMobileKeyboardMode","args":[[]],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"}],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"a.b.c"],"ok":"a.b.c"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"😀"],"ok":"😀"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"HELLO"],"ok":"HELLO"}
+{"fn":"normalizeMobileKeyboardMode","args":[[],"./x/**/*.json"],"ok":"./x/**/*.json"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"{name} has {count} items"],"ok":"{name} has {count} items"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"line1\nline2"],"ok":"line1\nline2"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,""],"ok":""}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"a😀b😀ca:b:c"],"ok":"a😀b😀ca:b:c"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,"😀"],"ok":"😀"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,"straßeHello World"],"ok":"straßeHello World"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"HELLO"],"ok":"HELLO"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"é日本語のテキスト"],"ok":"é日本語のテキスト"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"straße"],"ok":"straße"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"﻿bom"],"ok":"﻿bom"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"abc"],"ok":"abc"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"ΣΊΣΥΦΟΣ"],"ok":"ΣΊΣΥΦΟΣ"}
+{"fn":"normalizeMobileKeyboardMode","args":["a","src/a/b.ts"],"ok":"src/a/b.ts"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"tab\tseparated"],"ok":"tab\tseparated"}
+{"fn":"normalizeMobileKeyboardMode","args":[true,"﻿bom"],"ok":"﻿bom"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"src/a/b.ts"],"ok":"src/a/b.ts"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"İstanbul"],"ok":"İstanbul"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,".leading"],"ok":".leading"}
+{"fn":"normalizeMobileKeyboardMode","args":[true,"é"],"ok":"é"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"日本語のテキストa😀b😀c"],"ok":"日本語のテキストa😀b😀c"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,"ns:key.path"],"ok":"ns:key.path"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"{name} has {count} items"],"ok":"{name} has {count} items"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"key_name-1"],"ok":"key_name-1"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"src/a/b.tsa..b"],"ok":"src/a/b.tsa..b"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"{name} has {count} itemsa..b"],"ok":"{name} has {count} itemsa..b"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"line1\nline2"],"ok":"line1\nline2"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"key_name-1:"],"ok":"key_name-1:"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"ünïcödéé"],"ok":"ünïcödéé"}
+{"fn":"normalizeMobileKeyboardMode","args":[[],"a.b.ctab\tseparated"],"ok":"a.b.ctab\tseparated"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"İstanbul"],"ok":"İstanbul"}
+{"fn":"normalizeMobileKeyboardMode","args":["x","HELLO"],"ok":"HELLO"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"HELLO:"],"ok":"HELLO:"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},{"$undefined":true}],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"ünïcödé"],"ok":"ünïcödé"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"emoji 👍🏽 mixsrc/a/b.ts"],"ok":"emoji 👍🏽 mixsrc/a/b.ts"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"./x/**/*.json"],"ok":"./x/**/*.json"}
+{"fn":"normalizeMobileKeyboardMode","args":[[],"a.b.ckey_name-1"],"ok":"a.b.ckey_name-1"}
+{"fn":"normalizeMobileKeyboardMode","args":["x","日本語のテキスト"],"ok":"日本語のテキスト"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"a:b:c"],"ok":"a:b:c"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},""],"ok":""}
+{"fn":"normalizeMobileKeyboardMode","args":[[],"ns:key.path"],"ok":"ns:key.path"}
+{"fn":"normalizeMobileKeyboardMode","args":["x","trailing."],"ok":"trailing."}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"{name} has {count} items"],"ok":"{name} has {count} items"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"key_name-1"],"ok":"key_name-1"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,"a.b.c"],"ok":"a.b.c"}
+{"fn":"normalizeMobileKeyboardMode","args":[[],"trailing."],"ok":"trailing."}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},".leading"],"ok":".leading"}
+{"fn":"normalizeMobileKeyboardMode","args":[true,"😀:"],"ok":"😀:"}
+{"fn":"normalizeMobileKeyboardMode","args":["c","abc"],"ok":"abc"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,"hello world"],"ok":"hello world"}
+{"fn":"normalizeMobileKeyboardMode","args":[0,"Hello World"],"ok":"Hello World"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"abc"],"ok":"abc"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"ünïcödé"],"ok":"ünïcödé"}
+{"fn":"normalizeMobileKeyboardMode","args":[true,"src/a/b.ts"],"ok":"src/a/b.ts"}
+{"fn":"normalizeMobileKeyboardMode","args":["a.","a..b"],"ok":"a..b"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"ns:key.path"],"ok":"ns:key.path"}
+{"fn":"normalizeMobileKeyboardMode","args":["x","  padded  "],"ok":"  padded  "}
+{"fn":"normalizeMobileKeyboardMode","args":[[],"ab"],"ok":"ab"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":"b"},"é"],"ok":"é"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"a":{"b":"c"}},"src/a/b.ts"],"ok":"src/a/b.ts"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"﻿boma.b.c"],"ok":"﻿boma.b.c"}
+{"fn":"normalizeMobileKeyboardMode","args":[["a",1],"src/a/b.ts{name} has {count} items"],"ok":"src/a/b.ts{name} has {count} items"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6},"a😀b😀c"],"ok":"a😀b😀c"}
+{"fn":"normalizeMobileKeyboardMode","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7},"a😀b😀c"],"ok":"a😀b😀c"}
+{"fn":"normalizeMobileKeyboardMode","args":[[3,1,2],"a😀b😀c"],"ok":"a😀b😀c"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"héllo wörld"],"ok":"héllo wörld"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"👍🏽 thumbs"],"ok":"👍🏽 thumbs"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"日本語"],"ok":"日本語"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"İstanbul"],"ok":"İstanbul"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"straße"],"ok":"straße"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"ılık ırmak"],"ok":"ılık ırmak"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"👨‍👩‍👧 family"],"ok":"👨‍👩‍👧 family"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"a b"],"ok":"a b"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"ΣΊΣΥΦΟΣ"],"ok":"ΣΊΣΥΦΟΣ"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"a😀b"],"ok":"a😀b"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"﻿bom"],"ok":"﻿bom"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"a²b x½ y①"],"ok":"a²b x½ y①"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"aⅠb Ⅻ"],"ok":"aⅠb Ⅻ"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"a𐐀b 𝐀bc"],"ok":"a𐐀b 𝐀bc"}
+{"fn":"normalizeMobileKeyboardMode","args":[{},"कि ٣٤"],"ok":"कि ٣٤"}
+{"fn":"normalizeMobileKeyboardMode","args":["native"],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":["native","native"],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":["native","resize-content"],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":["native",{"$undefined":true}],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":["native","x"],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":["native",0],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":["native",null],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":["resize-content"],"ok":"resize-content"}
+{"fn":"normalizeMobileKeyboardMode","args":["resize-content","native"],"ok":"resize-content"}
+{"fn":"normalizeMobileKeyboardMode","args":["resize-content","resize-content"],"ok":"resize-content"}
+{"fn":"normalizeMobileKeyboardMode","args":["resize-content",{"$undefined":true}],"ok":"resize-content"}
+{"fn":"normalizeMobileKeyboardMode","args":["resize-content","x"],"ok":"resize-content"}
+{"fn":"normalizeMobileKeyboardMode","args":["resize-content",0],"ok":"resize-content"}
+{"fn":"normalizeMobileKeyboardMode","args":["resize-content",null],"ok":"resize-content"}
+{"fn":"normalizeMobileKeyboardMode","args":["RESIZE"],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":["RESIZE","native"],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":["RESIZE","resize-content"],"ok":"resize-content"}
+{"fn":"normalizeMobileKeyboardMode","args":["RESIZE",{"$undefined":true}],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":["RESIZE","x"],"ok":"x"}
+{"fn":"normalizeMobileKeyboardMode","args":["RESIZE",0],"ok":0}
+{"fn":"normalizeMobileKeyboardMode","args":["RESIZE",null],"ok":null}
+{"fn":"normalizeMobileKeyboardMode","args":[null],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"native"],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"resize-content"],"ok":"resize-content"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,{"$undefined":true}],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,"x"],"ok":"x"}
+{"fn":"normalizeMobileKeyboardMode","args":[null,0],"ok":0}
+{"fn":"normalizeMobileKeyboardMode","args":[null,null],"ok":null}
+{"fn":"normalizeMobileKeyboardMode","args":[5],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[5,"native"],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[5,"resize-content"],"ok":"resize-content"}
+{"fn":"normalizeMobileKeyboardMode","args":[5,{"$undefined":true}],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":[5,"x"],"ok":"x"}
+{"fn":"normalizeMobileKeyboardMode","args":[5,0],"ok":0}
+{"fn":"normalizeMobileKeyboardMode","args":[5,null],"ok":null}
+{"fn":"normalizeMobileKeyboardMode","args":[""],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":["","native"],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":["","resize-content"],"ok":"resize-content"}
+{"fn":"normalizeMobileKeyboardMode","args":["",{"$undefined":true}],"ok":"native"}
+{"fn":"normalizeMobileKeyboardMode","args":["","x"],"ok":"x"}
+{"fn":"normalizeMobileKeyboardMode","args":["",0],"ok":0}
+{"fn":"normalizeMobileKeyboardMode","args":["",null],"ok":null}
+{"fn":"normalizeMobileKeyboardMode","args":[],"ok":"native"}

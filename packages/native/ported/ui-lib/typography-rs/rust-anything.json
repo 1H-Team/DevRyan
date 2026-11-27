@@ -1,0 +1,30 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "typography.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "typography-rs",
+  "exports": [
+    {
+      "name": "getTypographyVariable",
+      "file": "typography.ts",
+      "line": 21,
+      "params": [
+        {
+          "name": "key",
+          "ts_type": "keyof typeof SEMANTIC_TYPOGRAPHY",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

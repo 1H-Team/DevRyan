@@ -1,0 +1,19 @@
+{
+  "unit": "http-cache-policy.js",
+  "files": 1,
+  "fingerprint": "fb5f5fc6cd2d3775",
+  "cases": 34,
+  "cases_hash": "8e984fadbb944507",
+  "coverage": {
+    "lines": 21,
+    "reached": 10,
+    "files": [
+      {
+        "file": "http-cache-policy.js",
+        "lines": 21,
+        "reached": 10,
+        "missed": "12, 14-16, 18-21, 24-26"
+      }
+    ]
+  }
+}

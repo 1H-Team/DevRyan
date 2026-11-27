@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { cacheGrowthFailure, newCacheEntries, snapshotCache } from './cache-guard.mjs';
 import { auditCache, isPinnedRun, storageMain } from './storage.mjs';
 
 function fixture(t) {
@@ -29,7 +28,7 @@ test('clean previews, then deletes disposable entries and keeps build caches, pi
   put('stray.log');
   put('sessions/2026-09-01-old/notes.md', 'x', 24 * 40);
   put('sessions/2026-10-15-recent/notes.md', 'x', 24);
-  put('eslint/cache.json');
+  put('typecheck/cache.json');
   put('worktrees/feature/file.txt');
   fs.symlinkSync(os.tmpdir(), path.join(root, '.cache/qa/link'));
 
@@ -45,7 +44,7 @@ test('clean previews, then deletes disposable entries and keeps build caches, pi
   assert.equal(storageMain(['clean', '--apply'], root, () => {}), 0);
   for (const gone of expected) assert.equal(fs.existsSync(path.join(root, gone)), false, gone);
   assert.equal(fs.existsSync(path.join(root, '.cache/v2-validation')), false, 'emptied family folder is removed');
-  for (const kept of ['qa/live-provider-handoff-x', 'qa/pinned-run', 'qa/running-now', 'qa/link', 'sessions/2026-10-15-recent', 'eslint/cache.json', 'worktrees/feature/file.txt']) {
+  for (const kept of ['qa/live-provider-handoff-x', 'qa/pinned-run', 'qa/running-now', 'qa/link', 'sessions/2026-10-15-recent', 'typecheck/cache.json', 'worktrees/feature/file.txt']) {
     assert.ok(fs.existsSync(path.join(root, '.cache', kept)), kept);
   }
   assert.ok(fs.existsSync(os.tmpdir()), 'symlink target untouched');
@@ -62,20 +61,4 @@ test('report sizes families and the CLI rejects unknown commands and flags', (t)
   assert.equal(storageMain(['report', '--apply'], root, () => {}), 2);
   assert.equal(storageMain(['clean', '--force'], root, () => {}), 2);
   assert.equal(storageMain(['prune'], root, () => {}), 2);
-});
-
-test('cache guard names new scratch and ignores kept build caches', (t) => {
-  const { root, put } = fixture(t);
-  put('qa/existing/log.txt');
-  const before = snapshotCache(root);
-  put('eslint/new-cache.json');
-  put('sessions/2026-10-16-notes/a.md');
-  assert.equal(cacheGrowthFailure(root, before), null);
-  fs.mkdirSync(path.join(root, '.cache/empty-family/projects/nested'), { recursive: true });
-  assert.equal(cacheGrowthFailure(root, before), null, 'empty folders are not scratch');
-  put('qa/new-run/log.txt');
-  put('test-fixtures/a/b.txt');
-  assert.deepEqual(newCacheEntries(before, snapshotCache(root)), ['qa/new-run', 'test-fixtures']);
-  const report = cacheGrowthFailure(root, before);
-  assert.match(report, /left 2 new entries in \.cache\/:\n- \.cache\/qa\/new-run \(.+\)\n {4}qa\/new-run\/log\.txt\n- \.cache\/test-fixtures \(.+\)\n {4}test-fixtures\/a\/b\.txt/);
 });

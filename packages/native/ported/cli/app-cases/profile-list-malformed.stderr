@@ -1,0 +1,1 @@
+Warning: Profile file '[..]/home/.config/devryan/tunnel-profiles.json' has permissions 640 (should be 600). Other users may be able to read tunnel tokens. Fix with: chmod 600 '[..]/home/.config/devryan/tunnel-profiles.json'

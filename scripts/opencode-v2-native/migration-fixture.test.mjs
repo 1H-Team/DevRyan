@@ -7,7 +7,7 @@ import { repositoryRoot } from './artifacts.mjs';
 import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/sqlite-driver.js';
 import { captureMigrationInventory } from '../../packages/web/server/lib/opencode/runtime-host/bundle-migration-inventory.js';
 
-const temporaryRoot = path.join(repositoryRoot, '.cache/v2-validation/tmp');
+const temporaryRoot = path.join(repositoryRoot, '.cache/v2-validation');
 await fs.mkdir(temporaryRoot, { recursive: true });
 
 test('legacy fixture executes truthful DDL and retains two relocations, references and exact source identities', async () => {

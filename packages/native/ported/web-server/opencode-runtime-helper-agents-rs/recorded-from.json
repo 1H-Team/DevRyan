@@ -1,0 +1,19 @@
+{
+  "unit": "runtime-helper-agents.js",
+  "files": 1,
+  "fingerprint": "ce9ae1576cc9e20a",
+  "cases": 2,
+  "cases_hash": "b0d069563b143fe3",
+  "coverage": {
+    "lines": 48,
+    "reached": 48,
+    "files": [
+      {
+        "file": "runtime-helper-agents.js",
+        "lines": 48,
+        "reached": 48,
+        "missed": ""
+      }
+    ]
+  }
+}

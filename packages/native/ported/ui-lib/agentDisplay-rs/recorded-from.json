@@ -1,0 +1,19 @@
+{
+  "unit": "agentDisplay.ts",
+  "files": 1,
+  "fingerprint": "8708d8f286285009",
+  "cases": 235,
+  "cases_hash": "3fc0b81d941c5b0e",
+  "coverage": {
+    "lines": 7,
+    "reached": 7,
+    "files": [
+      {
+        "file": "agentDisplay.ts",
+        "lines": 7,
+        "reached": 7,
+        "missed": ""
+      }
+    ]
+  }
+}

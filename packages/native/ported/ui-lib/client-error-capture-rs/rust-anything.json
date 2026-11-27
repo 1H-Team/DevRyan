@@ -1,0 +1,91 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "client-error-capture.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "client-error-capture-rs",
+  "exports": [
+    {
+      "name": "shouldIgnoreClientError",
+      "file": "client-error-capture.ts",
+      "line": 36,
+      "params": [
+        {
+          "name": "message",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "source",
+          "ts_type": "('window_error' | 'unhandled_rejection' | 'error_boundary')",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "fingerprintError",
+      "file": "client-error-capture.ts",
+      "line": 59,
+      "params": [
+        {
+          "name": "name",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "message",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "stack",
+          "ts_type": "string",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "currentRoute",
+      "file": "client-error-capture.ts",
+      "line": 63,
+      "reason": "reads window.location"
+    },
+    {
+      "name": "reportBoundaryError",
+      "file": "client-error-capture.ts",
+      "line": 208,
+      "reason": "queues into module state flushed by timers and fetch"
+    },
+    {
+      "name": "resetClientErrorCaptureForTests",
+      "file": "client-error-capture.ts",
+      "line": 212,
+      "reason": "resets the report queue"
+    },
+    {
+      "name": "initClientErrorCapture",
+      "file": "client-error-capture.ts",
+      "line": 214,
+      "reason": "installs window listeners and timers"
+    }
+  ]
+}

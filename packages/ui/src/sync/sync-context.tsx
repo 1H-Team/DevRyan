@@ -37,7 +37,6 @@ import {
   areSessionListsEquivalent,
   areStatusMapsEquivalent,
   findLiveSession,
-  findLiveSessionStatus,
 } from "./live-aggregate"
 import { bootstrapGlobal, bootstrapDirectory } from "./bootstrap"
 import { retry } from "./retry"
@@ -463,13 +462,6 @@ function useLiveSyncSelector<T>(selector: (states: State[]) => T, isEqual: (left
 // Each event reads live state, creates a shallow draft, applies, writes back.
 // React 18 batches synchronous setState calls automatically.
 // ---------------------------------------------------------------------------
-
-/** Read status for a session across all directories */
-export function useGlobalSessionStatus(sessionId: string): SessionStatus | undefined {
-  return useLiveSyncSelector(
-    useCallback((states) => findLiveSessionStatus(states, sessionId), [sessionId]),
-  )
-}
 
 /** Read all session statuses (for sidebar) */
 export function useAllSessionStatuses(enabled = true): Record<string, SessionStatus> {
@@ -4451,11 +4443,6 @@ export function SyncProvider(props: {
 // Hooks
 // ---------------------------------------------------------------------------
 
-/** Access the global sync store */
-export function useGlobalSync() {
-  return useGlobalSyncStore()
-}
-
 /** Access the global sync store with a selector */
 export function useGlobalSyncSelector<T>(selector: (state: GlobalSyncStore) => T): T {
   return useGlobalSyncStore(selector)
@@ -4762,11 +4749,6 @@ export function useSessionChildren(parentID?: string | null, directory?: string)
   )
 
   return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
-}
-
-/** Get the SDK client */
-export function useSyncSDK() {
-  return useSyncSystem().sdk
 }
 
 /** Get the current directory */

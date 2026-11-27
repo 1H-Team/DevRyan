@@ -1,0 +1,127 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "utils.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "utils-rs",
+  "exports": [
+    {
+      "name": "truncatePathMiddle",
+      "file": "utils.ts",
+      "line": 49,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "options",
+          "ts_type": "{ maxLength?: number }",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "formatPathForDisplay",
+      "file": "utils.ts",
+      "line": 100,
+      "params": [
+        {
+          "name": "path",
+          "ts_type": "string | null | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "homeDirectory",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "formatDirectoryName",
+      "file": "utils.ts",
+      "line": 125,
+      "params": [
+        {
+          "name": "path",
+          "ts_type": "string | null | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "homeDirectory",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "cn",
+      "file": "utils.ts",
+      "line": 7,
+      "reason": "clsx and tailwind-merge"
+    },
+    {
+      "name": "isMacOS",
+      "file": "utils.ts",
+      "line": 15,
+      "reason": "reads navigator"
+    },
+    {
+      "name": "isWindows",
+      "file": "utils.ts",
+      "line": 20,
+      "reason": "reads navigator"
+    },
+    {
+      "name": "getRevealLabelKey",
+      "file": "utils.ts",
+      "line": 25,
+      "reason": "reads navigator"
+    },
+    {
+      "name": "hasModifier",
+      "file": "utils.ts",
+      "line": 36,
+      "reason": "reads navigator and the desktop shell"
+    },
+    {
+      "name": "getModifierLabel",
+      "file": "utils.ts",
+      "line": 45,
+      "reason": "reads navigator and the desktop shell"
+    },
+    {
+      "name": "fuzzyMatch",
+      "file": "utils.ts",
+      "line": 149,
+      "reason": "Fuse.js scoring"
+    }
+  ]
+}

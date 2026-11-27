@@ -1,0 +1,4 @@
+bin.name = "devryan"
+args = ["constructor"]
+status.code = 0
+fs.sandbox = true

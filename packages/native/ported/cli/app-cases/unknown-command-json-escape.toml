@@ -1,0 +1,4 @@
+bin.name = "devryan"
+args = ["a\"b\\c\u0001", "--json"]
+status.code = 2
+fs.sandbox = true

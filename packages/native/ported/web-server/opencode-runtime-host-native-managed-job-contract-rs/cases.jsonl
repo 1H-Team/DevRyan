@@ -1,0 +1,209 @@
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":[":"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[null],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[0],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["src/a/b.tsHELLO","  padded  ","日本語のテキストİstanbul"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":[".leading{name} has {count} items"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ns:key.path","ΣΊΣΥΦΟΣhello"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"$undefined":true}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["tab\tseparated","a..b","a😀b😀c"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":[".leading.leading"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["emoji 👍🏽 mix"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[["a",1]],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"a":{"b":"c"}}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["src/a/b.ts","{name} has {count} items","straße"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["","straße"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":[".leading","src/a/b.ts",":key_name-1"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["./x/**/*.json","a..b"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":[]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[true],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["HELLO",":ünïcödé","line1\nline2"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["  padded  "]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"a":"b"}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[[]],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["HELLOab","straße","ΣΊΣΥΦΟΣ"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["İstanbul"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["emoji 👍🏽 mixa"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ünïcödé"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["a"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["a😀b😀c{name} has {count} items",":","Hello Worlda..b"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["a..b﻿bom","straße","﻿bom"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":[":","a😀b😀c","straße"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":["x"],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["İstanbul","line1\nline2","hello"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ΣΊΣΥΦΟΣ"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["a😀b😀c","é","abc"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["","a:b:c","line1\nline2"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["hello world"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["","key_name-1key_name-1","ab"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["hello"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["line1\nline2","{name} has {count} items"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["abc","İstanbul"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["é"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ns:key.path",":","trailing."]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["key_name-1key_name-1","key_name-1日本語のテキスト","ünïcödé"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["é","ΣΊΣΥΦΟΣhello world"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["key_name-1straße","hello world","key_name-1"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["key_name-1","ab","abc"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["hello","ünïcödé","é"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["src/a/b.ts","HELLO","src/a/b.ts"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["日本語のテキスト","a:b:c","﻿bomHELLO"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["hello","{name} has {count} items"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["hello","hello world","key_name-1"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["﻿bomhello world","ΣΊΣΥΦΟΣ","hello world"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["abc","src/a/b.tshello world"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["étrailing.","é","é"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["😀"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["hello","tab\tseparated"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["  padded  a.b.c"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ünïcödéΣΊΣΥΦΟΣ","./x/**/*.jsona😀b😀c"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ns:key.path","emoji 👍🏽 mix","﻿bom"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["emoji 👍🏽 mix","a😀b😀c﻿bom","./x/**/*.json"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["é","😀"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ns:key.path","hello"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["{name} has {count} itemsa:b:c"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["key_name-1"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["a.b.c","a..b"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["key_name-1","tab\tseparated","ünïcödé"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["tab\tseparated"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["straßehello"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["hello","a:b:c"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["./x/**/*.json:","hello"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["hello﻿bom","emoji 👍🏽 mix"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["  padded  HELLO"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ab","ns:key.path","é😀"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":[":","﻿bom","﻿boma..b"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["{name} has {count} itemshello world","﻿bom./x/**/*.json","😀"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ns:key.path","a.b.c😀"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["src/a/b.ts","src/a/b.ts","HELLO"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["😀",".leading"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["line1\nline2  padded  ",":","ns:key.path"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["😀","a.b.c"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["日本語のテキスト"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["HELLOa..b","ünïcödésrc/a/b.ts","src/a/b.ts"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":[".leading","tab\tseparated","ΣΊΣΥΦΟΣstraße"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["key_name-1","trailing.é"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["","line1\nline2","trailing.abc"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["İstanbulstraße","日本語のテキスト"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["é","ab","a😀b😀c{name} has {count} items"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["a.b.c","😀",""]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":[".leading"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["straße","tab\tseparated","ab"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["a.b.c","src/a/b.ts"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["Hello World"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["trailing."]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["emoji 👍🏽 mix","a😀b😀c"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["hello worldkey_name-1"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["Hello World",":"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ns:key.path","HELLO","日本語のテキスト"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["İstanbul","abc","é"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["a..b"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["﻿bom","key_name-1é","{name} has {count} itemshello"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["line1\nline2"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["é","  padded  ","﻿bom"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["src/a/b.tstab\tseparated","  padded  "]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["﻿bom","{name} has {count} itemsabc"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ab"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["line1\nline2","  padded  "]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["hellohello world"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["hello worldabc"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":[".leadinga..b"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ΣΊΣΥΦΟΣ","{name} has {count} items"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["😀","  padded  ","key_name-1"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["hello world","İstanbul","é"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["src/a/b.ts./x/**/*.json","ünïcödé","src/a/b.ts"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["  padded  ","","key_name-1"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":[":","./x/**/*.json"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["a😀b😀c"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["a./x/**/*.json"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["﻿bom"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["a.b.c"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ab日本語のテキスト"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ab","hello"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["hello world",":"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["hello","İstanbul"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ünïcödé","tab\tseparated","HELLO"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":[""]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["İstanbulİstanbul","ab","😀"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["hello","a..b"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["Hello World","ünïcödé","emoji 👍🏽 mix"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":[".leading","abc","a.b.c"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["  padded  ","a","trailing."]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["a:b:c","hello world./x/**/*.json"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["./x/**/*.jsonİstanbul","a.b.c"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["key_name-1","é"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["a.b.c","{name} has {count} items"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["tab\tseparated","./x/**/*.jsonab"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["","trailing.","HELLO"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ünïcödé.leading","line1\nline2"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ab./x/**/*.json","ΣΊΣΥΦΟΣ","ünïcödé:"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["a.b.ca.b.c","HELLO"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ab","ns:key.path"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":[".leading",":"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["Hello World","ΣΊΣΥΦΟΣ"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["line1\nline2","a.b.c","aa.b.c"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":[":","﻿bom"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["hello world","./x/**/*.json","é"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["HELLOHello World","key_name-1"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["HELLOtab\tseparated"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["line1\nline2","HELLO","a😀b😀c"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["straße"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["src/a/b.tsa😀b😀c","a.b.c","trailing."]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["a..ba.b.c","ΣΊΣΥΦΟΣ","Hello World"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":[".leading","  padded  "]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["  padded  ","é"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["{name} has {count} itemsabc"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["./x/**/*.json"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["tab\tseparated","src/a/b.ts","{name} has {count} items"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":[":","a","HELLO"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["{name} has {count} items",":",":"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["  padded  :","日本語のテキストHello World",""]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["straße","line1\nline2"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":[":","a😀b😀c"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["abc","a.b.c","line1\nline2"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["日本語のテキスト","😀","a"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["abc","line1\nline2"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["HELLO"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["日本語のテキスト","Hello World"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["src/a/b.ts","emoji 👍🏽 mix"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["a:b:c"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["","a😀b😀c"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["a.b.c","abc","key_name-1"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ünïcödé",""]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["😀","ns:key.path","hello"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["trailing.","emoji 👍🏽 mix","{name} has {count} items"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":[".leading",""]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["﻿bomΣΊΣΥΦΟΣ","HELLOns:key.path"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["tab\tseparatedabc","a:b:c"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ünïcödé","ünïcödé","日本語のテキスト"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ΣΊΣΥΦΟΣ",".leading"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["abc"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["","emoji 👍🏽 mix","İstanbul"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["  padded  ","a..b","trailing."]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["﻿bomstraße"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ns:key.path",".leadinghello"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["aa.b.c","Hello World","line1\nline2"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ΣΊΣΥΦΟΣHello World","ünïcödétrailing."]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["./x/**/*.json","a.b.c","straße"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ünïcödé","key_name-1HELLO","日本語のテキスト"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["é","ns:key.path"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["src/a/b.ts","﻿bom"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["a😀b😀c","é"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["Hello World","a..b",".leading"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["a😀b😀c","abc","a.b.c"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["hello","ünïcödé"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["src/a/b.ts","日本語のテキスト","trailing."]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["﻿bom","ab","./x/**/*.json"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["{name} has {count} items","a:b:c"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["ΣΊΣΥΦΟΣ","a"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["tab\tseparateda..b","straße","tab\tseparatedtrailing."]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[null],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["devryan.managed-subagent-jobs/1"]}],"ok":true}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":["x"]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":"devryan.managed-subagent-jobs/1"}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":[["devryan.managed-subagent-jobs/1"]]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":["s"],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[{"compiledContracts":[]}],"ok":false}
+{"fn":"hasNativeManagedSubagentJobs","args":[[1]],"ok":false}

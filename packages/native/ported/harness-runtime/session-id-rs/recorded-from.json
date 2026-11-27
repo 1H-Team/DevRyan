@@ -1,0 +1,19 @@
+{
+  "unit": "session-id.js",
+  "files": 1,
+  "fingerprint": "9222eedd00e19715",
+  "cases": 80,
+  "cases_hash": "40bacca3dd4f20d5",
+  "coverage": {
+    "lines": 48,
+    "reached": 48,
+    "files": [
+      {
+        "file": "session-id.js",
+        "lines": 48,
+        "reached": 48,
+        "missed": ""
+      }
+    ]
+  }
+}

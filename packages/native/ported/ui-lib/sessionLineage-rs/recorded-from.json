@@ -1,0 +1,19 @@
+{
+  "unit": "sessionLineage.ts",
+  "files": 1,
+  "fingerprint": "99fca6d9e0b45069",
+  "cases": 504,
+  "cases_hash": "c08e698587e1f305",
+  "coverage": {
+    "lines": 64,
+    "reached": 64,
+    "files": [
+      {
+        "file": "sessionLineage.ts",
+        "lines": 64,
+        "reached": 64,
+        "missed": ""
+      }
+    ]
+  }
+}

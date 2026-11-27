@@ -2,14 +2,14 @@ import {describe,expect,it,vi} from 'vitest';
 import {OPENCODE_CAPABILITY_ABSENT} from '../opencode/opencode-generation.js';
 import {createFreeZenCooldowns} from '@devryan/shared-runtime';
 import * as zenText from './zen-text.js';
-const {GIT_GENERATION_ZEN_MODEL,createGitZenTextTransport}=zenText;
+const {createGitZenTextTransport}=zenText;
 import {generateCommitMessageDirect} from './commit-message.js';
 import {generatePullRequestDescriptionDirect} from './pr-description.js';
 const context={selectedFiles:[{path:'fixture.ts',index:'M',workingDir:' '}],stagedOnly:true};
 const drafts={commit:JSON.stringify({subject:'fix: recover native generation',details:['Preserve native settlement']}),pr:JSON.stringify({title:'Recover native generation',body:'## Summary\n- Native helper\n## Testing\n- Isolated graph'})};
 const client={generation:()=>2};
 describe('admitted native Git text transport',()=>{
- it('defaults to DeepSeek V4.1 Flash with no reasoning pin',()=>{expect(GIT_GENERATION_ZEN_MODEL).toBe('deepseek-v4.1-flash');expect(Object.hasOwn(zenText,'GIT_GENERATION_ZEN_VARIANT')).toBe(false);});
+ it('pins no reasoning variant',()=>{expect(Object.hasOwn(zenText,'GIT_GENERATION_ZEN_VARIANT')).toBe(false);});
  it.each(['commit','pr'])('%s retains provider/agent/variant and rotates only after actual helper settlement',async kind=>{
   let running=false;const settled=[],generateHelperText=vi.fn(async input=>{
    expect(running).toBe(false);running=true;expect(input.providerID).toBe('opencode');expect(Object.hasOwn(input,'variant')).toBe(false);expect(input.agent).toBe(kind==='commit'?'devryan-commit':'devryan-pr');

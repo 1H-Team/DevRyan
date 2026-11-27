@@ -206,7 +206,7 @@ function updateCommand(commandName, updates, workingDirectory) {
   const jsonTarget = jsonSource.exists
     ? { config: jsonSource.config, path: jsonSource.path }
     : getJsonWriteTarget(layers, workingDirectory ? COMMAND_SCOPE.PROJECT : COMMAND_SCOPE.USER);
-  let config = jsonTarget.config || {};
+  const config = jsonTarget.config || {};
 
   const isBuiltinOverride = !mdExists && !hasJsonFields;
 

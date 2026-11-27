@@ -1,0 +1,4 @@
+bin.name = "devryan"
+args = ["--nope", "-h"]
+status.code = 1
+fs.sandbox = true

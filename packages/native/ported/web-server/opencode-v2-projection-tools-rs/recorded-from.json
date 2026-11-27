@@ -1,0 +1,25 @@
+{
+  "unit": "tools.js",
+  "files": 1,
+  "fingerprint": "9891d3b751571adb",
+  "cases": 1832,
+  "cases_hash": "690d9547b07fb872",
+  "coverage": {
+    "lines": 535,
+    "reached": 455,
+    "files": [
+      {
+        "file": "ids.js",
+        "lines": 225,
+        "reached": 145,
+        "missed": "40, 92-98, 112-121, 132-151, 167-189, 200, 214-216, 227-233, 239-244, 248-249"
+      },
+      {
+        "file": "tools.js",
+        "lines": 310,
+        "reached": 310,
+        "missed": ""
+      }
+    ]
+  }
+}

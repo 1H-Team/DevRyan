@@ -1,0 +1,17 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [
+    {
+      "site": "packages/web/server/lib/opencode/tool-output-trim.js:35",
+      "text": "throw Object.assign(new Error('toolOutput must be omit'), { statusCode: 400, code: 'opencode_invalid_input' });"
+    }
+  ],
+  "product": [
+    {
+      "site": "packages/web/server/lib/opencode/tool-output-trim.js:35",
+      "class": "Error",
+      "sample": "toolOutput must be omit"
+    }
+  ],
+  "engine": []
+}

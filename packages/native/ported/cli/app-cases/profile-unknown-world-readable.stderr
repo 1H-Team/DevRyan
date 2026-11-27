@@ -1,0 +1,3 @@
+Warning: Profile file '[..]/home/.config/devryan/tunnel-profiles.json' has permissions 644 (should be 600). Other users may be able to read tunnel tokens. Fix with: chmod 600 '[..]/home/.config/devryan/tunnel-profiles.json'
+Error: Unknown tunnel profile subcommand 'nope'. Use 'devryan tunnel help'.
+[run-root] test-isolation failed; its files were removed. Re-run with --keep-artifacts to keep [..].

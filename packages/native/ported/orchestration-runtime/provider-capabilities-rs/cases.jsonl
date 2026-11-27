@@ -1,0 +1,213 @@
+{"fn":"supportsManagedReadOnlyProvider","args":[0,true],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["x",{"$undefined":true}],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":{"b":"c"}},"x"],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":{"b":"c"}},[]],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["x",0],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":"b"},[]],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[["a",1],[]],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[0,null],"error":"Cannot read properties of null (reading 'cursorReadOnly')"}
+{"fn":"supportsManagedReadOnlyProvider","args":[null,"x"],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[["a",1],{"a":{"b":"c"}}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[null,{"a":{"b":"c"}}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":"b"}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[0],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":{"b":"c"}},{"$undefined":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{},true],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[["a",1],["a",1]],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":{"b":"c"}},{"a":{"b":"c"}}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[null,[]],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":"b"},0],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[[],null],"error":"Cannot read properties of null (reading 'cursorReadOnly')"}
+{"fn":"supportsManagedReadOnlyProvider","args":[null,null],"error":"Cannot read properties of null (reading 'cursorReadOnly')"}
+{"fn":"supportsManagedReadOnlyProvider","args":[0,{"a":"b"}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[[],"x"],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[["a",1],{}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[true,[]],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[null,{"a":"b"}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[0,[]],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{},"x"],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[true],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{},{}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[[],{"$undefined":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{},0],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":"b"},null],"error":"Cannot read properties of null (reading 'cursorReadOnly')"}
+{"fn":"supportsManagedReadOnlyProvider","args":[["a",1],"x"],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[[],["a",1]],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["x","x"],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":{"b":"c"}},{}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[0,"x"],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[true,{"$undefined":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[true,null],"error":"Cannot read properties of null (reading 'cursorReadOnly')"}
+{"fn":"supportsManagedReadOnlyProvider","args":[0,["a",1]],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{},["a",1]],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[["a",1],{"a":"b"}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":{"b":"c"}},true],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[true,["a",1]],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{},{"a":{"b":"c"}}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":{"b":"c"}},0],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["x",{"a":"b"}],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":[true,true],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[0,{"$undefined":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":"b"},{"$undefined":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[0,{"a":{"b":"c"}}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{},[]],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[[],[]],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":"b"},{"a":"b"}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":"b"},"x"],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[null,0],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[["a",1],null],"error":"Cannot read properties of null (reading 'cursorReadOnly')"}
+{"fn":"supportsManagedReadOnlyProvider","args":[["a",1],{"$undefined":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[null,{"$undefined":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["x",["a",1]],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":["x",{"a":{"b":"c"}}],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":"b"},{"a":{"b":"c"}}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[[],{"a":"b"}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":{"b":"c"}},["a",1]],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[["a",1],0],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[[],{"a":{"b":"c"}}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[["a",1]],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{},{"a":"b"}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["x",true],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":[0,0],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["x",[]],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":{"b":"c"}},null],"error":"Cannot read properties of null (reading 'cursorReadOnly')"}
+{"fn":"supportsManagedReadOnlyProvider","args":[{},{"$undefined":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["x",{}],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":[true,{"a":{"b":"c"}}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["x"],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":[null,["a",1]],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[[],0],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[true,"x"],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":{"b":"c"}}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":"b"},true],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[0,{}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[null,{}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[true,{"a":"b"}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":"b"},["a",1]],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{},null],"error":"Cannot read properties of null (reading 'cursorReadOnly')"}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":{"b":"c"}},{"a":"b"}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[null],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[[],{}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"a":"b"},{}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["x",null],"error":"Cannot read properties of null (reading 'cursorReadOnly')"}
+{"fn":"supportsManagedReadOnlyProvider","args":[[]],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[["a",1],true],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[true,0],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[true,{}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[[],true],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[null,true],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["x","X"],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":["X","x"],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6},true],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7},true],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[[3,1,2],true],"ok":false}
+{"fn":"supportsManagedReadOnlyAgent","args":[true],"ok":false}
+{"fn":"supportsManagedReadOnlyAgent","args":[0],"ok":false}
+{"fn":"supportsManagedReadOnlyAgent","args":[{"a":{"b":"c"}}],"ok":false}
+{"fn":"supportsManagedReadOnlyAgent","args":[{"a":"b"}],"ok":false}
+{"fn":"supportsManagedReadOnlyAgent","args":[["a",1]],"ok":false}
+{"fn":"supportsManagedReadOnlyAgent","args":[[]],"ok":false}
+{"fn":"supportsManagedReadOnlyAgent","args":[{}],"ok":false}
+{"fn":"supportsManagedReadOnlyAgent","args":["x"],"ok":true}
+{"fn":"supportsManagedReadOnlyAgent","args":[null],"ok":false}
+{"fn":"supportsManagedReadOnlyAgent","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":false}
+{"fn":"supportsManagedReadOnlyAgent","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":false}
+{"fn":"supportsManagedReadOnlyAgent","args":[[3,1,2]],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["cursor-acp",{"$undefined":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["cursor-acp",null],"error":"Cannot read properties of null (reading 'cursorReadOnly')"}
+{"fn":"supportsManagedReadOnlyProvider","args":["cursor-acp",{}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["cursor-acp",{"cursorReadOnly":true}],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":["cursor-acp",{"cursorReadOnly":"true"}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["cursor-acp",{"cursorReadOnly":1}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["cursor-acp","x"],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["cursor-acp",0],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[" Cursor-ACP ",{"$undefined":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[" Cursor-ACP ",null],"error":"Cannot read properties of null (reading 'cursorReadOnly')"}
+{"fn":"supportsManagedReadOnlyProvider","args":[" Cursor-ACP ",{}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[" Cursor-ACP ",{"cursorReadOnly":true}],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":[" Cursor-ACP ",{"cursorReadOnly":"true"}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[" Cursor-ACP ",{"cursorReadOnly":1}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[" Cursor-ACP ","x"],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[" Cursor-ACP ",0],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["openai",{"$undefined":true}],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":["openai",null],"error":"Cannot read properties of null (reading 'cursorReadOnly')"}
+{"fn":"supportsManagedReadOnlyProvider","args":["openai",{}],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":["openai",{"cursorReadOnly":true}],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":["openai",{"cursorReadOnly":"true"}],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":["openai",{"cursorReadOnly":1}],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":["openai","x"],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":["openai",0],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":["",{"$undefined":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["",null],"error":"Cannot read properties of null (reading 'cursorReadOnly')"}
+{"fn":"supportsManagedReadOnlyProvider","args":["",{}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["",{"cursorReadOnly":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["",{"cursorReadOnly":"true"}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["",{"cursorReadOnly":1}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["","x"],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["",0],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["  ",{"$undefined":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["  ",null],"error":"Cannot read properties of null (reading 'cursorReadOnly')"}
+{"fn":"supportsManagedReadOnlyProvider","args":["  ",{}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["  ",{"cursorReadOnly":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["  ",{"cursorReadOnly":"true"}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["  ",{"cursorReadOnly":1}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["  ","x"],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["  ",0],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[null,{"$undefined":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[null,null],"error":"Cannot read properties of null (reading 'cursorReadOnly')"}
+{"fn":"supportsManagedReadOnlyProvider","args":[null,{}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[null,{"cursorReadOnly":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[null,{"cursorReadOnly":"true"}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[null,{"cursorReadOnly":1}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[null,"x"],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[null,0],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"$undefined":true},{"$undefined":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"$undefined":true},null],"error":"Cannot read properties of null (reading 'cursorReadOnly')"}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"$undefined":true},{}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"$undefined":true},{"cursorReadOnly":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"$undefined":true},{"cursorReadOnly":"true"}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"$undefined":true},{"cursorReadOnly":1}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"$undefined":true},"x"],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[{"$undefined":true},0],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[5,{"$undefined":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[5,null],"error":"Cannot read properties of null (reading 'cursorReadOnly')"}
+{"fn":"supportsManagedReadOnlyProvider","args":[5,{}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[5,{"cursorReadOnly":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[5,{"cursorReadOnly":"true"}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[5,{"cursorReadOnly":1}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[5,"x"],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[5,0],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[["cursor-acp"],{"$undefined":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[["cursor-acp"],null],"error":"Cannot read properties of null (reading 'cursorReadOnly')"}
+{"fn":"supportsManagedReadOnlyProvider","args":[["cursor-acp"],{}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[["cursor-acp"],{"cursorReadOnly":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[["cursor-acp"],{"cursorReadOnly":"true"}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[["cursor-acp"],{"cursorReadOnly":1}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[["cursor-acp"],"x"],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[["cursor-acp"],0],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[" cursor-acp﻿",{"$undefined":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[" cursor-acp﻿",null],"error":"Cannot read properties of null (reading 'cursorReadOnly')"}
+{"fn":"supportsManagedReadOnlyProvider","args":[" cursor-acp﻿",{}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[" cursor-acp﻿",{"cursorReadOnly":true}],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":[" cursor-acp﻿",{"cursorReadOnly":"true"}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[" cursor-acp﻿",{"cursorReadOnly":1}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[" cursor-acp﻿","x"],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":[" cursor-acp﻿",0],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["CURSOR-ACP",{"$undefined":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["CURSOR-ACP",null],"error":"Cannot read properties of null (reading 'cursorReadOnly')"}
+{"fn":"supportsManagedReadOnlyProvider","args":["CURSOR-ACP",{}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["CURSOR-ACP",{"cursorReadOnly":true}],"ok":true}
+{"fn":"supportsManagedReadOnlyProvider","args":["CURSOR-ACP",{"cursorReadOnly":"true"}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["CURSOR-ACP",{"cursorReadOnly":1}],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["CURSOR-ACP","x"],"ok":false}
+{"fn":"supportsManagedReadOnlyProvider","args":["CURSOR-ACP",0],"ok":false}
+{"fn":"supportsManagedReadOnlyAgent","args":["designer"],"ok":false}
+{"fn":"supportsManagedReadOnlyAgent","args":[" Designer "],"ok":false}
+{"fn":"supportsManagedReadOnlyAgent","args":["explorer"],"ok":true}
+{"fn":"supportsManagedReadOnlyAgent","args":[""],"ok":false}
+{"fn":"supportsManagedReadOnlyAgent","args":[null],"ok":false}
+{"fn":"supportsManagedReadOnlyAgent","args":[{"$undefined":true}],"ok":false}
+{"fn":"supportsManagedReadOnlyAgent","args":[5],"ok":false}
+{"fn":"supportsManagedReadOnlyAgent","args":["DESIGNER"],"ok":false}
+{"fn":"supportsManagedReadOnlyAgent","args":["désigner"],"ok":true}

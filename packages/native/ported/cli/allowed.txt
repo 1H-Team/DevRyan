@@ -1,0 +1,232 @@
+--version	
+-v	
+--version	--json	
+-v	--json	
+serve	--version	
+tunnel	start	-v	
+--quiet	--version	
+--version	--bogus	
+--plain	-v	
+--help	
+-h	
+serve	--help	
+stop	--help	
+restart	-h	
+status	--help	
+logs	--help	
+update	--help	
+enroll-owner	--help	
+runtime	--help	
+--help	--json	
+--plain	--help	
+frobnicate	--help	
+--port	4000	--help	
+--foreground	-h	
+tunnel	--help	
+tunnel	start	--help	
+tunnel	profile	add	-h	
+tunnel	
+tunnel	help	
+tunnel	help	--json	
+--try-cf-tunnel	
+--tunnel-qr	
+--tunnel-password-url	
+--tunnel-provider	cloudflare	
+serve	--tunnel-mode	quick	
+--tunnel-config	
+--tunnel-token=abc	
+--tunnel-hostname	x.example.com	
+--tunnel	
+--try-cf-tunnel	--json	
+--tunnel	--tunnel-qr	-z	
+--json	--tunnel	--frob	
+--help	--tunnel	
+--frobnicate	
+-x	
+-pq	
+--frob=1	
+--json	--nope	
+status	--nope	
+--	
+-	
+--nope	-h	
+--expected-revision	3	
+status	--expected-revision=3	
+logs	--expected-revision	1	--json	
+--port	
+-p	
+--port=	
+--port	abc	
+--port=12a	
+--port	0	
+-p	-1	
+--port	70000	
+--port=-5	
+--port	--json	
+--json	--port	x	
+--port	0	--version	
+--port	80.5	
+--host	
+--host=  	
+--host	--json	
+tunnel	start	--origin-port	
+--origin-port	abc	
+--origin-port	80	
+--origin-port	-5	
+--origin-port=70000	
+--json	--origin-port	1	
+frobnicate	
+statsu	
+tunel	
+SERV	
+help	
+version	
+frobnicate	--json	
+stopp	--json	
+stätus	
+enrol-owner	
+tunnel	completion	
+tunnel	completion	bash	
+tunnel	completion	zsh	
+tunnel	completion	fish	
+tunnel	completion	ZSH	
+tunnel	completion	powershell	
+tunnel	completion	nu	--json	
+tunnel	completion	bash	--json	
+tunnel	frobnicate	
+tunnel	provders	
+tunnel	statu	--json	
+tunnel	strat	-q	
+tunnel	profile	
+tunnel	profile	--json	
+tunnel	profile	--quiet	
+tunnel	profile	list	
+tunnel	profile	list	--json	
+tunnel	profile	list	--quiet	
+tunnel	profile	list	--provider	cloudflare	--json	
+tunnel	profile	show	
+tunnel	profile	show	--name	ghost	
+tunnel	profile	show	--name	ghost	--json	
+tunnel	profile	remove	
+tunnel	profile	remove	--name	ghost	
+tunnel	profile	lst	
+tunnel	profile	zzzzzzz	
+status	
+status	--json	
+status	--quiet	
+status	-q	
+status	--plain	
+logs	
+logs	--no-follow	
+logs	--json	
+logs	--json	--no-follow	
+logs	--all	
+logs	--port	4000	
+logs	-q	--lines	5	
+runtime	
+runtime	bundle	
+runtime	bundle	resume	
+runtime	bundle	resume	--expected-revision	abc	
+runtime	bundle	resume	--expected-revision=0	
+runtime	bundle	resume	--port	3000	--expected-revision	1	
+runtime	bundle	resume	--expected-revision	1	--expected-revision	2	
+runtime	bundle	resume	now	--expected-revision	1	
+runtime	bundle	--json	
+runtime	-q	
+runtime	bundle	resume	--expected-revision	99999999999999999999	
+toString	
+constructor	
+__proto__	
+hasOwnProperty	
+-port	0	
+--p=0	
+--version=x	
+-json	--tunnel	
+--port	99999999999999999999999	
+--port=-123456789012345678901234	
+--port=-0	
+--port	0000	
+--port	80	
+--port	﻿0	
+--port	100000000000000000000	
+--host	x	--origin-port	1023	
+--origin-port	1000000000000000000000000	
+logs	--lines	--tunnel	
+--ui-password	--frob	
+tunnel	Help	
+tunnel	completion		
+tunnel	completion	 fish 	
+runtime	bundle	resume	--expected-revision	-1	
+--json	runtime	
+it's	
+a"b\c	--json	
+--json	--x"y	
+valueOf	
+isPrototypeOf	
+propertyIsEnumerable	
+toLocaleString	
+__defineGetter__	
+__defineSetter__	
+__lookupGetter__	
+__lookupSetter__	
+__proto__	--json	
+--json	__defineGetter__	
+toString	--json	
+status	
+status	--json	
+status	-q	
+status	
+status	--json	
+status	
+status	--json	
+status	
+status	-q	
+status	
+status	--json	
+status	
+logs	
+logs	--json	--no-follow	
+logs	--port	3000	
+logs	--no-follow	
+logs	--all	--no-follow	--json	
+logs	--no-follow	
+logs	--all	--lines	3	
+logs	--port	3001	--json	--no-follow	
+tunnel	profile	list	
+tunnel	profile	list	--json	
+tunnel	profile	list	-q	
+tunnel	profile	list	--show-secrets	
+tunnel	profile	list	--json	--show-secrets	
+tunnel	profile	list	--provider	 CLOUDFLARE 	
+tunnel	profile	list	--provider	ngrok	--json	
+tunnel	profile	show	--name	staging	
+tunnel	profile	show	--name	 prod-main 	--json	
+tunnel	profile	show	--name	PROD-MAIN	-q	--show-secrets	
+tunnel	profile	show	--name	staging	--provider	ngrok	
+tunnel	profile	show	--name	  	
+tunnel	profile	remove	--name	ghost	--json	
+tunnel	profile	remove	--name	staging	
+tunnel	profile	  	
+tunnel	profile	LISTS	
+tunnel	profile	list	
+tunnel	profile	list	--json	
+tunnel	profile	list	--quiet	
+tunnel	profile	nope	
+tunnel	profile	list	
+tunnel	profile	list	--json	
+tunnel	profile	list	-q	
+tunnel	profile	show	--name	kept	
+tunnel	profile	show	--name	UNICODE-ÜNÏ	--json	
+tunnel	profile	list	
+tunnel	profile	list	--json	
+tunnel	profile	list	--json	
+tunnel	profile	list	--json	
+tunnel	profile	list	--json	
+tunnel	profile	list	
+tunnel	profile	list	--json	
+tunnel	profile	list	-q	
+tunnel	profile	list	--json	
+tunnel	profile	list	--json	--show-secrets	
+tunnel	profile	list	--json	
+tunnel	profile	list	--json	
+tunnel	profile	list	

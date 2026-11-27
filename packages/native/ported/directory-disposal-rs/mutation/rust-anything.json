@@ -1,0 +1,126 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/native/ported/directory-disposal-rs/mutation-ts",
+  "unit": "directory-disposal-mutation.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "directory-disposal-mutation-rs",
+  "exports": [
+    {
+      "name": "releaseDirectoryRoutingIndexReturningIndex",
+      "file": "directory-disposal-mutation.ts",
+      "line": 18,
+      "params": [
+        {
+          "name": "index",
+          "ts_type": "{\n  sessionDirectoryById: [string, string][]\n  messageSessionById: [string, string][]\n  sessionMessageIdsById: [string, string[]][]\n}",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "directory",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "snapshot",
+          "ts_type": "State",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{ result: string[]; index: {\n  sessionDirectoryById: [string, string][]\n  messageSessionById: [string, string][]\n  sessionMessageIdsById: [string, string[]][]\n} }",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "clearDirectoryMaterializationsReturningPending",
+      "file": "directory-disposal-mutation.ts",
+      "line": 35,
+      "params": [
+        {
+          "name": "entries",
+          "ts_type": "[string, DirectoryMaterialization][]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "directory",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{ result: number; pending: [string, DirectoryMaterialization][] }",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "clearDirectoryPrefixedMapEntriesReturningMap",
+      "file": "directory-disposal-mutation.ts",
+      "line": 41,
+      "params": [
+        {
+          "name": "entries",
+          "ts_type": "[string, string][]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "directory",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "separator",
+          "ts_type": "string",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "{ result: number; entries: [string, string][] }",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "clearDirectoryPrefixedSetEntriesReturningSet",
+      "file": "directory-disposal-mutation.ts",
+      "line": 47,
+      "params": [
+        {
+          "name": "values",
+          "ts_type": "string[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "directory",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "separator",
+          "ts_type": "string",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "{ result: number; values: string[] }",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

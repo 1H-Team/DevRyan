@@ -8,7 +8,7 @@ const ALLOWLISTED_COMMANDS = new Set([
   'git rev-parse --absolute-git-dir --git-common-dir',
 ]);
 
-export const normalizeDeterministicGitReadCommand = (command) => {
+const normalizeDeterministicGitReadCommand = (command) => {
   if (typeof command !== 'string') return null;
   const normalized = command.trim().replace(/\s+/g, ' ');
   return ALLOWLISTED_COMMANDS.has(normalized) ? normalized : null;

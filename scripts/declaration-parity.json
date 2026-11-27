@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "description": "Declaration parity for scripts/check-declarations.mjs (added 2026-11-10). mismatches and unchecked are shrink-only debt: an unlisted mismatch or unchecked pair fails, and an entry that no longer matches fails until it is removed (node scripts/check-declarations.mjs --prune). Never add a mismatch; fix the declaration or the implementation instead. transformExports are permanent, not debt: names a native build transform adds to the bundled copy of the implementation only. Each name must still be declared-but-not-implemented and still be exported in the named transform source, or the check fails.",
+  "mismatches": [
+    {
+      "declaration": "packages/harness-runtime/index.d.ts",
+      "name": "preparedBaselineUsage",
+      "reason": "Phantom re-export: index.d.ts re-exports all of lib/session-mutations.d.ts, but index.js re-exports only createSessionMutationRuntime."
+    },
+    {
+      "declaration": "packages/harness-runtime/index.d.ts",
+      "name": "isLegacyDataRootBusy",
+      "reason": "Phantom declaration: nothing implements or imports it."
+    }
+  ],
+  "unchecked": [],
+  "transformExports": [
+    {
+      "declaration": "packages/web/server/default-config/plugins/devryan-browser.d.mts",
+      "transform": "packages/web/server/lib/opencode/runtime-host/reviewed-browser-transform.js",
+      "names": [
+        "reviewedBrowserDescription",
+        "reviewedBrowserInputSchema",
+        "withReviewedBrowserOwner",
+        "runReviewedBrowserBinary"
+      ],
+      "reason": "The declaration describes the native bundle copy: reviewed-browser-transform.js, applied by scripts/native-runtime-assets.mjs, adds these exports to that copy only; the shipped .mjs never exports them."
+    },
+    {
+      "declaration": "packages/web/server/default-config/plugins/devryan-document-reader.d.mts",
+      "transform": "packages/web/server/lib/opencode/runtime-host/reviewed-document-transform.js",
+      "names": [
+        "reviewedDocumentDescription",
+        "reviewedDocumentInputSchema",
+        "createDocumentTool",
+        "processFilePart",
+        "withReviewedDocumentOwner",
+        "parseAttachmentPayload",
+        "createDocumentID",
+        "createSourceID",
+        "createReviewedDocumentCache"
+      ],
+      "reason": "The declaration describes the native bundle copy: reviewed-document-transform.js, applied by scripts/native-runtime-assets.mjs, adds these exports to that copy only; the shipped .mjs never exports them."
+    }
+  ]
+}

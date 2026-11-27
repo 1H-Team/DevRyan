@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createLoopbackOpenCodeFixtureForGeneration } from '../../../../../scripts/perf/loopback-opencode-fixtures.mjs';
 import { PERF_CHILD_SESSION_IDS, PERF_PARENT_SESSION_ID } from '../../../../../scripts/perf/fixture-session-seeds.mjs';
 import { createOpenCodeClient } from './opencode-client/index.js';
-import { SESSION_TREE_MAX_DEPTH, isActiveSessionStatus, listSessionStatuses, listSessionTree } from './session-tree.js';
+import { SESSION_TREE_MAX_DEPTH, listSessionTree } from './session-tree.js';
 
 const buildOpenCodeUrl = (requestPath) => `http://opencode.test${requestPath}`;
 
@@ -145,25 +145,6 @@ describe('listSessionTree', () => {
   });
 });
 
-describe('listSessionStatuses', () => {
-  it('returns the status map and treats a missing endpoint as empty', async () => {
-    const withStatuses = createFakeFetch({
-      '/session/status': { a: { type: 'busy' }, b: { type: 'idle' }, c: { type: 'retry', attempt: 2, message: 'x' }, bad: 'nope' },
-    });
-
-    const statuses = await listSessionStatuses({ directory: '/repo', buildOpenCodeUrl, getOpenCodeAuthHeaders: () => ({}), fetchImpl: withStatuses.fetchImpl, openCodeClient: createNativeConsumerFixture({ readFixture: withStatuses.fetchImpl }) });
-
-    expect(statuses).toEqual({ a: { type: 'busy' }, b: { type: 'idle' }, c: { type: 'retry', attempt: 2, message: 'x' } });
-    expect(Object.values(statuses).filter(isActiveSessionStatus).map((status) => status.type)).toEqual(['busy', 'retry']);
-
-    const missing = createFakeFetch({});
-    await expect(listSessionStatuses({ directory: '/repo', buildOpenCodeUrl, getOpenCodeAuthHeaders: () => ({}), fetchImpl: missing.fetchImpl, openCodeClient: createNativeConsumerFixture({ readFixture: missing.fetchImpl }) })).resolves.toEqual({});
-
-    const failing = createFakeFetch({ '/session/status': new Error('down') });
-    await expect(listSessionStatuses({ directory: '/repo', buildOpenCodeUrl, getOpenCodeAuthHeaders: () => ({}), fetchImpl: failing.fetchImpl, openCodeClient: createNativeConsumerFixture({ readFixture: failing.fetchImpl }) })).rejects.toThrow('Cannot read session status (status 500)');
-  });
-});
-
 // ---------------------------------------------------------------------------
 // Generation 2: the same reads through `openCodeClient` (DESIGN.md E item 13c).
 
@@ -249,21 +230,6 @@ describe('listSessionTree (generation 2)', () => {
   });
 });
 
-describe('listSessionStatuses (generation 2)', () => {
-  it('reads non-idle statuses through the client, treats 404 as empty and reports other failures', async () => {
-    const client = createFakeClient({ statuses: { a: { type: 'busy' }, c: { type: 'retry', attempt: 2, message: 'x', next: 5 }, bad: 'nope' } });
-    const statuses = await listSessionStatuses({ directory: '/repo', openCodeClient: client });
-    expect(statuses).toEqual({ a: { type: 'busy' }, c: { type: 'retry', attempt: 2, message: 'x', next: 5 } });
-    expect(client.calls[0]).toMatchObject({ op: 'status', query: { directory: '/repo' } });
-
-    const missing = createFakeClient({ statuses: clientError(404, 'opencode_not_found') });
-    await expect(listSessionStatuses({ directory: '/repo', openCodeClient: missing })).resolves.toEqual({});
-
-    const failing = createFakeClient({ statuses: clientError(500, 'opencode_upstream_failure') });
-    await expect(listSessionStatuses({ directory: '/repo', openCodeClient: failing })).rejects.toThrow('Cannot read session status (status 500)');
-  });
-});
-
 describe('session tree native wire', () => {
   it('lists the canonical native fixture tree through the real client', async () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'devryan-session-tree-'));
@@ -274,7 +240,6 @@ describe('session tree native wire', () => {
       const tree = await listSessionTree({ sessionID: PERF_PARENT_SESSION_ID, directory, openCodeClient: client });
       expect(tree.map(entry => entry.id).sort()).toEqual([PERF_PARENT_SESSION_ID, ...PERF_CHILD_SESSION_IDS].sort());
       expect(tree[0]).toMatchObject({ id: PERF_PARENT_SESSION_ID, depth: 0 });
-      expect(await listSessionStatuses({ directory, openCodeClient: client })).toEqual({});
     } finally { await fixture.close(); rmSync(directory, { recursive: true, force: true }); }
   }, 30_000);
 });

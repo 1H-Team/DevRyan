@@ -1,0 +1,23 @@
+{"fn":"getTypographyVariable","args":[true],"error":"key.replace is not a function"}
+{"fn":"getTypographyVariable","args":[["a",1]],"error":"key.replace is not a function"}
+{"fn":"getTypographyVariable","args":[{"a":"b"}],"error":"key.replace is not a function"}
+{"fn":"getTypographyVariable","args":[0],"error":"key.replace is not a function"}
+{"fn":"getTypographyVariable","args":[null],"error":"Cannot read properties of null (reading 'replace')"}
+{"fn":"getTypographyVariable","args":["x"],"ok":"--text-x"}
+{"fn":"getTypographyVariable","args":[[]],"error":"key.replace is not a function"}
+{"fn":"getTypographyVariable","args":[{}],"error":"key.replace is not a function"}
+{"fn":"getTypographyVariable","args":[{"a":{"b":"c"}}],"error":"key.replace is not a function"}
+{"fn":"getTypographyVariable","args":["markdown"],"ok":"--text-markdown"}
+{"fn":"getTypographyVariable","args":["code"],"ok":"--text-code"}
+{"fn":"getTypographyVariable","args":["uiHeader"],"ok":"--text-ui-header"}
+{"fn":"getTypographyVariable","args":["uiLabel"],"ok":"--text-ui-label"}
+{"fn":"getTypographyVariable","args":["meta"],"ok":"--text-meta"}
+{"fn":"getTypographyVariable","args":["micro"],"ok":"--text-micro"}
+{"fn":"getTypographyVariable","args":["ABC"],"ok":"--text--a-b-c"}
+{"fn":"getTypographyVariable","args":["aBcD"],"ok":"--text-a-bc-d"}
+{"fn":"getTypographyVariable","args":[""],"ok":"--text-"}
+{"fn":"getTypographyVariable","args":["Émile"],"ok":"--text-émile"}
+{"fn":"getTypographyVariable","args":["ΣΑΣ"],"ok":"--text-σας"}
+{"fn":"getTypographyVariable","args":["İx"],"ok":"--text-i̇x"}
+{"fn":"getTypographyVariable","args":["x-Y_Z"],"ok":"--text-x--y_-z"}
+{"fn":"getTypographyVariable","args":["😀A"],"ok":"--text-😀-a"}

@@ -1,0 +1,14 @@
+{
+  "status": "ok",
+  "profile": {
+    "id": "p-1",
+    "name": "prod-main",
+    "provider": "cloudflare",
+    "mode": "managed-remote",
+    "hostname": "app.example.com",
+    "originPort": 3000,
+    "token": "***************1111",
+    "createdAt": 1600000000000,
+    "updatedAt": 1600000000500
+  }
+}

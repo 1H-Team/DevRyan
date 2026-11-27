@@ -1,0 +1,827 @@
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},[],true,[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},null,[],true],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,[],["a",1],0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],[],[],["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[0,{"a":"b"},{"a":"b"},{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":["x",{"a":"b"},{},true],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],true,{"a":"b"},{"a":"b"}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],null,0,{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":"b"},["a",1],[],[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":"b"},{"a":{"b":"c"}},{"a":"b"},[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,true,{"a":"b"},0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,{"a":"b"},["a",1],{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],"x",{},{"a":{"b":"c"}}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},{"a":{"b":"c"}},{"a":{"b":"c"}},"x"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{},0,null,{"a":"b"}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,{},{"a":{"b":"c"}},"x"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[0,[],0,null],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,["a",1],[],[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],true,null,["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,{"a":{"b":"c"}},[],0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[0,["a",1],[],true],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{},{"a":"b"},[],true],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],{"a":"b"},{"a":{"b":"c"}},"x"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],[],true,{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,true,true,{"a":"b"}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,0,{"a":"b"},null],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],{"a":"b"},0,{"a":"b"}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{},"x",["a",1],{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],0,null,0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,"x","x",0],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},{},{"a":{"b":"c"}},[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{},{"a":{"b":"c"}},true,["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,null,[],["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":"b"},["a",1],["a",1],[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],[],{"a":{"b":"c"}},"x"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},null,0,0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,{"a":{"b":"c"}},{"a":{"b":"c"}},["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},null,null,{"a":{"b":"c"}}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],["a",1],0,[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":["x",null,{"a":{"b":"c"}},null],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,0,null,{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[0,true,["a",1],["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},"x","x",["a",1]],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"inspectManagedModelInCatalog","args":["x",["a",1],"x",{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],0,[],true],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":["x",0,"x",[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":"b"},{"a":"b"},{"a":{"b":"c"}},[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,[],{},{"a":{"b":"c"}}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},null,[],{"a":{"b":"c"}}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{},null,true,{"a":{"b":"c"}}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,["a",1],0,0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":["x",true,null,{"a":"b"}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],{"a":"b"},true,0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,{"a":"b"},{"a":"b"},[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},true,true,{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],true,{},0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],{},{"a":{"b":"c"}},["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],{},{"a":{"b":"c"}},0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],["a",1],"x",["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},[],0,{"a":{"b":"c"}}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],"x",true,["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":["x",{"a":"b"},{"a":{"b":"c"}},["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,{"a":{"b":"c"}},{"a":{"b":"c"}},{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[0,true,{"a":{"b":"c"}},0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":["x",{"a":{"b":"c"}},["a",1],0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},["a",1],true,0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,{},{"a":"b"},0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":"b"},{"a":"b"},["a",1],true],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,"x",true,true],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,{"a":{"b":"c"}},true,true],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,["a",1],{},["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,0,{"a":{"b":"c"}},{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,"x",null,{"a":"b"}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],["a",1],true,true],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":["x",{"a":{"b":"c"}},[],0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":"b"},{"a":{"b":"c"}},true,null],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":"b"},{"a":{"b":"c"}},[],null],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{},true,true,"x"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":["x",[],{"a":{"b":"c"}},{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,[],{"a":{"b":"c"}},"x"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,true,"x",{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},["a",1],{},[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,true,{"a":{"b":"c"}},{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,["a",1],{},"x"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,["a",1],[],"x"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,true,null,"x"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":["x",{},"x",{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,true,{"a":"b"},{"a":{"b":"c"}}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],{"a":{"b":"c"}},["a",1],0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{},{"a":"b"},null,{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":"b"},["a",1],"x",{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":["x","x",["a",1],0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},{"a":{"b":"c"}},[],{"a":{"b":"c"}}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[0,0,{"a":"b"},0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},["a",1],[],[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,{"a":"b"},true,{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},{"a":{"b":"c"}},null,{"a":{"b":"c"}}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,"x",{"a":"b"},[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,[],true,"x"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],"x",null,["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],{},{"a":"b"},[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],[],["a",1],{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],0,[],["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},{},true,0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,[],{},{"a":"b"}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":["x",["a",1],null,[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":"b"},0,null,true],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":"b"},null,{"a":{"b":"c"}},"x"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,["a",1],{"a":"b"},"x"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":["x",0,["a",1],true],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":["x",{"a":{"b":"c"}},{"a":"b"},{"a":"b"}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],"x",0,[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,"x",{},[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],{"a":{"b":"c"}},true,[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],{"a":"b"},0,["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],["a",1],[],"x"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,{"a":"b"},0,{"a":"b"}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,{},["a",1],{"a":{"b":"c"}}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,{"a":"b"},{},{"a":"b"}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],{"a":{"b":"c"}},"x",["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,[],["a",1],[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":"b"},"x",{"a":{"b":"c"}},{"a":{"b":"c"}}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],0,{"a":{"b":"c"}},["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[0,{"a":"b"},0,null],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,true,["a",1],["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":"b"},"x",[],0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":"b"},[],"x",{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,null,[],0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":"b"},{},{"a":"b"},["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[0,["a",1],null,"x"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],[],true,0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],null,"x",{"a":"b"}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},{"a":{"b":"c"}},{"a":{"b":"c"}},["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],[],{"a":"b"},null],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},{},true,null],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],{},[],{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":["x",{},[],{"a":"b"}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},[],["a",1],0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],{"a":"b"},{},[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[0,true,null,{"a":{"b":"c"}}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],["a",1],null,0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],{"a":"b"},{"a":{"b":"c"}},["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":["x",{"a":{"b":"c"}},[],["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,[],{},true],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,{},null,["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],{},0,{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":["x",["a",1],{"a":{"b":"c"}},true],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[0,{},"x",["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,[],0,0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":"b"},["a",1],[],["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],[],0,null],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],0,{},null],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":["x",null,{"a":{"b":"c"}},["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],"x",true,{"a":{"b":"c"}}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],{"a":"b"},0,{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[0,{"a":{"b":"c"}},[],"x"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,true,0,{"a":"b"}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":"b"},{},{"a":"b"},true],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],{"a":{"b":"c"}},0,true],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,0,{},["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,"x",null,["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],null,"x","x"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,{},{"a":{"b":"c"}},0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],{"a":{"b":"c"}},"x",0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[0,{"a":"b"},"x",{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,["a",1],0,["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,{"a":{"b":"c"}},[],true],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,["a",1],{},[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[0,{},{},["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[0,null,[],"x"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{},true,{},true],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":["x",true,true,null],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,null,[],"x"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":"b"},{"a":"b"},null,{"a":"b"}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,[],true,0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],{"a":"b"},0,null],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],[],{"a":"b"},null],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":"b"},0,{"a":"b"},null],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{},["a",1],{},0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},{},"x",{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],null,{},{"a":"b"}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[null,{},"x",{"a":{"b":"c"}}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":"b"},["a",1],0,["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{},["a",1],[],0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[0,0,true,null],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[0,null,[],{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[0,true,"x",null],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[],{"a":"b"},[],{"a":"b"}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[0,0,null,"x"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[0,0,{},null],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{},[],[],{"a":"b"}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[0,["a",1],[],{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{},[],null,true],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[true,["a",1],{"a":{"b":"c"}},0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[0,["a",1],{"a":{"b":"c"}},"x"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{},[],true,[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":"b"},"x",{},"x"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":"b"},null,null,0],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[["a",1],true,{},["a",1]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},true,true,{"a":"b"}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6},[],true,[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7},[],true,[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[[3,1,2],[],true,[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6},true,[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7},true,[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},[3,1,2],true,[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},{},true,[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},[],{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6},[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},[],{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7},[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},[],[3,1,2],[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},[],{},[]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},[],true,{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},[],true,{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},[],true,[3,1,2]],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"inspectManagedModelInCatalog","args":[{"a":{"b":"c"}},[],true,{}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},true,{},true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[["a",1],{"a":"b"},{},["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},true,{"a":{"b":"c"}},true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,"x",true,{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":"b"},{"a":{"b":"c"}},{"a":"b"},"x"],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,null,{},[]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},true,"x",true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,0,null,[]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},["a",1],["a",1],true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":"b"},null,0,{}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,0,{"a":{"b":"c"}},["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":["x",true,{},{}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,0,"x",{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},{"a":{"b":"c"}},["a",1],"x"],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":"b"},{},{},[]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":["x",true,{"a":"b"},{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,[],"x",[]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":["x",{},0,{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":"b"},[],{},0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},{"a":"b"},0,"x"],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],{"a":{"b":"c"}},"x",{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[["a",1],["a",1],{"a":{"b":"c"}},{"a":"b"}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":["x",["a",1],["a",1],0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},[],{"a":"b"},null],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},{},[],null],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[["a",1],null,{"a":"b"},0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},{"a":{"b":"c"}},[],null],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,{"a":{"b":"c"}},[],true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[["a",1],0,0,{"a":"b"}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],true,["a",1],{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":"b"},{"a":{"b":"c"}},{},0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,{},{"a":"b"},{}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},{},null,"x"],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[["a",1],null,0,true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":["x",["a",1],"x",["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":["x","x",{},0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":"b"},null,true,{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,{"a":"b"},{},{"a":"b"}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,null,[],0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,{"a":"b"},{},"x"],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":"b"},0,["a",1],["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,true,"x",{"a":"b"}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},["a",1],[],null],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,["a",1],null,true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},[],{},{"a":"b"}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,0,{"a":{"b":"c"}},true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},[],["a",1],[]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":"b"},{},[],0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,{},{"a":"b"},{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],{"a":{"b":"c"}},"x",["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,{"a":"b"},"x",{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,true,{},[]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,null,{"a":{"b":"c"}},[]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,true,["a",1],[]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":["x",{},[],0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":["x",["a",1],{"a":{"b":"c"}},[]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[["a",1],[],{"a":"b"},{}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],{"a":"b"},{"a":{"b":"c"}},{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":["x",{},0,[]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,{"a":"b"},["a",1],{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],{"a":"b"},0,null],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,{"a":{"b":"c"}},{"a":"b"},{"a":"b"}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,0,{"a":"b"},[]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":"b"},0,{"a":{"b":"c"}},0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},{"a":{"b":"c"}},["a",1],["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},["a",1],"x",[]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":"b"},{},{"a":"b"},0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},{"a":"b"},"x",{"a":"b"}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},[],0,true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],{"a":"b"},{"a":"b"},["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,{"a":"b"},true,["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],{},true,{"a":"b"}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,{"a":"b"},true,null],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,0,null,["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},0,{"a":{"b":"c"}},[]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],"x","x",{"a":"b"}],"ok":null}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,{"a":"b"},{},null],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},true,0,0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,{"a":"b"},"x",null],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,0,true,{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":["x","x",{},["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,{"a":{"b":"c"}},{},"x"],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,"x",{"a":{"b":"c"}},0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[["a",1],"x",{"a":{"b":"c"}},0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},["a",1],null,"x"],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,[],null,{"a":"b"}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,{"a":{"b":"c"}},0,["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":["x","x",null,{"a":"b"}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,"x",null,{}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,["a",1],0,"x"],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},{},["a",1],true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,"x",["a",1],[]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},{},[],0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,{"a":{"b":"c"}},{},["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[["a",1],[],"x",{"a":"b"}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,{"a":"b"},0,"x"],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},{},["a",1],{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},[],0,[]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],["a",1],[],0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},{"a":{"b":"c"}},{},{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,0,["a",1],["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,{"a":{"b":"c"}},[],"x"],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,{"a":{"b":"c"}},{"a":{"b":"c"}},{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,"x",{"a":"b"},{}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,null,null,true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],[],[],["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},"x",{},["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,"x",{"a":{"b":"c"}},"x"],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,0,0,["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],["a",1],{},"x"],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],{"a":"b"},{"a":{"b":"c"}},{"a":"b"}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":"b"},["a",1],true,true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":["x",{},{"a":"b"},"x"],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,{"a":{"b":"c"}},["a",1],true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[["a",1],{},0,{}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":"b"},true,{"a":{"b":"c"}},["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":"b"},true,{"a":{"b":"c"}},[]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],{"a":{"b":"c"}},["a",1],{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,{"a":{"b":"c"}},[],{"a":"b"}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":"b"},[],[],{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},null,true,["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":["x",true,0,true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},{"a":"b"},["a",1],true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},["a",1],["a",1],null],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":["x","x",null,["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[["a",1],0,null,[]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,null,{"a":{"b":"c"}},null],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},true,[],"x"],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[["a",1],["a",1],{},[]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,0,0,true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,{"a":"b"},["a",1],{"a":"b"}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":["x",null,0,true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":"b"},null,{"a":{"b":"c"}},true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},"x","x",0],"ok":null}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},{"a":"b"},true,null],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},[],[],{}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,"x",[],{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,null,{},{}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[["a",1],["a",1],{"a":"b"},{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[["a",1],["a",1],[],null],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},0,true,0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},0,0,{"a":"b"}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},["a",1],"x",true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},["a",1],null,0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,{},["a",1],{"a":"b"}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},{},{"a":"b"},{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],[],"x",{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},true,null,true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,{"a":"b"},true,0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,{"a":"b"},["a",1],null],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],"x",{"a":{"b":"c"}},true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},["a",1],["a",1],{"a":"b"}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},{},{},[]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,["a",1],[],[]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,{"a":{"b":"c"}},null,{}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},{},true,{}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":["x",{"a":"b"},null,true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,null,null,null],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[["a",1],0,["a",1],null],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],true,["a",1],null],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":"b"},{"a":{"b":"c"}},[],{}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,[],"x",{}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},null,0,"x"],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,"x",{},["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],{"a":"b"},"x","x"],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},{},["a",1],0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[["a",1],{},null,true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[["a",1],{"a":{"b":"c"}},{"a":{"b":"c"}},true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},{"a":{"b":"c"}},true,{}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},[],{},"x"],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],"x",{"a":"b"},{"a":"b"}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},"x",null,["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":["x",{"a":{"b":"c"}},"x",["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,["a",1],[],"x"],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[["a",1],{},{},0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,{"a":"b"},null,null],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,{"a":"b"},null,true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":"b"},"x",{"a":{"b":"c"}},{}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,"x",["a",1],["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],true,{"a":{"b":"c"}},0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,"x",{},{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[true,{"a":"b"},"x",{}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":"b"},[],["a",1],"x"],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[["a",1],[],true,true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,"x",null,0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":["x",{"a":{"b":"c"}},{"a":"b"},{"a":"b"}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},[],[],[]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":"b"},{"a":"b"},true,0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],{"a":"b"},{},true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],"x",true,true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,[],{"a":"b"},["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":"b"},{},true,"x"],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,"x",0,0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],{"a":{"b":"c"}},{},{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},"x","x","x"],"ok":null}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,null,{"a":{"b":"c"}},{"a":{"b":"c"}}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":["x",["a",1],true,["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},true,{"a":{"b":"c"}},0],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},[],{"a":{"b":"c"}},["a",1]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[0,[],{"a":"b"},{}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6},true,{},true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7},true,{},true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[[3,1,2],true,{},true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{},true,{},true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6},{},true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7},{},true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},[3,1,2],{},true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},{},{},true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},true,{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6},true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},true,{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7},true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},true,[3,1,2],true],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},true,{},{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},true,{},{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},true,{},[3,1,2]],"ok":false}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"a":{"b":"c"}},true,{},{}],"ok":false}
+{"fn":"projectManagedModelValidationFailure","args":["x"],"ok":null}
+{"fn":"projectManagedModelValidationFailure","args":[0],"ok":null}
+{"fn":"projectManagedModelValidationFailure","args":[[]],"ok":null}
+{"fn":"projectManagedModelValidationFailure","args":[null],"ok":null}
+{"fn":"projectManagedModelValidationFailure","args":[{"a":"b"}],"ok":null}
+{"fn":"projectManagedModelValidationFailure","args":[{"a":{"b":"c"}}],"ok":null}
+{"fn":"projectManagedModelValidationFailure","args":[true],"ok":null}
+{"fn":"projectManagedModelValidationFailure","args":[{}],"ok":null}
+{"fn":"projectManagedModelValidationFailure","args":[["a",1]],"ok":null}
+{"fn":"projectManagedModelValidationFailure","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":null}
+{"fn":"projectManagedModelValidationFailure","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":null}
+{"fn":"projectManagedModelValidationFailure","args":[[3,1,2]],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"openai","gpt-5",{"$undefined":true}],"ok":{"status":"available","reason":null}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"openai","gpt-5",{"$undefined":true}],"ok":true}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"openai","gpt-5","low"],"ok":{"status":"available","reason":null}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"openai","gpt-5","low"],"ok":true}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"openai","gpt-5","mid"],"ok":{"status":"unavailable","reason":"variant_missing","supportedVariants":["low","high"],"modelName":"GPT 5"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"openai","gpt-5","mid"],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}," openai "," gpt-5 ","default"],"ok":{"status":"available","reason":null}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}," openai "," gpt-5 ","default"],"ok":true}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"openai","off",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"openai","off",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"openai","nope","low"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"openai","nope","low"],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"x","gpt-5",{"$undefined":true}],"ok":{"status":"unavailable","reason":"provider_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"x","gpt-5",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"anthropic","claude","fast"],"ok":{"status":"available","reason":null}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"anthropic","claude","fast"],"ok":true}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"anthropic","claude","deep"],"ok":{"status":"available","reason":null}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"anthropic","claude","deep"],"ok":true}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"anthropic","claude","slow"],"ok":{"status":"unavailable","reason":"variant_missing","supportedVariants":["fast","deep"],"modelName":"Claude"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"anthropic","claude","slow"],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"anthropic","claude",""],"ok":{"status":"available","reason":null}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"anthropic","claude",""],"ok":true}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"anthropic","claude",null],"ok":{"status":"available","reason":null}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"anthropic","claude",null],"ok":true}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"","m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"","m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"openai","  ",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"openai","  ",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},5,"m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},5,"m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"openai",5,{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"openai",5,{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"openai","gpt-5",7],"ok":{"status":"unavailable","reason":"variant_missing","supportedVariants":["low","high"],"modelName":"GPT 5"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]},"openai","gpt-5",7],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"openai","gpt-5",{"$undefined":true}],"ok":{"status":"available","reason":null}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"openai","gpt-5",{"$undefined":true}],"ok":true}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"openai","gpt-5","low"],"ok":{"status":"available","reason":null}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"openai","gpt-5","low"],"ok":true}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"openai","gpt-5","mid"],"ok":{"status":"unavailable","reason":"variant_missing","supportedVariants":["low","high"],"modelName":"GPT 5"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"openai","gpt-5","mid"],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}}," openai "," gpt-5 ","default"],"ok":{"status":"available","reason":null}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}}," openai "," gpt-5 ","default"],"ok":true}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"openai","off",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"openai","off",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"openai","nope","low"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"openai","nope","low"],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"x","gpt-5",{"$undefined":true}],"ok":{"status":"unavailable","reason":"provider_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"x","gpt-5",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"anthropic","claude","fast"],"ok":{"status":"available","reason":null}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"anthropic","claude","fast"],"ok":true}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"anthropic","claude","deep"],"ok":{"status":"available","reason":null}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"anthropic","claude","deep"],"ok":true}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"anthropic","claude","slow"],"ok":{"status":"unavailable","reason":"variant_missing","supportedVariants":["fast","deep"],"modelName":"Claude"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"anthropic","claude","slow"],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"anthropic","claude",""],"ok":{"status":"available","reason":null}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"anthropic","claude",""],"ok":true}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"anthropic","claude",null],"ok":{"status":"available","reason":null}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"anthropic","claude",null],"ok":true}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"","m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"","m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"openai","  ",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"openai","  ",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},5,"m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},5,"m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"openai",5,{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"openai",5,{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"openai","gpt-5",7],"ok":{"status":"unavailable","reason":"variant_missing","supportedVariants":["low","high"],"modelName":"GPT 5"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":{"providers":[{"id":"openai","models":{"gpt-5":{"name":"GPT 5","variants":{"low":{},"high":{}}},"off":{"available":false}}},{"providerID":"anthropic","models":[{"modelID":"claude","name":" Claude\u0001 ","variants":["fast",{"id":"deep"},5]}]},"junk"]}},"openai","gpt-5",7],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"openai","gpt-5",{"$undefined":true}],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"openai","gpt-5",{"$undefined":true}],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"openai","gpt-5","low"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"openai","gpt-5","low"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"openai","gpt-5","mid"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"openai","gpt-5","mid"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"catalogIncomplete":true,"providers":[]}," openai "," gpt-5 ","default"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"catalogIncomplete":true,"providers":[]}," openai "," gpt-5 ","default"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"openai","off",{"$undefined":true}],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"openai","off",{"$undefined":true}],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"openai","nope","low"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"openai","nope","low"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"x","gpt-5",{"$undefined":true}],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"x","gpt-5",{"$undefined":true}],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"anthropic","claude","fast"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"anthropic","claude","fast"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"anthropic","claude","deep"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"anthropic","claude","deep"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"anthropic","claude","slow"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"anthropic","claude","slow"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"anthropic","claude",""],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"anthropic","claude",""],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"anthropic","claude",null],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"anthropic","claude",null],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"","m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"","m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"openai","  ",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"openai","  ",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"catalogIncomplete":true,"providers":[]},5,"m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"catalogIncomplete":true,"providers":[]},5,"m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"openai",5,{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"openai",5,{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"openai","gpt-5",7],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"catalogIncomplete":true,"providers":[]},"openai","gpt-5",7],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[null,"openai","gpt-5",{"$undefined":true}],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,"openai","gpt-5",{"$undefined":true}],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[null,"openai","gpt-5","low"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,"openai","gpt-5","low"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[null,"openai","gpt-5","mid"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,"openai","gpt-5","mid"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[null," openai "," gpt-5 ","default"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[null," openai "," gpt-5 ","default"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[null,"openai","off",{"$undefined":true}],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,"openai","off",{"$undefined":true}],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[null,"openai","nope","low"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,"openai","nope","low"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[null,"x","gpt-5",{"$undefined":true}],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,"x","gpt-5",{"$undefined":true}],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[null,"anthropic","claude","fast"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,"anthropic","claude","fast"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[null,"anthropic","claude","deep"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,"anthropic","claude","deep"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[null,"anthropic","claude","slow"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,"anthropic","claude","slow"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[null,"anthropic","claude",""],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,"anthropic","claude",""],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[null,"anthropic","claude",null],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,"anthropic","claude",null],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[null,"","m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,"","m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[null,"openai","  ",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,"openai","  ",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[null,5,"m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,5,"m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[null,"openai",5,{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,"openai",5,{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[null,"openai","gpt-5",7],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[null,"openai","gpt-5",7],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[[],"openai","gpt-5",{"$undefined":true}],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],"openai","gpt-5",{"$undefined":true}],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[[],"openai","gpt-5","low"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],"openai","gpt-5","low"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[[],"openai","gpt-5","mid"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],"openai","gpt-5","mid"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[[]," openai "," gpt-5 ","default"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[[]," openai "," gpt-5 ","default"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[[],"openai","off",{"$undefined":true}],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],"openai","off",{"$undefined":true}],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[[],"openai","nope","low"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],"openai","nope","low"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[[],"x","gpt-5",{"$undefined":true}],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],"x","gpt-5",{"$undefined":true}],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[[],"anthropic","claude","fast"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],"anthropic","claude","fast"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[[],"anthropic","claude","deep"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],"anthropic","claude","deep"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[[],"anthropic","claude","slow"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],"anthropic","claude","slow"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[[],"anthropic","claude",""],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],"anthropic","claude",""],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[[],"anthropic","claude",null],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],"anthropic","claude",null],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[[],"","m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],"","m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[[],"openai","  ",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],"openai","  ",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[[],5,"m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],5,"m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[[],"openai",5,{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],"openai",5,{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[[],"openai","gpt-5",7],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[[],"openai","gpt-5",7],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":["x","openai","gpt-5",{"$undefined":true}],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":["x","openai","gpt-5",{"$undefined":true}],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":["x","openai","gpt-5","low"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":["x","openai","gpt-5","low"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":["x","openai","gpt-5","mid"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":["x","openai","gpt-5","mid"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":["x"," openai "," gpt-5 ","default"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":["x"," openai "," gpt-5 ","default"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":["x","openai","off",{"$undefined":true}],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":["x","openai","off",{"$undefined":true}],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":["x","openai","nope","low"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":["x","openai","nope","low"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":["x","x","gpt-5",{"$undefined":true}],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":["x","x","gpt-5",{"$undefined":true}],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":["x","anthropic","claude","fast"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":["x","anthropic","claude","fast"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":["x","anthropic","claude","deep"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":["x","anthropic","claude","deep"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":["x","anthropic","claude","slow"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":["x","anthropic","claude","slow"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":["x","anthropic","claude",""],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":["x","anthropic","claude",""],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":["x","anthropic","claude",null],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":["x","anthropic","claude",null],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":["x","","m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":["x","","m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":["x","openai","  ",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":["x","openai","  ",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":["x",5,"m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":["x",5,"m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":["x","openai",5,{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":["x","openai",5,{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":["x","openai","gpt-5",7],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":["x","openai","gpt-5",7],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":"x"},"openai","gpt-5",{"$undefined":true}],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":"x"},"openai","gpt-5",{"$undefined":true}],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":"x"},"openai","gpt-5","low"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":"x"},"openai","gpt-5","low"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":"x"},"openai","gpt-5","mid"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":"x"},"openai","gpt-5","mid"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":"x"}," openai "," gpt-5 ","default"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":"x"}," openai "," gpt-5 ","default"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":"x"},"openai","off",{"$undefined":true}],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":"x"},"openai","off",{"$undefined":true}],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":"x"},"openai","nope","low"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":"x"},"openai","nope","low"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":"x"},"x","gpt-5",{"$undefined":true}],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":"x"},"x","gpt-5",{"$undefined":true}],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":"x"},"anthropic","claude","fast"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":"x"},"anthropic","claude","fast"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":"x"},"anthropic","claude","deep"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":"x"},"anthropic","claude","deep"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":"x"},"anthropic","claude","slow"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":"x"},"anthropic","claude","slow"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":"x"},"anthropic","claude",""],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":"x"},"anthropic","claude",""],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":"x"},"anthropic","claude",null],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":"x"},"anthropic","claude",null],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":"x"},"","m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":"x"},"","m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":"x"},"openai","  ",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":"x"},"openai","  ",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":"x"},5,"m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":"x"},5,"m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":"x"},"openai",5,{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":"x"},"openai",5,{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":"x"},"openai","gpt-5",7],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":"x"},"openai","gpt-5",7],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":null},"openai","gpt-5",{"$undefined":true}],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":null},"openai","gpt-5",{"$undefined":true}],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":null},"openai","gpt-5","low"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":null},"openai","gpt-5","low"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":null},"openai","gpt-5","mid"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":null},"openai","gpt-5","mid"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":null}," openai "," gpt-5 ","default"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":null}," openai "," gpt-5 ","default"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":null},"openai","off",{"$undefined":true}],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":null},"openai","off",{"$undefined":true}],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":null},"openai","nope","low"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":null},"openai","nope","low"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":null},"x","gpt-5",{"$undefined":true}],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":null},"x","gpt-5",{"$undefined":true}],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":null},"anthropic","claude","fast"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":null},"anthropic","claude","fast"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":null},"anthropic","claude","deep"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":null},"anthropic","claude","deep"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":null},"anthropic","claude","slow"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":null},"anthropic","claude","slow"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":null},"anthropic","claude",""],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":null},"anthropic","claude",""],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":null},"anthropic","claude",null],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":null},"anthropic","claude",null],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":null},"","m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":null},"","m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":null},"openai","  ",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":null},"openai","  ",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":null},5,"m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":null},5,"m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":null},"openai",5,{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":null},"openai",5,{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"data":null},"openai","gpt-5",7],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"data":null},"openai","gpt-5",7],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"openai","gpt-5",{"$undefined":true}],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"openai","gpt-5",{"$undefined":true}],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"openai","gpt-5","low"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"openai","gpt-5","low"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"openai","gpt-5","mid"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"openai","gpt-5","mid"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]}," openai "," gpt-5 ","default"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]}," openai "," gpt-5 ","default"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"openai","off",{"$undefined":true}],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"openai","off",{"$undefined":true}],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"openai","nope","low"],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"openai","nope","low"],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"x","gpt-5",{"$undefined":true}],"ok":{"status":"unavailable","reason":"provider_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"x","gpt-5",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"anthropic","claude","fast"],"ok":{"status":"unavailable","reason":"provider_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"anthropic","claude","fast"],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"anthropic","claude","deep"],"ok":{"status":"unavailable","reason":"provider_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"anthropic","claude","deep"],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"anthropic","claude","slow"],"ok":{"status":"unavailable","reason":"provider_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"anthropic","claude","slow"],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"anthropic","claude",""],"ok":{"status":"unavailable","reason":"provider_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"anthropic","claude",""],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"anthropic","claude",null],"ok":{"status":"unavailable","reason":"provider_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"anthropic","claude",null],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"","m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"","m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"openai","  ",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"openai","  ",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},5,"m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},5,"m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"openai",5,{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"openai",5,{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"openai","gpt-5",7],"ok":{"status":"unknown","reason":"catalog_unavailable"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":"x"}]},"openai","gpt-5",7],"ok":null}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"openai","gpt-5",{"$undefined":true}],"ok":{"status":"available","reason":null}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"openai","gpt-5",{"$undefined":true}],"ok":true}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"openai","gpt-5","low"],"ok":{"status":"unavailable","reason":"variant_missing","supportedVariants":["0","1"]}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"openai","gpt-5","low"],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"openai","gpt-5","mid"],"ok":{"status":"unavailable","reason":"variant_missing","supportedVariants":["0","1"]}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"openai","gpt-5","mid"],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]}," openai "," gpt-5 ","default"],"ok":{"status":"available","reason":null}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]}," openai "," gpt-5 ","default"],"ok":true}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"openai","off",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"openai","off",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"openai","nope","low"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"openai","nope","low"],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"x","gpt-5",{"$undefined":true}],"ok":{"status":"unavailable","reason":"provider_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"x","gpt-5",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"anthropic","claude","fast"],"ok":{"status":"unavailable","reason":"provider_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"anthropic","claude","fast"],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"anthropic","claude","deep"],"ok":{"status":"unavailable","reason":"provider_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"anthropic","claude","deep"],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"anthropic","claude","slow"],"ok":{"status":"unavailable","reason":"provider_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"anthropic","claude","slow"],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"anthropic","claude",""],"ok":{"status":"unavailable","reason":"provider_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"anthropic","claude",""],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"anthropic","claude",null],"ok":{"status":"unavailable","reason":"provider_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"anthropic","claude",null],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"","m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"","m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"openai","  ",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"openai","  ",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},5,"m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},5,"m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"openai",5,{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"openai",5,{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"openai","gpt-5",7],"ok":{"status":"unavailable","reason":"variant_missing","supportedVariants":["0","1"]}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":"ab"}}}]},"openai","gpt-5",7],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"openai","gpt-5",{"$undefined":true}],"ok":{"status":"available","reason":null}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"openai","gpt-5",{"$undefined":true}],"ok":true}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"openai","gpt-5","low"],"ok":{"status":"unavailable","reason":"variant_missing","supportedVariants":[],"modelName":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"openai","gpt-5","low"],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"openai","gpt-5","mid"],"ok":{"status":"unavailable","reason":"variant_missing","supportedVariants":[],"modelName":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"openai","gpt-5","mid"],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]}," openai "," gpt-5 ","default"],"ok":{"status":"available","reason":null}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]}," openai "," gpt-5 ","default"],"ok":true}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"openai","off",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"openai","off",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"openai","nope","low"],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"openai","nope","low"],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"x","gpt-5",{"$undefined":true}],"ok":{"status":"unavailable","reason":"provider_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"x","gpt-5",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"anthropic","claude","fast"],"ok":{"status":"unavailable","reason":"provider_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"anthropic","claude","fast"],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"anthropic","claude","deep"],"ok":{"status":"unavailable","reason":"provider_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"anthropic","claude","deep"],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"anthropic","claude","slow"],"ok":{"status":"unavailable","reason":"provider_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"anthropic","claude","slow"],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"anthropic","claude",""],"ok":{"status":"unavailable","reason":"provider_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"anthropic","claude",""],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"anthropic","claude",null],"ok":{"status":"unavailable","reason":"provider_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"anthropic","claude",null],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"","m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"","m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"openai","  ",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"openai","  ",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},5,"m",{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},5,"m",{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"openai",5,{"$undefined":true}],"ok":{"status":"unavailable","reason":"model_missing"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"openai",5,{"$undefined":true}],"ok":false}
+{"fn":"inspectManagedModelInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"openai","gpt-5",7],"ok":{"status":"unavailable","reason":"variant_missing","supportedVariants":[],"modelName":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}
+{"fn":"isManagedModelAvailableInCatalog","args":[{"providers":[{"id":"openai","models":{"gpt-5":{"variants":null,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}]},"openai","gpt-5",7],"ok":false}
+{"fn":"projectManagedModelValidationFailure","args":[{"code":"managed_agent_model_unavailable","details":{"reason":"variant_missing","providerId":"openai","modelId":"gpt-5","variant":"mid","agent":"Designer","modelName":"GPT 5","supportedVariants":["low","high","low",5,"  "]}}],"ok":{"code":"managed_agent_model_unavailable","details":{"reason":"variant_missing","providerId":"openai","modelId":"gpt-5","variant":"mid","agent":"Designer","modelName":"GPT 5","supportedVariants":["low","high"]},"message":"Designer cannot start: mid is unsupported for GPT 5. Choose low, high or Provider default in Agents settings."}}
+{"fn":"projectManagedModelValidationFailure","args":[{"code":"managed_agent_model_unavailable","details":{"reason":"variant_missing","providerId":"openai","modelId":"gpt-5","variant":"mid","agent":{"$undefined":true},"modelName":"","supportedVariants":[]}}],"ok":{"code":"managed_agent_model_unavailable","details":{"reason":"variant_missing","providerId":"openai","modelId":"gpt-5","variant":"mid","supportedVariants":[]},"message":"Managed agent cannot start: mid is unsupported for openai/gpt-5. Choose a supported variant or Provider default in Agents settings."}}
+{"fn":"projectManagedModelValidationFailure","args":[{"code":"managed_agent_model_availability_unknown","details":{"reason":"catalog_unavailable","providerId":"openai","modelId":"gpt-5","variant":null,"agent":"Designer","modelName":"GPT 5","supportedVariants":["low","high","low",5,"  "]}}],"ok":{"code":"managed_agent_model_availability_unknown","details":{"reason":"catalog_unavailable","providerId":"openai","modelId":"gpt-5","variant":null,"agent":"Designer","modelName":"GPT 5","supportedVariants":["low","high"]},"message":"Managed selection could not be verified: openai/gpt-5."}}
+{"fn":"projectManagedModelValidationFailure","args":[{"code":"managed_agent_model_unavailable","details":{"reason":"model_missing","providerId":"openai","modelId":"gpt-5","variant":"v\u0007","agent":"Designer","modelName":"GPT 5","supportedVariants":["low","high","low",5,"  "]}}],"ok":{"code":"managed_agent_model_unavailable","details":{"reason":"model_missing","providerId":"openai","modelId":"gpt-5","variant":"v","agent":"Designer","modelName":"GPT 5","supportedVariants":["low","high"]},"message":"Managed selection could not be verified: openai/gpt-5 (v)."}}
+{"fn":"projectManagedModelValidationFailure","args":[{"code":"managed_agent_model_unavailable","details":{"reason":"variant_missing","providerId":"openai","modelId":"gpt-5","variant":"mid","agent":"Designer","modelName":"GPT 5","supportedVariants":"x"}}],"ok":{"code":"managed_agent_model_unavailable","details":{"reason":"variant_missing","providerId":"openai","modelId":"gpt-5","variant":"mid","agent":"Designer","modelName":"GPT 5"},"message":"Designer cannot start: mid is unsupported for GPT 5. Choose a supported variant or Provider default in Agents settings."}}
+{"fn":"projectManagedModelValidationFailure","args":[{"code":"x","details":{"reason":"variant_missing","providerId":"openai","modelId":"gpt-5","variant":"mid","agent":"Designer","modelName":"GPT 5","supportedVariants":["low","high","low",5,"  "]}}],"ok":null}
+{"fn":"projectManagedModelValidationFailure","args":[{"code":"managed_agent_model_unavailable","details":{"reason":"x","providerId":"openai","modelId":"gpt-5","variant":"mid","agent":"Designer","modelName":"GPT 5","supportedVariants":["low","high","low",5,"  "]}}],"ok":null}
+{"fn":"projectManagedModelValidationFailure","args":[{"code":"managed_agent_model_unavailable"}],"ok":null}
+{"fn":"projectManagedModelValidationFailure","args":[null],"ok":null}
+{"fn":"projectManagedModelValidationFailure","args":["x"],"ok":null}
+{"fn":"projectManagedModelValidationFailure","args":[{"code":"managed_agent_model_unavailable","details":{"reason":"variant_missing","providerId":5,"modelId":null,"variant":"mid","agent":"Designer","modelName":{"$undefined":true},"supportedVariants":["low","high","low",5,"  "]}}],"ok":{"code":"managed_agent_model_unavailable","details":{"reason":"variant_missing","providerId":null,"modelId":null,"variant":"mid","agent":"Designer","supportedVariants":["low","high"]},"message":"Designer cannot start: mid is unsupported for null/null. Choose low, high or Provider default in Agents settings."}}

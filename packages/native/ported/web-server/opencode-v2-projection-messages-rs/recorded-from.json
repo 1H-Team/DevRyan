@@ -1,0 +1,49 @@
+{
+  "unit": "messages.js",
+  "files": 1,
+  "fingerprint": "7a1fefb76bea6c1d",
+  "cases": 869,
+  "cases_hash": "dc600208368000d2",
+  "coverage": {
+    "lines": 1801,
+    "reached": 1226,
+    "files": [
+      {
+        "file": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/shared-runtime/lib/native-message-status.js",
+        "lines": 12,
+        "reached": 12,
+        "missed": ""
+      },
+      {
+        "file": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/shared-runtime/lib/provider-error-details.js",
+        "lines": 41,
+        "reached": 30,
+        "missed": "31-41"
+      },
+      {
+        "file": "errors.js",
+        "lines": 184,
+        "reached": 139,
+        "missed": "97, 110-117, 129-140, 153-156, 168-170, 181-197"
+      },
+      {
+        "file": "ids.js",
+        "lines": 225,
+        "reached": 207,
+        "missed": "92-98, 200, 214-216, 227-233"
+      },
+      {
+        "file": "messages.js",
+        "lines": 1029,
+        "reached": 590,
+        "missed": "175-178, 240-253, 322-331, 342-351, 360-364, 381, 392-415, 494-495, 516-567, 577-629, 701-704, 717-738, 761-779, 781-786, 788-790, 792-797, 799-807, 809-822, 824-896, 898-911, 913, 922-936, 940-945, 978-983, 988-993, 997-1003, 1007-1008, 1035-1084, 1096"
+      },
+      {
+        "file": "tools.js",
+        "lines": 310,
+        "reached": 248,
+        "missed": "94-96, 109-119, 123-125, 136-155, 167-177, 244-245, 249-250, 268-269, 296-303"
+      }
+    ]
+  }
+}

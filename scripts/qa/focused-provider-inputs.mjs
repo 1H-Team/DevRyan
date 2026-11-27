@@ -53,6 +53,7 @@ export async function prepareFocusedProviderInputs({ artifactRoot, outputRoot, p
       files.push({ path: relative, sha256: qaHash(bytes) });
     }
     const preparedInput = { sourceHome, artifactRoot, files }, mirror = { reviewedNativeFile: 'reviewed-native.json', reviewedPluginFile: 'reviewed-plugins.json', opencodeConfigDirectory: 'opencode', webConfigDirectory: 'web' };
+    let failed = false, failure;
     try {
       const factory = await createQaNativePreparationFactory({ preparedInput, mirror, bootstrapCredentials: async () => { throw fail('qa_focused_no_credentials'); } });
       const source = await factory.prepareSource({ runtimeRoot, workspace, sourceHome, artifactRoot });
@@ -74,7 +75,12 @@ export async function prepareFocusedProviderInputs({ artifactRoot, outputRoot, p
       const matrixFile = path.join(outputRoot, 'matrix.json'); await fs.writeFile(matrixFile, JSON.stringify(matrix, null, 2) + '\n', { flag: 'wx', mode: 0o400 });
       const result = { preparationFile, mirrorSha256: qaHash(await readQaPinnedFile(preparationFile)), matrixFile, matrixSha256: qaHash(await readQaPinnedFile(matrixFile)), evidenceRoot: matrix.evidenceRoot, inference: 'not-run' };
       check(); passed = true; return result;
-    } finally { try { await fs.rm(probe, { recursive: true, force: true }); } catch (error) { passed = false; throw error; } }
+    } catch (error) { failed = true; failure = error; throw error; }
+    // A probe cleanup failure is reported with, never instead of, the preparation's own failure.
+    finally { try { await fs.rm(probe, { recursive: true, force: true }); } catch (error) {
+      passed = false;
+      throw failed ? Object.assign(new AggregateError([failure, error], `${failure?.message ?? failure}; probe cleanup also failed`, { cause: failure }), { code: failure?.code }) : error;
+    } }
   } finally {
     process.off('SIGINT', interrupt); process.off('SIGTERM', interrupt);
     run.finish(interrupted ? 'interrupted' : passed ? 'passed' : 'failed');

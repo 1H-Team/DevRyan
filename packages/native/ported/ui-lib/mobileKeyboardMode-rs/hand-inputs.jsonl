@@ -1,0 +1,43 @@
+{"fn": "normalizeMobileKeyboardMode", "args": ["native"]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["native", "native"]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["native", "resize-content"]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["native", {"$undefined": true}]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["native", "x"]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["native", 0]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["native", null]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["resize-content"]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["resize-content", "native"]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["resize-content", "resize-content"]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["resize-content", {"$undefined": true}]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["resize-content", "x"]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["resize-content", 0]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["resize-content", null]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["RESIZE"]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["RESIZE", "native"]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["RESIZE", "resize-content"]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["RESIZE", {"$undefined": true}]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["RESIZE", "x"]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["RESIZE", 0]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["RESIZE", null]}
+{"fn": "normalizeMobileKeyboardMode", "args": [null]}
+{"fn": "normalizeMobileKeyboardMode", "args": [null, "native"]}
+{"fn": "normalizeMobileKeyboardMode", "args": [null, "resize-content"]}
+{"fn": "normalizeMobileKeyboardMode", "args": [null, {"$undefined": true}]}
+{"fn": "normalizeMobileKeyboardMode", "args": [null, "x"]}
+{"fn": "normalizeMobileKeyboardMode", "args": [null, 0]}
+{"fn": "normalizeMobileKeyboardMode", "args": [null, null]}
+{"fn": "normalizeMobileKeyboardMode", "args": [5]}
+{"fn": "normalizeMobileKeyboardMode", "args": [5, "native"]}
+{"fn": "normalizeMobileKeyboardMode", "args": [5, "resize-content"]}
+{"fn": "normalizeMobileKeyboardMode", "args": [5, {"$undefined": true}]}
+{"fn": "normalizeMobileKeyboardMode", "args": [5, "x"]}
+{"fn": "normalizeMobileKeyboardMode", "args": [5, 0]}
+{"fn": "normalizeMobileKeyboardMode", "args": [5, null]}
+{"fn": "normalizeMobileKeyboardMode", "args": [""]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["", "native"]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["", "resize-content"]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["", {"$undefined": true}]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["", "x"]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["", 0]}
+{"fn": "normalizeMobileKeyboardMode", "args": ["", null]}
+{"fn": "normalizeMobileKeyboardMode", "args": []}

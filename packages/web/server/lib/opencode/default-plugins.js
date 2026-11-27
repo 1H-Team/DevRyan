@@ -16,7 +16,6 @@ const sanitizer = DEVRYAN_MANAGED_PLUGINS.find(
   (plugin) => plugin.id === DEVRYAN_DEFAULT_PLUGIN_IDS.OPENAI_TOOL_SCHEMA_SANITIZER,
 );
 
-export const OPENAI_TOOL_SCHEMA_SANITIZER_FILE = sanitizer.registrationPath.split('/').at(-1);
 export const OPENAI_TOOL_SCHEMA_SANITIZER_SPEC = sanitizer.registrationPath;
 
 const catalog = Object.freeze(DEVRYAN_MANAGED_PLUGINS

@@ -100,7 +100,8 @@ export async function githubToken(environment, run) {
   return (await run('gh', ['auth', 'token'], { timeout: 10_000 }).catch(() => ({ stdout: '' }))).stdout.trim();
 }
 
-export async function preflight({ repositoryRoot = root, environment = process.env, fetchImpl = fetch, run = execute, log = console.log, localOnly = false } = {}) {
+export async function preflight({ repositoryRoot = root, environment = process.env, fetchImpl = fetch, run = execute, log = console.log, localOnly = false,
+  catalogFreshness = modelCatalogFreshness } = {}) {
   const results = [];
   const check = async (name, operation) => {
     try {
@@ -154,8 +155,10 @@ export async function preflight({ repositoryRoot = root, environment = process.e
     if (!token) throw new Error('GitHub checks need GITHUB_TOKEN, GH_TOKEN or `gh auth login`; use --local-only to skip them');
     const client = githubClient({ token, fetchImpl, repository: env.GITHUB_REPOSITORY, environment: env });
     // The runtime never fetches a catalog: a model missing here ships missing.
-    await check('reviewed model catalog', () => modelCatalogFreshness({ fetchImpl })
-      .catch(error => { if (env.RELEASE_DRY_RUN === 'true') return `dry run: a tag push would fail: ${error.message}`; throw error; }));
+    // Dry runs and tag runs apply the same verdict, so a dry run that passes
+    // proves the tag run's catalog check too (release:tag runs it before pushing).
+    // A live catalog that cannot be read fails as well: there is no verdict.
+    await check('reviewed model catalog', () => catalogFreshness({ fetchImpl }));
     const admission = await check('publication state and latest ordering', async () => {
       if (env.RELEASE_DRY_RUN !== 'true') {
         const result = await admit({ repositoryRoot, environment: env, fetchImpl, log: () => {} });

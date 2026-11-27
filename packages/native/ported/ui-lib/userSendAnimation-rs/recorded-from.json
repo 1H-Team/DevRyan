@@ -1,0 +1,19 @@
+{
+  "unit": "userSendAnimation.ts",
+  "files": 1,
+  "fingerprint": "f1a819b84b792e46",
+  "cases": 654,
+  "cases_hash": "00108e78cde94264",
+  "coverage": {
+    "lines": 30,
+    "reached": 30,
+    "files": [
+      {
+        "file": "userSendAnimation.ts",
+        "lines": 30,
+        "reached": 30,
+        "missed": ""
+      }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "unit": "opencode-update-runtime.js",
+  "files": 1,
+  "fingerprint": "d903dfb752a368e9",
+  "cases": 229,
+  "cases_hash": "834ba57959ef69e0",
+  "coverage": {
+    "lines": 3,
+    "reached": 3,
+    "files": [
+      {
+        "file": "opencode-update-runtime.js",
+        "lines": 3,
+        "reached": 3,
+        "missed": ""
+      }
+    ]
+  }
+}

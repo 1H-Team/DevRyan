@@ -1,0 +1,59 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "commitTemplate.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "committemplate-rs",
+  "exports": [
+    {
+      "name": "stripCommitComments",
+      "file": "commitTemplate.ts",
+      "line": 42,
+      "params": [
+        {
+          "name": "message",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "validateCommitMessage",
+      "file": "commitTemplate.ts",
+      "line": 54,
+      "params": [
+        {
+          "name": "message",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "CommitMessageValidation",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "buildCommitMsgHookScript",
+      "file": "commitTemplate.ts",
+      "line": 98,
+      "params": [],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

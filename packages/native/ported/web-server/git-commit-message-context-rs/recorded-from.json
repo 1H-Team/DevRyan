@@ -1,0 +1,19 @@
+{
+  "unit": "commit-message-context.js",
+  "files": 1,
+  "fingerprint": "04cff3387011ab31",
+  "cases": 46,
+  "cases_hash": "7e6ffd93ad305c99",
+  "coverage": {
+    "lines": 197,
+    "reached": 63,
+    "files": [
+      {
+        "file": "commit-message-context.js",
+        "lines": 197,
+        "reached": 63,
+        "missed": "59, 65-72, 76-77, 81-132, 136-161, 163-176, 178-189, 191-209"
+      }
+    ]
+  }
+}

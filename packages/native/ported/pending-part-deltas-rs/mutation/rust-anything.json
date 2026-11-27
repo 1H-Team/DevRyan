@@ -1,0 +1,270 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/native/ported/pending-part-deltas-rs/mutation-ts",
+  "unit": "pending-part-deltas-mutation.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "pending-part-deltas-mutation-rs",
+  "exports": [
+    {
+      "name": "recordPartTypeHintReturningStore",
+      "file": "pending-part-deltas-mutation.ts",
+      "line": 21,
+      "params": [
+        {
+          "name": "store",
+          "ts_type": "PartTypeHintStore",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "directory",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "event",
+          "ts_type": "Event",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "now",
+          "ts_type": "number",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "PartTypeHintStore",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getPartTypeHintReturningStore",
+      "file": "pending-part-deltas-mutation.ts",
+      "line": 26,
+      "params": [
+        {
+          "name": "store",
+          "ts_type": "PartTypeHintStore",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "directory",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "partID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "now",
+          "ts_type": "number",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{ result: string | undefined; store: PartTypeHintStore }",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "clearPartTypeHintsReturningStore",
+      "file": "pending-part-deltas-mutation.ts",
+      "line": 31,
+      "params": [
+        {
+          "name": "store",
+          "ts_type": "PartTypeHintStore",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "directory",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "PartTypeHintStore",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "addPendingPartDeltaReturningStore",
+      "file": "pending-part-deltas-mutation.ts",
+      "line": 36,
+      "params": [
+        {
+          "name": "store",
+          "ts_type": "PendingPartDeltaStore",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "directory",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "pending",
+          "ts_type": "Omit<PendingPartDelta, \"updatedAt\">",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "now",
+          "ts_type": "number",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "PendingPartDeltaStore",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "consumePendingPartDeltasReturningStore",
+      "file": "pending-part-deltas-mutation.ts",
+      "line": 41,
+      "params": [
+        {
+          "name": "store",
+          "ts_type": "PendingPartDeltaStore",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "directory",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "messageID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "partID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "now",
+          "ts_type": "number",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{ result: PendingPartDelta[]; store: PendingPartDeltaStore }",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "hasPendingPartDeltasForMessageList",
+      "file": "pending-part-deltas-mutation.ts",
+      "line": 46,
+      "params": [
+        {
+          "name": "store",
+          "ts_type": "PendingPartDeltaStore",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "directory",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "messageIDs",
+          "ts_type": "string[] | Set<string>",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "clearPendingPartDeltasForDirectoryReturningStore",
+      "file": "pending-part-deltas-mutation.ts",
+      "line": 50,
+      "params": [
+        {
+          "name": "store",
+          "ts_type": "PendingPartDeltaStore",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "directory",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{ result: number; store: PendingPartDeltaStore }",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "clearPendingPartDeltasForMessagesReturningStore",
+      "file": "pending-part-deltas-mutation.ts",
+      "line": 55,
+      "params": [
+        {
+          "name": "store",
+          "ts_type": "PendingPartDeltaStore",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "directory",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "messageIDs",
+          "ts_type": "string[] | Set<string>",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{ result: number; store: PendingPartDeltaStore }",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

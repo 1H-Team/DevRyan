@@ -1,0 +1,410 @@
+{"fn":"resolveProviderPromptTools","args":[null,"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,["a",1],["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x",true,{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[["a",1],0,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[true,["a",1],[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{},{},0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,0,true],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[["a",1],null,0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,null],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x",{"a":{"b":"c"}},[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{},{"a":"b"},{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],{},[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[true,{"a":"b"},{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":{"b":"c"}},"x",0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,[],[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":{"b":"c"}},{"a":"b"},["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,"x",["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,"x",["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":"b"},null,[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":"b"},0,true],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[true,{},{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[true,null,["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],true,"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[true,{"a":"b"},true],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x","x",["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x",["a",1],null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[{"a":"b"},[],"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[["a",1],{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[["a",1],"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[true,"x",true],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,[],["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":{"b":"c"}},{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,{"a":{"b":"c"}},null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[{},true,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,true,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":{"b":"c"}},{"a":{"b":"c"}},["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,null],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x",null,{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":{"b":"c"}},"x",{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[true,[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],[],{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":{"b":"c"}},["a",1],{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":{"b":"c"}},true,["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,0,{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[["a",1],["a",1],{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],true,true],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[["a",1],["a",1],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{},{},"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,[],{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":{"b":"c"}},[],{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x",{"a":{"b":"c"}},null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[{},0,[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{},null],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,"x",null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[["a",1],["a",1],["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[true,{"a":{"b":"c"}},{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x",[],{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[["a",1],null,["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":"b"},0,[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[["a",1],0,{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{},"x",{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,[],0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{},{"a":"b"},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,["a",1],0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x",[],["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[["a",1],{},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,{"a":{"b":"c"}},0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],[],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":"b"},{},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,0,[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[true,{"a":{"b":"c"}},["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x",0,null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[{"a":"b"},0,{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{},0,{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[true,{"a":"b"},["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,true,{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,{"a":"b"},true],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":"b"},true,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],null,true],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],{"a":"b"},null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[null,["a",1],[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x",null,null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":["x","x",{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x",0,["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":{"b":"c"}},["a",1],{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[true,{"a":{"b":"c"}},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],{"a":"b"},[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x",null,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":"b"},{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],[],true],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x",null,true],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":{"b":"c"}},0,[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],{},true],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":"b"},0,null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[null,{},{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[true,{},true],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x",true,0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],0,[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":{"b":"c"}},{},{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,"x",{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,["a",1],true],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[["a",1],{},true],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,"x",[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,"x",{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],"x",["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[["a",1],{"a":{"b":"c"}},null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[0,true,["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[true,"x",{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[["a",1],{},"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{},"x",["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],{"a":"b"},true],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[["a",1],0,{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,{"a":{"b":"c"}},0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,{},0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,null,{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,{},null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[{},null,["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,null,{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":"b"},[],0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,{"a":{"b":"c"}},["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[true,["a",1],{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":"b"},{"a":"b"},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,["a",1],0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,{"a":"b"},{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[["a",1],{"a":{"b":"c"}},true],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":{"b":"c"}},[],{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[["a",1],"x",{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,"x",0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[true,[],true],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{},null,true],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,"x","x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,true,[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{},0,["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,null,{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x",["a",1],[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,{"a":{"b":"c"}},{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,{"a":"b"},0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[["a",1],0,0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[["a",1],0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x",{},true],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":{"b":"c"}},{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,0,"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{},{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[true,{"a":{"b":"c"}},[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[true,{"a":{"b":"c"}},{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],{"a":{"b":"c"}},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[["a",1],{"a":{"b":"c"}},0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[true,{},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":{"b":"c"}},0,{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":{"b":"c"}},"x",["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[["a",1],"x",{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],"x",{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":"b"},{"a":{"b":"c"}},[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,{},["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[true,0,[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x",[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{},0,0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{},{"a":{"b":"c"}},{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":"b"},true,{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,{},{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":{"b":"c"}},true,[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[["a",1],null,[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,true,["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":"b"},0,"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],{"a":{"b":"c"}},["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x",{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[0,[],{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[true,true,{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x",null],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x",{"a":"b"},["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{},true,0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x",{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":"b"},true,"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,[],null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[0,"x",0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],{"a":{"b":"c"}},{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":{"b":"c"}},"x",{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":{"b":"c"}},"x",true],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":"b"},{},0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":"b"},{"a":"b"},"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":{"b":"c"}},{"a":{"b":"c"}},{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,0,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,null,0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[["a",1],["a",1],"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":"b"},{"a":{"b":"c"}},{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":{"b":"c"}},0,{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],true,["a",1]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[[],"x",[]],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x","x",{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["x",[],{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":"b"},[],{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[true,true,{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[{"a":{"b":"c"}},true,"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot","orchestrator",{"$undefined":true}],"ok":{"resend_*":false,"mcp__resend__*":false,"task":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot","orchestrator",null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":["github-copilot","orchestrator",{}],"ok":{"resend_*":false,"mcp__resend__*":false,"task":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot","orchestrator",{"readOnly":true}],"ok":{"task":false,"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot","orchestrator",{"readOnly":"true"}],"ok":{"resend_*":false,"mcp__resend__*":false,"task":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot","orchestrator","x"],"ok":{"resend_*":false,"mcp__resend__*":false,"task":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot","orchestrator",0],"ok":{"resend_*":false,"mcp__resend__*":false,"task":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot"," ORCHESTRATOR ",{"$undefined":true}],"ok":{"resend_*":false,"mcp__resend__*":false,"task":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot"," ORCHESTRATOR ",null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":["github-copilot"," ORCHESTRATOR ",{}],"ok":{"resend_*":false,"mcp__resend__*":false,"task":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot"," ORCHESTRATOR ",{"readOnly":true}],"ok":{"task":false,"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot"," ORCHESTRATOR ",{"readOnly":"true"}],"ok":{"resend_*":false,"mcp__resend__*":false,"task":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot"," ORCHESTRATOR ","x"],"ok":{"resend_*":false,"mcp__resend__*":false,"task":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot"," ORCHESTRATOR ",0],"ok":{"resend_*":false,"mcp__resend__*":false,"task":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot","designer",{"$undefined":true}],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot","designer",null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":["github-copilot","designer",{}],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot","designer",{"readOnly":true}],"ok":{"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot","designer",{"readOnly":"true"}],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot","designer","x"],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot","designer",0],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot",{"$undefined":true},{"$undefined":true}],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot",{"$undefined":true},null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":["github-copilot",{"$undefined":true},{}],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot",{"$undefined":true},{"readOnly":true}],"ok":{"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot",{"$undefined":true},{"readOnly":"true"}],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot",{"$undefined":true},"x"],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot",{"$undefined":true},0],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot",7,{"$undefined":true}],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot",7,null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":["github-copilot",7,{}],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot",7,{"readOnly":true}],"ok":{"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot",7,{"readOnly":"true"}],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot",7,"x"],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":["github-copilot",7,0],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ","orchestrator",{"$undefined":true}],"ok":{"resend_*":false,"mcp__resend__*":false,"task":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ","orchestrator",null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ","orchestrator",{}],"ok":{"resend_*":false,"mcp__resend__*":false,"task":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ","orchestrator",{"readOnly":true}],"ok":{"task":false,"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ","orchestrator",{"readOnly":"true"}],"ok":{"resend_*":false,"mcp__resend__*":false,"task":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ","orchestrator","x"],"ok":{"resend_*":false,"mcp__resend__*":false,"task":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ","orchestrator",0],"ok":{"resend_*":false,"mcp__resend__*":false,"task":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot "," ORCHESTRATOR ",{"$undefined":true}],"ok":{"resend_*":false,"mcp__resend__*":false,"task":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot "," ORCHESTRATOR ",null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[" Copilot "," ORCHESTRATOR ",{}],"ok":{"resend_*":false,"mcp__resend__*":false,"task":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot "," ORCHESTRATOR ",{"readOnly":true}],"ok":{"task":false,"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot "," ORCHESTRATOR ",{"readOnly":"true"}],"ok":{"resend_*":false,"mcp__resend__*":false,"task":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot "," ORCHESTRATOR ","x"],"ok":{"resend_*":false,"mcp__resend__*":false,"task":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot "," ORCHESTRATOR ",0],"ok":{"resend_*":false,"mcp__resend__*":false,"task":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ","designer",{"$undefined":true}],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ","designer",null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ","designer",{}],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ","designer",{"readOnly":true}],"ok":{"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ","designer",{"readOnly":"true"}],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ","designer","x"],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ","designer",0],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ",{"$undefined":true},{"$undefined":true}],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ",{"$undefined":true},null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ",{"$undefined":true},{}],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ",{"$undefined":true},{"readOnly":true}],"ok":{"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ",{"$undefined":true},{"readOnly":"true"}],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ",{"$undefined":true},"x"],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ",{"$undefined":true},0],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ",7,{"$undefined":true}],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ",7,null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ",7,{}],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ",7,{"readOnly":true}],"ok":{"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ",7,{"readOnly":"true"}],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ",7,"x"],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":[" Copilot ",7,0],"ok":{"resend_*":false,"mcp__resend__*":false}}
+{"fn":"resolveProviderPromptTools","args":["openai","orchestrator",{"$undefined":true}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":["openai","orchestrator",null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":["openai","orchestrator",{}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":["openai","orchestrator",{"readOnly":true}],"ok":{"task":false,"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":["openai","orchestrator",{"readOnly":"true"}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":["openai","orchestrator","x"],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":["openai","orchestrator",0],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":["openai"," ORCHESTRATOR ",{"$undefined":true}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":["openai"," ORCHESTRATOR ",null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":["openai"," ORCHESTRATOR ",{}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":["openai"," ORCHESTRATOR ",{"readOnly":true}],"ok":{"task":false,"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":["openai"," ORCHESTRATOR ",{"readOnly":"true"}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":["openai"," ORCHESTRATOR ","x"],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":["openai"," ORCHESTRATOR ",0],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":["openai","designer",{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["openai","designer",null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":["openai","designer",{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["openai","designer",{"readOnly":true}],"ok":{"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":["openai","designer",{"readOnly":"true"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["openai","designer","x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["openai","designer",0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["openai",{"$undefined":true},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["openai",{"$undefined":true},null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":["openai",{"$undefined":true},{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["openai",{"$undefined":true},{"readOnly":true}],"ok":{"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":["openai",{"$undefined":true},{"readOnly":"true"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["openai",{"$undefined":true},"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["openai",{"$undefined":true},0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["openai",7,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["openai",7,null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":["openai",7,{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["openai",7,{"readOnly":true}],"ok":{"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":["openai",7,{"readOnly":"true"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["openai",7,"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["openai",7,0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["","orchestrator",{"$undefined":true}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":["","orchestrator",null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":["","orchestrator",{}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":["","orchestrator",{"readOnly":true}],"ok":{"task":false,"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":["","orchestrator",{"readOnly":"true"}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":["","orchestrator","x"],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":["","orchestrator",0],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[""," ORCHESTRATOR ",{"$undefined":true}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[""," ORCHESTRATOR ",null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[""," ORCHESTRATOR ",{}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[""," ORCHESTRATOR ",{"readOnly":true}],"ok":{"task":false,"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":[""," ORCHESTRATOR ",{"readOnly":"true"}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[""," ORCHESTRATOR ","x"],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[""," ORCHESTRATOR ",0],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":["","designer",{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["","designer",null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":["","designer",{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["","designer",{"readOnly":true}],"ok":{"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":["","designer",{"readOnly":"true"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["","designer","x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["","designer",0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["",{"$undefined":true},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["",{"$undefined":true},null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":["",{"$undefined":true},{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["",{"$undefined":true},{"readOnly":true}],"ok":{"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":["",{"$undefined":true},{"readOnly":"true"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["",{"$undefined":true},"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["",{"$undefined":true},0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["",7,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["",7,null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":["",7,{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["",7,{"readOnly":true}],"ok":{"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":["",7,{"readOnly":"true"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["",7,"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":["",7,0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,"orchestrator",{"$undefined":true}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[null,"orchestrator",null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[null,"orchestrator",{}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[null,"orchestrator",{"readOnly":true}],"ok":{"task":false,"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":[null,"orchestrator",{"readOnly":"true"}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[null,"orchestrator","x"],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[null,"orchestrator",0],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[null," ORCHESTRATOR ",{"$undefined":true}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[null," ORCHESTRATOR ",null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[null," ORCHESTRATOR ",{}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[null," ORCHESTRATOR ",{"readOnly":true}],"ok":{"task":false,"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":[null," ORCHESTRATOR ",{"readOnly":"true"}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[null," ORCHESTRATOR ","x"],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[null," ORCHESTRATOR ",0],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[null,"designer",{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,"designer",null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[null,"designer",{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,"designer",{"readOnly":true}],"ok":{"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":[null,"designer",{"readOnly":"true"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,"designer","x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,"designer",0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,{"$undefined":true},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,{"$undefined":true},null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[null,{"$undefined":true},{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,{"$undefined":true},{"readOnly":true}],"ok":{"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":[null,{"$undefined":true},{"readOnly":"true"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,{"$undefined":true},"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,{"$undefined":true},0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,7,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,7,null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[null,7,{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,7,{"readOnly":true}],"ok":{"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":[null,7,{"readOnly":"true"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,7,"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[null,7,0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[5,"orchestrator",{"$undefined":true}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[5,"orchestrator",null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[5,"orchestrator",{}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[5,"orchestrator",{"readOnly":true}],"ok":{"task":false,"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":[5,"orchestrator",{"readOnly":"true"}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[5,"orchestrator","x"],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[5,"orchestrator",0],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[5," ORCHESTRATOR ",{"$undefined":true}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[5," ORCHESTRATOR ",null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[5," ORCHESTRATOR ",{}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[5," ORCHESTRATOR ",{"readOnly":true}],"ok":{"task":false,"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":[5," ORCHESTRATOR ",{"readOnly":"true"}],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[5," ORCHESTRATOR ","x"],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[5," ORCHESTRATOR ",0],"ok":{"task":false}}
+{"fn":"resolveProviderPromptTools","args":[5,"designer",{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[5,"designer",null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[5,"designer",{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[5,"designer",{"readOnly":true}],"ok":{"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":[5,"designer",{"readOnly":"true"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[5,"designer","x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[5,"designer",0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[5,{"$undefined":true},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[5,{"$undefined":true},null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[5,{"$undefined":true},{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[5,{"$undefined":true},{"readOnly":true}],"ok":{"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":[5,{"$undefined":true},{"readOnly":"true"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[5,{"$undefined":true},"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[5,{"$undefined":true},0],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[5,7,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[5,7,null],"error":"Cannot read properties of null (reading 'readOnly')"}
+{"fn":"resolveProviderPromptTools","args":[5,7,{}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[5,7,{"readOnly":true}],"ok":{"*":false,"read":true,"glob":true,"grep":true,"webfetch":true,"devryan_plan_read":true}}
+{"fn":"resolveProviderPromptTools","args":[5,7,{"readOnly":"true"}],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[5,7,"x"],"ok":{"$undefined":true}}
+{"fn":"resolveProviderPromptTools","args":[5,7,0],"ok":{"$undefined":true}}

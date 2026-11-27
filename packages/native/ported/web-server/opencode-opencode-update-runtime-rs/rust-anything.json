@@ -1,0 +1,30 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode",
+  "unit": "opencode-update-runtime.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "opencode-update-runtime-rs",
+  "exports": [
+    {
+      "name": "openCodeBaseVersion",
+      "file": "opencode-update-runtime.js",
+      "line": 3,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "string | null | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string | null | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

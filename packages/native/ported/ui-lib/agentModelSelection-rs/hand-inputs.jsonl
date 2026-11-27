@@ -1,0 +1,20 @@
+{"fn": "parseAgentModelSelections", "args": [{" Orchestrator ": {"providerId": " openai ", "modelId": " gpt-5.6-sol ", "variant": " high "}}]}
+{"fn": "parseAgentModelSelections", "args": [{"Orchestrator": {"providerId": "openai", "modelId": "gpt-5.6-sol"}}]}
+{"fn": "parseAgentModelSelections", "args": [{"Builder": {"providerId": "openai", "modelId": "gpt-5.6", "variant": " "}, "Broken": {"providerId": "", "modelId": "missing-provider", "variant": "high"}}]}
+{"fn": "parseAgentModelSelections", "args": [null]}
+{"fn": "parseAgentModelSelections", "args": []}
+{"fn": "parseAgentModelSelections", "args": [[1]]}
+{"fn": "parseAgentModelSelections", "args": ["x"]}
+{"fn": "parseAgentModelSelections", "args": [5]}
+{"fn": "parseAgentModelSelections", "args": [{}]}
+{"fn": "parseAgentModelSelections", "args": [{"b": {"providerId": "p", "modelId": "m"}, "2": {"providerId": "p2", "modelId": "m2"}, "1": {"providerId": "p1", "modelId": "m1"}, "a": {"providerId": "pa", "modelId": "ma"}}]}
+{"fn": "parseAgentModelSelections", "args": [{"1": {"providerId": "x", "modelId": "y"}, " 1": {"providerId": "z", "modelId": "w"}}]}
+{"fn": "parseAgentModelSelections", "args": [{" 3 ": {"providerId": "a", "modelId": "b"}, "10": {"providerId": "c", "modelId": "d"}, "a": {"providerId": "e", "modelId": "f"}, "4294967295": {"providerId": "g", "modelId": "h"}, "01": {"providerId": "i", "modelId": "j"}}]}
+{"fn": "parseAgentModelSelections", "args": [{"x": null, "y": "str", "z": {"providerId": 1, "modelId": "m"}, "w": {"providerId": "p", "modelId": "m", "variant": 7}}]}
+{"fn": "parseAgentModelSelections", "args": [{"   ": {"providerId": "p", "modelId": "m"}}]}
+{"fn": "parseAgentModelSelections", "args": [{"﻿k": {"providerId": "　p", "modelId": "m "}}]}
+{"fn": "parseAgentModelSelections", "args": [{"k": {"providerId": "p", "modelId": "m"}, "k ": {"providerId": "q", "modelId": "n", "variant": "v"}}]}
+{"fn": "parseAgentModelSelections", "args": [{"k": {"providerId": "p", "modelId": "m", "extra": 1}}]}
+{"fn": "parseAgentModelSelections", "args": [{"$num": "NaN"}]}
+{"fn": "parseAgentModelSelections", "args": [{"$undefined": true}]}
+{"fn": "parseAgentModelSelections", "args": [{"k": [1]}]}

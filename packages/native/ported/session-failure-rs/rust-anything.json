@@ -1,0 +1,72 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "session-failure.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "session-failure-rs",
+  "exports": [
+    {
+      "name": "isSessionCancellation",
+      "file": "session-failure.ts",
+      "line": 14,
+      "params": [
+        {
+          "name": "error",
+          "ts_type": "{\n  code?: string;\n  message?: string;\n  name?: string;\n  /** Absolute provider reset time (ms), persisted next to `code`. */\n  retryAt?: number;\n  data?: { message?: string; v2Type?: string; statusCode?: number; providerCode?: string; providerParam?: string; retryAfterMs?: number };\n}",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "describeSessionFailure",
+      "file": "session-failure.ts",
+      "line": 19,
+      "params": [
+        {
+          "name": "error",
+          "ts_type": "{\n  code?: string;\n  message?: string;\n  name?: string;\n  /** Absolute provider reset time (ms), persisted next to `code`. */\n  retryAt?: number;\n  data?: { message?: string; v2Type?: string; statusCode?: number; providerCode?: string; providerParam?: string; retryAfterMs?: number };\n}",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "{ code: string; message: string }",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "sessionFailureRetryAt",
+      "file": "session-failure.ts",
+      "line": 90,
+      "params": [
+        {
+          "name": "error",
+          "ts_type": "{\n  code?: string;\n  message?: string;\n  name?: string;\n  /** Absolute provider reset time (ms), persisted next to `code`. */\n  retryAt?: number;\n  data?: { message?: string; v2Type?: string; statusCode?: number; providerCode?: string; providerParam?: string; retryAfterMs?: number };\n} | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "at",
+          "ts_type": "number",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "number | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

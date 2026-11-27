@@ -1,0 +1,19 @@
+{
+  "unit": "commitTemplate.ts",
+  "files": 1,
+  "fingerprint": "8219c41e36a13aa4",
+  "cases": 543,
+  "cases_hash": "ea304938ed8cfeed",
+  "coverage": {
+    "lines": 129,
+    "reached": 127,
+    "files": [
+      {
+        "file": "commitTemplate.ts",
+        "lines": 129,
+        "reached": 127,
+        "missed": "81-82"
+      }
+    ]
+  }
+}

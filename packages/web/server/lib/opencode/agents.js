@@ -36,17 +36,6 @@ const SLIM_PROTECTED_AGENTS = new Set(['orchestrator', 'councillor']);
 // ============== AGENT SCOPE HELPERS ==============
 
 /**
- * Ensure project-level agent directory exists.
- */
-function ensureProjectAgentDir(workingDirectory) {
-  const projectAgentDir = path.join(workingDirectory, '.opencode', 'agents');
-  if (!fs.existsSync(projectAgentDir)) {
-    fs.mkdirSync(projectAgentDir, { recursive: true });
-  }
-  return projectAgentDir;
-}
-
-/**
  * Get project-level agent path.
  */
 function getProjectAgentPath(workingDirectory, agentName) {
@@ -968,27 +957,6 @@ function getPackagedAgent(agentName) {
   return listPackagedAgents().find((agent) => agent.name === agentName) || null;
 }
 
-function getAgentScope(agentName, workingDirectory) {
-  if (workingDirectory) {
-    const projectPath = getIndexedProjectAgentPath(workingDirectory, agentName);
-    if (fs.existsSync(projectPath)) {
-      return { scope: AGENT_SCOPE.PROJECT, path: projectPath };
-    }
-  }
-
-  const packagedAgent = getPackagedAgent(agentName);
-  if (packagedAgent) {
-    return { scope: PACKAGED_AGENT_SCOPE, path: packagedAgent.path };
-  }
-
-  const slimRuntimeAgents = getSlimRuntimeModelAgents(workingDirectory);
-  if (slimRuntimeAgents[agentName]) {
-    return { scope: SLIM_SCOPE, path: slimRuntimeAgents[agentName].__path || null };
-  }
-
-  return { scope: null, path: null };
-}
-
 function getAgentSources(agentName, workingDirectory, options = {}) {
   const slim = resolveSlimConfig(workingDirectory, options);
   const projectPath = workingDirectory ? getIndexedProjectAgentPath(workingDirectory, agentName) : null;
@@ -1145,16 +1113,10 @@ function resolveLocalAgentBackupExecution({ directory, agent, options = {} } = {
   };
 }
 
-function throwAgentWriteDisabled() {
-  throw new Error(AGENT_WRITE_DISABLED_MESSAGE);
-}
-
 export {
   PACKAGED_AGENT_SCOPE,
   AGENT_WRITE_DISABLED_MESSAGE,
-  ensureProjectAgentDir,
   getProjectAgentPath,
-  getAgentScope,
   getAgentSources,
   getAgentConfig,
   getEffectivePackagedAgentRuntimeFrontmatter,
@@ -1172,7 +1134,4 @@ export {
   resolveLocalAgentBackupExecution,
   listProjectAgents,
   listConfigAgents,
-  throwAgentWriteDisabled as createAgent,
-  throwAgentWriteDisabled as updateAgent,
-  throwAgentWriteDisabled as deleteAgent,
 };

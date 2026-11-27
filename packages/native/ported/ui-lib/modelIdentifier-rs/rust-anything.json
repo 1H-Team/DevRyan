@@ -1,0 +1,30 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "modelIdentifier.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "modelidentifier-rs",
+  "exports": [
+    {
+      "name": "parseModelIdentifier",
+      "file": "modelIdentifier.ts",
+      "line": 6,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "string | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "ParsedModelIdentifier | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

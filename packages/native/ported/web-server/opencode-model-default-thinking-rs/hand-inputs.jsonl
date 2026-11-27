@@ -1,0 +1,92 @@
+{"fn": "resolveModelDefaultThinking", "args": [null, null]}
+{"fn": "resolveModelDefaultThinking", "args": [{}, null]}
+{"fn": "resolveModelDefaultThinking", "args": [{"options": {"useCompletionUrls": true}}, null]}
+{"fn": "resolveModelDefaultThinking", "args": ["str", null]}
+{"fn": "resolveModelDefaultThinking", "args": [null, {}]}
+{"fn": "resolveModelDefaultThinking", "args": [{}, {}]}
+{"fn": "resolveModelDefaultThinking", "args": [{"options": {"useCompletionUrls": true}}, {}]}
+{"fn": "resolveModelDefaultThinking", "args": ["str", {}]}
+{"fn": "resolveModelDefaultThinking", "args": [null, {"defaultThinkingLevel": " High ", "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{}, {"defaultThinkingLevel": " High ", "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{"options": {"useCompletionUrls": true}}, {"defaultThinkingLevel": " High ", "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": ["str", {"defaultThinkingLevel": " High ", "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [null, {"defaultThinkingLevel": "x", "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{}, {"defaultThinkingLevel": "x", "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{"options": {"useCompletionUrls": true}}, {"defaultThinkingLevel": "x", "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": ["str", {"defaultThinkingLevel": "x", "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [null, {"defaultThinkingLevel": null}]}
+{"fn": "resolveModelDefaultThinking", "args": [{}, {"defaultThinkingLevel": null}]}
+{"fn": "resolveModelDefaultThinking", "args": [{"options": {"useCompletionUrls": true}}, {"defaultThinkingLevel": null}]}
+{"fn": "resolveModelDefaultThinking", "args": ["str", {"defaultThinkingLevel": null}]}
+{"fn": "resolveModelDefaultThinking", "args": [null, {"api": {"npm": "@ai-sdk/openai", "id": "gpt-5"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{}, {"api": {"npm": "@ai-sdk/openai", "id": "gpt-5"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{"options": {"useCompletionUrls": true}}, {"api": {"npm": "@ai-sdk/openai", "id": "gpt-5"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": ["str", {"api": {"npm": "@ai-sdk/openai", "id": "gpt-5"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [null, {"api": {"npm": "@ai-sdk/openai", "id": "gpt-5-chat"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{}, {"api": {"npm": "@ai-sdk/openai", "id": "gpt-5-chat"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{"options": {"useCompletionUrls": true}}, {"api": {"npm": "@ai-sdk/openai", "id": "gpt-5-chat"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": ["str", {"api": {"npm": "@ai-sdk/openai", "id": "gpt-5-chat"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [null, {"api": {"npm": "@ai-sdk/openai", "id": "gpt-4"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{}, {"api": {"npm": "@ai-sdk/openai", "id": "gpt-4"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{"options": {"useCompletionUrls": true}}, {"api": {"npm": "@ai-sdk/openai", "id": "gpt-4"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": ["str", {"api": {"npm": "@ai-sdk/openai", "id": "gpt-4"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [null, {"api": {"npm": "@ai-sdk/openai", "id": "gpt-5"}, "options": {"reasoningEffort": "low"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{}, {"api": {"npm": "@ai-sdk/openai", "id": "gpt-5"}, "options": {"reasoningEffort": "low"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{"options": {"useCompletionUrls": true}}, {"api": {"npm": "@ai-sdk/openai", "id": "gpt-5"}, "options": {"reasoningEffort": "low"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": ["str", {"api": {"npm": "@ai-sdk/openai", "id": "gpt-5"}, "options": {"reasoningEffort": "low"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [null, {"api": {"npm": "@ai-sdk/anthropic"}, "options": {"effort": "high"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{}, {"api": {"npm": "@ai-sdk/anthropic"}, "options": {"effort": "high"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{"options": {"useCompletionUrls": true}}, {"api": {"npm": "@ai-sdk/anthropic"}, "options": {"effort": "high"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": ["str", {"api": {"npm": "@ai-sdk/anthropic"}, "options": {"effort": "high"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [null, {"api": {"npm": "@ai-sdk/google", "id": "gemini-3-pro"}, "capabilities": {"reasoning": true}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{}, {"api": {"npm": "@ai-sdk/google", "id": "gemini-3-pro"}, "capabilities": {"reasoning": true}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{"options": {"useCompletionUrls": true}}, {"api": {"npm": "@ai-sdk/google", "id": "gemini-3-pro"}, "capabilities": {"reasoning": true}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": ["str", {"api": {"npm": "@ai-sdk/google", "id": "gemini-3-pro"}, "capabilities": {"reasoning": true}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [null, {"api": {"npm": "@ai-sdk/google", "id": "gemini-3"}, "options": {"thinkingConfig": {"thinkingLevel": "medium"}}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{}, {"api": {"npm": "@ai-sdk/google", "id": "gemini-3"}, "options": {"thinkingConfig": {"thinkingLevel": "medium"}}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{"options": {"useCompletionUrls": true}}, {"api": {"npm": "@ai-sdk/google", "id": "gemini-3"}, "options": {"thinkingConfig": {"thinkingLevel": "medium"}}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": ["str", {"api": {"npm": "@ai-sdk/google", "id": "gemini-3"}, "options": {"thinkingConfig": {"thinkingLevel": "medium"}}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [null, {"api": {"npm": "@openrouter/ai-sdk-provider", "id": "gemini-3"}, "capabilities": {"reasoning": 1}, "options": {"reasoning": {"effort": "bogus"}}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{}, {"api": {"npm": "@openrouter/ai-sdk-provider", "id": "gemini-3"}, "capabilities": {"reasoning": 1}, "options": {"reasoning": {"effort": "bogus"}}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{"options": {"useCompletionUrls": true}}, {"api": {"npm": "@openrouter/ai-sdk-provider", "id": "gemini-3"}, "capabilities": {"reasoning": 1}, "options": {"reasoning": {"effort": "bogus"}}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": ["str", {"api": {"npm": "@openrouter/ai-sdk-provider", "id": "gemini-3"}, "capabilities": {"reasoning": 1}, "options": {"reasoning": {"effort": "bogus"}}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [null, {"api": {"npm": "@ai-sdk/azure", "id": "gpt-5.4"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{}, {"api": {"npm": "@ai-sdk/azure", "id": "gpt-5.4"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{"options": {"useCompletionUrls": true}}, {"api": {"npm": "@ai-sdk/azure", "id": "gpt-5.4"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": ["str", {"api": {"npm": "@ai-sdk/azure", "id": "gpt-5.4"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [null, {"api": {"npm": "@ai-sdk/azure", "id": "gpt-5.5"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{}, {"api": {"npm": "@ai-sdk/azure", "id": "gpt-5.5"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{"options": {"useCompletionUrls": true}}, {"api": {"npm": "@ai-sdk/azure", "id": "gpt-5.5"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": ["str", {"api": {"npm": "@ai-sdk/azure", "id": "gpt-5.5"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [null, {"api": {"npm": "@ai-sdk/azure", "id": "x-gpt-6.0"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{}, {"api": {"npm": "@ai-sdk/azure", "id": "x-gpt-6.0"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{"options": {"useCompletionUrls": true}}, {"api": {"npm": "@ai-sdk/azure", "id": "x-gpt-6.0"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": ["str", {"api": {"npm": "@ai-sdk/azure", "id": "x-gpt-6.0"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [null, {"api": {"npm": "@ai-sdk/azure", "id": "gpt-4o"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{}, {"api": {"npm": "@ai-sdk/azure", "id": "gpt-4o"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{"options": {"useCompletionUrls": true}}, {"api": {"npm": "@ai-sdk/azure", "id": "gpt-4o"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": ["str", {"api": {"npm": "@ai-sdk/azure", "id": "gpt-4o"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}
+{"fn": "resolveModelDefaultThinking", "args": [null, {"api": "str", "variants": "abc"}]}
+{"fn": "resolveModelDefaultThinking", "args": [{}, {"api": "str", "variants": "abc"}]}
+{"fn": "resolveModelDefaultThinking", "args": [{"options": {"useCompletionUrls": true}}, {"api": "str", "variants": "abc"}]}
+{"fn": "resolveModelDefaultThinking", "args": ["str", {"api": "str", "variants": "abc"}]}
+{"fn": "resolveModelDefaultThinking", "args": [null, [1]]}
+{"fn": "resolveModelDefaultThinking", "args": [{}, [1]]}
+{"fn": "resolveModelDefaultThinking", "args": [{"options": {"useCompletionUrls": true}}, [1]]}
+{"fn": "resolveModelDefaultThinking", "args": ["str", [1]]}
+{"fn": "resolveModelDefaultThinking", "args": [null, {"variants": [1], "defaultThinkingLevel": "0"}]}
+{"fn": "resolveModelDefaultThinking", "args": [{}, {"variants": [1], "defaultThinkingLevel": "0"}]}
+{"fn": "resolveModelDefaultThinking", "args": [{"options": {"useCompletionUrls": true}}, {"variants": [1], "defaultThinkingLevel": "0"}]}
+{"fn": "resolveModelDefaultThinking", "args": ["str", {"variants": [1], "defaultThinkingLevel": "0"}]}
+{"fn": "resolveModelDefaultThinking", "args": [null, {"variants": {" medium ": {}}, "api": {"npm": "@ai-sdk/github-copilot", "id": "gpt-5-mini"}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{}, {"variants": {" medium ": {}}, "api": {"npm": "@ai-sdk/github-copilot", "id": "gpt-5-mini"}}]}
+{"fn": "resolveModelDefaultThinking", "args": [{"options": {"useCompletionUrls": true}}, {"variants": {" medium ": {}}, "api": {"npm": "@ai-sdk/github-copilot", "id": "gpt-5-mini"}}]}
+{"fn": "resolveModelDefaultThinking", "args": ["str", {"variants": {" medium ": {}}, "api": {"npm": "@ai-sdk/github-copilot", "id": "gpt-5-mini"}}]}
+{"fn": "annotateModelDefaultThinking", "args": [{"providers": [{"id": "a", "models": {"m1": {"api": {"npm": "@ai-sdk/openai", "id": "gpt-5"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}, "m2": {"defaultThinkingLevel": "x", "variants": {"low": {}, "Medium": {}, "HIGH": {}}}, "2": {"api": {"npm": "@ai-sdk/google", "id": "gemini-3-pro"}, "capabilities": {"reasoning": true}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}}}], "x": 1}]}
+{"fn": "annotateModelDefaultThinking", "args": [{"providers": [{"id": "a", "models": {"m": {"defaultThinkingLevel": "medium", "variants": {"low": {}, "Medium": {}, "HIGH": {}}}}}], "x": 1}]}
+{"fn": "annotateModelDefaultThinking", "args": [{"providers": [{"id": "az", "options": {"useCompletionUrls": 1}, "models": {"m": {"api": {"npm": "@ai-sdk/azure", "id": "gpt-5.4"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}}}, null, "s", {"models": [{"api": {"npm": "@ai-sdk/openai", "id": "gpt-5"}, "variants": {"low": {}, "Medium": {}, "HIGH": {}}}]}], "x": 1}]}
+{"fn": "annotateModelDefaultThinking", "args": [{"providers": "x", "x": 1}]}
+{"fn": "annotateModelDefaultThinking", "args": []}
+{"fn": "annotateModelDefaultThinking", "args": [{"providers": []}]}
+{"fn": "annotateModelDefaultThinking", "args": [[1]]}
+{"fn": "annotateModelDefaultThinking", "args": [{"providers": [{"models": {"$map": []}}], "x": 1}]}

@@ -104,16 +104,6 @@ export const unwrapData = (body) => {
 };
 
 /**
- * `{location, data}` -> both parts (location `null` when absent).
- * @param {unknown} body
- * @returns {{ location: Record<string, unknown> | null, data: unknown }}
- */
-export const unwrapLocated = (body) => ({
-  location: isRecord(body) && isRecord(body.location) ? body.location : null,
-  data: unwrapData(body),
-});
-
-/**
  * `{data, cursor: {previous?, next?}}` -> rows and the next cursor. Malformed
  * pages and cursors fail explicitly rather than becoming a complete empty page.
  * @param {unknown} body

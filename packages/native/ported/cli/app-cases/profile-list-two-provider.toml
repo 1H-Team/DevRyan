@@ -1,0 +1,5 @@
+bin.name = "devryan"
+args = ["tunnel", "profile", "list", "--provider", " CLOUDFLARE "]
+status.code = 0
+fs.sandbox = true
+fs.base = "profile-list-two-provider.in"

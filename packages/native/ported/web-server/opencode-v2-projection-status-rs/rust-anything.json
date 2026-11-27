@@ -1,0 +1,151 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode/v2/projection",
+  "unit": "status.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "status-rs",
+  "exports": [
+    {
+      "name": "toV1RetryStatus",
+      "file": "status.js",
+      "line": 49,
+      "params": [
+        {
+          "name": "retry",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "V1SessionStatus | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "statusForEvent",
+      "file": "status.js",
+      "line": 62,
+      "params": [
+        {
+          "name": "type",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "data",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "V1SessionStatus | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isSameStatus",
+      "file": "status.js",
+      "line": 74,
+      "params": [
+        {
+          "name": "left",
+          "ts_type": "V1SessionStatus | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "right",
+          "ts_type": "V1SessionStatus | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "retryStatusFromMessages",
+      "file": "status.js",
+      "line": 89,
+      "params": [
+        {
+          "name": "messages",
+          "ts_type": "readonly unknown[]",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "V1SessionStatus | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "activeSessionIDs",
+      "file": "status.js",
+      "line": 106,
+      "params": [
+        {
+          "name": "body",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "Set<string>",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "statusesFromActive",
+      "file": "status.js",
+      "line": 118,
+      "params": [
+        {
+          "name": "body",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "options",
+          "ts_type": "{ retryBySession?: ReadonlyMap<string, V1SessionStatus | null> }",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "Record<string, V1SessionStatus>",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "reconcileActiveStatuses",
+      "file": "status.js",
+      "line": 145,
+      "reason": "checks `instanceof`: class identity does not survive the bridge"
+    },
+    {
+      "name": "filterStatusesByDirectory",
+      "file": "status.js",
+      "line": 180,
+      "reason": "calls a directoryOf callback"
+    }
+  ]
+}

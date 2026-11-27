@@ -1,0 +1,19 @@
+{
+  "unit": "session-failure.ts",
+  "files": 1,
+  "fingerprint": "97eb237efc791d7e",
+  "cases": 739,
+  "cases_hash": "7f5657616780d7bc",
+  "coverage": {
+    "lines": 91,
+    "reached": 91,
+    "files": [
+      {
+        "file": "session-failure.ts",
+        "lines": 91,
+        "reached": 91,
+        "missed": ""
+      }
+    ]
+  }
+}

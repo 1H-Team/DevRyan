@@ -1,0 +1,321 @@
+{"fn":"parseSseEventEnvelope","args":[{}],"ok":null}
+{"fn":"parseSseEventEnvelope","args":[{"a":"b"}],"ok":null}
+{"fn":"parseSseEventEnvelope","args":[{"a":{"b":"c"}}],"ok":null}
+{"fn":"parseSseEventEnvelope","args":[0],"ok":null}
+{"fn":"parseSseEventEnvelope","args":["x"],"ok":null}
+{"fn":"parseSseEventEnvelope","args":[true],"ok":null}
+{"fn":"parseSseEventEnvelope","args":[null],"ok":null}
+{"fn":"parseSseEventEnvelope","args":[[]],"ok":null}
+{"fn":"parseSseEventEnvelope","args":[["a",1]],"ok":null}
+{"fn":"parseSseEventEnvelope","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":null}
+{"fn":"parseSseEventEnvelope","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":null}
+{"fn":"parseSseEventEnvelope","args":[[3,1,2]],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":[{"a":{"b":"c"}}],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":[0],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":["x"],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":[{"a":"b"}],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":[["a",1]],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":[true],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":[[]],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":[{}],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":[null],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":[[3,1,2]],"ok":null}
+{"fn":"serializeMessageStreamWsEvent","args":[true,{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":true}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":"b"}],"ok":"{\"type\":\"event\",\"payload\":{\"a\":\"b\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[["a",1]],"ok":"{\"type\":\"event\",\"payload\":[\"a\",1]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[["a",1],"x"],"ok":"{\"type\":\"event\",\"payload\":[\"a\",1]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[null,{}],"ok":"{\"type\":\"event\",\"payload\":null}"}
+{"fn":"serializeMessageStreamWsEvent","args":[0,{}],"ok":"{\"type\":\"event\",\"payload\":0}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":"b"},[]],"ok":"{\"type\":\"event\",\"payload\":{\"a\":\"b\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":["x",{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":\"x\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[0,true],"ok":"{\"type\":\"event\",\"payload\":0}"}
+{"fn":"serializeMessageStreamWsEvent","args":["x",true],"ok":"{\"type\":\"event\",\"payload\":\"x\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":["x",{"a":"b"}],"ok":"{\"type\":\"event\",\"payload\":\"x\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"b":"c"}},{"a":{"b":"c"}}],"ok":"{\"type\":\"event\",\"payload\":{\"a\":{\"b\":\"c\"}}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":"b"},{}],"ok":"{\"type\":\"event\",\"payload\":{\"a\":\"b\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[0,{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":0}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":"b"},"x"],"ok":"{\"type\":\"event\",\"payload\":{\"a\":\"b\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[],{}],"ok":"{\"type\":\"event\",\"payload\":[]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[["a",1],true],"ok":"{\"type\":\"event\",\"payload\":[\"a\",1]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"b":"c"}},{"a":"b"}],"ok":"{\"type\":\"event\",\"payload\":{\"a\":{\"b\":\"c\"}}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[],{"a":"b"}],"ok":"{\"type\":\"event\",\"payload\":[]}"}
+{"fn":"serializeMessageStreamWsEvent","args":["x","x"],"ok":"{\"type\":\"event\",\"payload\":\"x\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"b":"c"}},[]],"ok":"{\"type\":\"event\",\"payload\":{\"a\":{\"b\":\"c\"}}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[["a",1],["a",1]],"ok":"{\"type\":\"event\",\"payload\":[\"a\",1]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{}],"ok":"{\"type\":\"event\",\"payload\":{}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{},true],"ok":"{\"type\":\"event\",\"payload\":{}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[null,0],"ok":"{\"type\":\"event\",\"payload\":null}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[]],"ok":"{\"type\":\"event\",\"payload\":[]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{},"x"],"ok":"{\"type\":\"event\",\"payload\":{}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[0,["a",1]],"ok":"{\"type\":\"event\",\"payload\":0}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{},["a",1]],"ok":"{\"type\":\"event\",\"payload\":{}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[true,null],"error":"Cannot read properties of null (reading 'eventId')"}
+{"fn":"serializeMessageStreamWsEvent","args":[true],"ok":"{\"type\":\"event\",\"payload\":true}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{},[]],"ok":"{\"type\":\"event\",\"payload\":{}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[true,"x"],"ok":"{\"type\":\"event\",\"payload\":true}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[],[]],"ok":"{\"type\":\"event\",\"payload\":[]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[0,null],"error":"Cannot read properties of null (reading 'eventId')"}
+{"fn":"serializeMessageStreamWsEvent","args":[{},{}],"ok":"{\"type\":\"event\",\"payload\":{}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"b":"c"}},true],"ok":"{\"type\":\"event\",\"payload\":{\"a\":{\"b\":\"c\"}}}"}
+{"fn":"serializeMessageStreamWsEvent","args":["x",["a",1]],"ok":"{\"type\":\"event\",\"payload\":\"x\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[0,{"a":"b"}],"ok":"{\"type\":\"event\",\"payload\":0}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":"b"},{"a":{"b":"c"}}],"ok":"{\"type\":\"event\",\"payload\":{\"a\":\"b\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{},0],"ok":"{\"type\":\"event\",\"payload\":{}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[],["a",1]],"ok":"{\"type\":\"event\",\"payload\":[]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[null,[]],"ok":"{\"type\":\"event\",\"payload\":null}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"b":"c"}},0],"ok":"{\"type\":\"event\",\"payload\":{\"a\":{\"b\":\"c\"}}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[],"x"],"ok":"{\"type\":\"event\",\"payload\":[]}"}
+{"fn":"serializeMessageStreamWsEvent","args":["x",{}],"ok":"{\"type\":\"event\",\"payload\":\"x\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[true,{}],"ok":"{\"type\":\"event\",\"payload\":true}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":"b"},null],"error":"Cannot read properties of null (reading 'eventId')"}
+{"fn":"serializeMessageStreamWsEvent","args":[{},{"a":{"b":"c"}}],"ok":"{\"type\":\"event\",\"payload\":{}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"b":"c"}}],"ok":"{\"type\":\"event\",\"payload\":{\"a\":{\"b\":\"c\"}}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[["a",1],{"a":{"b":"c"}}],"ok":"{\"type\":\"event\",\"payload\":[\"a\",1]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[["a",1],{"a":"b"}],"ok":"{\"type\":\"event\",\"payload\":[\"a\",1]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{},{"a":"b"}],"ok":"{\"type\":\"event\",\"payload\":{}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[0,{"a":{"b":"c"}}],"ok":"{\"type\":\"event\",\"payload\":0}"}
+{"fn":"serializeMessageStreamWsEvent","args":[["a",1],0],"ok":"{\"type\":\"event\",\"payload\":[\"a\",1]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[],0],"ok":"{\"type\":\"event\",\"payload\":[]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[0,[]],"ok":"{\"type\":\"event\",\"payload\":0}"}
+{"fn":"serializeMessageStreamWsEvent","args":[0,"x"],"ok":"{\"type\":\"event\",\"payload\":0}"}
+{"fn":"serializeMessageStreamWsEvent","args":[null,null],"error":"Cannot read properties of null (reading 'eventId')"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":"b"},0],"ok":"{\"type\":\"event\",\"payload\":{\"a\":\"b\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":"b"},{"a":"b"}],"ok":"{\"type\":\"event\",\"payload\":{\"a\":\"b\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[],true],"ok":"{\"type\":\"event\",\"payload\":[]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"b":"c"}},["a",1]],"ok":"{\"type\":\"event\",\"payload\":{\"a\":{\"b\":\"c\"}}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[0,0],"ok":"{\"type\":\"event\",\"payload\":0}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[],{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":[]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":"b"},true],"ok":"{\"type\":\"event\",\"payload\":{\"a\":\"b\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[null,{"a":{"b":"c"}}],"ok":"{\"type\":\"event\",\"payload\":null}"}
+{"fn":"serializeMessageStreamWsEvent","args":[null],"ok":"{\"type\":\"event\",\"payload\":null}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"b":"c"}},"x"],"ok":"{\"type\":\"event\",\"payload\":{\"a\":{\"b\":\"c\"}}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{},{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":{}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"b":"c"}},{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":{\"a\":{\"b\":\"c\"}}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"b":"c"}},null],"error":"Cannot read properties of null (reading 'eventId')"}
+{"fn":"serializeMessageStreamWsEvent","args":[null,{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":null}"}
+{"fn":"serializeMessageStreamWsEvent","args":[null,"x"],"ok":"{\"type\":\"event\",\"payload\":null}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[],{"a":{"b":"c"}}],"ok":"{\"type\":\"event\",\"payload\":[]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":"b"},{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":{\"a\":\"b\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[null,true],"ok":"{\"type\":\"event\",\"payload\":null}"}
+{"fn":"serializeMessageStreamWsEvent","args":["x",null],"error":"Cannot read properties of null (reading 'eventId')"}
+{"fn":"serializeMessageStreamWsEvent","args":[["a",1],[]],"ok":"{\"type\":\"event\",\"payload\":[\"a\",1]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[["a",1],null],"error":"Cannot read properties of null (reading 'eventId')"}
+{"fn":"serializeMessageStreamWsEvent","args":[true,true],"ok":"{\"type\":\"event\",\"payload\":true}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":"b"},["a",1]],"ok":"{\"type\":\"event\",\"payload\":{\"a\":\"b\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[],null],"error":"Cannot read properties of null (reading 'eventId')"}
+{"fn":"serializeMessageStreamWsEvent","args":[true,{"a":"b"}],"ok":"{\"type\":\"event\",\"payload\":true}"}
+{"fn":"serializeMessageStreamWsEvent","args":[null,["a",1]],"ok":"{\"type\":\"event\",\"payload\":null}"}
+{"fn":"serializeMessageStreamWsEvent","args":[0],"ok":"{\"type\":\"event\",\"payload\":0}"}
+{"fn":"serializeMessageStreamWsEvent","args":[["a",1],{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":[\"a\",1]}"}
+{"fn":"serializeMessageStreamWsEvent","args":["x",[]],"ok":"{\"type\":\"event\",\"payload\":\"x\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[true,0],"ok":"{\"type\":\"event\",\"payload\":true}"}
+{"fn":"serializeMessageStreamWsEvent","args":[null,{"a":"b"}],"ok":"{\"type\":\"event\",\"payload\":null}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{},null],"error":"Cannot read properties of null (reading 'eventId')"}
+{"fn":"serializeMessageStreamWsEvent","args":["x",{"a":{"b":"c"}}],"ok":"{\"type\":\"event\",\"payload\":\"x\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[["a",1],{}],"ok":"{\"type\":\"event\",\"payload\":[\"a\",1]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"b":"c"}},{}],"ok":"{\"type\":\"event\",\"payload\":{\"a\":{\"b\":\"c\"}}}"}
+{"fn":"serializeMessageStreamWsEvent","args":["x"],"ok":"{\"type\":\"event\",\"payload\":\"x\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[true,[]],"ok":"{\"type\":\"event\",\"payload\":true}"}
+{"fn":"serializeMessageStreamWsEvent","args":[true,["a",1]],"ok":"{\"type\":\"event\",\"payload\":true}"}
+{"fn":"serializeMessageStreamWsEvent","args":[true,{"a":{"b":"c"}}],"ok":"{\"type\":\"event\",\"payload\":true}"}
+{"fn":"serializeMessageStreamWsEvent","args":["x",0],"ok":"{\"type\":\"event\",\"payload\":\"x\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":["x","X"],"ok":"{\"type\":\"event\",\"payload\":\"x\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6},{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":{\"2\":4,\"10\":3,\"zebra\":1,\"apple\":2,\"é\":5,\"Apple\":6}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7},{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":{\"n\":9007199254740992,\"f\":1e+21,\"t\":0.1,\"neg\":-7}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[3,1,2],{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":[3,1,2]}"}
+{"fn":"parseSseEventEnvelope","args":[""],"ok":null}
+{"fn":"parseSseEventEnvelope","args":[null],"ok":null}
+{"fn":"parseSseEventEnvelope","args":[5],"ok":null}
+{"fn":"parseSseEventEnvelope","args":["id: 1\ndata: {\"a\":1}"],"ok":{"eventId":"1","directory":null,"payload":{"a":1}}}
+{"fn":"parseSseEventEnvelope","args":["data:{\"payload\":{\"type\":\"x\"},\"directory\":\"/d\"}"],"ok":{"eventId":null,"directory":"/d","payload":{"type":"x"}}}
+{"fn":"parseSseEventEnvelope","args":["id:   \ndata: {\"payload\":[1,2],\"directory\":\"\"}"],"ok":{"eventId":null,"directory":null,"payload":[1,2]}}
+{"fn":"parseSseEventEnvelope","args":["data: {\"payload\":null,\"properties\":{\"directory\":\"/p\"}}"],"ok":{"eventId":null,"directory":"/p","payload":{"payload":null,"properties":{"directory":"/p"}}}}
+{"fn":"parseSseEventEnvelope","args":["data:  {\"x\":1}\ndata: {\"y\":2}"],"ok":null}
+{"fn":"parseSseEventEnvelope","args":["data: [1,\ndata: 2]"],"ok":{"eventId":null,"directory":null,"payload":[1,2]}}
+{"fn":"parseSseEventEnvelope","args":["data: \"str\""],"ok":{"eventId":null,"directory":null,"payload":"str"}}
+{"fn":"parseSseEventEnvelope","args":["data: 12"],"ok":{"eventId":null,"directory":null,"payload":12}}
+{"fn":"parseSseEventEnvelope","args":["data: null"],"ok":{"eventId":null,"directory":null,"payload":null}}
+{"fn":"parseSseEventEnvelope","args":["data: true"],"ok":{"eventId":null,"directory":null,"payload":true}}
+{"fn":"parseSseEventEnvelope","args":["data:    "],"ok":null}
+{"fn":"parseSseEventEnvelope","args":["event: x\nid: 7"],"ok":null}
+{"fn":"parseSseEventEnvelope","args":["id: a\nid: b\ndata: {}"],"ok":{"eventId":"a","directory":null,"payload":{}}}
+{"fn":"parseSseEventEnvelope","args":["data: {bad}"],"ok":null}
+{"fn":"parseSseEventEnvelope","args":["data: {\"directory\":5,\"properties\":{\"directory\":\"/q\"}}"],"ok":{"eventId":null,"directory":"/q","payload":{"directory":5,"properties":{"directory":"/q"}}}}
+{"fn":"parseSseEventEnvelope","args":["data: {\"directory\":\"/own\",\"properties\":{\"directory\":\"/q\"}}"],"ok":{"eventId":null,"directory":"/own","payload":{"directory":"/own","properties":{"directory":"/q"}}}}
+{"fn":"parseSseEventEnvelope","args":["data: {\"2\":1,\"b\":2,\"1\":3}"],"ok":{"eventId":null,"directory":null,"payload":{"1":3,"2":1,"b":2}}}
+{"fn":"parseSseEventEnvelope","args":["data: {\"a\":1,\"a\":2}"],"ok":{"eventId":null,"directory":null,"payload":{"a":2}}}
+{"fn":"parseSseEventEnvelope","args":["data: 1e400"],"ok":{"eventId":null,"directory":null,"payload":{"$num":"Infinity"}}}
+{"fn":"parseSseEventEnvelope","args":["data: -0"],"ok":{"eventId":null,"directory":null,"payload":{"$num":"-0"}}}
+{"fn":"parseSseEventEnvelope","args":["data: {\"s\":\"\\ud800\"}"],"ok":{"eventId":null,"directory":null,"payload":{"s":{"$utf16":[55296]}}}}
+{"fn":"parseSseEventEnvelope","args":["﻿data: {}"],"ok":null}
+{"fn":"parseSseEventEnvelope","args":["data: {\"a\":1}"],"ok":{"eventId":null,"directory":null,"payload":{"a":1}}}
+{"fn":"parseSseEventEnvelope","args":["data:\t{}"],"ok":{"eventId":null,"directory":null,"payload":{}}}
+{"fn":"parseSseEventEnvelope","args":["data: {}\r\nid: 9\r"],"ok":{"eventId":"9","directory":null,"payload":{}}}
+{"fn":"parseSseEventEnvelope","args":["data: {}  x"],"ok":null}
+{"fn":"parseSseEventEnvelope","args":["data: \"\\u0041\""],"ok":{"eventId":null,"directory":null,"payload":"A"}}
+{"fn":"parseSseEventEnvelope","args":["data: [1,]"],"ok":null}
+{"fn":"parseSseEventEnvelope","args":["data: {\"payload\":\"str\"}"],"ok":{"eventId":null,"directory":null,"payload":{"payload":"str"}}}
+{"fn":"parseSseEventEnvelope","args":["data: {\"payload\":{}}"],"ok":{"eventId":null,"directory":null,"payload":{}}}
+{"fn":"parseSseEventEnvelope","args":["id: x \ndata: 1"],"ok":{"eventId":"x","directory":null,"payload":1}}
+{"fn":"parseSseEventEnvelope","args":["data: 01"],"ok":null}
+{"fn":"parseSseEventEnvelope","args":["data: .5"],"ok":null}
+{"fn":"parseSseEventEnvelope","args":["data: 1."],"ok":null}
+{"fn":"parseSseEventEnvelope","args":["data: -"],"ok":null}
+{"fn":"parseSseEventEnvelope","args":["data: {\"properties\":null}"],"ok":{"eventId":null,"directory":null,"payload":{"properties":null}}}
+{"fn":"parseSseEventEnvelope","args":["data: {\"properties\":{\"directory\":\"\"}}"],"ok":{"eventId":null,"directory":null,"payload":{"properties":{"directory":""}}}}
+{"fn":"parseSseEventEnvelope","args":["data: 　{}　"],"ok":{"eventId":null,"directory":null,"payload":{}}}
+{"fn":"parseSseEventEnvelope","args":["  data: {}"],"ok":null}
+{"fn":"parseSseEventEnvelope","args":["data: {\"__x\":1}"],"ok":{"eventId":null,"directory":null,"payload":{"__x":1}}}
+{"fn":"parseSseEventEnvelope","args":[],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":[null],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":[0],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":["s"],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":[[]],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":[{}],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":[{"kind":"comment"}],"ok":{"keepalive":true}}
+{"fn":"toUpstreamV2SseEvent","args":[{"kind":"event"}],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":[{"kind":"event","envelope":null}],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":[{"kind":"event","envelope":"x"}],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":[{"kind":"event","envelope":{"type":"a"},"eventId":"e1","directory":"/d"}],"ok":{"eventId":null,"upstreamEventId":"e1","directory":"/d","payload":{"type":"a"}}}
+{"fn":"toUpstreamV2SseEvent","args":[{"kind":"event","envelope":[1],"eventId":"","directory":5}],"ok":{"eventId":null,"upstreamEventId":null,"directory":null,"payload":[1]}}
+{"fn":"toUpstreamV2SseEvent","args":[{"kind":"other","envelope":{}}],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":[[1]],"ok":null}
+{"fn":"toUpstreamV2SseEvent","args":[{"kind":"event","envelope":{"a":1},"eventId":7}],"ok":{"eventId":null,"upstreamEventId":null,"directory":null,"payload":{"a":1}}}
+{"fn":"toUpstreamV2SseEvent","args":[],"ok":null}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"x"},{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"x\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"x"},{}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"x\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"x"},{"eventId":"e","directory":"/d"}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"x\"},\"eventId\":\"e\",\"directory\":\"/d\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"x"},{"eventId":"","directory":""}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"x\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"x"},{"eventId":5}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"x\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"x"},{"dialect":"devryan"}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"x\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"x"},{"dialect":"legacy","eventId":"\"q\""}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"x\"},\"eventId\":\"\\\"q\\\"\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"x"},"str"],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"x\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"x"},7],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"x\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"x"},null],"error":"Cannot read properties of null (reading 'eventId')"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"x"},{"directory":"/x\n"}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"x\"},\"directory\":\"/x\\n\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"devryan:a","p":1},{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"openchamber:a\",\"p\":1}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"devryan:a","p":1},{}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"openchamber:a\",\"p\":1}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"devryan:a","p":1},{"eventId":"e","directory":"/d"}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"openchamber:a\",\"p\":1},\"eventId\":\"e\",\"directory\":\"/d\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"devryan:a","p":1},{"eventId":"","directory":""}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"openchamber:a\",\"p\":1}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"devryan:a","p":1},{"eventId":5}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"openchamber:a\",\"p\":1}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"devryan:a","p":1},{"dialect":"devryan"}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"devryan:a\",\"p\":1}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"devryan:a","p":1},{"dialect":"legacy","eventId":"\"q\""}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"openchamber:a\",\"p\":1},\"eventId\":\"\\\"q\\\"\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"devryan:a","p":1},"str"],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"openchamber:a\",\"p\":1}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"devryan:a","p":1},7],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"openchamber:a\",\"p\":1}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"devryan:a","p":1},null],"error":"Cannot read properties of null (reading 'eventId')"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"devryan:a","p":1},{"directory":"/x\n"}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"openchamber:a\",\"p\":1},\"directory\":\"/x\\n\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"openchamber:a"},{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"openchamber:a\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"openchamber:a"},{}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"openchamber:a\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"openchamber:a"},{"eventId":"e","directory":"/d"}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"openchamber:a\"},\"eventId\":\"e\",\"directory\":\"/d\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"openchamber:a"},{"eventId":"","directory":""}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"openchamber:a\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"openchamber:a"},{"eventId":5}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"openchamber:a\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"openchamber:a"},{"dialect":"devryan"}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"devryan:a\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"openchamber:a"},{"dialect":"legacy","eventId":"\"q\""}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"openchamber:a\"},\"eventId\":\"\\\"q\\\"\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"openchamber:a"},"str"],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"openchamber:a\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"openchamber:a"},7],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"openchamber:a\"}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"openchamber:a"},null],"error":"Cannot read properties of null (reading 'eventId')"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"openchamber:a"},{"directory":"/x\n"}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"openchamber:a\"},\"directory\":\"/x\\n\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[null,{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":null}"}
+{"fn":"serializeMessageStreamWsEvent","args":[null,{}],"ok":"{\"type\":\"event\",\"payload\":null}"}
+{"fn":"serializeMessageStreamWsEvent","args":[null,{"eventId":"e","directory":"/d"}],"ok":"{\"type\":\"event\",\"payload\":null,\"eventId\":\"e\",\"directory\":\"/d\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[null,{"eventId":"","directory":""}],"ok":"{\"type\":\"event\",\"payload\":null}"}
+{"fn":"serializeMessageStreamWsEvent","args":[null,{"eventId":5}],"ok":"{\"type\":\"event\",\"payload\":null}"}
+{"fn":"serializeMessageStreamWsEvent","args":[null,{"dialect":"devryan"}],"ok":"{\"type\":\"event\",\"payload\":null}"}
+{"fn":"serializeMessageStreamWsEvent","args":[null,{"dialect":"legacy","eventId":"\"q\""}],"ok":"{\"type\":\"event\",\"payload\":null,\"eventId\":\"\\\"q\\\"\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[null,"str"],"ok":"{\"type\":\"event\",\"payload\":null}"}
+{"fn":"serializeMessageStreamWsEvent","args":[null,7],"ok":"{\"type\":\"event\",\"payload\":null}"}
+{"fn":"serializeMessageStreamWsEvent","args":[null,null],"error":"Cannot read properties of null (reading 'eventId')"}
+{"fn":"serializeMessageStreamWsEvent","args":[null,{"directory":"/x\n"}],"ok":"{\"type\":\"event\",\"payload\":null,\"directory\":\"/x\\n\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$undefined":true},{"$undefined":true}],"ok":"{\"type\":\"event\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$undefined":true},{}],"ok":"{\"type\":\"event\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$undefined":true},{"eventId":"e","directory":"/d"}],"ok":"{\"type\":\"event\",\"eventId\":\"e\",\"directory\":\"/d\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$undefined":true},{"eventId":"","directory":""}],"ok":"{\"type\":\"event\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$undefined":true},{"eventId":5}],"ok":"{\"type\":\"event\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$undefined":true},{"dialect":"devryan"}],"ok":"{\"type\":\"event\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$undefined":true},{"dialect":"legacy","eventId":"\"q\""}],"ok":"{\"type\":\"event\",\"eventId\":\"\\\"q\\\"\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$undefined":true},"str"],"ok":"{\"type\":\"event\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$undefined":true},7],"ok":"{\"type\":\"event\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$undefined":true},null],"error":"Cannot read properties of null (reading 'eventId')"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$undefined":true},{"directory":"/x\n"}],"ok":"{\"type\":\"event\",\"directory\":\"/x\\n\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[5,{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":5}"}
+{"fn":"serializeMessageStreamWsEvent","args":[5,{}],"ok":"{\"type\":\"event\",\"payload\":5}"}
+{"fn":"serializeMessageStreamWsEvent","args":[5,{"eventId":"e","directory":"/d"}],"ok":"{\"type\":\"event\",\"payload\":5,\"eventId\":\"e\",\"directory\":\"/d\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[5,{"eventId":"","directory":""}],"ok":"{\"type\":\"event\",\"payload\":5}"}
+{"fn":"serializeMessageStreamWsEvent","args":[5,{"eventId":5}],"ok":"{\"type\":\"event\",\"payload\":5}"}
+{"fn":"serializeMessageStreamWsEvent","args":[5,{"dialect":"devryan"}],"ok":"{\"type\":\"event\",\"payload\":5}"}
+{"fn":"serializeMessageStreamWsEvent","args":[5,{"dialect":"legacy","eventId":"\"q\""}],"ok":"{\"type\":\"event\",\"payload\":5,\"eventId\":\"\\\"q\\\"\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[5,"str"],"ok":"{\"type\":\"event\",\"payload\":5}"}
+{"fn":"serializeMessageStreamWsEvent","args":[5,7],"ok":"{\"type\":\"event\",\"payload\":5}"}
+{"fn":"serializeMessageStreamWsEvent","args":[5,null],"error":"Cannot read properties of null (reading 'eventId')"}
+{"fn":"serializeMessageStreamWsEvent","args":[5,{"directory":"/x\n"}],"ok":"{\"type\":\"event\",\"payload\":5,\"directory\":\"/x\\n\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":["s",{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":\"s\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":["s",{}],"ok":"{\"type\":\"event\",\"payload\":\"s\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":["s",{"eventId":"e","directory":"/d"}],"ok":"{\"type\":\"event\",\"payload\":\"s\",\"eventId\":\"e\",\"directory\":\"/d\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":["s",{"eventId":"","directory":""}],"ok":"{\"type\":\"event\",\"payload\":\"s\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":["s",{"eventId":5}],"ok":"{\"type\":\"event\",\"payload\":\"s\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":["s",{"dialect":"devryan"}],"ok":"{\"type\":\"event\",\"payload\":\"s\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":["s",{"dialect":"legacy","eventId":"\"q\""}],"ok":"{\"type\":\"event\",\"payload\":\"s\",\"eventId\":\"\\\"q\\\"\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":["s","str"],"ok":"{\"type\":\"event\",\"payload\":\"s\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":["s",7],"ok":"{\"type\":\"event\",\"payload\":\"s\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":["s",null],"error":"Cannot read properties of null (reading 'eventId')"}
+{"fn":"serializeMessageStreamWsEvent","args":["s",{"directory":"/x\n"}],"ok":"{\"type\":\"event\",\"payload\":\"s\",\"directory\":\"/x\\n\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[1,{"$undefined":true},2],{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":[1,null,2]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[1,{"$undefined":true},2],{}],"ok":"{\"type\":\"event\",\"payload\":[1,null,2]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[1,{"$undefined":true},2],{"eventId":"e","directory":"/d"}],"ok":"{\"type\":\"event\",\"payload\":[1,null,2],\"eventId\":\"e\",\"directory\":\"/d\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[1,{"$undefined":true},2],{"eventId":"","directory":""}],"ok":"{\"type\":\"event\",\"payload\":[1,null,2]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[1,{"$undefined":true},2],{"eventId":5}],"ok":"{\"type\":\"event\",\"payload\":[1,null,2]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[1,{"$undefined":true},2],{"dialect":"devryan"}],"ok":"{\"type\":\"event\",\"payload\":[1,null,2]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[1,{"$undefined":true},2],{"dialect":"legacy","eventId":"\"q\""}],"ok":"{\"type\":\"event\",\"payload\":[1,null,2],\"eventId\":\"\\\"q\\\"\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[1,{"$undefined":true},2],"str"],"ok":"{\"type\":\"event\",\"payload\":[1,null,2]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[1,{"$undefined":true},2],7],"ok":"{\"type\":\"event\",\"payload\":[1,null,2]}"}
+{"fn":"serializeMessageStreamWsEvent","args":[[1,{"$undefined":true},2],null],"error":"Cannot read properties of null (reading 'eventId')"}
+{"fn":"serializeMessageStreamWsEvent","args":[[1,{"$undefined":true},2],{"directory":"/x\n"}],"ok":"{\"type\":\"event\",\"payload\":[1,null,2],\"directory\":\"/x\\n\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"$undefined":true},"b":{"$num":"NaN"}},{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":{\"b\":null}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"$undefined":true},"b":{"$num":"NaN"}},{}],"ok":"{\"type\":\"event\",\"payload\":{\"b\":null}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"$undefined":true},"b":{"$num":"NaN"}},{"eventId":"e","directory":"/d"}],"ok":"{\"type\":\"event\",\"payload\":{\"b\":null},\"eventId\":\"e\",\"directory\":\"/d\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"$undefined":true},"b":{"$num":"NaN"}},{"eventId":"","directory":""}],"ok":"{\"type\":\"event\",\"payload\":{\"b\":null}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"$undefined":true},"b":{"$num":"NaN"}},{"eventId":5}],"ok":"{\"type\":\"event\",\"payload\":{\"b\":null}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"$undefined":true},"b":{"$num":"NaN"}},{"dialect":"devryan"}],"ok":"{\"type\":\"event\",\"payload\":{\"b\":null}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"$undefined":true},"b":{"$num":"NaN"}},{"dialect":"legacy","eventId":"\"q\""}],"ok":"{\"type\":\"event\",\"payload\":{\"b\":null},\"eventId\":\"\\\"q\\\"\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"$undefined":true},"b":{"$num":"NaN"}},"str"],"ok":"{\"type\":\"event\",\"payload\":{\"b\":null}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"$undefined":true},"b":{"$num":"NaN"}},7],"ok":"{\"type\":\"event\",\"payload\":{\"b\":null}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"$undefined":true},"b":{"$num":"NaN"}},null],"error":"Cannot read properties of null (reading 'eventId')"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"a":{"$undefined":true},"b":{"$num":"NaN"}},{"directory":"/x\n"}],"ok":"{\"type\":\"event\",\"payload\":{\"b\":null},\"directory\":\"/x\\n\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$num":"-0"},{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":0}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$num":"-0"},{}],"ok":"{\"type\":\"event\",\"payload\":0}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$num":"-0"},{"eventId":"e","directory":"/d"}],"ok":"{\"type\":\"event\",\"payload\":0,\"eventId\":\"e\",\"directory\":\"/d\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$num":"-0"},{"eventId":"","directory":""}],"ok":"{\"type\":\"event\",\"payload\":0}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$num":"-0"},{"eventId":5}],"ok":"{\"type\":\"event\",\"payload\":0}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$num":"-0"},{"dialect":"devryan"}],"ok":"{\"type\":\"event\",\"payload\":0}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$num":"-0"},{"dialect":"legacy","eventId":"\"q\""}],"ok":"{\"type\":\"event\",\"payload\":0,\"eventId\":\"\\\"q\\\"\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$num":"-0"},"str"],"ok":"{\"type\":\"event\",\"payload\":0}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$num":"-0"},7],"ok":"{\"type\":\"event\",\"payload\":0}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$num":"-0"},null],"error":"Cannot read properties of null (reading 'eventId')"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$num":"-0"},{"directory":"/x\n"}],"ok":"{\"type\":\"event\",\"payload\":0,\"directory\":\"/x\\n\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[true,{"$undefined":true}],"ok":"{\"type\":\"event\",\"payload\":true}"}
+{"fn":"serializeMessageStreamWsEvent","args":[true,{}],"ok":"{\"type\":\"event\",\"payload\":true}"}
+{"fn":"serializeMessageStreamWsEvent","args":[true,{"eventId":"e","directory":"/d"}],"ok":"{\"type\":\"event\",\"payload\":true,\"eventId\":\"e\",\"directory\":\"/d\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[true,{"eventId":"","directory":""}],"ok":"{\"type\":\"event\",\"payload\":true}"}
+{"fn":"serializeMessageStreamWsEvent","args":[true,{"eventId":5}],"ok":"{\"type\":\"event\",\"payload\":true}"}
+{"fn":"serializeMessageStreamWsEvent","args":[true,{"dialect":"devryan"}],"ok":"{\"type\":\"event\",\"payload\":true}"}
+{"fn":"serializeMessageStreamWsEvent","args":[true,{"dialect":"legacy","eventId":"\"q\""}],"ok":"{\"type\":\"event\",\"payload\":true,\"eventId\":\"\\\"q\\\"\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[true,"str"],"ok":"{\"type\":\"event\",\"payload\":true}"}
+{"fn":"serializeMessageStreamWsEvent","args":[true,7],"ok":"{\"type\":\"event\",\"payload\":true}"}
+{"fn":"serializeMessageStreamWsEvent","args":[true,null],"error":"Cannot read properties of null (reading 'eventId')"}
+{"fn":"serializeMessageStreamWsEvent","args":[true,{"directory":"/x\n"}],"ok":"{\"type\":\"event\",\"payload\":true,\"directory\":\"/x\\n\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"$undefined":true}],"ok":"{\"type\":\"event\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"devryan:z"}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"openchamber:z\"}}"}
+{"fn":"parseSseEventEnvelope","args":["id: evt-1\nevent: message\ndata: {\"directory\":\"/tmp/project\",\"payload\":{\"type\":\"session.updated\"}}\n"],"ok":{"eventId":"evt-1","directory":"/tmp/project","payload":{"type":"session.updated"}}}
+{"fn":"parseSseEventEnvelope","args":["data: {\"type\":\"openchamber:notification\",\"properties\":{\"directory\":\"/tmp/project\"}}\n"],"ok":{"eventId":null,"directory":"/tmp/project","payload":{"type":"openchamber:notification","properties":{"directory":"/tmp/project"}}}}
+{"fn":"parseSseEventEnvelope","args":["event: message\n"],"ok":null}
+{"fn":"parseSseEventEnvelope","args":["data: {oops}\n"],"ok":null}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"openchamber:heartbeat","timestamp":1},{"dialect":null,"eventId":"evt-2","directory":"/tmp/project"}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"openchamber:heartbeat\",\"timestamp\":1},\"eventId\":\"evt-2\",\"directory\":\"/tmp/project\"}"}
+{"fn":"toUpstreamV2SseEvent","args":[{"kind":"event","eventId":"evt_1","directory":"/tmp/p","envelope":{"id":"evt_1","created":1,"type":"session.renamed","location":{"directory":"/tmp/p"},"data":{"sessionID":"ses_1","title":"T"}}}],"ok":{"eventId":null,"upstreamEventId":"evt_1","directory":"/tmp/p","payload":{"id":"evt_1","created":1,"type":"session.renamed","location":{"directory":"/tmp/p"},"data":{"sessionID":"ses_1","title":"T"}}}}
+{"fn":"toUpstreamV2SseEvent","args":[{"kind":"comment"}],"ok":{"keepalive":true}}
+{"fn":"toUpstreamV2SseEvent","args":[{"kind":"event","eventId":"evt_2","directory":null,"envelope":{"id":"evt_2","type":"server.connected","data":{}}}],"ok":{"eventId":null,"upstreamEventId":"evt_2","directory":null,"payload":{"id":"evt_2","type":"server.connected","data":{}}}}
+{"fn":"toUpstreamV2SseEvent","args":[null],"ok":null}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"devryan.stream.gap","properties":{"scope":"global","reason":"upstream_reconnect"}},{"eventId":"ignored","directory":"global"}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"devryan.stream.gap\",\"properties\":{\"scope\":\"global\",\"reason\":\"upstream_reconnect\"}},\"eventId\":\"ignored\",\"directory\":\"global\"}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"devryan.stream.gap","properties":{"scope":"global"}}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"devryan.stream.gap\",\"properties\":{\"scope\":\"global\"}}}"}
+{"fn":"serializeMessageStreamWsEvent","args":[{"type":"devryan.stream.gap","properties":{"scope":"global"}},{"dialect":null}],"ok":"{\"type\":\"event\",\"payload\":{\"type\":\"devryan.stream.gap\",\"properties\":{\"scope\":\"global\"}}}"}

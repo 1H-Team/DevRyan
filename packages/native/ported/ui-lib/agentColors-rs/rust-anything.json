@@ -1,0 +1,48 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "agentColors.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "agentcolors-rs",
+  "exports": [
+    {
+      "name": "getAgentColor",
+      "file": "agentColors.ts",
+      "line": 26,
+      "params": [
+        {
+          "name": "agentName",
+          "ts_type": "string | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getAgentIconColor",
+      "file": "agentColors.ts",
+      "line": 48,
+      "params": [
+        {
+          "name": "agentName",
+          "ts_type": "string | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

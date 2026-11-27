@@ -46,8 +46,3 @@ export const createCapabilityAbsentError = (capability, { status = 409 } = {}) =
   new Error(`OpenCode 2 does not provide ${capability} yet`),
   { code: OPENCODE_CAPABILITY_ABSENT, status, capability, generation: 2 },
 );
-
-/** True for an error raised by {@link createCapabilityAbsentError}. */
-export const isCapabilityAbsentError = (error) => (
-  error !== null && typeof error === 'object' && error.code === OPENCODE_CAPABILITY_ABSENT
-);

@@ -43,17 +43,13 @@ The following functions are exported and used by the web server:
 
 ### ClawdHub Integration (`clawdhub/index.js`)
 - `isClawdHubSource(source)`: Check if source string refers to ClawdHub.
-- `scanClawdHub()`: Scan entire ClawdHub registry for all skills (paginated, max 20 pages).
 - `scanClawdHubPage({ cursor })`: Scan a single page of ClawdHub results with cursor-based pagination.
 - `installSkillsFromClawdHub({ scope, targetSource, workingDirectory, userSkillDir, selections, conflictPolicy, conflictDecisions })`: Install skills from ClawdHub through the shared bounded ZIP pipeline.
+
+### ClawdHub API (`clawdhub/api.js`, used by `scan.js` and `install.js`)
 - `fetchClawdHubSkills({ cursor })`: Fetch paginated skills list from ClawdHub API.
-- `fetchClawdHubSkillVersion(slug, version)`: Fetch specific skill version details.
 - `fetchClawdHubSkillInfo(slug)`: Fetch skill metadata without version details.
 - `downloadClawdHubSkill(slug, version)`: Download skill package as ZIP buffer.
-
-### ClawdHub Constants (`clawdhub/index.js`)
-- `CLAWDHUB_SOURCE_ID`: Source identifier for curated sources.
-- `CLAWDHUB_SOURCE_STRING`: Source string format.
 
 ## Internal Helpers
 
@@ -88,7 +84,9 @@ The following functions are internal helpers used by exported functions:
 
 ### ClawdHub API Helpers (`clawdhub/api.js`)
 - `rateLimitedFetch(url, options)`: Fetch with rate limiting (120 req/min limit, 100ms delay between requests, exponential backoff on 429/500 errors).
-- `mapClawdHubItem(item)`: Transform ClawdHub API response to SkillsCatalogItem format.
+
+### ClawdHub Scan Helpers (`clawdhub/scan.js`)
+- `mapClawdHubItem(item)`: Transform a ClawdHub API item to the SkillsCatalogItem format; `scanClawdHubPage` maps every item through it.
 
 ## Response Contracts
 

@@ -1,0 +1,19 @@
+{
+  "unit": "project-environment.js",
+  "files": 1,
+  "fingerprint": "9171ee3d1ed4487b",
+  "cases": 137,
+  "cases_hash": "06a9521e8f72d393",
+  "coverage": {
+    "lines": 224,
+    "reached": 100,
+    "files": [
+      {
+        "file": "project-environment.js",
+        "lines": 224,
+        "reached": 100,
+        "missed": "113-114, 118-138, 140-156, 160-177, 179-189, 191-203, 205-210, 212-226, 228-242, 244-248, 250"
+      }
+    ]
+  }
+}

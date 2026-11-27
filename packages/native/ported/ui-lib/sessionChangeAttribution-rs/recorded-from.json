@@ -1,0 +1,19 @@
+{
+  "unit": "sessionChangeAttribution.ts",
+  "files": 1,
+  "fingerprint": "e70fc8166366d209",
+  "cases": 803,
+  "cases_hash": "5499ca5d42b09776",
+  "coverage": {
+    "lines": 221,
+    "reached": 221,
+    "files": [
+      {
+        "file": "sessionChangeAttribution.ts",
+        "lines": 221,
+        "reached": 221,
+        "missed": ""
+      }
+    ]
+  }
+}

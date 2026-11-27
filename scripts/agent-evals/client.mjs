@@ -1014,7 +1014,7 @@ export const runSessionTurn = async (options = {}) => {
   let rootSessionId = '';
   let firstTurnMessageIds = null;
   const requireManaged = options.caseId === 'managed-change' || isRoutingCase(options.caseId) || isAdaptiveCase(options.caseId);
-  let harnessEvidence = { startFingerprint: null, finishFingerprint: null, availability: null, trace: null, rootSessionId: null };
+  const harnessEvidence = { startFingerprint: null, finishFingerprint: null, availability: null, trace: null, rootSessionId: null };
   try {
     const metadata = await Promise.allSettled([
       client.getHarnessPreflight?.(directory, selection, signal), client.getAdvertisedAvailability?.(directory, selection, signal),

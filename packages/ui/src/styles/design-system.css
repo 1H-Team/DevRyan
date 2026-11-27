@@ -359,11 +359,6 @@
 /* Agent color system using theme variables */
 @layer components {
   /* Agent color variants - each maps to theme colors */
-  .agent-primary {
-    --agent-color: var(--primary);
-    --agent-color-bg: var(--primary);
-  }
-
   .agent-info {
     --agent-color: var(--status-info);
     --agent-color-bg: var(--status-info);
@@ -426,20 +421,5 @@
   .agent-badge-combined:hover {
     background: rgb(from var(--agent-color-bg) r g b / 0.06);
     border-color: rgb(from var(--agent-color) r g b / 0.16);
-  }
-
-  /* Agent dot indicator */
-  .agent-dot {
-    background: var(--agent-color);
-  }
-
-  /* Agent list item */
-  .agent-list-item:hover {
-    background: rgb(from var(--agent-color-bg) r g b / 0.05);
-  }
-
-  .agent-list-item.active {
-    background: rgb(from var(--agent-color-bg) r g b / 0.1);
-    border-color: rgb(from var(--agent-color) r g b / 0.2);
   }
 }

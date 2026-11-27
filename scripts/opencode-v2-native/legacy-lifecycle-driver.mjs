@@ -64,7 +64,7 @@ const directory = locations[0].directory, observations = [], diagnostics = [], e
 // This fresh host owns the descriptor's durable web journal for its lifetime.
 const journal = await createFixtureJournal({ webDataDirectory: binding.descriptor.launch.webDataDirectory,
   label: `fixture-lc-${randomBytes(4).toString('hex')}` });
-let owner, managed, host, url, epoch = 0;
+let owner, managed, url, epoch = 0;
 const deps = { getRuntime: () => ({ generation: 2, baseUrl: url, version: nativeVersion, epoch }),
   getAuthHeaders: () => owner?.getAuthHeaders() ?? {}, withNativeWebOperation: (spec, action) => owner.nativeOwner.withWebOperation(spec, action),
   recordDiagnostic: payload => { diagnostics.push(payload); journal.clientDiagnostic(payload); } };
@@ -78,7 +78,7 @@ const admission = createOpenCodeAdmission(deps, { beforePromptDispatch: (receipt
     updateAcceptedOperation: receipt => owner.nativeOwner.updateAcceptedOperation(receipt) } });
 const client = createOpenCodeClient({ ...deps, getAdmission: () => admission });
 const buildOpenCodeUrl = route => new URL(route, url).href;
-host = createSessionExecutionHost({ dataDirectory: binding.descriptor.launch.webDataDirectory, openCodeClient: client,
+const host = createSessionExecutionHost({ dataDirectory: binding.descriptor.launch.webDataDirectory, openCodeClient: client,
   getLauncher: () => launcher, buildOpenCodeUrl, getOpenCodeAuthHeaders: deps.getAuthHeaders,
   onDiagnostic: event => { diagnostics.push(event); journal.sessionExecution(event); },
   nativeExecution: { locations, socketDirectory: null, workerBrowsers: false,

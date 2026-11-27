@@ -1,0 +1,114 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "projectResolution.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "projectresolution-rs",
+  "exports": [
+    {
+      "name": "normalizeProjectPath",
+      "file": "projectResolution.ts",
+      "line": 4,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "string | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "resolveProjectForDirectory",
+      "file": "projectResolution.ts",
+      "line": 13,
+      "params": [
+        {
+          "name": "projects",
+          "ts_type": "ProjectEntry[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "directory",
+          "ts_type": "string | null",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "ProjectEntry | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "resolveProjectFromWorktreeDirectory",
+      "file": "projectResolution.ts",
+      "line": 29,
+      "params": [
+        {
+          "name": "projects",
+          "ts_type": "ProjectEntry[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "availableWorktreesByProject",
+          "ts_type": "Map<string, WorktreeMetadata[]>",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "directory",
+          "ts_type": "string | null",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "ProjectEntry | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "resolveProjectForSessionDirectory",
+      "file": "projectResolution.ts",
+      "line": 63,
+      "params": [
+        {
+          "name": "projects",
+          "ts_type": "ProjectEntry[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "availableWorktreesByProject",
+          "ts_type": "Map<string, WorktreeMetadata[]>",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "directory",
+          "ts_type": "string | null",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "ProjectEntry | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

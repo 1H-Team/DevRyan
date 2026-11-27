@@ -1,0 +1,412 @@
+{"fn": "isCursorAcpErrorTitle", "args": ["cursor-acp error: b: Provider Error"]}
+{"fn": "isGeneratedNewSessionTitle", "args": ["cursor-acp error: b: Provider Error"]}
+{"fn": "isPlanControlSessionTitle", "args": ["cursor-acp error: b: Provider Error"]}
+{"fn": "isPlaceholderSessionTitle", "args": ["cursor-acp error: b: Provider Error"]}
+{"fn": "isCursorAcpErrorTitle", "args": ["Cursor-ACP Error: provider failed"]}
+{"fn": "isGeneratedNewSessionTitle", "args": ["Cursor-ACP Error: provider failed"]}
+{"fn": "isPlanControlSessionTitle", "args": ["Cursor-ACP Error: provider failed"]}
+{"fn": "isPlaceholderSessionTitle", "args": ["Cursor-ACP Error: provider failed"]}
+{"fn": "isCursorAcpErrorTitle", "args": ["normal Cursor session"]}
+{"fn": "isGeneratedNewSessionTitle", "args": ["normal Cursor session"]}
+{"fn": "isPlanControlSessionTitle", "args": ["normal Cursor session"]}
+{"fn": "isPlaceholderSessionTitle", "args": ["normal Cursor session"]}
+{"fn": "isCursorAcpErrorTitle", "args": ["cursor-acp  error :x"]}
+{"fn": "isGeneratedNewSessionTitle", "args": ["cursor-acp  error :x"]}
+{"fn": "isPlanControlSessionTitle", "args": ["cursor-acp  error :x"]}
+{"fn": "isPlaceholderSessionTitle", "args": ["cursor-acp  error :x"]}
+{"fn": "isCursorAcpErrorTitle", "args": ["cursor-acperror:"]}
+{"fn": "isGeneratedNewSessionTitle", "args": ["cursor-acperror:"]}
+{"fn": "isPlanControlSessionTitle", "args": ["cursor-acperror:"]}
+{"fn": "isPlaceholderSessionTitle", "args": ["cursor-acperror:"]}
+{"fn": "isCursorAcpErrorTitle", "args": ["New session - 2026-05-20T13:18:22.865Z"]}
+{"fn": "isGeneratedNewSessionTitle", "args": ["New session - 2026-05-20T13:18:22.865Z"]}
+{"fn": "isPlanControlSessionTitle", "args": ["New session - 2026-05-20T13:18:22.865Z"]}
+{"fn": "isPlaceholderSessionTitle", "args": ["New session - 2026-05-20T13:18:22.865Z"]}
+{"fn": "isCursorAcpErrorTitle", "args": ["New session - 2026-05-20T13:18:22Z"]}
+{"fn": "isGeneratedNewSessionTitle", "args": ["New session - 2026-05-20T13:18:22Z"]}
+{"fn": "isPlanControlSessionTitle", "args": ["New session - 2026-05-20T13:18:22Z"]}
+{"fn": "isPlaceholderSessionTitle", "args": ["New session - 2026-05-20T13:18:22Z"]}
+{"fn": "isCursorAcpErrorTitle", "args": ["new session-2026-05-20t13:18:22.z"]}
+{"fn": "isGeneratedNewSessionTitle", "args": ["new session-2026-05-20t13:18:22.z"]}
+{"fn": "isPlanControlSessionTitle", "args": ["new session-2026-05-20t13:18:22.z"]}
+{"fn": "isPlaceholderSessionTitle", "args": ["new session-2026-05-20t13:18:22.z"]}
+{"fn": "isCursorAcpErrorTitle", "args": ["New session - user supplied"]}
+{"fn": "isGeneratedNewSessionTitle", "args": ["New session - user supplied"]}
+{"fn": "isPlanControlSessionTitle", "args": ["New session - user supplied"]}
+{"fn": "isPlaceholderSessionTitle", "args": ["New session - user supplied"]}
+{"fn": "isCursorAcpErrorTitle", "args": ["regular title"]}
+{"fn": "isGeneratedNewSessionTitle", "args": ["regular title"]}
+{"fn": "isPlanControlSessionTitle", "args": ["regular title"]}
+{"fn": "isPlaceholderSessionTitle", "args": ["regular title"]}
+{"fn": "isCursorAcpErrorTitle", "args": ["<!--plan-->"]}
+{"fn": "isGeneratedNewSessionTitle", "args": ["<!--plan-->"]}
+{"fn": "isPlanControlSessionTitle", "args": ["<!--plan-->"]}
+{"fn": "isPlaceholderSessionTitle", "args": ["<!--plan-->"]}
+{"fn": "isCursorAcpErrorTitle", "args": ["<-----plan------>"]}
+{"fn": "isGeneratedNewSessionTitle", "args": ["<-----plan------>"]}
+{"fn": "isPlanControlSessionTitle", "args": ["<-----plan------>"]}
+{"fn": "isPlaceholderSessionTitle", "args": ["<-----plan------>"]}
+{"fn": "isCursorAcpErrorTitle", "args": ["<!-- plan -->"]}
+{"fn": "isGeneratedNewSessionTitle", "args": ["<!-- plan -->"]}
+{"fn": "isPlanControlSessionTitle", "args": ["<!-- plan -->"]}
+{"fn": "isPlaceholderSessionTitle", "args": ["<!-- plan -->"]}
+{"fn": "isCursorAcpErrorTitle", "args": ["Review plan rendering"]}
+{"fn": "isGeneratedNewSessionTitle", "args": ["Review plan rendering"]}
+{"fn": "isPlanControlSessionTitle", "args": ["Review plan rendering"]}
+{"fn": "isPlaceholderSessionTitle", "args": ["Review plan rendering"]}
+{"fn": "isCursorAcpErrorTitle", "args": ["<plan>"]}
+{"fn": "isGeneratedNewSessionTitle", "args": ["<plan>"]}
+{"fn": "isPlanControlSessionTitle", "args": ["<plan>"]}
+{"fn": "isPlaceholderSessionTitle", "args": ["<plan>"]}
+{"fn": "isCursorAcpErrorTitle", "args": ["<-!plan->"]}
+{"fn": "isGeneratedNewSessionTitle", "args": ["<-!plan->"]}
+{"fn": "isPlanControlSessionTitle", "args": ["<-!plan->"]}
+{"fn": "isPlaceholderSessionTitle", "args": ["<-!plan->"]}
+{"fn": "isCursorAcpErrorTitle", "args": ["<!PLAN->"]}
+{"fn": "isGeneratedNewSessionTitle", "args": ["<!PLAN->"]}
+{"fn": "isPlanControlSessionTitle", "args": ["<!PLAN->"]}
+{"fn": "isPlaceholderSessionTitle", "args": ["<!PLAN->"]}
+{"fn": "isCursorAcpErrorTitle", "args": ["<!plan>"]}
+{"fn": "isGeneratedNewSessionTitle", "args": ["<!plan>"]}
+{"fn": "isPlanControlSessionTitle", "args": ["<!plan>"]}
+{"fn": "isPlaceholderSessionTitle", "args": ["<!plan>"]}
+{"fn": "isCursorAcpErrorTitle", "args": ["Untitled Session"]}
+{"fn": "isGeneratedNewSessionTitle", "args": ["Untitled Session"]}
+{"fn": "isPlanControlSessionTitle", "args": ["Untitled Session"]}
+{"fn": "isPlaceholderSessionTitle", "args": ["Untitled Session"]}
+{"fn": "isCursorAcpErrorTitle", "args": ["  untitled   SESSION "]}
+{"fn": "isGeneratedNewSessionTitle", "args": ["  untitled   SESSION "]}
+{"fn": "isPlanControlSessionTitle", "args": ["  untitled   SESSION "]}
+{"fn": "isPlaceholderSessionTitle", "args": ["  untitled   SESSION "]}
+{"fn": "isCursorAcpErrorTitle", "args": [""]}
+{"fn": "isGeneratedNewSessionTitle", "args": [""]}
+{"fn": "isPlanControlSessionTitle", "args": [""]}
+{"fn": "isPlaceholderSessionTitle", "args": [""]}
+{"fn": "isCursorAcpErrorTitle", "args": []}
+{"fn": "isGeneratedNewSessionTitle", "args": []}
+{"fn": "isPlanControlSessionTitle", "args": []}
+{"fn": "isPlaceholderSessionTitle", "args": []}
+{"fn": "isCursorAcpErrorTitle", "args": [5]}
+{"fn": "isGeneratedNewSessionTitle", "args": [5]}
+{"fn": "isPlanControlSessionTitle", "args": [5]}
+{"fn": "isPlaceholderSessionTitle", "args": [5]}
+{"fn": "isCursorAcpErrorTitle", "args": ["New Session - 2026-05-20T13:18:22.865Zx"]}
+{"fn": "isGeneratedNewSessionTitle", "args": ["New Session - 2026-05-20T13:18:22.865Zx"]}
+{"fn": "isPlanControlSessionTitle", "args": ["New Session - 2026-05-20T13:18:22.865Zx"]}
+{"fn": "isPlaceholderSessionTitle", "args": ["New Session - 2026-05-20T13:18:22.865Zx"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["  find   the services page  "]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["  find   the services page  ", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": [""]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["in /dashboard/professional/calendar, remove the button to export pdf"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["in /dashboard/professional/calendar, remove the button to export pdf", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["in /dashboard/professional/reviews, remove the \"Open request form\" button"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["in /dashboard/professional/reviews, remove the \"Open request form\" button", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["# Heading here #"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["# Heading here #", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["   ### deep heading ###  \nbody"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["   ### deep heading ###  \nbody", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["#nospace"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["#nospace", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["####### seven"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["####### seven", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["not heading\n## Second"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["not heading\n## Second", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["please fix the api url"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["please fix the api url", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["Can you add a ui for PR review"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["Can you add a ui for PR review", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["could you   create an  issue"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["could you   create an  issue", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["i want you to build the thing"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["i want you to build the thing", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["on ./src/app-shell_main, fix it"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["on ./src/app-shell_main, fix it", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["for ../x/y fix this."]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["for ../x/y fix this.", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["in /a,b"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["in /a,b", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["in /a ,"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["in /a ,", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["in /a , rest"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["in /a , rest", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["in /, something"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["in /, something", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["in /a/b-c_d fix the bug"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["in /a/b-c_d fix the bug", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["in /a/ fix bug."]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["in /a/ fix bug.", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["update"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["update", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["Update the update handler"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["Update the update handler", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["remove the button to   go"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["remove the button to   go", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["hide button to x"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["hide button to x", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["delete a button to x"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["delete a button to x", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["find the the thing"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["find the the thing", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["add an apple"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["add an apple", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["adding stuff"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["adding stuff", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["fix it"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["fix it", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["debug this"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["debug this", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["refactor “quoted” ‘single’ `code`"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["refactor “quoted” ‘single’ `code`", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["   \n\n  "]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["   \n\n  ", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["Investigate why things break"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["Investigate why things break", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x "]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x ", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["#  　 \t"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["#  　 \t", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["## a\r"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["## a\r", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["fix: weird"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["fix: weird", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["test/me"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["test/me", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["Summarize URLs and APIs"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["Summarize URLs and APIs", "FB"]}
+{"fn": "deriveSessionTitleFromUserText", "args": [null]}
+{"fn": "deriveSessionTitleFromUserText", "args": []}
+{"fn": "deriveSessionTitleFromUserText", "args": ["", null]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["", {"$undefined": true}]}
+{"fn": "deriveSessionTitleFromUserText", "args": [5, 7]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Untitled Session", "latestUserText": "Help me recover the login session"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Untitled Session", "latestUserText": "Help me recover the login session", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Untitled Session", "latestUserText": "Help me recover the login session", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Untitled Session"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Untitled Session", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Untitled Session", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Untitled Session", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Untitled Session", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Untitled Session", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Untitled Session", "latestUserText": ""}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Untitled Session", "latestUserText": "", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Untitled Session", "latestUserText": "", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Untitled Session", "latestUserText": 5}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Untitled Session", "latestUserText": 5, "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Untitled Session", "latestUserText": 5, "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Untitled Session", "latestUserText": "# Head"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Untitled Session", "latestUserText": "# Head", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Untitled Session", "latestUserText": "# Head", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Login Session Recovery", "latestUserText": "Help me recover the login session"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Login Session Recovery", "latestUserText": "Help me recover the login session", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Login Session Recovery", "latestUserText": "Help me recover the login session", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Login Session Recovery"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Login Session Recovery", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Login Session Recovery", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Login Session Recovery", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Login Session Recovery", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Login Session Recovery", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Login Session Recovery", "latestUserText": ""}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Login Session Recovery", "latestUserText": "", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Login Session Recovery", "latestUserText": "", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Login Session Recovery", "latestUserText": 5}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Login Session Recovery", "latestUserText": 5, "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Login Session Recovery", "latestUserText": 5, "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Login Session Recovery", "latestUserText": "# Head"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Login Session Recovery", "latestUserText": "# Head", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Login Session Recovery", "latestUserText": "# Head", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "My custom title", "latestUserText": "Help me recover the login session"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "My custom title", "latestUserText": "Help me recover the login session", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "My custom title", "latestUserText": "Help me recover the login session", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "My custom title"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "My custom title", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "My custom title", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "My custom title", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "My custom title", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "My custom title", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "My custom title", "latestUserText": ""}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "My custom title", "latestUserText": "", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "My custom title", "latestUserText": "", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "My custom title", "latestUserText": 5}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "My custom title", "latestUserText": 5, "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "My custom title", "latestUserText": 5, "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "My custom title", "latestUserText": "# Head"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "My custom title", "latestUserText": "# Head", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "My custom title", "latestUserText": "# Head", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Menu menu layout", "latestUserText": "Help me recover the login session"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Menu menu layout", "latestUserText": "Help me recover the login session", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Menu menu layout", "latestUserText": "Help me recover the login session", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Menu menu layout"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Menu menu layout", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Menu menu layout", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Menu menu layout", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Menu menu layout", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Menu menu layout", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Menu menu layout", "latestUserText": ""}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Menu menu layout", "latestUserText": "", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Menu menu layout", "latestUserText": "", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Menu menu layout", "latestUserText": 5}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Menu menu layout", "latestUserText": 5, "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Menu menu layout", "latestUserText": 5, "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Menu menu layout", "latestUserText": "# Head"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Menu menu layout", "latestUserText": "# Head", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Menu menu layout", "latestUserText": "# Head", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Ilk ılk layout", "latestUserText": "Help me recover the login session"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Ilk ılk layout", "latestUserText": "Help me recover the login session", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Ilk ılk layout", "latestUserText": "Help me recover the login session", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Ilk ılk layout"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Ilk ılk layout", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Ilk ılk layout", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Ilk ılk layout", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Ilk ılk layout", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Ilk ılk layout", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Ilk ılk layout", "latestUserText": ""}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Ilk ılk layout", "latestUserText": "", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Ilk ılk layout", "latestUserText": "", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Ilk ılk layout", "latestUserText": 5}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Ilk ılk layout", "latestUserText": 5, "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Ilk ılk layout", "latestUserText": 5, "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Ilk ılk layout", "latestUserText": "# Head"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Ilk ılk layout", "latestUserText": "# Head", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix Ilk ılk layout", "latestUserText": "# Head", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix İlk ilk layout", "latestUserText": "Help me recover the login session"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix İlk ilk layout", "latestUserText": "Help me recover the login session", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix İlk ilk layout", "latestUserText": "Help me recover the login session", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix İlk ilk layout"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix İlk ilk layout", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix İlk ilk layout", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix İlk ilk layout", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix İlk ilk layout", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix İlk ilk layout", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix İlk ilk layout", "latestUserText": ""}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix İlk ilk layout", "latestUserText": "", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix İlk ilk layout", "latestUserText": "", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix İlk ilk layout", "latestUserText": 5}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix İlk ilk layout", "latestUserText": 5, "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix İlk ilk layout", "latestUserText": 5, "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix İlk ilk layout", "latestUserText": "# Head"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix İlk ilk layout", "latestUserText": "# Head", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "Fix İlk ilk layout", "latestUserText": "# Head", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "cursor-acp error: x", "latestUserText": "Help me recover the login session"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "cursor-acp error: x", "latestUserText": "Help me recover the login session", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "cursor-acp error: x", "latestUserText": "Help me recover the login session", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "cursor-acp error: x"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "cursor-acp error: x", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "cursor-acp error: x", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "cursor-acp error: x", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "cursor-acp error: x", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "cursor-acp error: x", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "cursor-acp error: x", "latestUserText": ""}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "cursor-acp error: x", "latestUserText": "", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "cursor-acp error: x", "latestUserText": "", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "cursor-acp error: x", "latestUserText": 5}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "cursor-acp error: x", "latestUserText": 5, "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "cursor-acp error: x", "latestUserText": 5, "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "cursor-acp error: x", "latestUserText": "# Head"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "cursor-acp error: x", "latestUserText": "# Head", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "cursor-acp error: x", "latestUserText": "# Head", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "a a a b B b", "latestUserText": "Help me recover the login session"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "a a a b B b", "latestUserText": "Help me recover the login session", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "a a a b B b", "latestUserText": "Help me recover the login session", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "a a a b B b"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "a a a b B b", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "a a a b B b", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "a a a b B b", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "a a a b B b", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "a a a b B b", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "a a a b B b", "latestUserText": ""}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "a a a b B b", "latestUserText": "", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "a a a b B b", "latestUserText": "", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "a a a b B b", "latestUserText": 5}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "a a a b B b", "latestUserText": 5, "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "a a a b B b", "latestUserText": 5, "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "a a a b B b", "latestUserText": "# Head"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "a a a b B b", "latestUserText": "# Head", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "a a a b B b", "latestUserText": "# Head", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": null, "latestUserText": "Help me recover the login session"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": null, "latestUserText": "Help me recover the login session", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": null, "latestUserText": "Help me recover the login session", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": null, "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": null, "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": null, "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": null, "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": null, "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": null, "latestUserText": ""}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": null, "latestUserText": "", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": null, "latestUserText": "", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": null, "latestUserText": 5}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": null, "latestUserText": 5, "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": null, "latestUserText": 5, "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": null, "latestUserText": "# Head"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": null, "latestUserText": "# Head", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": null, "latestUserText": "# Head", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": 5, "latestUserText": "Help me recover the login session"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": 5, "latestUserText": "Help me recover the login session", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": 5, "latestUserText": "Help me recover the login session", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": 5}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": 5, "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": 5, "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": 5, "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": 5, "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": 5, "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": 5, "latestUserText": ""}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": 5, "latestUserText": "", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": 5, "latestUserText": "", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": 5, "latestUserText": 5}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": 5, "latestUserText": 5, "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": 5, "latestUserText": 5, "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": 5, "latestUserText": "# Head"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": 5, "latestUserText": "# Head", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": 5, "latestUserText": "# Head", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "  ", "latestUserText": "Help me recover the login session"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "  ", "latestUserText": "Help me recover the login session", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "  ", "latestUserText": "Help me recover the login session", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "  "}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "  ", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "  ", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "  ", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "  ", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "  ", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "  ", "latestUserText": ""}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "  ", "latestUserText": "", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "  ", "latestUserText": "", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "  ", "latestUserText": 5}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "  ", "latestUserText": 5, "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "  ", "latestUserText": 5, "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "  ", "latestUserText": "# Head"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "  ", "latestUserText": "# Head", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "  ", "latestUserText": "# Head", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "<!--plan-->", "latestUserText": "Help me recover the login session"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "<!--plan-->", "latestUserText": "Help me recover the login session", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "<!--plan-->", "latestUserText": "Help me recover the login session", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "<!--plan-->"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "<!--plan-->", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "<!--plan-->", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "<!--plan-->", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "<!--plan-->", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "<!--plan-->", "latestUserText": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "<!--plan-->", "latestUserText": ""}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "<!--plan-->", "latestUserText": "", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "<!--plan-->", "latestUserText": "", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "<!--plan-->", "latestUserText": 5}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "<!--plan-->", "latestUserText": 5, "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "<!--plan-->", "latestUserText": 5, "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "<!--plan-->", "latestUserText": "# Head"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "<!--plan-->", "latestUserText": "# Head", "fallback": "FB"}]}
+{"fn": "resolveDisplaySessionTitle", "args": [{"title": "<!--plan-->", "latestUserText": "# Head", "fallback": null}]}
+{"fn": "resolveDisplaySessionTitle", "args": [null]}
+{"fn": "resolveDisplaySessionTitle", "args": []}
+{"fn": "resolveDisplaySessionTitle", "args": [{}]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["# w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w x"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["add word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word "]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["in /a/calendar, remove the calendar button"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["in /a/calendar, update"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["in /x/Reviews, fix the reviews page"]}
+{"fn": "deriveSessionTitleFromUserText", "args": ["## 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"]}

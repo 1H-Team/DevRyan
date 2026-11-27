@@ -1,0 +1,19 @@
+{
+  "unit": "contextUsagePresentation.ts",
+  "files": 1,
+  "fingerprint": "b9ff75be9207ae8d",
+  "cases": 247,
+  "cases_hash": "cb18513f04c8fa01",
+  "coverage": {
+    "lines": 22,
+    "reached": 22,
+    "files": [
+      {
+        "file": "contextUsagePresentation.ts",
+        "lines": 22,
+        "reached": 22,
+        "missed": ""
+      }
+    ]
+  }
+}

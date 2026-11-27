@@ -84,8 +84,8 @@ test('Claude reserve reduces routine headroom near account exhaustion', () => {
 
 test('attended source persists original budget and refuses interrupted in-flight traffic after reopening', async t => {
   const { mkdtemp, rm, mkdir } = await import('node:fs/promises'); const { resolve } = await import('node:path');
-  await mkdir(resolve('.cache'), { recursive: true });
-  const directory = await mkdtemp(resolve('.cache/focused-budget-')); t.after(() => rm(directory, { recursive: true, force: true }));
+  await mkdir(resolve('.cache/qa'), { recursive: true, mode: 0o700 });
+  const directory = await mkdtemp(resolve('.cache/qa/focused-budget-')); t.after(() => rm(directory, { recursive: true, force: true }));
   const first = await openQaClaudeBudget(directory, { now: () => now });
   await first.sample(quota(30), { before: true }); await first.sample(quota(32));
   const resumed = await openQaClaudeBudget(directory, { now: () => now });
@@ -124,8 +124,8 @@ test('follow-up checks the new canonical response for exact first-reply recall',
 test('credential-free input preparation removes partial handoff output after artifact failure', async t => {
   const { prepareFocusedProviderInputs } = await import('./focused-provider-inputs.mjs');
   const { mkdtemp, mkdir, rm, access } = await import('node:fs/promises'); const { resolve, join } = await import('node:path');
-  await mkdir(resolve('.cache'), { recursive: true });
-  const root = await mkdtemp(resolve('.cache/focused-inputs-')); t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(resolve('.cache/qa'), { recursive: true, mode: 0o700 });
+  const root = await mkdtemp(resolve('.cache/qa/focused-inputs-')); t.after(() => rm(root, { recursive: true, force: true }));
   const artifactRoot = join(root, 'artifacts'); await mkdir(artifactRoot, { mode: 0o700 });
   const outputRoot = join(root, 'handoff');
   await assert.rejects(prepareFocusedProviderInputs({ artifactRoot, outputRoot, providerId: 'cursor-acp', modelId: 'grok-4.6', variant: 'medium' }));

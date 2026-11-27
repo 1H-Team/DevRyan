@@ -1,0 +1,97 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode/opencode-client",
+  "unit": "envelope.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "envelope-rs",
+  "exports": [
+    {
+      "name": "unwrapV1Payload",
+      "file": "envelope.js",
+      "line": 91,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "unwrapData",
+      "file": "envelope.js",
+      "line": 100,
+      "params": [
+        {
+          "name": "body",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "unwrapPage",
+      "file": "envelope.js",
+      "line": 112,
+      "params": [
+        {
+          "name": "body",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{data:unknown[];next:string|undefined;previous:string|undefined}",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "unwrapList",
+      "file": "envelope.js",
+      "line": 135,
+      "params": [
+        {
+          "name": "body",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown[]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "isNoContent",
+      "file": "envelope.js",
+      "line": 21,
+      "reason": "compares with a module sentinel object by identity"
+    },
+    {
+      "name": "readResponseBody",
+      "file": "envelope.js",
+      "line": 34,
+      "reason": "async, reads a Response stream"
+    }
+  ]
+}

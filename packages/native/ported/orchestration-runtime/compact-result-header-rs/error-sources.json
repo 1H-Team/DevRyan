@@ -1,0 +1,17 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [
+    {
+      "site": "packages/orchestration-runtime/compact-result-header.js:33",
+      "text": "if (!envelope || envelope.taskId !== task.taskId || envelope.rootSessionId !== task.rootSessionId) throw new TypeError('Compact result requires a matching durable envelope');"
+    }
+  ],
+  "product": [],
+  "engine": [
+    {
+      "site": "packages/orchestration-runtime/compact-result-header.js:9",
+      "class": "TypeError",
+      "sample": "preview.trimEnd is not a function"
+    }
+  ]
+}

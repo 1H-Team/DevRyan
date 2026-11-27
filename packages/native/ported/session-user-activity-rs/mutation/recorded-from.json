@@ -1,0 +1,37 @@
+{
+  "unit": "session-user-activity-mutation.ts",
+  "files": 1,
+  "fingerprint": "d43e1017310c0a74",
+  "cases": 440,
+  "cases_hash": "34cb5219ca3db302",
+  "coverage": {
+    "lines": 255,
+    "reached": 185,
+    "files": [
+      {
+        "file": "session-user-activity-mutation.ts",
+        "lines": 16,
+        "reached": 16,
+        "missed": ""
+      },
+      {
+        "file": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync/message-order.ts",
+        "lines": 60,
+        "reached": 27,
+        "missed": "8-10, 13-14, 17-22, 25-26, 29-42, 64-69"
+      },
+      {
+        "file": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync/revert-transactions.ts",
+        "lines": 98,
+        "reached": 63,
+        "missed": "26-28, 31-33, 36-45, 48-50, 90-105"
+      },
+      {
+        "file": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync/session-user-activity.ts",
+        "lines": 81,
+        "reached": 79,
+        "missed": "45, 51"
+      }
+    ]
+  }
+}

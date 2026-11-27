@@ -1,0 +1,782 @@
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", null, [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", " /live/ ", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "///", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "/", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "\\", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", null, [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", " /live/ ", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "///", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "/", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "\\", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", null, [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", " /live/ ", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "///", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "/", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "\\", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", null, [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", " /live/ ", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "///", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "/", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "\\", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", null, [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", " /live/ ", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "///", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "/", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "\\", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", null, [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", " /live/ ", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "///", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "/", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "\\", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", null, [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", " /live/ ", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "///", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "/", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "\\", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", null, [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", " /live/ ", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "///", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "/", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "\\", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", null, [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", " /live/ ", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "///", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "/", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "\\", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", null, [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", " /live/ ", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "///", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "/", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "\\", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", null, [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", " /live/ ", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "///", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "/", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "\\", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", null, [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", " /live/ ", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "///", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "/", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "\\", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, null, [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, " /live/ ", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "///", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "/", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "\\", [{"id": "a", "directory": "/repo/a/"}, {"id": "b", "parentID": "a"}, {"id": "c", "parentID": "b", "directory": "  "}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", null, [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", " /live/ ", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "///", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "/", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "\\", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", null, [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", " /live/ ", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "///", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "/", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "\\", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", null, [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", " /live/ ", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "///", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "/", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "\\", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", null, [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", " /live/ ", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "///", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "/", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "\\", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", null, [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", " /live/ ", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "///", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "/", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "\\", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", null, [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", " /live/ ", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "///", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "/", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "\\", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", null, [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", " /live/ ", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "///", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "/", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "\\", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", null, [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", " /live/ ", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "///", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "/", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "\\", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", null, [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", " /live/ ", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "///", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "/", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "\\", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", null, [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", " /live/ ", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "///", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "/", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "\\", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", null, [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", " /live/ ", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "///", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "/", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "\\", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", null, [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", " /live/ ", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "///", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "/", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "\\", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, null, [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, " /live/ ", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "///", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "/", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "\\", [{"id": "x", "parentID": "y"}, {"id": "y", "parentID": "x"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", null, [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", " /live/ ", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "///", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "/", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "\\", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", null, [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", " /live/ ", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "///", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "/", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "\\", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", null, [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", " /live/ ", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "///", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "/", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "\\", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", null, [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", " /live/ ", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "///", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "/", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "\\", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", null, [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", " /live/ ", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "///", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "/", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "\\", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", null, [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", " /live/ ", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "///", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "/", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "\\", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", null, [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", " /live/ ", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "///", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "/", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "\\", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", null, [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", " /live/ ", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "///", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "/", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "\\", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", null, [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", " /live/ ", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "///", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "/", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "\\", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", null, [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", " /live/ ", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "///", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "/", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "\\", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", null, [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", " /live/ ", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "///", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "/", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "\\", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", null, [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", " /live/ ", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "///", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "/", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "\\", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, null, [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, " /live/ ", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "///", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "/", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "\\", [{"id": "p", "project": {"worktree": "C:\\wt\\"}}, {"id": "q", "parentID": "p", "directory": "//"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", null, [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", " /live/ ", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "///", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "/", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "\\", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", null, [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", " /live/ ", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "///", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "/", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "\\", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", null, [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", " /live/ ", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "///", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "/", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "\\", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", null, [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", " /live/ ", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "///", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "/", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "\\", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", null, [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", " /live/ ", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "///", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "/", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "\\", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", null, [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", " /live/ ", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "///", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "/", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "\\", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", null, [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", " /live/ ", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "///", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "/", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "\\", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", null, [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", " /live/ ", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "///", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "/", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "\\", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", null, [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", " /live/ ", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "///", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "/", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "\\", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", null, [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", " /live/ ", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "///", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "/", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "\\", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", null, [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", " /live/ ", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "///", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "/", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "\\", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", null, [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", " /live/ ", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "///", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "/", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "\\", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, null, [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, " /live/ ", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "///", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "/", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "\\", [{"id": "r", "directory": "/"}, {"id": "r", "directory": "/second"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", null, [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", " /live/ ", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "///", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "/", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "\\", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", null, [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", " /live/ ", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "///", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "/", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "\\", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", null, [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", " /live/ ", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "///", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "/", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "\\", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", null, [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", " /live/ ", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "///", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "/", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "\\", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", null, [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", " /live/ ", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "///", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "/", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "\\", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", null, [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", " /live/ ", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "///", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "/", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "\\", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", null, [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", " /live/ ", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "///", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "/", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "\\", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", null, [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", " /live/ ", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "///", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "/", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "\\", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", null, [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", " /live/ ", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "///", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "/", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "\\", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", null, [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", " /live/ ", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "///", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "/", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "\\", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", null, [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", " /live/ ", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "///", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "/", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "\\", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", null, [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", " /live/ ", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "///", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "/", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "\\", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, null, [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, " /live/ ", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "///", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "/", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "\\", [{"id": "s", "parentID": "s"}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", null, [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", " /live/ ", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "///", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "/", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "\\", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", null, [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", " /live/ ", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "///", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "/", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "\\", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", null, [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", " /live/ ", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "///", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "/", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "\\", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", null, [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", " /live/ ", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "///", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "/", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "\\", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", null, [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", " /live/ ", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "///", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "/", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "\\", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", null, [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", " /live/ ", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "///", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "/", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "\\", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", null, [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", " /live/ ", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "///", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "/", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "\\", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", null, [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", " /live/ ", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "///", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "/", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "\\", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", null, [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", " /live/ ", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "///", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "/", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "\\", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", null, [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", " /live/ ", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "///", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "/", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "\\", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", null, [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", " /live/ ", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "///", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "/", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "\\", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", null, [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", " /live/ ", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "///", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "/", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "\\", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, null, [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, " /live/ ", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "///", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "/", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "\\", [{"id": 1, "directory": "/num"}, {"id": "t", "parentID": 1}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", null, [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", " /live/ ", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "///", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "/", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "\\", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", null, [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", " /live/ ", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "///", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "/", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "\\", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", null, [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", " /live/ ", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "///", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "/", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "\\", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", null, [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", " /live/ ", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "///", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "/", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "\\", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", null, [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", " /live/ ", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "///", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "/", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "\\", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", null, [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", " /live/ ", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "///", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "/", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "\\", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", null, [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", " /live/ ", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "///", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "/", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "\\", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", null, [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", " /live/ ", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "///", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "/", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "\\", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", null, [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", " /live/ ", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "///", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "/", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "\\", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", null, [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", " /live/ ", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "///", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "/", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "\\", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", null, [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", " /live/ ", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "///", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "/", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "\\", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", null, [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", " /live/ ", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "///", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "/", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "\\", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, null, [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, " /live/ ", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "///", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "/", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "\\", [null]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", null, "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", " /live/ ", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "///", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "/", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "\\", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", null, "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", " /live/ ", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "///", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "/", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "\\", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", null, "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", " /live/ ", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "///", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "/", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "\\", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", null, "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", " /live/ ", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "///", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "/", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "\\", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", null, "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", " /live/ ", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "///", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "/", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "\\", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", null, "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", " /live/ ", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "///", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "/", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "\\", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", null, "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", " /live/ ", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "///", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "/", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "\\", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", null, "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", " /live/ ", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "///", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "/", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "\\", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", null, "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", " /live/ ", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "///", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "/", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "\\", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", null, "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", " /live/ ", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "///", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "/", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "\\", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", null, "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", " /live/ ", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "///", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "/", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "\\", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", null, "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", " /live/ ", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "///", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "/", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "\\", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, null, "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, " /live/ ", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "///", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "/", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "\\", "str"]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", null, null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", " /live/ ", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "///", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "/", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "\\", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", null, null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", " /live/ ", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "///", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "/", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "\\", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", null, null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", " /live/ ", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "///", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "/", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "\\", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", null, null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", " /live/ ", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "///", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "/", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "\\", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", null, null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", " /live/ ", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "///", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "/", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "\\", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", null, null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", " /live/ ", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "///", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "/", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "\\", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", null, null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", " /live/ ", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "///", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "/", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "\\", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", null, null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", " /live/ ", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "///", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "/", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "\\", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", null, null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", " /live/ ", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "///", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "/", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "\\", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", null, null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", " /live/ ", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "///", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "/", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "\\", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", null, null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", " /live/ ", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "///", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "/", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "\\", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", null, null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", " /live/ ", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "///", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "/", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "\\", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, null, null]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, " /live/ ", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "///", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "/", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "\\", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", null, [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", " /live/ ", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "///", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "/", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "\\", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", null, [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", " /live/ ", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "///", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "/", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "\\", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", null, [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", " /live/ ", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "///", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "/", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "\\", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", null, [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", " /live/ ", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "///", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "/", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "\\", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", null, [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", " /live/ ", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "///", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "/", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "\\", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", null, [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", " /live/ ", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "///", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "/", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "\\", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", null, [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", " /live/ ", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "///", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "/", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "\\", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", null, [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", " /live/ ", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "///", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "/", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "\\", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", null, [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", " /live/ ", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "///", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "/", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "\\", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", null, [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", " /live/ ", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "///", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "/", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "\\", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", null, [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", " /live/ ", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "///", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "/", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "\\", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", null, [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", " /live/ ", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "///", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "/", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "\\", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, null, [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, " /live/ ", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "///", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "/", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "\\", [{"id": "u", "project": "str", "directory": null}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", null, [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", " /live/ ", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "///", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "/", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "\\", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", null, [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", " /live/ ", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "///", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "/", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "\\", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", null, [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", " /live/ ", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "///", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "/", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "\\", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", null, [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", " /live/ ", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "///", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "/", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "\\", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", null, [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", " /live/ ", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "///", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "/", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "\\", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", null, [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", " /live/ ", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "///", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "/", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "\\", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", null, [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", " /live/ ", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "///", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "/", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "\\", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", null, [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", " /live/ ", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "///", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "/", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "\\", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", null, [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", " /live/ ", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "///", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "/", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "\\", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", null, [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", " /live/ ", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "///", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "/", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "\\", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", null, [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", " /live/ ", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "///", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "/", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "\\", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", null, [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", " /live/ ", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "///", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "/", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "\\", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, null, [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, " /live/ ", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "///", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "/", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "\\", [{"id": {"$num": "NaN"}, "directory": "/nan"}, {"id": "v", "parentID": {"$num": "NaN"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", null, [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", " /live/ ", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "///", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "/", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", "\\", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", null, [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", " /live/ ", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "///", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "/", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["b", "\\", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", null, [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", " /live/ ", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "///", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "/", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["c", "\\", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", null, [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", " /live/ ", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "///", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "/", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["x", "\\", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", null, [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", " /live/ ", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "///", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "/", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["q", "\\", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", null, [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", " /live/ ", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "///", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "/", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["r", "\\", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", null, [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", " /live/ ", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "///", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "/", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["s", "\\", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", null, [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", " /live/ ", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "///", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "/", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["t", "\\", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", null, [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", " /live/ ", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "///", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "/", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["u", "\\", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", null, [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", " /live/ ", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "///", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "/", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["v", "\\", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", null, [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", " /live/ ", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "///", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "/", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["w", "\\", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", null, [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", " /live/ ", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "///", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "/", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["zz", "\\", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, null, [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, " /live/ ", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "///", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "/", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": [1, "\\", [{"id": "w", "directory": 5, "project": {"worktree": "/w"}}]]}
+{"fn": "resolveRoutedSessionDirectory", "args": ["a", null]}
+{"fn": "resolveRoutedSessionDirectory", "args": []}

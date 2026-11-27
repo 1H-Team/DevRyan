@@ -1,0 +1,4 @@
+bin.name = "devryan"
+args = ["--json", "--origin-port", "1"]
+status.code = 2
+fs.sandbox = true

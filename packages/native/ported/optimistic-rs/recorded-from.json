@@ -1,0 +1,25 @@
+{
+  "unit": "optimistic.ts",
+  "files": 1,
+  "fingerprint": "1b0864bf2e9a2215",
+  "cases": 213,
+  "cases_hash": "74f910560dbef937",
+  "coverage": {
+    "lines": 153,
+    "reached": 121,
+    "files": [
+      {
+        "file": "message-order.ts",
+        "lines": 60,
+        "reached": 46,
+        "missed": "25-26, 54-59, 64-69"
+      },
+      {
+        "file": "optimistic.ts",
+        "lines": 93,
+        "reached": 75,
+        "missed": "87-97, 101-107"
+      }
+    ]
+  }
+}

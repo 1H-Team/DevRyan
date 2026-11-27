@@ -1,0 +1,156 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode/runtime-host",
+  "unit": "native-claude-lifecycle.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "native-claude-lifecycle-rs",
+  "exports": [
+    {
+      "name": "sameClaudeEnrollment",
+      "file": "native-claude-lifecycle.js",
+      "line": 46,
+      "params": [
+        {
+          "name": "left",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "right",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "emptyClaudeLifecycle",
+      "file": "native-claude-lifecycle.js",
+      "line": 47,
+      "params": [],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "assertClaudeEnrollmentCapacity",
+      "file": "native-claude-lifecycle.js",
+      "line": 50,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "selected",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "parseClaudeLifecycle",
+      "file": "native-claude-lifecycle.js",
+      "line": 62,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "parseClaudeLifecycleOperation",
+      "file": "native-claude-lifecycle.js",
+      "line": 89,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "transitionClaudeLifecycle",
+      "file": "native-claude-lifecycle.js",
+      "line": 107,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "expectedRevision",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "operation",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "claudeRecordFingerprint",
+      "file": "native-claude-lifecycle.js",
+      "line": 26,
+      "reason": "kept on request"
+    },
+    {
+      "name": "claudeGrantFingerprint",
+      "file": "native-claude-lifecycle.js",
+      "line": 32,
+      "reason": "kept on request"
+    },
+    {
+      "name": "hasLegacyClaudeFence",
+      "file": "native-claude-lifecycle.js",
+      "line": 36,
+      "reason": "kept on request"
+    }
+  ]
+}

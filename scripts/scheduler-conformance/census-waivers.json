@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "waivers": [
+    {
+      "kind": "gap",
+      "name": "fake-timers-case",
+      "class": "unreached",
+      "needs": "test",
+      "reason": "O0c review 3, B1: the recorder's path for a test run under the test runner's fake timers (no timer entry is a rest point then) is exercised only by the toy. No scheduler code is behind it: a scripted scenario cannot reach it, since the driver gives the scheduler its own virtual clock and timers and never turns the runner's fake timers on, and no package test uses them; needs nothing unless a test adopts fake timers"
+    }
+  ]
+}

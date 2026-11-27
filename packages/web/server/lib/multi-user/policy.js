@@ -60,7 +60,7 @@ export function buildUserPolicyResetRow(userId) {
 
 export const MCP_FEATURE_OVERRIDE_STATES = Object.freeze(['on', 'off']);
 
-export function normalizeFeatureOverrides(value) {
+function normalizeFeatureOverrides(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   const normalized = {};
   const agents = value.agents;
@@ -268,7 +268,7 @@ const legacyUserPermissionOverrides = (pages) => {
   }]));
 };
 
-export function normalizeSettingsPermissionOverrides(value) {
+function normalizeSettingsPermissionOverrides(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   const normalized = {};
   for (const [rawSlug, rawPermission] of Object.entries(value)) {
@@ -392,8 +392,6 @@ export function canEditSettingsPage(principal, rawSlug) {
   return permission?.read === true && permission?.edit === true;
 }
 
-export const canOpenSettingsPage = canReadSettingsPage;
-
 export function canUseBrowser(principal) {
   return principal?.scope === 'local-admin'
     || principal?.role === 'admin'
@@ -467,11 +465,11 @@ export function settingsPageForRequest(requestPath, method = 'GET') {
   return null;
 }
 
-export function allowedSettingsFields(principal) {
+function allowedSettingsFields(principal) {
   return settingsFieldsForPermission(principal, 'edit');
 }
 
-export function readableSettingsFields(principal) {
+function readableSettingsFields(principal) {
   return settingsFieldsForPermission(principal, 'read');
 }
 

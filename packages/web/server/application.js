@@ -16,7 +16,7 @@ import { beginSessionCreationTrace, isSessionCreateRequest } from './lib/opencod
 import express from 'express';
 import compression from 'compression';
 import path from 'path';
-import { spawn, spawnSync } from 'child_process';
+import { spawn } from 'child_process';
 import fs from 'fs';
 import http from 'http';
 import net from 'net';
@@ -34,7 +34,6 @@ import { normalizeManagedRemoteTunnelToken } from './lib/tunnels/managed-token.j
 import { createTunnelProviderRegistry } from './lib/tunnels/registry.js';
 import { createCloudflareTunnelProvider } from './lib/tunnels/providers/cloudflare.js';
 import { createRequestSecurityRuntime } from './lib/security/request-security.js';
-import { registerRuntimeServiceRoutes } from './lib/runtime-service/routes.js';
 import {
   getUnauthenticatedLanErrorMessage,
   isNetworkExposedBindHost,
@@ -374,15 +373,11 @@ async function constructWebHost(options = {}) {
 
   let notificationTemplateRuntime = null;
 
-  const createTimeoutSignal = (...args) => notificationTemplateRuntime.createTimeoutSignal(...args);
-  const formatProjectLabel = (...args) => notificationTemplateRuntime.formatProjectLabel(...args);
   const resolveNotificationTemplate = (...args) => notificationTemplateRuntime.resolveNotificationTemplate(...args);
   const shouldApplyResolvedTemplateMessage = (...args) => notificationTemplateRuntime.shouldApplyResolvedTemplateMessage(...args);
   const fetchFreeZenModels = (...args) => notificationTemplateRuntime.fetchFreeZenModels(...args);
   const resolveZenModel = (...args) => notificationTemplateRuntime.resolveZenModel(...args);
-  const resolveZenModelNonBlocking = (...args) => notificationTemplateRuntime.resolveZenModelNonBlocking(...args);
   const validateZenModelAtStartup = (...args) => notificationTemplateRuntime.validateZenModelAtStartup(...args);
-  const extractTextFromParts = (...args) => notificationTemplateRuntime.extractTextFromParts(...args);
   const extractLastMessageText = (...args) => notificationTemplateRuntime.extractLastMessageText(...args);
   const fetchSessionMessages = (...args) => notificationTemplateRuntime.fetchSessionMessages(...args);
   const fetchLastAssistantMessageText = (...args) => notificationTemplateRuntime.fetchLastAssistantMessageText(...args);
@@ -533,7 +528,6 @@ async function constructWebHost(options = {}) {
   const removePushSubscription = (...args) => pushRuntime.removePushSubscription(...args);
   const sendPushToAllUiSessions = (...args) => pushRuntime.sendPushToAllUiSessions(...args);
   const updateUiVisibility = (...args) => pushRuntime.updateUiVisibility(...args);
-  const isAnyUiVisible = (...args) => pushRuntime.isAnyUiVisible(...args);
   const isUiVisible = (...args) => pushRuntime.isUiVisible(...args);
   const ensurePushInitialized = (...args) => pushRuntime.ensurePushInitialized(...args);
   const setPushInitialized = (...args) => pushRuntime.setPushInitialized(...args);
@@ -876,11 +870,10 @@ async function constructWebHost(options = {}) {
     openCodeEpoch += 1;
   };
 
+  // Only the configured host decides anything; the parsed port and hostname
+  // feed nothing (the native runtime picks its own port).
   const {
-    configuredOpenCodePort: ENV_CONFIGURED_OPENCODE_PORT,
     configuredOpenCodeHost: ENV_CONFIGURED_OPENCODE_HOST,
-    effectivePort: ENV_EFFECTIVE_PORT,
-    configuredOpenCodeHostname: ENV_CONFIGURED_OPENCODE_HOSTNAME,
   } = resolveOpenCodeEnvConfig({
     env: process.env,
     logger: console,
@@ -907,15 +900,6 @@ async function constructWebHost(options = {}) {
     const argv1 = typeof process.argv?.[1] === 'string' ? process.argv[1] : '';
     return /openchamber-server/i.test(argv0) || /openchamber-server/i.test(argv1);
   })();
-  const ENV_CONFIGURED_OPENCODE_WSL_DISTRO =
-    typeof process.env.OPENCODE_WSL_DISTRO === 'string' && process.env.OPENCODE_WSL_DISTRO.trim().length > 0
-      ? process.env.OPENCODE_WSL_DISTRO.trim()
-      : (
-        typeof process.env.DEVRYAN_OPENCODE_WSL_DISTRO === 'string' &&
-        process.env.DEVRYAN_OPENCODE_WSL_DISTRO.trim().length > 0
-          ? process.env.DEVRYAN_OPENCODE_WSL_DISTRO.trim()
-          : null
-      );
 
   const openCodeAuthStateRuntime = createOpenCodeAuthStateRuntime({
     crypto,
@@ -934,7 +918,6 @@ async function constructWebHost(options = {}) {
 
   const getOpenCodeAuthHeaders = (...args) => nativeBundle ? nativeRuntime?.getAuthHeaders() ?? {} : openCodeAuthStateRuntime.getOpenCodeAuthHeaders(...args);
   const isOpenCodeConnectionSecure = (...args) => openCodeAuthStateRuntime.isOpenCodeConnectionSecure(...args);
-  const ensureLocalOpenCodeServerPassword = (...args) => openCodeAuthStateRuntime.ensureLocalOpenCodeServerPassword(...args);
 
   const openCodeNetworkState = {};
   Object.defineProperties(openCodeNetworkState, {
@@ -955,7 +938,6 @@ async function constructWebHost(options = {}) {
     getOpenCodeAuthHeaders,
   });
 
-  const waitForReady = (...args) => openCodeNetworkRuntime.waitForReady(...args);
   const normalizeApiPrefix = (...args) => openCodeNetworkRuntime.normalizeApiPrefix(...args);
   const setDetectedOpenCodeApiPrefix = (...args) => openCodeNetworkRuntime.setDetectedOpenCodeApiPrefix(...args);
   const buildOpenCodeUrl = (...args) => openCodeNetworkRuntime.buildOpenCodeUrl(...args);
@@ -1080,36 +1062,16 @@ async function constructWebHost(options = {}) {
   }
 
   let cachedLoginShellEnvSnapshot;
-  let resolvedOpencodeBinary = null;
-  let resolvedOpencodeBinarySource = null;
-  let resolvedNodeBinary = null;
-  let resolvedBunBinary = null;
   let resolvedGitBinary = null;
-  let useWslForOpencode = false;
-  let resolvedWslBinary = null;
-  let resolvedWslOpencodePath = null;
-  let resolvedWslDistro = null;
 
   const openCodeEnvState = {};
   Object.defineProperties(openCodeEnvState, {
     cachedLoginShellEnvSnapshot: { get: () => cachedLoginShellEnvSnapshot, set: (value) => { cachedLoginShellEnvSnapshot = value; } },
-    resolvedOpencodeBinary: { get: () => resolvedOpencodeBinary, set: (value) => { resolvedOpencodeBinary = value; } },
-    resolvedOpencodeBinarySource: { get: () => resolvedOpencodeBinarySource, set: (value) => { resolvedOpencodeBinarySource = value; } },
-    resolvedNodeBinary: { get: () => resolvedNodeBinary, set: (value) => { resolvedNodeBinary = value; } },
-    resolvedBunBinary: { get: () => resolvedBunBinary, set: (value) => { resolvedBunBinary = value; } },
     resolvedGitBinary: { get: () => resolvedGitBinary, set: (value) => { resolvedGitBinary = value; } },
-    useWslForOpencode: { get: () => useWslForOpencode, set: (value) => { useWslForOpencode = value; } },
-    resolvedWslBinary: { get: () => resolvedWslBinary, set: (value) => { resolvedWslBinary = value; } },
-    resolvedWslOpencodePath: { get: () => resolvedWslOpencodePath, set: (value) => { resolvedWslOpencodePath = value; } },
-    resolvedWslDistro: { get: () => resolvedWslDistro, set: (value) => { resolvedWslDistro = value; } },
   });
 
   const openCodeEnvRuntime = createOpenCodeEnvRuntime({
-    homeDirectory: getRuntimeHome(),
     state: openCodeEnvState,
-    normalizeDirectoryPath,
-    readSettingsFromDiskMigrated,
-    ENV_CONFIGURED_OPENCODE_WSL_DISTRO,
   });
 
   const applyLoginShellEnvSnapshot = (...args) => openCodeEnvRuntime.applyLoginShellEnvSnapshot(...args);
@@ -1296,7 +1258,6 @@ async function constructWebHost(options = {}) {
   const setOpenCodePort = (...args) => serverUtilsRuntime.setOpenCodePort(...args);
   const waitForOpenCodePort = (...args) => serverUtilsRuntime.waitForOpenCodePort(...args);
   const buildAugmentedPath = (...args) => serverUtilsRuntime.buildAugmentedPath(...args);
-  const buildManagedOpenCodePath = (...args) => serverUtilsRuntime.buildManagedOpenCodePath(...args);
   const parseSseDataPayload = (...args) => serverUtilsRuntime.parseSseDataPayload(...args);
   const staticRoutesRuntime = createStaticRoutesRuntime({
     openCodeClient,
@@ -1306,8 +1267,6 @@ async function constructWebHost(options = {}) {
     __dirname,
     express,
     resolveProjectDirectory,
-    buildOpenCodeUrl,
-    getOpenCodeAuthHeaders,
     readSettingsFromDiskMigrated,
     normalizePwaAppName,
     normalizePwaOrientation,
@@ -1409,10 +1368,6 @@ async function constructWebHost(options = {}) {
     isShuttingDown: { get: () => isShuttingDown, set: (value) => { isShuttingDown = value; } },
     healthCheckInterval: { get: () => healthCheckInterval, set: (value) => { healthCheckInterval = value; } },
     expressApp: { get: () => expressApp, set: (value) => { expressApp = value; } },
-    useWslForOpencode: { get: () => useWslForOpencode, set: (value) => { useWslForOpencode = value; } },
-    resolvedWslBinary: { get: () => resolvedWslBinary, set: (value) => { resolvedWslBinary = value; } },
-    resolvedWslOpencodePath: { get: () => resolvedWslOpencodePath, set: (value) => { resolvedWslOpencodePath = value; } },
-    resolvedWslDistro: { get: () => resolvedWslDistro, set: (value) => { resolvedWslDistro = value; } },
   });
 
   const openAiOAuthCoordinator = createOpenAiOAuthCoordinator({
@@ -1451,29 +1406,19 @@ async function constructWebHost(options = {}) {
   });
 
   const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
-    getManagedOAuthEnvironment: () => openAiOAuthBridge.environment(),
     state: openCodeLifecycleState,
     env: {
-      ENV_CONFIGURED_OPENCODE_PORT,
       ENV_CONFIGURED_OPENCODE_HOST,
-      ENV_EFFECTIVE_PORT,
-      ENV_CONFIGURED_OPENCODE_HOSTNAME,
       ENV_SKIP_OPENCODE_START,
     },
     syncToHmrState,
     syncFromHmrState,
     getOpenCodeAuthHeaders,
     buildOpenCodeUrl,
-    waitForReady,
-    normalizeApiPrefix,
-    ensureLocalOpenCodeServerPassword,
     setOpenCodePort,
     setDetectedOpenCodeApiPrefix,
     setupProxy: (...args) => setupProxy(...args),
     ensureOpenCodeApiPrefix,
-    buildAugmentedPath,
-    buildManagedOpenCodePath,
-    getManagedOpenCodeShellEnvSnapshot: getLoginShellEnvSnapshot,
     getNativeRuntime: () => nativeRuntime,
     getRuntimeBundle: () => selectedRuntimeBundle ? { descriptor: selectedRuntimeBundle.descriptor, version: nativeBundle.artifacts.manifest.opencodeVersion, verify: verifySelectedRuntimeBundle } : null,
     getActiveSessionCount,
@@ -1491,18 +1436,6 @@ async function constructWebHost(options = {}) {
     sanitizeProjects,
     sanitizeHiddenSkills,
     discoverSkills,
-    getManagedOrchestrationEnvironment: async () => {
-      if (!managedOrchestrationRuntime) {
-        throw new Error('Managed orchestration runtime was not prepared before OpenCode startup');
-      }
-      return { ...await managedOrchestrationRuntime.prepareBridge(),
-        ...capturedExecutionEnvironment };
-    },
-    getManagedBrowserEnvironment: async () => (
-      typeof managedBrowserEnvironmentProvider === 'function'
-        ? await managedBrowserEnvironmentProvider()
-        : {}
-    ),
     pauseManagedBrowserLeases: async (reason) => (
       browserLeaseRuntime && typeof browserLeaseRuntime.pauseForReset === 'function'
         ? await browserLeaseRuntime.pauseForReset(reason)
@@ -1527,14 +1460,6 @@ async function constructWebHost(options = {}) {
       sessionRuntime.resetAllSessionActivityToIdle();
       if (!bundleWork.isHeld()) void projectPrewarmRuntime?.run('opencode-restart');
     },
-    onManagedProcessExit: ({ pid, code, signal, uptimeMs, expected, stderrTail }) => {
-      harnessRuntime.record({ type: 'lifecycle', event: 'opencode_process_exit',
-        payload: { pid, code, signal, uptimeMs, expected, stderrTail } });
-      if (!expected) {
-        console.error(`[OpenCode] Managed server exited unexpectedly (pid ${pid}, ${signal ? `signal ${signal}` : `code ${code}`}, uptime ${uptimeMs}ms)`,
-          harnessRuntime.sanitizer?.sanitizeText?.(stderrTail) ?? '');
-      }
-    },
     onStartupStatus: (text) => onOpenCodeStartupStatus?.(text),
     assertExecutionReady: executionReadiness.assertReady,
   });
@@ -1550,7 +1475,6 @@ async function constructWebHost(options = {}) {
     if(!nativeRuntime?.isReady()||!nativeRuntime.getConfigurationSnapshot()?.locations.some(location=>location.directory===directory))throw Object.assign(new Error('native_runtime_not_ready'),{code:'native_runtime_not_ready',statusCode:503});
   };
   const waitForOpenCodeReady = (...args) => openCodeLifecycleRuntime.waitForOpenCodeReady(...args);
-  const waitForAgentPresence = (...args) => openCodeLifecycleRuntime.waitForAgentPresence(...args);
   const commandDeadlineRuntime = createWebCommandDeadlineRuntime({
     openCodeClient,
     store: harnessRuntime.commandDeadlineStore,
@@ -1628,8 +1552,8 @@ async function constructWebHost(options = {}) {
   const harnessFingerprintReader = createHarnessRunFingerprintReader({
     openCodeClient,
     getDuplicateProviderRoute: createDuplicateProviderRouteResolver({ openAiUsesOAuth: () => openAiOAuthCoordinator.usesOAuth() }),
-    getRuntimeBinary: () => useWslForOpencode || executionReadiness.state === 'required_unavailable' ? null : capturedExecutions
-      ? capturedExecutionEnvironment.DEVRYAN_OPENCODE_ARTIFACT : resolvedOpencodeBinary,
+    getRuntimeBinary: () => executionReadiness.state === 'required_unavailable' ? null : capturedExecutions
+      ? capturedExecutionEnvironment.DEVRYAN_OPENCODE_ARTIFACT : null,
     isManaged: () => !(isExternalOpenCode || ENV_SKIP_OPENCODE_START || ENV_CONFIGURED_OPENCODE_HOST),
     buildOpenCodeUrl, getOpenCodeAuthHeaders, fetchImpl: fetch,
     getAgentSource: (agent, directory) => getAgentSources(agent, directory).md,
@@ -1931,8 +1855,6 @@ async function constructWebHost(options = {}) {
     });
   });
 
-  const fetchAgentsSnapshot = (...args) => serverUtilsRuntime.fetchAgentsSnapshot(...args);
-  const fetchProvidersSnapshot = (...args) => serverUtilsRuntime.fetchProvidersSnapshot(...args);
   const setupProxy = (...args) => serverUtilsRuntime.setupProxy(...args);
   const gracefulShutdownRuntime = createGracefulShutdownRuntime({
     process,
@@ -1964,7 +1886,6 @@ async function constructWebHost(options = {}) {
     closeFeatureRoutes: () => featureRoutesRuntime.close(),
     getSessionTitleRuntime: () => standardSessionTitleRuntime,
     shouldSkipOpenCodeStop: () => ENV_SKIP_OPENCODE_START || isExternalOpenCode,
-    getOpenCodePort: () => openCodePort,
     getOpenCodeProcess: () => openCodeProcess,
     setOpenCodeProcess: (value) => {
       openCodeProcess = value;
@@ -2321,11 +2242,11 @@ async function constructWebHost(options = {}) {
           opencodeLaunchArgs: [],
           opencodeLaunchWrapperType: null,
           opencodeViaWsl: false,
-          opencodeWslBinary: resolvedWslBinary || null,
-          opencodeWslPath: resolvedWslOpencodePath || null,
-          opencodeWslDistro: resolvedWslDistro || null,
-          nodeBinaryResolved: resolvedNodeBinary || null,
-          bunBinaryResolved: resolvedBunBinary || null,
+          opencodeWslBinary: null,
+          opencodeWslPath: null,
+          opencodeWslDistro: null,
+          nodeBinaryResolved: null,
+          bunBinaryResolved: null,
           desktopNotifyEnabled: ENV_DESKTOP_NOTIFY,
           planModeExperimentalEnabled: PLAN_MODE_EXPERIMENT_ENABLED,
           multiUserControlPlane: multiUserRuntime.getControlPlaneStatus?.() ?? {
@@ -2340,7 +2261,6 @@ async function constructWebHost(options = {}) {
       tunnelAuthController,
       readSettingsFromDiskMigrated,
       normalizeTunnelSessionTtlMs,
-      getRuntimeReady: () => Boolean(openCodePort && isOpenCodeReady && !isRestartingOpenCode),
       resolveZenModel,
       sayTTSCapability,
       ensurePushInitialized,
@@ -2371,22 +2291,6 @@ async function constructWebHost(options = {}) {
       registerPrivateCapabilityRoutes: (privateApp) => {
         browserCdpDiscoveryRuntime.attach(privateApp);
         browserLeaseRuntime.attach(privateApp);
-        if (options.runtimeServiceController) {
-          registerRuntimeServiceRoutes(privateApp, {
-            controller: options.runtimeServiceController,
-            onLocalOwnerBootstrap: async (res) => {
-              if (!multiUserRuntime.connection.enabled) {
-                await multiUserRuntime.connection.bootstrapLocalOwner();
-                multiUserRuntime.connection.setOwnerCookie(res, await multiUserRuntime.connection.issueLocalOwnerSession());
-              }
-            },
-            server,
-            onDesktopHostLease: options.onDesktopHostLease,
-            onDesktopHostRelease: options.onDesktopHostRelease,
-            onDisableRuntimeService: options.onDisableRuntimeService,
-            onPrepareRuntimeServiceUpdate: options.onPrepareRuntimeServiceUpdate,
-          });
-        }
         registerSupabaseConnectionRoutes(privateApp, {
           runtime: multiUserRuntime,
           preserveLocalContext: async (principal) => {
@@ -2818,8 +2722,6 @@ async function constructWebHost(options = {}) {
         openCodeWorkingDirectory = directory;
         syncToHmrState();
       },
-      restartOpenCode,
-      waitForOpenCodeReady,
       isExternalOpenCode: () => isExternalOpenCode || ENV_SKIP_OPENCODE_START,
       getPackagedAgentPrompts: () => openCodeLifecycleRuntime.getPackagedAgentPrompts(),
       restorePackagedAgentPrompt: (input) => openCodeLifecycleRuntime.restorePackagedAgentPrompt(input),
@@ -2829,10 +2731,7 @@ async function constructWebHost(options = {}) {
       getDevRyanEventClients: () => uiDevRyanEventClients,
       writeSseEvent,
       emitSyntheticOpenCodeEvent,
-      broadcastGlobalUiEvent,
-      resolveZenModel,
       xaiToolCatalogRuntime,
-      resolveZenModelNonBlocking,
       generateHelperText: request => nativeRuntime.generateHelperText(request),
       resolveHelperSelection: request => nativeRuntime.resolveHelperSelection(request),
       cursorTextRuntime: cursorSdkRuntime,

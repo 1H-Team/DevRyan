@@ -68,7 +68,6 @@ import {
   encodeAnalyticsCursor,
   extractHumanPrompt,
   isAnalyticsChangeAction,
-  isSettingsChangeAction,
   sanitizeActivityForReviewer,
   stableAuditEventId,
   validateAnalyticsDay,

@@ -1,0 +1,10 @@
+{"fn": "countLinesWithLimit", "args": ["", 0]}
+{"fn": "countLinesWithLimit", "args": ["a", 0]}
+{"fn": "countLinesWithLimit", "args": ["\n", 0]}
+{"fn": "countLinesWithLimit", "args": ["\n\n\n", 2]}
+{"fn": "countLinesWithLimit", "args": ["a\nb\nc", {"$num": "NaN"}]}
+{"fn": "countLinesWithLimit", "args": ["a\nb\nc", {"$num": "-Infinity"}]}
+{"fn": "countLinesWithLimit", "args": ["a\r\nb\u2028c\n", 1.5]}
+{"fn": "countLinesWithLimit", "args": ["\n\n\n\n\n\n\n\n\n\n", 5]}
+{"fn": "countLinesWithLimit", "args": ["\ud83d\ude00\n\ud83d\ude00", -1]}
+{"fn": "countLinesWithLimit", "args": ["x\n", {"$num": "Infinity"}]}

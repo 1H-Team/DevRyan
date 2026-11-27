@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "target": "target.json",
+  "members": [
+    "acceptOperatorStop", "acceptPrimaryPrompt", "acknowledgeResult", "cancelAutoResumeForSession", "cancelSessionsForRemoval", "cancelTask",
+    "childAttempt", "claimPrimaryStepBudgetWarning", "claimProviderRecoveryContinuation", "confirmAgentHandoff", "correctRequiredCheck",
+    "declareObjectiveChecks", "discardObjectiveChecks", "flush", "getChildAssignment", "getDiagnostics", "getObjectiveRequiredChecks",
+    "getRequiredCheckTask", "getRequiredCheckTasks", "getResultEnvelope", "getSnapshot", "getTask", "initialize", "inspectAgentHandoff",
+    "inspectDispatchBarrier", "listReadyProviderRecoveryContinuations", "listResultEnvelopes", "listTasks", "readNativeJobInputDispositions",
+    "readOperatorStop", "recordOperatorStop", "recordPrimaryStep", "recordRequiredCheck", "recordRequiredChecks", "recoverStoppedRuntime",
+    "releaseModeLease", "releaseProviderRecoveryContinuation", "setResultAutoResume", "shutdown", "submit", "verifyNativeJobSegment",
+    "verifyRecoveredCollection", "verifyTaskDispatch", "verifyTaskSettlement", "waitForAnyTask", "waitForDispatchBarrier", "waitForResultAction",
+    "waitForResultCommit", "waitForTask", "waiveRequiredChecks", "withNativePromptContext", "withRuntimeRestart", "withdrawOperatorStop"
+  ],
+  "control": [
+    "reserveNativeJobSegment", "recordNativeJobSegment", "readPriorFailureReason", "recordTransportRecovery", "setChildSessionId",
+    "assertPrerequisites", "markAccepted", "readPrimaryStepBudget", "recordProgress"
+  ],
+  "ports": [
+    "executor.start", "executor.resume", "executor.retryInPlace", "executor.observe", "executor.reconcile", "executor.abort",
+    "executor.readRecoverableResult", "executor.getLastRecoverableResult", "executor.shutdown",
+    "persistence.load", "persistence.save", "persistence.loadNativeJobProofShards", "persistence.putNativeJobProofShard", "persistence.removeNativeJobProofShard",
+    "logger.warn", "logger.error",
+    "autoResume.attempt", "autoResume.resolveOwnerKey", "autoResume.resolveBackupExecution", "autoResume.resolveProviderReset",
+    "publishEvent", "onBarrierChange", "onMutationTiming", "onPersistenceObservation", "onRequiredCheckReceipt", "onRunCleanup",
+    "verifyTaskPrerequisites", "inspectRequiredChecks", "acknowledgeNativeJob", "stopAttemptRuns", "resolveExecutionBackend", "admitLaunch"
+  ],
+  "data": ["autoResume.defaultEnabled", "autoResume.probeStaggerMs", "autoResume.startupGraceMs"],
+  "options": [
+    "abortTimeoutMs", "acknowledgeNativeJob", "admitLaunch", "autoResume", "cancelTimeout", "createLeaseToken", "createTaskId", "createWaveId",
+    "cursorReadOnly", "executor", "expireUnacknowledged", "inspectRequiredChecks", "logger", "maxHistoryAgeMs", "maxPersistedBytes",
+    "maxTerminalRecords", "now", "onBarrierChange", "onMutationTiming", "onPersistenceObservation", "onRequiredCheckReceipt", "onRunCleanup",
+    "persistence", "persistenceStallMs", "providerRecoveryContinuationLeaseMs", "publishEvent", "reconciliationRetryMs", "resolveExecutionBackend",
+    "scheduleTimeout", "startingLeaseTimeoutMs", "stopAttemptRuns", "verifyTaskPrerequisites"
+  ],
+  "inputs": [
+    "in call", "in control", "in callback", "in fire", "in abort", "in answer", "in read", "in clock", "in draw", "in env", "in step",
+    "out port", "out abort", "out timer.set", "out timer.clear", "out return", "out throw", "out settle"
+  ],
+  "places": ["rest", "during", "group", "return", "with", "settle"],
+  "launch": [
+    "simultaneous-submits", "submit-while-launch-pending", "fan-out-8", "launch-behind-held-save", "save-rejected-then-launch", "restart-recovery",
+    "launch-after-recovery", "runtime-restart-deferred-launch", "prerequisites-hold", "auto-resume-attempt", "handoff-refusal", "cancel-during-launch"
+  ],
+  "gaps": [
+    "reconcile-retry-pending", "handoff-abort-timeout", "restart-starting-with-deadline", "getTask-missing", "initialize-after-shutdown",
+    "publish-failure", "failed-mutation-timing", "fake-timers-case", "publication-beside-launch", "restart-with-operator-stop",
+    "restart-during-runtime-restart"
+  ]
+}

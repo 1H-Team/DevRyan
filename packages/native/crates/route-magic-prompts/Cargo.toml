@@ -1,0 +1,30 @@
+[package]
+name = "devryan-route-magic-prompts"
+version = "0.1.0"
+description = "The magic-prompts route group as a standalone candidate for the backend conformance harness (tests only; nothing calls it)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "devryan-route-magic-prompts"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# Test-only: `--plant <id>` switches on one planted behaviour change (src/plant.rs), so the
+# harness can be shown to catch it. A build without the feature has no such option.
+plants = ["devryan-route-common/plants"]
+
+[dependencies]
+devryan-config-text.workspace = true
+devryan-route-common.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

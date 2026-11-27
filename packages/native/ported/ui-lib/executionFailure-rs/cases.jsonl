@@ -1,0 +1,744 @@
+{"fn":"describeExecutionRecoveryFailure","args":["Hello World"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["😀hello world"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["HELLO"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["😀"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["İstanbul"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":[".leading"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["trailing."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ab"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["﻿bom"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["key_name-1"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a😀b😀c  padded  "],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["hello"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["é"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":[":"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["key_name-1HELLO"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["straßea😀b😀c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["line1\nline2"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a.b.c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ΣΊΣΥΦΟΣHELLO"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a😀b😀c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ünïcödé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a:b:cİstanbul"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["abc"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["helloé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["  padded  "],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["emoji 👍🏽 mix"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ns:key.pathHello World"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["src/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["😀emoji 👍🏽 mix"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a..b"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["hello world"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["key_name-1tab\tseparated"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["İstanbul😀"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["key_name-1a..b"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["日本語のテキストhello"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["tab\tseparated"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["key_name-1trailing."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a..ba..b"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["straßea"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["{name} has {count} items"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":[":HELLO"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a:b:c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ab😀"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["key_name-1ab"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a  padded  "],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["日本語のテキスト"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["éstraße"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["{name} has {count} itemstab\tseparated"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ns:key.path"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["aline1\nline2"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["straße"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["straße./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["tab\tseparateda"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["abckey_name-1"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":[""],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":[":Hello World"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["{name} has {count} itemsa..b"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["abc./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["hello worldns:key.path"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a.leading"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ΣΊΣΥΦΟΣtab\tseparated"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["éHello World"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["abcünïcödé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["İstanbulhello"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a..bkey_name-1"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["key_name-1src/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["日本語のテキストstraße"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a..babc"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a..b﻿bom"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["trailing.ünïcödé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["hello worldemoji 👍🏽 mix"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a..ba:b:c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["éé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":[".leadingΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a😀b😀cHello World"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["hello world日本語のテキスト"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["key_name-1  padded  "],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["Hello Worlda..b"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["straße{name} has {count} items"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["hello worldHELLO"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["key_name-1a:b:c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["éhello world"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["emoji 👍🏽 mixa"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["./x/**/*.jsonabc"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["HELLOa:b:c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["key_name-1abc"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["hello worldsrc/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ΣΊΣΥΦΟΣstraße"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ΣΊΣΥΦΟΣsrc/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["  padded  ﻿bom"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["src/a/b.tsabc"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a:b:c日本語のテキスト"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["éa😀b😀c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ns:key.patha:b:c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["./x/**/*.jsona😀b😀c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["emoji 👍🏽 mixa:b:c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["emoji 👍🏽 mixΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ünïcödé  padded  "],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a😀b😀cé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["tab\tseparated日本語のテキスト"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["trailing.ns:key.path"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["emoji 👍🏽 mixé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ns:key.pathline1\nline2"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":[".leadingHELLO"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ab日本語のテキスト"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":[":😀"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["aünïcödé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["src/a/b.tstrailing."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["tab\tseparatedsrc/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ababc"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ΣΊΣΥΦΟΣhello"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["HELLOns:key.path"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["helloemoji 👍🏽 mix"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["😀abc"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ΣΊΣΥΦΟΣHello World"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["日本語のテキスト:"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["src/a/b.tsa"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["HELLO./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["emoji 👍🏽 mix.leading"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a😀b😀cab"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ns:key.pathstraße"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":[":a:b:c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["😀日本語のテキスト"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a.b.cHello World"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["abé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["straßens:key.path"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["HELLOa.b.c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["emoji 👍🏽 mix﻿bom"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ΣΊΣΥΦΟΣtrailing."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["日本語のテキストab"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":[".leading😀"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["src/a/b.tsa:b:c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a😀b😀c😀"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["  padded  日本語のテキスト"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a:b:cé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["{name} has {count} itemshello world"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["İstanbulabc"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["{name} has {count} itemsİstanbul"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["abca.b.c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["éhello"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ns:key.patha.b.c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a😀b😀cHELLO"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["Hello Worldline1\nline2"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["key_name-1İstanbul"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a.b.cΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a:b:c😀"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":[":line1\nline2"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ΣΊΣΥΦΟΣa:b:c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["hellostraße"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["emoji 👍🏽 mix  padded  "],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["İstanbul{name} has {count} items"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["hello{name} has {count} items"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a.b.ca"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["İstanbulab"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a😀b😀ckey_name-1"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["aa:b:c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["😀a"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a😀"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["src/a/b.ts./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a:b:cabc"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["tab\tseparatedline1\nline2"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["abchello world"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["aba:b:c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["HELLOİstanbul"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":[".leading./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":[":é"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a😀b😀ctab\tseparated"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["trailing.é"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["HELLOHELLO"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["src/a/b.tsé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["abΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a..bhello"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["line1\nline2HELLO"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["hellokey_name-1"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["line1\nline2./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ünïcödésrc/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["./x/**/*.jsona.b.c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ΣΊΣΥΦΟΣa"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ΣΊΣΥΦΟΣünïcödé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["İstanbultrailing."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ΣΊΣΥΦΟΣhello world"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["﻿bom{name} has {count} items"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a.b.cns:key.path"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["éab"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a😀b😀cİstanbul"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["İstanbulΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["日本語のテキストHELLO"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a:b:c.leading"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["étab\tseparated"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a:b:csrc/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["{name} has {count} items😀"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["src/a/b.tsa.b.c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ab﻿bom"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["éline1\nline2"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ns:key.path.leading"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["./x/**/*.jsonkey_name-1"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["{name} has {count} itemsa.b.c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["héllo wörld"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["👍🏽 thumbs"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["日本語"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ılık ırmak"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["👨‍👩‍👧 family"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a b"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a😀b"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a²b x½ y①"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["aⅠb Ⅻ"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a𐐀b 𝐀bc"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["कि ٣٤"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["Iı İi"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["K K k"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ſ s S"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["x‍y 👨‍👩‍👧"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["a b c　d"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["١٢٣ ٤٥"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["𝟘𝟙 ²³"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["snake_case foo-bar o'neil"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ǅungla Ǆ"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["one\r\ntwo threefour"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["café café"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["ΣΑΣ σας ς"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["日本語のテキスト"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["{name} has {count} items"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["😀"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ünïcödé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ünïcödéhello"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["﻿bom"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["  padded  "],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a😀b😀c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a:b:c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["line1\nline2"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":[":"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["src/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["İstanbulemoji 👍🏽 mix"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a:b:chello"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["emoji 👍🏽 mixİstanbul"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["İstanbul"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a.b.c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":[""],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":[".leading"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["HELLOsrc/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["hello world"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["HELLO"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["Hello World"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["asrc/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["emoji 👍🏽 mix"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["hello"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["hello worldline1\nline2"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ns:key.path"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["😀a"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a..b"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["tab\tseparated"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["  padded    padded  "],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["straße"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ab"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["abc"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["é"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["./x/**/*.jsonHELLO"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ünïcödé./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["hellons:key.path"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["HELLOtab\tseparated"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["line1\nline2tab\tseparated"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["Hello World{name} has {count} items"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["trailing."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["key_name-1"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["日本語のテキストstraße"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["HELLOtrailing."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":[".leadinga"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a..bsrc/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["éns:key.path"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a:b:c./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["trailing.abc"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["straßea"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ns:key.pathİstanbul"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["hellohello"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["straße  padded  "],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["emoji 👍🏽 mixline1\nline2"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["trailing.a😀b😀c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a😀b😀ctrailing."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ns:key.pathkey_name-1"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["straßeabc"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a..b.leading"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["./x/**/*.jsonHello World"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["key_name-1tab\tseparated"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a.b.c😀"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a..b日本語のテキスト"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["helloa:b:c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a..bünïcödé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["HELLOstraße"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["hello{name} has {count} items"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ünïcödéhello world"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["trailing../x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["﻿bomtrailing."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ns:key.pathHello World"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ékey_name-1"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["😀abc"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a😀b😀cns:key.path"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["hello worldé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["tab\tseparated  padded  "],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["emoji 👍🏽 mix{name} has {count} items"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ns:key.pathstraße"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["trailing.line1\nline2"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["src/a/b.tsa..b"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["😀straße"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["Hello WorldΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a:b:cab"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a..bhello"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a😀b😀ca.b.c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["abhello world"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a  padded  "],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a..bkey_name-1"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["é:"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a😀b😀cabc"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["abc﻿bom"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["{name} has {count} itemsünïcödé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a:b:ca:b:c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["{name} has {count} items{name} has {count} items"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["straßeünïcödé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["HELLOa.b.c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["abns:key.path"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["İstanbulΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["emoji 👍🏽 mixtab\tseparated"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ns:key.path﻿bom"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":[":a:b:c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["straßea..b"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["tab\tseparateda:b:c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["key_name-1src/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["src/a/b.tskey_name-1"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":[".leadinghello world"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a..babc"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["abcline1\nline2"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["src/a/b.ts.leading"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["étrailing."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["﻿bomline1\nline2"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ünïcödéHello World"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["line1\nline2key_name-1"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["tab\tseparatedkey_name-1"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["hello world{name} has {count} items"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a😀b😀cHello World"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a..b﻿bom"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["aba.b.c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ns:key.patha😀b😀c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["HELLOns:key.path"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a😀b😀cab"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["straße😀"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["trailing.key_name-1"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["HELLO﻿bom"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a.b.ca:b:c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ns:key.path日本語のテキスト"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["日本語のテキストabc"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["abc😀"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["straße./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["HELLO./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":[".leading./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["  padded  a"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["hello😀"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["line1\nline2ab"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["hello world﻿bom"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a😀b😀chello"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ΣΊΣΥΦΟΣ😀"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["trailing.ns:key.path"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["abcns:key.path"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["😀emoji 👍🏽 mix"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":[":.leading"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["﻿bomstraße"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a😀b😀c.leading"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["  padded  HELLO"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["Hello WorldHello World"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["key_name-1key_name-1"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["line1\nline2a.b.c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["﻿bomé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["HELLOhello"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["key_name-1./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a😀b😀ca:b:c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["src/a/b.ts./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["hello worldtrailing."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["İstanbulline1\nline2"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["abtab\tseparated"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a.b.c{name} has {count} items"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["aba..b"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["é  padded  "],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a..bHELLO"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["{name} has {count} items﻿bom"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["trailing..leading"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a..bline1\nline2"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["src/a/b.tsİstanbul"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["helloa"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["İstanbulns:key.path"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["straßeab"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["﻿bom😀"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["src/a/b.tsline1\nline2"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a.b.ca..b"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ns:key.pathhello world"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ns:key.pathHELLO"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["Hello Worldünïcödé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["line1\nline2hello"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["trailing.Hello World"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["key_name-1emoji 👍🏽 mix"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["src/a/b.tstab\tseparated"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["aa.b.c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["src/a/b.ts😀"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["./x/**/*.json😀"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["İstanbul😀"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["tab\tseparated.leading"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["straßea😀b😀c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ünïcödéHELLO"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["line1\nline2ΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["éa..b"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ns:key.pathsrc/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["./x/**/*.jsonünïcödé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["src/a/b.tsHello World"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["😀hello"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["key_name-1ünïcödé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["hellosrc/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["tab\tseparatedabc"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["  padded  a😀b😀c"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ΣΊΣΥΦΟΣline1\nline2"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["héllo wörld"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["👍🏽 thumbs"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["日本語"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ılık ırmak"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["👨‍👩‍👧 family"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a b"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a😀b"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a²b x½ y①"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["aⅠb Ⅻ"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a𐐀b 𝐀bc"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["कि ٣٤"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["Iı İi"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["K K k"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ſ s S"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["x‍y 👨‍👩‍👧"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["a b c　d"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["١٢٣ ٤٥"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["𝟘𝟙 ²³"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["snake_case foo-bar o'neil"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ǅungla Ǆ"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["one\r\ntwo threefour"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["café café"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ΣΑΣ σας ς"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["local_execution_timeout"],"ok":"The workspace was not ready before the startup deadline. Retry the subtask. (local_execution_timeout)"}
+{"fn":"describeExecutionRecoveryFailure","args":["local_execution_timeout"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["xlocal_execution_timeout"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["xlocal_execution_timeout"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["local_execution_timeout_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["local_execution_timeout_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["err: local_execution_timeout."],"ok":"The workspace was not ready before the startup deadline. Retry the subtask. (local_execution_timeout)"}
+{"fn":"describeExecutionRecoveryFailure","args":["err: local_execution_timeout."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["élocal_execution_timeouté"],"ok":"The workspace was not ready before the startup deadline. Retry the subtask. (local_execution_timeout)"}
+{"fn":"describeExecutionRecoveryFailure","args":["élocal_execution_timeouté"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["local_execution_timeout cleanup unconfirmed"],"ok":"Execution could not start and cleanup is still unconfirmed. Wait for recovery before retrying. (local_execution_timeout)"}
+{"fn":"describeExecutionRecoveryFailure","args":["local_execution_timeout cleanup unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["1local_execution_timeout"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["1local_execution_timeout"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["-local_execution_timeout-"],"ok":"The workspace was not ready before the startup deadline. Retry the subtask. (local_execution_timeout)"}
+{"fn":"describeExecutionRecoveryFailure","args":["-local_execution_timeout-"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["execution_preparation_stalled"],"ok":"Workspace preparation stopped making progress. Retry the subtask. (execution_preparation_stalled)"}
+{"fn":"describeExecutionRecoveryFailure","args":["execution_preparation_stalled"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["xexecution_preparation_stalled"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["xexecution_preparation_stalled"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["execution_preparation_stalled_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["execution_preparation_stalled_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["err: execution_preparation_stalled."],"ok":"Workspace preparation stopped making progress. Retry the subtask. (execution_preparation_stalled)"}
+{"fn":"describeExecutionRecoveryFailure","args":["err: execution_preparation_stalled."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["éexecution_preparation_stalledé"],"ok":"Workspace preparation stopped making progress. Retry the subtask. (execution_preparation_stalled)"}
+{"fn":"describeExecutionRecoveryFailure","args":["éexecution_preparation_stalledé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["execution_preparation_stalled cleanup unconfirmed"],"ok":"Execution could not start and cleanup is still unconfirmed. Wait for recovery before retrying. (execution_preparation_stalled)"}
+{"fn":"describeExecutionRecoveryFailure","args":["execution_preparation_stalled cleanup unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["1execution_preparation_stalled"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["1execution_preparation_stalled"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["-execution_preparation_stalled-"],"ok":"Workspace preparation stopped making progress. Retry the subtask. (execution_preparation_stalled)"}
+{"fn":"describeExecutionRecoveryFailure","args":["-execution_preparation_stalled-"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["workspace_changing"],"ok":"Workspace files kept changing during preparation. Pause the writer and retry the subtask. (workspace_changing)"}
+{"fn":"describeExecutionRecoveryFailure","args":["workspace_changing"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["xworkspace_changing"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["xworkspace_changing"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["workspace_changing_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["workspace_changing_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["err: workspace_changing."],"ok":"Workspace files kept changing during preparation. Pause the writer and retry the subtask. (workspace_changing)"}
+{"fn":"describeExecutionRecoveryFailure","args":["err: workspace_changing."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["éworkspace_changingé"],"ok":"Workspace files kept changing during preparation. Pause the writer and retry the subtask. (workspace_changing)"}
+{"fn":"describeExecutionRecoveryFailure","args":["éworkspace_changingé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["workspace_changing cleanup unconfirmed"],"ok":"Execution could not start and cleanup is still unconfirmed. Wait for recovery before retrying. (workspace_changing)"}
+{"fn":"describeExecutionRecoveryFailure","args":["workspace_changing cleanup unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["1workspace_changing"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["1workspace_changing"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["-workspace_changing-"],"ok":"Workspace files kept changing during preparation. Pause the writer and retry the subtask. (workspace_changing)"}
+{"fn":"describeExecutionRecoveryFailure","args":["-workspace_changing-"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["execution_artifacts_unavailable"],"ok":"The verified execution runtime is missing or incompatible. Repair or update DevRyan, then restart the server. (execution_artifacts_unavailable)"}
+{"fn":"describeExecutionRecoveryFailure","args":["execution_artifacts_unavailable"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["xexecution_artifacts_unavailable"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["xexecution_artifacts_unavailable"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["execution_artifacts_unavailable_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["execution_artifacts_unavailable_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["err: execution_artifacts_unavailable."],"ok":"The verified execution runtime is missing or incompatible. Repair or update DevRyan, then restart the server. (execution_artifacts_unavailable)"}
+{"fn":"describeExecutionRecoveryFailure","args":["err: execution_artifacts_unavailable."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["éexecution_artifacts_unavailableé"],"ok":"The verified execution runtime is missing or incompatible. Repair or update DevRyan, then restart the server. (execution_artifacts_unavailable)"}
+{"fn":"describeExecutionRecoveryFailure","args":["éexecution_artifacts_unavailableé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["execution_artifacts_unavailable cleanup unconfirmed"],"ok":"Execution could not start and cleanup is still unconfirmed. Wait for recovery before retrying. (execution_artifacts_unavailable)"}
+{"fn":"describeExecutionRecoveryFailure","args":["execution_artifacts_unavailable cleanup unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["1execution_artifacts_unavailable"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["1execution_artifacts_unavailable"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["-execution_artifacts_unavailable-"],"ok":"The verified execution runtime is missing or incompatible. Repair or update DevRyan, then restart the server. (execution_artifacts_unavailable)"}
+{"fn":"describeExecutionRecoveryFailure","args":["-execution_artifacts_unavailable-"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["execution_owner_termination_unconfirmed"],"ok":"The previous execution host has not confirmed shutdown. Wait for recovery before retrying. (execution_owner_termination_unconfirmed)"}
+{"fn":"describeExecutionRecoveryFailure","args":["execution_owner_termination_unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["xexecution_owner_termination_unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["xexecution_owner_termination_unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["execution_owner_termination_unconfirmed_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["execution_owner_termination_unconfirmed_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["err: execution_owner_termination_unconfirmed."],"ok":"The previous execution host has not confirmed shutdown. Wait for recovery before retrying. (execution_owner_termination_unconfirmed)"}
+{"fn":"describeExecutionRecoveryFailure","args":["err: execution_owner_termination_unconfirmed."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["éexecution_owner_termination_unconfirmedé"],"ok":"The previous execution host has not confirmed shutdown. Wait for recovery before retrying. (execution_owner_termination_unconfirmed)"}
+{"fn":"describeExecutionRecoveryFailure","args":["éexecution_owner_termination_unconfirmedé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["execution_owner_termination_unconfirmed cleanup unconfirmed"],"ok":"Execution could not start and cleanup is still unconfirmed. Wait for recovery before retrying. (execution_owner_termination_unconfirmed)"}
+{"fn":"describeExecutionRecoveryFailure","args":["execution_owner_termination_unconfirmed cleanup unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["1execution_owner_termination_unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["1execution_owner_termination_unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["-execution_owner_termination_unconfirmed-"],"ok":"The previous execution host has not confirmed shutdown. Wait for recovery before retrying. (execution_owner_termination_unconfirmed)"}
+{"fn":"describeExecutionRecoveryFailure","args":["-execution_owner_termination_unconfirmed-"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["execution_owner_lost"],"ok":"The execution host restarted while preparing this work. Retry the subtask. (execution_owner_lost)"}
+{"fn":"describeExecutionRecoveryFailure","args":["execution_owner_lost"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["xexecution_owner_lost"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["xexecution_owner_lost"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["execution_owner_lost_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["execution_owner_lost_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["err: execution_owner_lost."],"ok":"The execution host restarted while preparing this work. Retry the subtask. (execution_owner_lost)"}
+{"fn":"describeExecutionRecoveryFailure","args":["err: execution_owner_lost."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["éexecution_owner_losté"],"ok":"The execution host restarted while preparing this work. Retry the subtask. (execution_owner_lost)"}
+{"fn":"describeExecutionRecoveryFailure","args":["éexecution_owner_losté"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["execution_owner_lost cleanup unconfirmed"],"ok":"Execution could not start and cleanup is still unconfirmed. Wait for recovery before retrying. (execution_owner_lost)"}
+{"fn":"describeExecutionRecoveryFailure","args":["execution_owner_lost cleanup unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["1execution_owner_lost"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["1execution_owner_lost"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["-execution_owner_lost-"],"ok":"The execution host restarted while preparing this work. Retry the subtask. (execution_owner_lost)"}
+{"fn":"describeExecutionRecoveryFailure","args":["-execution_owner_lost-"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["execution_owner_unavailable"],"ok":"The execution host is unavailable. Reconnect and retry. (execution_owner_unavailable)"}
+{"fn":"describeExecutionRecoveryFailure","args":["execution_owner_unavailable"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["xexecution_owner_unavailable"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["xexecution_owner_unavailable"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["execution_owner_unavailable_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["execution_owner_unavailable_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["err: execution_owner_unavailable."],"ok":"The execution host is unavailable. Reconnect and retry. (execution_owner_unavailable)"}
+{"fn":"describeExecutionRecoveryFailure","args":["err: execution_owner_unavailable."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["éexecution_owner_unavailableé"],"ok":"The execution host is unavailable. Reconnect and retry. (execution_owner_unavailable)"}
+{"fn":"describeExecutionRecoveryFailure","args":["éexecution_owner_unavailableé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["execution_owner_unavailable cleanup unconfirmed"],"ok":"Execution could not start and cleanup is still unconfirmed. Wait for recovery before retrying. (execution_owner_unavailable)"}
+{"fn":"describeExecutionRecoveryFailure","args":["execution_owner_unavailable cleanup unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["1execution_owner_unavailable"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["1execution_owner_unavailable"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["-execution_owner_unavailable-"],"ok":"The execution host is unavailable. Reconnect and retry. (execution_owner_unavailable)"}
+{"fn":"describeExecutionRecoveryFailure","args":["-execution_owner_unavailable-"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["payload_too_large"],"ok":"This request exceeds the execution input limit. Reduce attached context or start a new task. (payload_too_large)"}
+{"fn":"describeExecutionRecoveryFailure","args":["payload_too_large"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["xpayload_too_large"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["xpayload_too_large"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["payload_too_large_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["payload_too_large_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["err: payload_too_large."],"ok":"This request exceeds the execution input limit. Reduce attached context or start a new task. (payload_too_large)"}
+{"fn":"describeExecutionRecoveryFailure","args":["err: payload_too_large."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["épayload_too_largeé"],"ok":"This request exceeds the execution input limit. Reduce attached context or start a new task. (payload_too_large)"}
+{"fn":"describeExecutionRecoveryFailure","args":["épayload_too_largeé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["payload_too_large cleanup unconfirmed"],"ok":"Execution could not start and cleanup is still unconfirmed. Wait for recovery before retrying. (payload_too_large)"}
+{"fn":"describeExecutionRecoveryFailure","args":["payload_too_large cleanup unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["1payload_too_large"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["1payload_too_large"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["-payload_too_large-"],"ok":"This request exceeds the execution input limit. Reduce attached context or start a new task. (payload_too_large)"}
+{"fn":"describeExecutionRecoveryFailure","args":["-payload_too_large-"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["skill_source_mismatch"],"ok":"The selected skill changed during preparation. Retry to load its current version. (skill_source_mismatch)"}
+{"fn":"describeExecutionRecoveryFailure","args":["skill_source_mismatch"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["xskill_source_mismatch"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["xskill_source_mismatch"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["skill_source_mismatch_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["skill_source_mismatch_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["err: skill_source_mismatch."],"ok":"The selected skill changed during preparation. Retry to load its current version. (skill_source_mismatch)"}
+{"fn":"describeExecutionRecoveryFailure","args":["err: skill_source_mismatch."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["éskill_source_mismatché"],"ok":"The selected skill changed during preparation. Retry to load its current version. (skill_source_mismatch)"}
+{"fn":"describeExecutionRecoveryFailure","args":["éskill_source_mismatché"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["skill_source_mismatch cleanup unconfirmed"],"ok":"Execution could not start and cleanup is still unconfirmed. Wait for recovery before retrying. (skill_source_mismatch)"}
+{"fn":"describeExecutionRecoveryFailure","args":["skill_source_mismatch cleanup unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["1skill_source_mismatch"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["1skill_source_mismatch"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["-skill_source_mismatch-"],"ok":"The selected skill changed during preparation. Retry to load its current version. (skill_source_mismatch)"}
+{"fn":"describeExecutionRecoveryFailure","args":["-skill_source_mismatch-"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["native_skill_unreviewed"],"ok":"The skill name or ID was not recognized. Retry using an exact available skill name. (native_skill_unreviewed)"}
+{"fn":"describeExecutionRecoveryFailure","args":["native_skill_unreviewed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["xnative_skill_unreviewed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["xnative_skill_unreviewed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["native_skill_unreviewed_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["native_skill_unreviewed_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["err: native_skill_unreviewed."],"ok":"The skill name or ID was not recognized. Retry using an exact available skill name. (native_skill_unreviewed)"}
+{"fn":"describeExecutionRecoveryFailure","args":["err: native_skill_unreviewed."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["énative_skill_unreviewedé"],"ok":"The skill name or ID was not recognized. Retry using an exact available skill name. (native_skill_unreviewed)"}
+{"fn":"describeExecutionRecoveryFailure","args":["énative_skill_unreviewedé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["native_skill_unreviewed cleanup unconfirmed"],"ok":"Execution could not start and cleanup is still unconfirmed. Wait for recovery before retrying. (native_skill_unreviewed)"}
+{"fn":"describeExecutionRecoveryFailure","args":["native_skill_unreviewed cleanup unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["1native_skill_unreviewed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["1native_skill_unreviewed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["-native_skill_unreviewed-"],"ok":"The skill name or ID was not recognized. Retry using an exact available skill name. (native_skill_unreviewed)"}
+{"fn":"describeExecutionRecoveryFailure","args":["-native_skill_unreviewed-"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["storage_unavailable"],"ok":"There is not enough available storage to prepare or save this work. Free space and retry. (storage_unavailable)"}
+{"fn":"describeExecutionRecoveryFailure","args":["storage_unavailable"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["xstorage_unavailable"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["xstorage_unavailable"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["storage_unavailable_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["storage_unavailable_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["err: storage_unavailable."],"ok":"There is not enough available storage to prepare or save this work. Free space and retry. (storage_unavailable)"}
+{"fn":"describeExecutionRecoveryFailure","args":["err: storage_unavailable."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["éstorage_unavailableé"],"ok":"There is not enough available storage to prepare or save this work. Free space and retry. (storage_unavailable)"}
+{"fn":"describeExecutionRecoveryFailure","args":["éstorage_unavailableé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["storage_unavailable cleanup unconfirmed"],"ok":"Execution could not start and cleanup is still unconfirmed. Wait for recovery before retrying. (storage_unavailable)"}
+{"fn":"describeExecutionRecoveryFailure","args":["storage_unavailable cleanup unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["1storage_unavailable"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["1storage_unavailable"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["-storage_unavailable-"],"ok":"There is not enough available storage to prepare or save this work. Free space and retry. (storage_unavailable)"}
+{"fn":"describeExecutionRecoveryFailure","args":["-storage_unavailable-"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["mutation_runtime_missing"],"ok":"The paired execution runtime is missing. Repair or update the installation before retrying. (mutation_runtime_missing)"}
+{"fn":"describeExecutionRecoveryFailure","args":["mutation_runtime_missing"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["xmutation_runtime_missing"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["xmutation_runtime_missing"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["mutation_runtime_missing_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["mutation_runtime_missing_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["err: mutation_runtime_missing."],"ok":"The paired execution runtime is missing. Repair or update the installation before retrying. (mutation_runtime_missing)"}
+{"fn":"describeExecutionRecoveryFailure","args":["err: mutation_runtime_missing."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["émutation_runtime_missingé"],"ok":"The paired execution runtime is missing. Repair or update the installation before retrying. (mutation_runtime_missing)"}
+{"fn":"describeExecutionRecoveryFailure","args":["émutation_runtime_missingé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["mutation_runtime_missing cleanup unconfirmed"],"ok":"Execution could not start and cleanup is still unconfirmed. Wait for recovery before retrying. (mutation_runtime_missing)"}
+{"fn":"describeExecutionRecoveryFailure","args":["mutation_runtime_missing cleanup unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["1mutation_runtime_missing"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["1mutation_runtime_missing"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["-mutation_runtime_missing-"],"ok":"The paired execution runtime is missing. Repair or update the installation before retrying. (mutation_runtime_missing)"}
+{"fn":"describeExecutionRecoveryFailure","args":["-mutation_runtime_missing-"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["mutation_runtime_unsupported"],"ok":"This runtime cannot provide the required execution protection. Use a supported runtime. (mutation_runtime_unsupported)"}
+{"fn":"describeExecutionRecoveryFailure","args":["mutation_runtime_unsupported"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["xmutation_runtime_unsupported"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["xmutation_runtime_unsupported"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["mutation_runtime_unsupported_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["mutation_runtime_unsupported_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["err: mutation_runtime_unsupported."],"ok":"This runtime cannot provide the required execution protection. Use a supported runtime. (mutation_runtime_unsupported)"}
+{"fn":"describeExecutionRecoveryFailure","args":["err: mutation_runtime_unsupported."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["émutation_runtime_unsupportedé"],"ok":"This runtime cannot provide the required execution protection. Use a supported runtime. (mutation_runtime_unsupported)"}
+{"fn":"describeExecutionRecoveryFailure","args":["émutation_runtime_unsupportedé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["mutation_runtime_unsupported cleanup unconfirmed"],"ok":"Execution could not start and cleanup is still unconfirmed. Wait for recovery before retrying. (mutation_runtime_unsupported)"}
+{"fn":"describeExecutionRecoveryFailure","args":["mutation_runtime_unsupported cleanup unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["1mutation_runtime_unsupported"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["1mutation_runtime_unsupported"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["-mutation_runtime_unsupported-"],"ok":"This runtime cannot provide the required execution protection. Use a supported runtime. (mutation_runtime_unsupported)"}
+{"fn":"describeExecutionRecoveryFailure","args":["-mutation_runtime_unsupported-"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["session_retention_in_progress"],"ok":"Session cleanup is in progress. Retry after it finishes. (session_retention_in_progress)"}
+{"fn":"describeExecutionRecoveryFailure","args":["session_retention_in_progress"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["xsession_retention_in_progress"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["xsession_retention_in_progress"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["session_retention_in_progress_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["session_retention_in_progress_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["err: session_retention_in_progress."],"ok":"Session cleanup is in progress. Retry after it finishes. (session_retention_in_progress)"}
+{"fn":"describeExecutionRecoveryFailure","args":["err: session_retention_in_progress."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["ésession_retention_in_progressé"],"ok":"Session cleanup is in progress. Retry after it finishes. (session_retention_in_progress)"}
+{"fn":"describeExecutionRecoveryFailure","args":["ésession_retention_in_progressé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["session_retention_in_progress cleanup unconfirmed"],"ok":"Execution could not start and cleanup is still unconfirmed. Wait for recovery before retrying. (session_retention_in_progress)"}
+{"fn":"describeExecutionRecoveryFailure","args":["session_retention_in_progress cleanup unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["1session_retention_in_progress"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["1session_retention_in_progress"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["-session_retention_in_progress-"],"ok":"Session cleanup is in progress. Retry after it finishes. (session_retention_in_progress)"}
+{"fn":"describeExecutionRecoveryFailure","args":["-session_retention_in_progress-"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["mutation_history_captured"],"ok":"This conversation's changes are owned by the DevRyan companion, which is unavailable. Restore it to Revert or Redo. (mutation_history_captured)"}
+{"fn":"describeExecutionRecoveryFailure","args":["mutation_history_captured"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["xmutation_history_captured"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["xmutation_history_captured"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["mutation_history_captured_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["mutation_history_captured_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["err: mutation_history_captured."],"ok":"This conversation's changes are owned by the DevRyan companion, which is unavailable. Restore it to Revert or Redo. (mutation_history_captured)"}
+{"fn":"describeExecutionRecoveryFailure","args":["err: mutation_history_captured."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["émutation_history_capturedé"],"ok":"This conversation's changes are owned by the DevRyan companion, which is unavailable. Restore it to Revert or Redo. (mutation_history_captured)"}
+{"fn":"describeExecutionRecoveryFailure","args":["émutation_history_capturedé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["mutation_history_captured cleanup unconfirmed"],"ok":"Execution could not start and cleanup is still unconfirmed. Wait for recovery before retrying. (mutation_history_captured)"}
+{"fn":"describeExecutionRecoveryFailure","args":["mutation_history_captured cleanup unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["1mutation_history_captured"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["1mutation_history_captured"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["-mutation_history_captured-"],"ok":"This conversation's changes are owned by the DevRyan companion, which is unavailable. Restore it to Revert or Redo. (mutation_history_captured)"}
+{"fn":"describeExecutionRecoveryFailure","args":["-mutation_history_captured-"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["mutation_recovery_pending"],"ok":"An interrupted Revert in this project is waiting for the DevRyan companion to finish recovery. Restore it before reverting. (mutation_recovery_pending)"}
+{"fn":"describeExecutionRecoveryFailure","args":["mutation_recovery_pending"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["xmutation_recovery_pending"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["xmutation_recovery_pending"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["mutation_recovery_pending_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["mutation_recovery_pending_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["err: mutation_recovery_pending."],"ok":"An interrupted Revert in this project is waiting for the DevRyan companion to finish recovery. Restore it before reverting. (mutation_recovery_pending)"}
+{"fn":"describeExecutionRecoveryFailure","args":["err: mutation_recovery_pending."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["émutation_recovery_pendingé"],"ok":"An interrupted Revert in this project is waiting for the DevRyan companion to finish recovery. Restore it before reverting. (mutation_recovery_pending)"}
+{"fn":"describeExecutionRecoveryFailure","args":["émutation_recovery_pendingé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["mutation_recovery_pending cleanup unconfirmed"],"ok":"Execution could not start and cleanup is still unconfirmed. Wait for recovery before retrying. (mutation_recovery_pending)"}
+{"fn":"describeExecutionRecoveryFailure","args":["mutation_recovery_pending cleanup unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["1mutation_recovery_pending"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["1mutation_recovery_pending"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["-mutation_recovery_pending-"],"ok":"An interrupted Revert in this project is waiting for the DevRyan companion to finish recovery. Restore it before reverting. (mutation_recovery_pending)"}
+{"fn":"describeExecutionRecoveryFailure","args":["-mutation_recovery_pending-"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["native_slim_retry_primary_fenced"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["native_slim_retry_primary_fenced"],"ok":{"code":"execution_recovery_unavailable","message":"Automatic recovery could not verify this task's execution. Review the task and its recovery options before continuing."}}
+{"fn":"describeExecutionFailure","args":["xnative_slim_retry_primary_fenced"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["xnative_slim_retry_primary_fenced"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["native_slim_retry_primary_fenced_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["native_slim_retry_primary_fenced_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["err: native_slim_retry_primary_fenced."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["err: native_slim_retry_primary_fenced."],"ok":{"code":"execution_recovery_unavailable","message":"Automatic recovery could not verify this task's execution. Review the task and its recovery options before continuing."}}
+{"fn":"describeExecutionFailure","args":["énative_slim_retry_primary_fencedé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["énative_slim_retry_primary_fencedé"],"ok":{"code":"execution_recovery_unavailable","message":"Automatic recovery could not verify this task's execution. Review the task and its recovery options before continuing."}}
+{"fn":"describeExecutionFailure","args":["native_slim_retry_primary_fenced cleanup unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["native_slim_retry_primary_fenced cleanup unconfirmed"],"ok":{"code":"execution_recovery_unavailable","message":"Automatic recovery could not verify this task's execution. Review the task and its recovery options before continuing."}}
+{"fn":"describeExecutionFailure","args":["1native_slim_retry_primary_fenced"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["1native_slim_retry_primary_fenced"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["-native_slim_retry_primary_fenced-"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["-native_slim_retry_primary_fenced-"],"ok":{"code":"execution_recovery_unavailable","message":"Automatic recovery could not verify this task's execution. Review the task and its recovery options before continuing."}}
+{"fn":"describeExecutionFailure","args":["execution_recovery_unavailable"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["execution_recovery_unavailable"],"ok":{"code":"execution_recovery_unavailable","message":"Automatic recovery could not verify this task's execution. Review the task and its recovery options before continuing."}}
+{"fn":"describeExecutionFailure","args":["xexecution_recovery_unavailable"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["xexecution_recovery_unavailable"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["execution_recovery_unavailable_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["execution_recovery_unavailable_"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["err: execution_recovery_unavailable."],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["err: execution_recovery_unavailable."],"ok":{"code":"execution_recovery_unavailable","message":"Automatic recovery could not verify this task's execution. Review the task and its recovery options before continuing."}}
+{"fn":"describeExecutionFailure","args":["éexecution_recovery_unavailableé"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["éexecution_recovery_unavailableé"],"ok":{"code":"execution_recovery_unavailable","message":"Automatic recovery could not verify this task's execution. Review the task and its recovery options before continuing."}}
+{"fn":"describeExecutionFailure","args":["execution_recovery_unavailable cleanup unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["execution_recovery_unavailable cleanup unconfirmed"],"ok":{"code":"execution_recovery_unavailable","message":"Automatic recovery could not verify this task's execution. Review the task and its recovery options before continuing."}}
+{"fn":"describeExecutionFailure","args":["1execution_recovery_unavailable"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["1execution_recovery_unavailable"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["-execution_recovery_unavailable-"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionRecoveryFailure","args":["-execution_recovery_unavailable-"],"ok":{"code":"execution_recovery_unavailable","message":"Automatic recovery could not verify this task's execution. Review the task and its recovery options before continuing."}}
+{"fn":"describeExecutionFailure","args":["payload_too_large and local_execution_timeout"],"ok":"The workspace was not ready before the startup deadline. Retry the subtask. (local_execution_timeout)"}
+{"fn":"describeExecutionFailure","args":["provider error"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":[""],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["cleanup unconfirmed"],"ok":{"$undefined":true}}
+{"fn":"describeExecutionFailure","args":["local_execution_timeout; execution did not start; cleanup unconfirmed"],"ok":"Execution could not start and cleanup is still unconfirmed. Wait for recovery before retrying. (local_execution_timeout)"}
+{"fn":"describeExecutionFailure","args":["storage_unavailable skill_source_mismatch"],"ok":"The selected skill changed during preparation. Retry to load its current version. (skill_source_mismatch)"}
+{"fn":"describeExecutionFailure","args":["local_execution_timeout"],"ok":"The workspace was not ready before the startup deadline. Retry the subtask. (local_execution_timeout)"}
+{"fn":"describeExecutionFailure","args":["local_execution_timeout; execution did not start; cleanup unconfirmed"],"ok":"Execution could not start and cleanup is still unconfirmed. Wait for recovery before retrying. (local_execution_timeout)"}
+{"fn":"describeExecutionFailure","args":["payload_too_large"],"ok":"This request exceeds the execution input limit. Reduce attached context or start a new task. (payload_too_large)"}
+{"fn":"describeExecutionFailure","args":["provider error"],"ok":{"$undefined":true}}

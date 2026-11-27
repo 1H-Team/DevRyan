@@ -1,0 +1,38 @@
+# The product's Cargo workspace (packages/native/DOCUMENTATION.md). Nothing here
+# ships in the app; packaging excludes the whole folder.
+[workspace]
+resolver = "3"
+members = ["crates/client-engine", "crates/client-engine-runner", "crates/config-text", "crates/front", "crates/js-layer", "crates/route-common", "crates/route-magic-prompts", "crates/route-session-folders", "crates/scheduler-core", "crates/scheduler-policy"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+publish = false
+
+# Every third-party crate is pinned to an exact version and named, with its
+# purpose and licence, in DOCUMENTATION.md; deny.toml checks the licences.
+[workspace.dependencies]
+brotli-decompressor = { version = "=5.0.0", default-features = false }
+devryan-config-text = { path = "crates/config-text", version = "=0.1.0" }
+# The workspace's own crates, by path (no version: nothing is published).
+devryan-client-engine = { path = "crates/client-engine" }
+httparse = { version = "=1.10.1", default-features = false, features = ["std"] }
+libc = { version = "=0.2.191", default-features = false, features = ["std"] }
+serde_json = { version = "=1.0.154", default-features = false, features = ["std"] }
+devryan-route-common = { path = "crates/route-common", version = "=0.1.0" }
+# This workspace's own crates (path dependencies, no version).
+devryan-js-layer = { path = "crates/js-layer" }
+devryan-scheduler-policy = { path = "crates/scheduler-policy" }
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+
+[profile.release]
+debug = false
+# No strip step: the minimal toolchain profile has no rust-objcopy runtime.
+strip = "none"

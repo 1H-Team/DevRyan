@@ -117,7 +117,9 @@ for (const mode of ['direct', 'persistent', 'fallback']) {
           useNodeWorkerForPrompts: mode !== 'direct', usePersistentWorkerForPrompts: mode !== 'fallback',
           nodeBinary: workerBinary, workerPath: path.join(directory, 'node-worker.mjs'),
           persistentWorkerPath: path.join(directory, 'persistent-worker.mjs'),
-          workerEnv: { PATH: process.env.PATH, ...(electronWorker ? { ELECTRON_RUN_AS_NODE: '1' } : {}) }, loadSdk: async () => sdk,
+          // PATH and the test isolation guard's private home: with no HOME a worker's home falls back to the real one.
+          workerEnv: { PATH: process.env.PATH, HOME: process.env.HOME, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME, XDG_DATA_HOME: process.env.XDG_DATA_HOME,
+            XDG_STATE_HOME: process.env.XDG_STATE_HOME, XDG_CACHE_HOME: process.env.XDG_CACHE_HOME, ...(electronWorker ? { ELECTRON_RUN_AS_NODE: '1' } : {}) }, loadSdk: async () => sdk,
           getWorkspaceDiff: async () => '', logger: { warn() {}, error() {} },
           onUsageObservation: ({ observation, ...correlation }) => {
             observations.push(observation);

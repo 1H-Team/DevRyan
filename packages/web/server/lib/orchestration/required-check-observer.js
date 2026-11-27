@@ -74,7 +74,7 @@ const servedFreshnessOf = value => SERVED_FRESHNESS.has(value) ? value : undefin
 const worseServed = (left, right) => [left, right].includes('stale') ? 'stale' : [left, right].includes('unknown') ? 'unknown' : left ?? right;
 export const PREVIEW_FRESHNESS_HINT = 'This visual check reached a server DevRyan cannot tie to the current files (started outside this call, or by a call whose copy of the project is older). Start the server inside the check command (start it, wait until it answers, check, stop it) and rerun the check.';
 
-export const readVisualCheckEvidence = async (directory, check, servedFreshness) => {
+const readVisualCheckEvidence = async (directory, check, servedFreshness) => {
   if (check.kind !== 'visual') return null;
   const report = await readArtifact(directory, check.visual.reportPath, 64 * 1024);
   if (!report) return null;

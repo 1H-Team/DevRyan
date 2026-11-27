@@ -1,0 +1,34 @@
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, null]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, null, null]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, null, {}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, null, {"unavailable": true}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, {"type": "api"}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, {"type": "api"}, null]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, {"type": "api"}, {}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, {"type": "api"}, {"unavailable": true}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, {"type": "key"}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, {"type": "key"}, null]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, {"type": "key"}, {}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, {"type": "key"}, {"unavailable": true}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, {"type": "oauth"}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, {"type": "oauth"}, null]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, {"type": "oauth"}, {}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, {"type": "oauth"}, {"unavailable": true}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, {"type": "oauth", "methodID": "chatgpt-browser"}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, {"type": "oauth", "methodID": "chatgpt-browser"}, null]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, {"type": "oauth", "methodID": "chatgpt-browser"}, {}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, {"type": "oauth", "methodID": "chatgpt-browser"}, {"unavailable": true}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, {"type": "wat"}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, {"type": "wat"}, null]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, {"type": "wat"}, {}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, {"type": "wat"}, {"unavailable": true}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, "s"]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, "s", null]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, "s", {}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"gpt": {"name": "g"}, "o": "str"}}, {"id": "x"}, null, "s"], "k": 1}, "s", {"unavailable": true}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [null, {"type": "oauth"}]}
+{"fn": "annotateOpenAIModelAvailability", "args": ["s", {"type": "oauth"}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": "x"}, {"type": "oauth"}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": [{"a": 1}]}]}, {"type": "oauth"}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": null}]}, {"type": "oauth"}]}
+{"fn": "annotateOpenAIModelAvailability", "args": [{"providers": [{"id": "openai", "models": {"model": {"id": "model"}}}]}, {"type": "oauth", "methodID": "chatgpt-siwc", "access": "fixture-access", "metadata": {"accountID": "workspace-a", "scopes": ["chatgpt.tokens.use.direct"]}}]}

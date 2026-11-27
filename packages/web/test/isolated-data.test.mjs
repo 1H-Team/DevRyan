@@ -8,7 +8,8 @@ import { describe, expect, it } from 'vitest';
 import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 
 const guard = globalThis[Symbol.for('devryan.test.realDataGuard')];
-const realConfig = path.join(os.homedir(), '.config');
+// HOME is the guard's private home; the write guard protects the real one.
+const realConfig = path.join(guard.realHomes[0], '.config');
 // Never created: the guard refuses before the file system is reached.
 const probe = (name) => path.join(realConfig, name, `devryan-isolation-probe-${process.pid}`, 'file.json');
 
@@ -23,7 +24,8 @@ const expectRefused = async (action) => {
 describe('web test isolation', () => {
   it('gives the test file its own empty data folder in the OS temp dir', () => {
     const dataRoot = resolveDevRyanDataRoot();
-    expect(dataRoot.startsWith(fs.realpathSync(os.tmpdir()))).toBe(true);
+    // Inside the run's private root, which lies in the OS temp dir of the runner.
+    expect(dataRoot.startsWith(`${process.env.DEVRYAN_TEST_ISOLATION_ROOT}${path.sep}`)).toBe(true);
     expect(dataRoot.startsWith(realConfig)).toBe(false);
     expect(fs.readdirSync(dataRoot)).toEqual([]);
   });

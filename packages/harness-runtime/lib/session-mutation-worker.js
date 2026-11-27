@@ -28,6 +28,14 @@ const callHost = (target, args) => new Promise((resolve, reject) => {
 });
 const observe = (observer, payload) => port.postMessage({ type: 'observe', observer, payload, cause: activeCall.getStore() });
 const observers = workerData?.observers ?? {};
+// The host's lock port (absent under other transports): the owner token of
+// every owner lock this thread is about to take, before the lock file can
+// exist, and its settlement once the lock is released or was never taken. If
+// this thread dies, the host removes a lock it still holds (the file holds
+// exactly that token and this process's pid). Posting is synchronous, so a
+// claim posted before the thread dies is never lost.
+const lockPort = typeof workerData?.lockPort?.postMessage === 'function' ? workerData.lockPort : null;
+const tell = (message) => { try { lockPort.postMessage(message); } catch { /* The host has gone. */ } };
 const runtime = createSessionMutationRuntime({
   directory: workerData.directory,
   // This thread may block: walks use synchronous filesystem calls.
@@ -35,6 +43,7 @@ const runtime = createSessionMutationRuntime({
   ...(workerData.maintenance ? { maintenance: workerData.maintenance } : {}),
   ...(workerData.batching ? { batching: workerData.batching } : {}),
   ...(workerData.complexity ? { complexity: workerData.complexity } : {}),
+  ...(lockPort ? { ownerLockClaims: { claim: (lockPath, ownerToken) => tell({ claim: ownerToken, lockPath }), settle: (ownerToken) => tell({ settle: ownerToken }) } } : {}),
   ...(observers.onChange ? { onChange: (payload) => callHost({ observer: 'onChange' }, [payload]) } : {}),
   ...(observers.onMaterialize ? { onMaterialize: (row) => callHost({ observer: 'onMaterialize' }, [row]) } : {}),
   // Observers only: never awaited, as in the host.

@@ -1,0 +1,19 @@
+{
+  "unit": "user-profile-visibility.js",
+  "files": 1,
+  "fingerprint": "e585c5461dc2a30d",
+  "cases": 20,
+  "cases_hash": "ccfab14ed6493bb9",
+  "coverage": {
+    "lines": 9,
+    "reached": 9,
+    "files": [
+      {
+        "file": "user-profile-visibility.js",
+        "lines": 9,
+        "reached": 9,
+        "missed": ""
+      }
+    ]
+  }
+}

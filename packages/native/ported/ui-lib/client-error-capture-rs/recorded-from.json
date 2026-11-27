@@ -1,0 +1,19 @@
+{
+  "unit": "client-error-capture.ts",
+  "files": 1,
+  "fingerprint": "c6a52786aaac7d18",
+  "cases": 538,
+  "cases_hash": "bc6ac83562bd1897",
+  "coverage": {
+    "lines": 217,
+    "reached": 77,
+    "files": [
+      {
+        "file": "client-error-capture.ts",
+        "lines": 217,
+        "reached": 77,
+        "missed": "64-74, 78-84, 88-99, 112-115, 117-126, 128-165, 168-173, 175-190, 193-203, 209, 215-224, 226-230, 232-234, 236-241"
+      }
+    ]
+  }
+}

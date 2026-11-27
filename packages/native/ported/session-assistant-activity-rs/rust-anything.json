@@ -1,0 +1,54 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "session-assistant-activity.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "session-assistant-activity-rs",
+  "exports": [
+    {
+      "name": "getAssistantResponseAt",
+      "file": "session-assistant-activity.ts",
+      "line": 15,
+      "params": [
+        {
+          "name": "message",
+          "ts_type": "Message",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "number | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getLastVisibleAssistantResponseAt",
+      "file": "session-assistant-activity.ts",
+      "line": 26,
+      "params": [
+        {
+          "name": "session",
+          "ts_type": "Session | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "messages",
+          "ts_type": "readonly Message[] | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "number | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

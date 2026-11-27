@@ -1,0 +1,22 @@
+[package]
+name = "devryan-scheduler-core"
+version = "0.1.0"
+description = "The orchestration scheduler's core in Rust on the ledger's JavaScript job layer, judged only by the scheduler conformance harness through its process candidate (tests only; nothing calls, starts or ships it)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "scheduler-candidate"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+devryan-js-layer.workspace = true
+devryan-scheduler-policy.workspace = true
+
+[lints]
+workspace = true

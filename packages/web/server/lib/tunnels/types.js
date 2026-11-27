@@ -70,7 +70,7 @@ export function normalizeTunnelMode(value) {
   return TUNNEL_MODE_QUICK;
 }
 
-export function normalizeTunnelIntent(value) {
+function normalizeTunnelIntent(value) {
   if (typeof value !== 'string') {
     return undefined;
   }

@@ -1,0 +1,19 @@
+{
+  "unit": "source.js",
+  "files": 1,
+  "fingerprint": "d961d74098a3c0e0",
+  "cases": 346,
+  "cases_hash": "1e47edfde10591ed",
+  "coverage": {
+    "lines": 74,
+    "reached": 74,
+    "files": [
+      {
+        "file": "source.js",
+        "lines": 74,
+        "reached": 74,
+        "missed": ""
+      }
+    ]
+  }
+}

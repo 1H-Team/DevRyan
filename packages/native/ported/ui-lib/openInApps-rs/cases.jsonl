@@ -1,0 +1,239 @@
+{"fn":"getOpenInAppById","args":[{"$undefined":true}],"ok":null}
+{"fn":"getOpenInAppById","args":["İstanbul"],"ok":null}
+{"fn":"getOpenInAppById","args":["straße"],"ok":null}
+{"fn":"getOpenInAppById","args":["tab\tseparatedabc"],"ok":null}
+{"fn":"getOpenInAppById","args":[],"ok":null}
+{"fn":"getOpenInAppById","args":["tab\tseparated"],"ok":null}
+{"fn":"getOpenInAppById","args":["aİstanbul"],"ok":null}
+{"fn":"getOpenInAppById","args":["ns:key.path"],"ok":null}
+{"fn":"getOpenInAppById","args":["src/a/b.ts"],"ok":null}
+{"fn":"getOpenInAppById","args":["ünïcödé"],"ok":null}
+{"fn":"getOpenInAppById","args":["😀"],"ok":null}
+{"fn":"getOpenInAppById","args":["a😀b😀c﻿bom"],"ok":null}
+{"fn":"getOpenInAppById","args":["a.b.c"],"ok":null}
+{"fn":"getOpenInAppById","args":["a😀b😀c"],"ok":null}
+{"fn":"getOpenInAppById","args":["hello world😀"],"ok":null}
+{"fn":"getOpenInAppById","args":["日本語のテキスト{name} has {count} items"],"ok":null}
+{"fn":"getOpenInAppById","args":["a:b:c"],"ok":null}
+{"fn":"getOpenInAppById","args":[""],"ok":null}
+{"fn":"getOpenInAppById","args":["日本語のテキスト"],"ok":null}
+{"fn":"getOpenInAppById","args":["ΣΊΣΥΦΟΣa"],"ok":null}
+{"fn":"getOpenInAppById","args":["hello world"],"ok":null}
+{"fn":"getOpenInAppById","args":["ΣΊΣΥΦΟΣ"],"ok":null}
+{"fn":"getOpenInAppById","args":["a"],"ok":null}
+{"fn":"getOpenInAppById","args":["ab"],"ok":null}
+{"fn":"getOpenInAppById","args":[".leading"],"ok":null}
+{"fn":"getOpenInAppById","args":["src/a/b.tstab\tseparated"],"ok":null}
+{"fn":"getOpenInAppById","args":["{name} has {count} itemshello world"],"ok":null}
+{"fn":"getOpenInAppById","args":["HELLO"],"ok":null}
+{"fn":"getOpenInAppById","args":["trailing.ünïcödé"],"ok":null}
+{"fn":"getOpenInAppById","args":["a..b"],"ok":null}
+{"fn":"getOpenInAppById","args":["Hello World"],"ok":null}
+{"fn":"getOpenInAppById","args":["line1\nline2"],"ok":null}
+{"fn":"getOpenInAppById","args":["key_name-1"],"ok":null}
+{"fn":"getOpenInAppById","args":["é"],"ok":null}
+{"fn":"getOpenInAppById","args":["{name} has {count} items"],"ok":null}
+{"fn":"getOpenInAppById","args":["./x/**/*.jsona"],"ok":null}
+{"fn":"getOpenInAppById","args":["aabc"],"ok":null}
+{"fn":"getOpenInAppById","args":[":"],"ok":null}
+{"fn":"getOpenInAppById","args":["hello"],"ok":null}
+{"fn":"getOpenInAppById","args":["./x/**/*.json"],"ok":null}
+{"fn":"getOpenInAppById","args":["emoji 👍🏽 mix"],"ok":null}
+{"fn":"getOpenInAppById","args":[".leadingstraße"],"ok":null}
+{"fn":"getOpenInAppById","args":["İstanbulHello World"],"ok":null}
+{"fn":"getOpenInAppById","args":["﻿bomabc"],"ok":null}
+{"fn":"getOpenInAppById","args":["a.b.ctrailing."],"ok":null}
+{"fn":"getOpenInAppById","args":["hello worldline1\nline2"],"ok":null}
+{"fn":"getOpenInAppById","args":[".leadinga.b.c"],"ok":null}
+{"fn":"getOpenInAppById","args":["trailing..leading"],"ok":null}
+{"fn":"getOpenInAppById","args":[":İstanbul"],"ok":null}
+{"fn":"getOpenInAppById","args":["./x/**/*.jsoné"],"ok":null}
+{"fn":"getOpenInAppById","args":["  padded  straße"],"ok":null}
+{"fn":"getOpenInAppById","args":["tab\tseparatedhello world"],"ok":null}
+{"fn":"getOpenInAppById","args":["ΣΊΣΥΦΟΣé"],"ok":null}
+{"fn":"getOpenInAppById","args":["a..b日本語のテキスト"],"ok":null}
+{"fn":"getOpenInAppById","args":["﻿bomkey_name-1"],"ok":null}
+{"fn":"getOpenInAppById","args":["😀  padded  "],"ok":null}
+{"fn":"getOpenInAppById","args":["HELLOkey_name-1"],"ok":null}
+{"fn":"getOpenInAppById","args":["abc"],"ok":null}
+{"fn":"getOpenInAppById","args":["a:b:c.leading"],"ok":null}
+{"fn":"getOpenInAppById","args":["a.b.ca:b:c"],"ok":null}
+{"fn":"getOpenInAppById","args":["😀İstanbul"],"ok":null}
+{"fn":"getOpenInAppById","args":["trailing."],"ok":null}
+{"fn":"getOpenInAppById","args":["  padded  "],"ok":null}
+{"fn":"getOpenInAppById","args":["ünïcödékey_name-1"],"ok":null}
+{"fn":"getOpenInAppById","args":["éé"],"ok":null}
+{"fn":"getOpenInAppById","args":["a..btab\tseparated"],"ok":null}
+{"fn":"getOpenInAppById","args":["﻿bom"],"ok":null}
+{"fn":"getOpenInAppById","args":["hellokey_name-1"],"ok":null}
+{"fn":"getOpenInAppById","args":["ns:key.pathtab\tseparated"],"ok":null}
+{"fn":"getOpenInAppById","args":["a..bns:key.path"],"ok":null}
+{"fn":"getOpenInAppById","args":["straßeline1\nline2"],"ok":null}
+{"fn":"getOpenInAppById","args":["line1\nline2abc"],"ok":null}
+{"fn":"getOpenInAppById","args":["./x/**/*.jsonİstanbul"],"ok":null}
+{"fn":"getOpenInAppById","args":["trailing.src/a/b.ts"],"ok":null}
+{"fn":"getOpenInAppById","args":["😀a😀b😀c"],"ok":null}
+{"fn":"getOpenInAppById","args":["Hello Worldhello"],"ok":null}
+{"fn":"getOpenInAppById","args":["abtab\tseparated"],"ok":null}
+{"fn":"getOpenInAppById","args":["trailing.ab"],"ok":null}
+{"fn":"getOpenInAppById","args":["﻿bom😀"],"ok":null}
+{"fn":"getOpenInAppById","args":[".leading./x/**/*.json"],"ok":null}
+{"fn":"getOpenInAppById","args":["ünïcödé😀"],"ok":null}
+{"fn":"getOpenInAppById","args":["tab\tseparatedhello"],"ok":null}
+{"fn":"getOpenInAppById","args":["a.b.cünïcödé"],"ok":null}
+{"fn":"getOpenInAppById","args":["./x/**/*.jsonhello world"],"ok":null}
+{"fn":"getOpenInAppById","args":["Hello World﻿bom"],"ok":null}
+{"fn":"getOpenInAppById","args":["a😀"],"ok":null}
+{"fn":"getOpenInAppById","args":["line1\nline2emoji 👍🏽 mix"],"ok":null}
+{"fn":"getOpenInAppById","args":["日本語のテキストhello"],"ok":null}
+{"fn":"getOpenInAppById","args":["abemoji 👍🏽 mix"],"ok":null}
+{"fn":"getOpenInAppById","args":["ünïcödé.leading"],"ok":null}
+{"fn":"getOpenInAppById","args":["hello worlda"],"ok":null}
+{"fn":"getOpenInAppById","args":["emoji 👍🏽 mixstraße"],"ok":null}
+{"fn":"getOpenInAppById","args":["😀ΣΊΣΥΦΟΣ"],"ok":null}
+{"fn":"getOpenInAppById","args":["emoji 👍🏽 mixa..b"],"ok":null}
+{"fn":"getOpenInAppById","args":["😀é"],"ok":null}
+{"fn":"getOpenInAppById","args":["İstanbul﻿bom"],"ok":null}
+{"fn":"getOpenInAppById","args":["ΣΊΣΥΦΟΣ.leading"],"ok":null}
+{"fn":"getOpenInAppById","args":["a😀b😀cemoji 👍🏽 mix"],"ok":null}
+{"fn":"getOpenInAppById","args":["a😀b😀c  padded  "],"ok":null}
+{"fn":"getOpenInAppById","args":["İstanbultab\tseparated"],"ok":null}
+{"fn":"getOpenInAppById","args":["abHELLO"],"ok":null}
+{"fn":"getOpenInAppById","args":["﻿bomab"],"ok":null}
+{"fn":"getOpenInAppById","args":["ns:key.path日本語のテキスト"],"ok":null}
+{"fn":"getOpenInAppById","args":["ΣΊΣΥΦΟΣkey_name-1"],"ok":null}
+{"fn":"getOpenInAppById","args":["ns:key.path  padded  "],"ok":null}
+{"fn":"getOpenInAppById","args":["line1\nline2ünïcödé"],"ok":null}
+{"fn":"getOpenInAppById","args":["emoji 👍🏽 mix😀"],"ok":null}
+{"fn":"getOpenInAppById","args":["hello worldHello World"],"ok":null}
+{"fn":"getOpenInAppById","args":["src/a/b.tsa.b.c"],"ok":null}
+{"fn":"getOpenInAppById","args":["{name} has {count} items日本語のテキスト"],"ok":null}
+{"fn":"getOpenInAppById","args":["./x/**/*.jsonHello World"],"ok":null}
+{"fn":"getOpenInAppById","args":["abca.b.c"],"ok":null}
+{"fn":"getOpenInAppById","args":["hello world﻿bom"],"ok":null}
+{"fn":"getOpenInAppById","args":["src/a/b.tsa"],"ok":null}
+{"fn":"getOpenInAppById","args":["  padded    padded  "],"ok":null}
+{"fn":"getOpenInAppById","args":["a..bİstanbul"],"ok":null}
+{"fn":"getOpenInAppById","args":[":src/a/b.ts"],"ok":null}
+{"fn":"getOpenInAppById","args":["a:b:c﻿bom"],"ok":null}
+{"fn":"getOpenInAppById","args":["ns:key.pathsrc/a/b.ts"],"ok":null}
+{"fn":"getOpenInAppById","args":["tab\tseparated﻿bom"],"ok":null}
+{"fn":"getOpenInAppById","args":["a:b:cİstanbul"],"ok":null}
+{"fn":"getOpenInAppById","args":["a.b.ca😀b😀c"],"ok":null}
+{"fn":"getOpenInAppById","args":["a..btrailing."],"ok":null}
+{"fn":"getOpenInAppById","args":["./x/**/*.jsonhello"],"ok":null}
+{"fn":"getOpenInAppById","args":["a..ba😀b😀c"],"ok":null}
+{"fn":"getOpenInAppById","args":["tab\tseparatedHELLO"],"ok":null}
+{"fn":"getOpenInAppById","args":["abctab\tseparated"],"ok":null}
+{"fn":"getOpenInAppById","args":["src/a/b.ts😀"],"ok":null}
+{"fn":"getOpenInAppById","args":["abckey_name-1"],"ok":null}
+{"fn":"getOpenInAppById","args":["abline1\nline2"],"ok":null}
+{"fn":"getOpenInAppById","args":["Hello World.leading"],"ok":null}
+{"fn":"getOpenInAppById","args":["a.b.c./x/**/*.json"],"ok":null}
+{"fn":"getOpenInAppById","args":["a.leading"],"ok":null}
+{"fn":"getOpenInAppById","args":["Hello WorldHELLO"],"ok":null}
+{"fn":"getOpenInAppById","args":["trailing.line1\nline2"],"ok":null}
+{"fn":"getOpenInAppById","args":["Hello WorldHello World"],"ok":null}
+{"fn":"getOpenInAppById","args":["ns:key.path﻿bom"],"ok":null}
+{"fn":"getOpenInAppById","args":["line1\nline2ΣΊΣΥΦΟΣ"],"ok":null}
+{"fn":"getOpenInAppById","args":["src/a/b.tshello"],"ok":null}
+{"fn":"getOpenInAppById","args":["./x/**/*.jsonstraße"],"ok":null}
+{"fn":"getOpenInAppById","args":["😀abc"],"ok":null}
+{"fn":"getOpenInAppById","args":[".leadingHello World"],"ok":null}
+{"fn":"getOpenInAppById","args":["a.b.chello world"],"ok":null}
+{"fn":"getOpenInAppById","args":["ünïcödéhello world"],"ok":null}
+{"fn":"getOpenInAppById","args":["hello world{name} has {count} items"],"ok":null}
+{"fn":"getOpenInAppById","args":["  padded  ünïcödé"],"ok":null}
+{"fn":"getOpenInAppById","args":["ns:key.pathé"],"ok":null}
+{"fn":"getOpenInAppById","args":[":straße"],"ok":null}
+{"fn":"getOpenInAppById","args":["﻿bomsrc/a/b.ts"],"ok":null}
+{"fn":"getOpenInAppById","args":["a  padded  "],"ok":null}
+{"fn":"getOpenInAppById","args":["ab😀"],"ok":null}
+{"fn":"getOpenInAppById","args":["./x/**/*.jsona.b.c"],"ok":null}
+{"fn":"getOpenInAppById","args":["日本語のテキストsrc/a/b.ts"],"ok":null}
+{"fn":"getOpenInAppById","args":["straßehello world"],"ok":null}
+{"fn":"getOpenInAppById","args":["日本語のテキストab"],"ok":null}
+{"fn":"getOpenInAppById","args":["a😀b😀ca..b"],"ok":null}
+{"fn":"getOpenInAppById","args":["tab\tseparatedΣΊΣΥΦΟΣ"],"ok":null}
+{"fn":"getOpenInAppById","args":["{name} has {count} items😀"],"ok":null}
+{"fn":"getOpenInAppById","args":["日本語のテキストtrailing."],"ok":null}
+{"fn":"getOpenInAppById","args":[":a"],"ok":null}
+{"fn":"getOpenInAppById","args":["İstanbulsrc/a/b.ts"],"ok":null}
+{"fn":"getOpenInAppById","args":["emoji 👍🏽 mixemoji 👍🏽 mix"],"ok":null}
+{"fn":"getOpenInAppById","args":["a..bline1\nline2"],"ok":null}
+{"fn":"getOpenInAppById","args":[":key_name-1"],"ok":null}
+{"fn":"getOpenInAppById","args":["hello worldHELLO"],"ok":null}
+{"fn":"getOpenInAppById","args":["{name} has {count} itemsa..b"],"ok":null}
+{"fn":"getOpenInAppById","args":["line1\nline2a😀b😀c"],"ok":null}
+{"fn":"getOpenInAppById","args":["a:b:c{name} has {count} items"],"ok":null}
+{"fn":"getOpenInAppById","args":["tab\tseparated./x/**/*.json"],"ok":null}
+{"fn":"getOpenInAppById","args":["éHello World"],"ok":null}
+{"fn":"getOpenInAppById","args":["line1\nline2ab"],"ok":null}
+{"fn":"getOpenInAppById","args":["trailing.hello"],"ok":null}
+{"fn":"getOpenInAppById","args":["ab﻿bom"],"ok":null}
+{"fn":"getOpenInAppById","args":["İstanbulİstanbul"],"ok":null}
+{"fn":"getOpenInAppById","args":["abctrailing."],"ok":null}
+{"fn":"getOpenInAppById","args":["  padded  ns:key.path"],"ok":null}
+{"fn":"getOpenInAppById","args":["Hello WorldΣΊΣΥΦΟΣ"],"ok":null}
+{"fn":"getOpenInAppById","args":["straßesrc/a/b.ts"],"ok":null}
+{"fn":"getOpenInAppById","args":[".leading{name} has {count} items"],"ok":null}
+{"fn":"getOpenInAppById","args":["ns:key.path.leading"],"ok":null}
+{"fn":"getOpenInAppById","args":["HELLOline1\nline2"],"ok":null}
+{"fn":"getOpenInAppById","args":["straße﻿bom"],"ok":null}
+{"fn":"getOpenInAppById","args":["aa..b"],"ok":null}
+{"fn":"getOpenInAppById","args":["straßeİstanbul"],"ok":null}
+{"fn":"getOpenInAppById","args":["﻿bom  padded  "],"ok":null}
+{"fn":"getOpenInAppById","args":["hello world.leading"],"ok":null}
+{"fn":"getOpenInAppById","args":["ab./x/**/*.json"],"ok":null}
+{"fn":"getOpenInAppById","args":["./x/**/*.jsontab\tseparated"],"ok":null}
+{"fn":"getOpenInAppById","args":["aba😀b😀c"],"ok":null}
+{"fn":"getOpenInAppById","args":["src/a/b.tsns:key.path"],"ok":null}
+{"fn":"getOpenInAppById","args":["{name} has {count} itemsemoji 👍🏽 mix"],"ok":null}
+{"fn":"getOpenInAppById","args":["line1\nline2  padded  "],"ok":null}
+{"fn":"getOpenInAppById","args":["ns:key.pathstraße"],"ok":null}
+{"fn":"getOpenInAppById","args":["ünïcödé:"],"ok":null}
+{"fn":"getOpenInAppById","args":["ns:key.pathΣΊΣΥΦΟΣ"],"ok":null}
+{"fn":"getOpenInAppById","args":["İstanbulabc"],"ok":null}
+{"fn":"getOpenInAppById","args":["a😀b😀ckey_name-1"],"ok":null}
+{"fn":"getOpenInAppById","args":["HELLOab"],"ok":null}
+{"fn":"getOpenInAppById","args":["ünïcödéa..b"],"ok":null}
+{"fn":"getOpenInAppById","args":["éemoji 👍🏽 mix"],"ok":null}
+{"fn":"getOpenInAppById","args":["héllo wörld"],"ok":null}
+{"fn":"getOpenInAppById","args":["👍🏽 thumbs"],"ok":null}
+{"fn":"getOpenInAppById","args":["日本語"],"ok":null}
+{"fn":"getOpenInAppById","args":["ılık ırmak"],"ok":null}
+{"fn":"getOpenInAppById","args":["👨‍👩‍👧 family"],"ok":null}
+{"fn":"getOpenInAppById","args":["a b"],"ok":null}
+{"fn":"getOpenInAppById","args":["a😀b"],"ok":null}
+{"fn":"getOpenInAppById","args":["a²b x½ y①"],"ok":null}
+{"fn":"getOpenInAppById","args":["aⅠb Ⅻ"],"ok":null}
+{"fn":"getOpenInAppById","args":["a𐐀b 𝐀bc"],"ok":null}
+{"fn":"getOpenInAppById","args":["कि ٣٤"],"ok":null}
+{"fn":"getOpenInAppById","args":["finder"],"ok":{"id":"finder","label":"Finder","appName":"Finder"}}
+{"fn":"getOpenInAppById","args":["terminal"],"ok":{"id":"terminal","label":"Terminal","appName":"Terminal"}}
+{"fn":"getOpenInAppById","args":["iterm2"],"ok":{"id":"iterm2","label":"iTerm2","appName":"iTerm"}}
+{"fn":"getOpenInAppById","args":["ghostty"],"ok":{"id":"ghostty","label":"Ghostty","appName":"Ghostty"}}
+{"fn":"getOpenInAppById","args":["vscode"],"ok":{"id":"vscode","label":"VS Code","appName":"Visual Studio Code"}}
+{"fn":"getOpenInAppById","args":["intellij"],"ok":{"id":"intellij","label":"IntelliJ","appName":"IntelliJ IDEA"}}
+{"fn":"getOpenInAppById","args":["visual-studio"],"ok":{"id":"visual-studio","label":"Visual Studio","appName":"Visual Studio"}}
+{"fn":"getOpenInAppById","args":["cursor"],"ok":{"id":"cursor","label":"Cursor","appName":"Cursor"}}
+{"fn":"getOpenInAppById","args":["android-studio"],"ok":{"id":"android-studio","label":"Android Studio","appName":"Android Studio"}}
+{"fn":"getOpenInAppById","args":["pycharm"],"ok":{"id":"pycharm","label":"PyCharm","appName":"PyCharm"}}
+{"fn":"getOpenInAppById","args":["xcode"],"ok":{"id":"xcode","label":"Xcode","appName":"Xcode"}}
+{"fn":"getOpenInAppById","args":["sublime-text"],"ok":{"id":"sublime-text","label":"Sublime","appName":"Sublime Text"}}
+{"fn":"getOpenInAppById","args":["webstorm"],"ok":{"id":"webstorm","label":"WebStorm","appName":"WebStorm"}}
+{"fn":"getOpenInAppById","args":["rider"],"ok":{"id":"rider","label":"Rider","appName":"Rider"}}
+{"fn":"getOpenInAppById","args":["zed"],"ok":{"id":"zed","label":"Zed","appName":"Zed"}}
+{"fn":"getOpenInAppById","args":["phpstorm"],"ok":{"id":"phpstorm","label":"PhpStorm","appName":"PhpStorm"}}
+{"fn":"getOpenInAppById","args":["eclipse"],"ok":{"id":"eclipse","label":"Eclipse","appName":"Eclipse"}}
+{"fn":"getOpenInAppById","args":["windsurf"],"ok":{"id":"windsurf","label":"Windsurf","appName":"Windsurf"}}
+{"fn":"getOpenInAppById","args":["vscodium"],"ok":{"id":"vscodium","label":"VSCodium","appName":"VSCodium"}}
+{"fn":"getOpenInAppById","args":["rustrover"],"ok":{"id":"rustrover","label":"RustRover","appName":"RustRover"}}
+{"fn":"getOpenInAppById","args":["kiro"],"ok":{"id":"kiro","label":"Kiro","appName":"Kiro"}}
+{"fn":"getOpenInAppById","args":["antigravity"],"ok":{"id":"antigravity","label":"Antigravity","appName":"Antigravity"}}
+{"fn":"getOpenInAppById","args":["trae"],"ok":{"id":"trae","label":"Trae","appName":"Trae"}}
+{"fn":"getOpenInAppById","args":[""],"ok":null}
+{"fn":"getOpenInAppById","args":["Finder"],"ok":null}
+{"fn":"getOpenInAppById","args":["zed "],"ok":null}
+{"fn":"getOpenInAppById","args":[],"ok":null}
+{"fn":"getOpenInAppById","args":[null],"ok":null}

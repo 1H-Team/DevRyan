@@ -1,0 +1,5 @@
+bin.name = "devryan"
+args = ["tunnel", "profile", "remove", "--name", "ghost", "--json"]
+status.code = 1
+fs.sandbox = true
+fs.base = "profile-remove-missing-two.in"

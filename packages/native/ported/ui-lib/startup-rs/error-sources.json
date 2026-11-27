@@ -1,0 +1,42 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [],
+  "product": [],
+  "engine": [
+    {
+      "site": "packages/ui/src/lib/startup/readiness.ts:108",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'desktopBootReady')"
+    },
+    {
+      "site": "packages/ui/src/lib/startup/readiness.ts:119",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'status')"
+    },
+    {
+      "site": "packages/ui/src/lib/startup/readiness.ts:134",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'health')"
+    },
+    {
+      "site": "packages/ui/src/lib/startup/readiness.ts:135",
+      "class": "TypeError",
+      "sample": "Cannot read properties of undefined (reading 'status')"
+    },
+    {
+      "site": "packages/ui/src/lib/startup/readiness.ts:154",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'ready')"
+    },
+    {
+      "site": "packages/ui/src/lib/startup/readiness.ts:76",
+      "class": "TypeError",
+      "sample": "Cannot read properties of undefined (reading 'status')"
+    },
+    {
+      "site": "packages/ui/src/lib/startup/readiness.ts:97",
+      "class": "TypeError",
+      "sample": "openCodeError?.trim is not a function"
+    }
+  ]
+}

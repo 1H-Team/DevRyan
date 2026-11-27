@@ -1,0 +1,19 @@
+{
+  "unit": "responseStyle.ts",
+  "files": 1,
+  "fingerprint": "344674616becb5f9",
+  "cases": 1261,
+  "cases_hash": "1aa063be07449512",
+  "coverage": {
+    "lines": 108,
+    "reached": 108,
+    "files": [
+      {
+        "file": "responseStyle.ts",
+        "lines": 108,
+        "reached": 108,
+        "missed": ""
+      }
+    ]
+  }
+}

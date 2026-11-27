@@ -1,0 +1,55 @@
+{
+  "unit": "sessions.js",
+  "files": 1,
+  "fingerprint": "4eb5376727e6225f",
+  "cases": 2019,
+  "cases_hash": "510896513e666dd0",
+  "coverage": {
+    "lines": 2139,
+    "reached": 1231,
+    "files": [
+      {
+        "file": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/shared-runtime/lib/native-message-status.js",
+        "lines": 12,
+        "reached": 11,
+        "missed": "6"
+      },
+      {
+        "file": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/shared-runtime/lib/provider-error-details.js",
+        "lines": 41,
+        "reached": 30,
+        "missed": "31-41"
+      },
+      {
+        "file": "errors.js",
+        "lines": 184,
+        "reached": 139,
+        "missed": "97, 110-117, 129-140, 153-156, 168-170, 181-197"
+      },
+      {
+        "file": "ids.js",
+        "lines": 225,
+        "reached": 144,
+        "missed": "40, 74, 92-98, 112-121, 132-151, 167-189, 200, 214-216, 227-233, 239-244, 248-249"
+      },
+      {
+        "file": "messages.js",
+        "lines": 1029,
+        "reached": 427,
+        "missed": "74, 86-87, 155, 163-171, 175-178, 212-222, 232-236, 240-253, 261-263, 274-312, 322-331, 342-351, 360-364, 381, 392-415, 426-434, 436-469, 471-484, 494-495, 516-567, 577-629, 645-656, 667-674, 685-693, 701-704, 717-738, 761-779, 781-786, 788-790, 792-797, 799-807, 809-822, 824-896, 898-911, 913, 922-936, 940-945, 957, 968-971, 978-983, 988-993, 997-1003, 1007-1008, 1035-1084, 1096, 1104"
+      },
+      {
+        "file": "sessions.js",
+        "lines": 338,
+        "reached": 321,
+        "missed": "303-313, 350-355"
+      },
+      {
+        "file": "tools.js",
+        "lines": 310,
+        "reached": 159,
+        "missed": "56, 87-97, 109-119, 123-125, 136-155, 167-177, 187-191, 201-206, 210-214, 218-233, 241-245, 249-250, 261-265, 267-269, 271-274, 276-280, 282-293, 295-303, 305, 325, 329-343"
+      }
+    ]
+  }
+}

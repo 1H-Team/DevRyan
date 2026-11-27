@@ -89,7 +89,7 @@ export const readFacadeSessionQuery = (req) => ({
 export const readFacadeMessagePage = (req) => ({ limit: numberQuery(req, 'limit', true), before: stringQuery(req, 'before') });
 
 /** `attachments=inline` asks the single-message route for full tool media (tool-attachment-summary.js). */
-export const readFacadeInlineAttachments = (req) => {
+const readFacadeInlineAttachments = (req) => {
   const value = stringQuery(req, 'attachments');
   if (value === undefined) return false;
   if (value !== 'inline') throw invalid('attachments must be inline');

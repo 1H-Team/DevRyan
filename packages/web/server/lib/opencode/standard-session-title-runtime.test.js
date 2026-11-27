@@ -171,12 +171,6 @@ const captureTimers = () => {
   return { timers, setTimer, clearTimer };
 };
 
-const settleAfterPatches = async (fake, count) => {
-  for (let index = 0; index < 50 && fake.state.patches.length < count; index += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-};
-
 const stageOutcomes = (diagnostics, ...stages) => diagnostics
   .map(({ payload }) => `${payload.stage}:${payload.outcome}`)
   .filter((entry) => stages.some((stage) => entry.startsWith(`${stage}:`)));

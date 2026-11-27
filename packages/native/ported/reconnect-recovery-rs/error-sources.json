@@ -1,0 +1,102 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [],
+  "product": [],
+  "engine": [
+    {
+      "site": "packages/ui/src/sync/materialization.ts:312",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'role')"
+    },
+    {
+      "site": "packages/ui/src/sync/reconnect-recovery.ts:112",
+      "class": "TypeError",
+      "sample": "Cannot read properties of undefined (reading 'session_status')"
+    },
+    {
+      "site": "packages/ui/src/sync/reconnect-recovery.ts:113",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'id')"
+    },
+    {
+      "site": "packages/ui/src/sync/reconnect-recovery.ts:121",
+      "class": "TypeError",
+      "sample": "messages.at is not a function"
+    },
+    {
+      "site": "packages/ui/src/sync/reconnect-recovery.ts:136",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'a1')"
+    },
+    {
+      "site": "packages/ui/src/sync/reconnect-recovery.ts:147",
+      "class": "TypeError",
+      "sample": "snapshot.parts.at is not a function"
+    },
+    {
+      "site": "packages/ui/src/sync/reconnect-recovery.ts:182",
+      "class": "TypeError",
+      "sample": "object is not iterable (cannot read property Symbol(Symbol.iterator))"
+    },
+    {
+      "site": "packages/ui/src/sync/reconnect-recovery.ts:183",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'type')"
+    },
+    {
+      "site": "packages/ui/src/sync/reconnect-recovery.ts:241",
+      "class": "TypeError",
+      "sample": "snapshot.parts.at is not a function"
+    },
+    {
+      "site": "packages/ui/src/sync/reconnect-recovery.ts:288",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'thresholdMs')"
+    },
+    {
+      "site": "packages/ui/src/sync/reconnect-recovery.ts:32",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'status')"
+    },
+    {
+      "site": "packages/ui/src/sync/reconnect-recovery.ts:338",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'session_status')"
+    },
+    {
+      "site": "packages/ui/src/sync/reconnect-recovery.ts:343",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'length')"
+    },
+    {
+      "site": "packages/ui/src/sync/reconnect-recovery.ts:356",
+      "class": "TypeError",
+      "sample": "state.session is not iterable"
+    },
+    {
+      "site": "packages/ui/src/sync/reconnect-recovery.ts:357",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'parentID')"
+    },
+    {
+      "site": "packages/ui/src/sync/reconnect-recovery.ts:369",
+      "class": "TypeError",
+      "sample": "state.session.some is not a function"
+    },
+    {
+      "site": "packages/ui/src/sync/reconnect-recovery.ts:416",
+      "class": "TypeError",
+      "sample": "input.candidateSessionIds is not iterable"
+    },
+    {
+      "site": "packages/ui/src/sync/reconnect-recovery.ts:417",
+      "class": "TypeError",
+      "sample": "Cannot read properties of undefined (reading 'has')"
+    },
+    {
+      "site": "packages/ui/src/sync/reconnect-recovery.ts:418",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'a')"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+bin.name = "devryan"
+args = ["--port", "4000", "--help"]
+status.code = 0
+fs.sandbox = true

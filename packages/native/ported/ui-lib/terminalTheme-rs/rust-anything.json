@@ -1,0 +1,37 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "terminalTheme.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "terminaltheme-rs",
+  "exports": [
+    {
+      "name": "convertThemeToXterm",
+      "file": "terminalTheme.ts",
+      "line": 30,
+      "params": [
+        {
+          "name": "theme",
+          "ts_type": "Theme",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "TerminalTheme",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "getGhosttyTerminalOptions",
+      "file": "terminalTheme.ts",
+      "line": 68,
+      "reason": "carries the Ghostty runtime object through"
+    }
+  ]
+}

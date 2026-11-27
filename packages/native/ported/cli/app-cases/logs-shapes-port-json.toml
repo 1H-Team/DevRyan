@@ -1,0 +1,5 @@
+bin.name = "devryan"
+args = ["logs", "--port", "3001", "--json", "--no-follow"]
+status.code = 1
+fs.sandbox = true
+fs.base = "logs-shapes-port-json.in"

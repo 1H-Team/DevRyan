@@ -1,0 +1,25 @@
+{
+  "unit": "default-plugins.js",
+  "files": 1,
+  "fingerprint": "8b186e8d606d4d3c",
+  "cases": 288,
+  "cases_hash": "df3effe453673851",
+  "coverage": {
+    "lines": 417,
+    "reached": 307,
+    "files": [
+      {
+        "file": "default-plugins.js",
+        "lines": 61,
+        "reached": 61,
+        "missed": ""
+      },
+      {
+        "file": "managed-plugins.js",
+        "lines": 356,
+        "reached": 246,
+        "missed": "206, 254-260, 271-275, 279-281, 285-296, 298-320, 322-327, 331-383"
+      }
+    ]
+  }
+}

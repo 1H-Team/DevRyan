@@ -1,0 +1,16 @@
+{
+  "status": "ok",
+  "profiles": [
+    {
+      "id": "b",
+      "name": "bytes",
+      "provider": "cloudflare",
+      "mode": "managed-remote",
+      "hostname": "h.example.com",
+      "originPort": 3000,
+      "token": "ab��cd",
+      "createdAt": 1,
+      "updatedAt": 2
+    }
+  ]
+}

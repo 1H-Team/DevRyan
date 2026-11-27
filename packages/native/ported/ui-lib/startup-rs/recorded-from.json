@@ -1,0 +1,19 @@
+{
+  "unit": "startup/",
+  "files": 9,
+  "fingerprint": "7a28510dd5e0bce2",
+  "cases": 1543,
+  "cases_hash": "e7c8190e2c58d8ce",
+  "coverage": {
+    "lines": 169,
+    "reached": 136,
+    "files": [
+      {
+        "file": "startup/readiness.ts",
+        "lines": 169,
+        "reached": 136,
+        "missed": "26-32, 165-173, 175-179, 181-187, 189-191, 193-194"
+      }
+    ]
+  }
+}

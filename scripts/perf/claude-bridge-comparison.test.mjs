@@ -145,3 +145,33 @@ test('native auth preflight uses the bridge platform allowlist and private confi
     await fs.rm(root, { recursive: true, force: true });
   }
 });
+
+test('a native cleanup failure after a failed turn is reported with, never instead of, the turn failure', async () => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-claude-comparison-')));
+  const realKill = process.kill;
+  let child;
+  try {
+    // The owned child cannot be signalled: cleanup fails after the turn has already failed.
+    process.kill = (pid, signal) => {
+      if (child && Math.abs(pid) === child.pid && signal !== 0) throw Object.assign(new Error('kill EPERM'), { code: 'EPERM' });
+      return realKill.call(process, pid, signal);
+    };
+    await assert.rejects(runNativeClaudeTurn({ query: ({ options }) => {
+      child = options.spawnClaudeCodeProcess({ command: process.execPath, args: ['-e', 'setInterval(() => {}, 1000)'], cwd: root, env: {} });
+      return { async *[Symbol.asyncIterator]() { throw new Error('fixture stream failed'); }, close() {} };
+    }, prompt: 'fixture', roleInstructions: 'role', directory: root,
+    runFiles: { sourcePath: path.join(root, 'src/source.ts'), testPath: path.join(root, 'src/source.test.mjs'), testRelativePath: 'src/source.test.mjs' },
+    model: 'fixture', effort: 'medium', executable: process.execPath, environment: {}, timeoutMs: 10000 }), error => {
+      assert.ok(error instanceof AggregateError, `expected both failures, got: ${error.code}`);
+      assert.equal(error.code, 'comparison_native_turn_failed', 'the turn failure is the reported code');
+      assert.equal(typeof error.measurement?.durationMs, 'number', 'the turn measurement survives');
+      assert.equal(error.errors[0].code, 'comparison_native_turn_failed');
+      assert.equal(error.errors[1].code, 'comparison_native_cleanup_failed');
+      return true;
+    });
+  } finally {
+    process.kill = realKill;
+    if (child?.pid) { try { process.kill(-child.pid, 'SIGKILL'); } catch {} }
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});

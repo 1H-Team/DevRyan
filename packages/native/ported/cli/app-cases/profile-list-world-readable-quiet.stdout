@@ -1,0 +1,2 @@
+prod-main cloudflare/managed-remote app.example.com origin:3000
+Staging cloudflare/managed-remote stage.example.com origin:1024

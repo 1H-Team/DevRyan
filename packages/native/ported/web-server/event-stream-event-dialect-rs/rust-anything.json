@@ -1,0 +1,43 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/event-stream",
+  "unit": "event-dialect.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "event-dialect-rs",
+  "exports": [
+    {
+      "name": "applyEventDialect",
+      "file": "event-dialect.js",
+      "line": 27,
+      "params": [
+        {
+          "name": "json",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "dialect",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "resolveEventDialect",
+      "file": "event-dialect.js",
+      "line": 13,
+      "reason": "parses req.url with WHATWG URL"
+    }
+  ]
+}

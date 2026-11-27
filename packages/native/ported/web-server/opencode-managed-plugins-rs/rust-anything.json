@@ -1,0 +1,133 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode",
+  "unit": "managed-plugins.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "managed-plugins-rs",
+  "exports": [
+    {
+      "name": "getDevRyanManagedPluginForSpec",
+      "file": "managed-plugins.js",
+      "line": 234,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "DevRyanManagedPlugin | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getDevRyanManagedPluginForFile",
+      "file": "managed-plugins.js",
+      "line": 245,
+      "params": [
+        {
+          "name": "fileName",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "DevRyanManagedPlugin | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isRetiredDevRyanPluginSpec",
+      "file": "managed-plugins.js",
+      "line": 263,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isDevRyanManagedLegacyPluginSpec",
+      "file": "managed-plugins.js",
+      "line": 270,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "removeDevRyanManagedLegacyPluginSpecs",
+      "file": "managed-plugins.js",
+      "line": 278,
+      "params": [
+        {
+          "name": "entries",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown[]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "reconcileDevRyanManagedPluginSpecs",
+      "file": "managed-plugins.js",
+      "line": 284,
+      "params": [
+        {
+          "name": "currentEntries",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "baselineEntries",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown[]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "inspectDevRyanManagedPluginInstallation",
+      "file": "managed-plugins.js",
+      "line": 330,
+      "reason": "kept on request"
+    }
+  ]
+}

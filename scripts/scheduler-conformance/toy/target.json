@@ -1,0 +1,89 @@
+{
+  "module": "toy-scheduler.mjs",
+  "export": "createManagedTaskScheduler",
+  "defaults": {
+    "createTaskId": "toy_task_",
+    "createLeaseToken": "toy_lease_"
+  },
+  "env": [
+    "DEVRYAN_ORCHESTRATION_UNACKNOWLEDGED_EXPIRY"
+  ],
+  "defaultPersistence": [
+    "const persistence = options.persistence ?? { async load() { return null; }, async save() {} };"
+  ],
+  "savedState": {
+    "file": "toy-ledger.mjs",
+    "export": "encodeLedgerSnapshot",
+    "port": "persistence.save",
+    "arg": 0
+  },
+  "sites": [
+    {
+      "site": "persistLocked",
+      "kind": "draw",
+      "anchor": "const owner = createRandomId('toy_save_');"
+    },
+    {
+      "site": "stop",
+      "kind": "draw",
+      "anchor": "const stop = { taskId, requestId: createRandomId('toy_stop_'), at: now() };"
+    },
+    {
+      "site": "createRandomId",
+      "kind": "helper",
+      "anchor": "const random = globalThis.crypto.randomUUID();"
+    },
+    {
+      "site": "runExclusive.queued",
+      "kind": "clock",
+      "anchor": "const queuedAt = options.onMutationTiming ? performance.now() : 0;"
+    },
+    {
+      "site": "runExclusive.started",
+      "kind": "clock",
+      "anchor": "const startedAt = options.onMutationTiming ? performance.now() : 0;"
+    },
+    {
+      "site": "runExclusive.held",
+      "kind": "clock",
+      "anchor": "holdMs: performance.now() - startedAt"
+    },
+    {
+      "site": "persistLocked",
+      "kind": "env",
+      "anchor": "const expire = globalThis.process?.env?.DEVRYAN_ORCHESTRATION_UNACKNOWLEDGED_EXPIRY !== '0';"
+    }
+  ],
+  "unreached": [
+    {
+      "anchor": "const now = options.now ?? Date.now;",
+      "reason": "the recorder always passes now"
+    },
+    {
+      "anchor": "const scheduleTimeout = options.scheduleTimeout ?? globalThis.setTimeout;",
+      "reason": "the recorder always passes scheduleTimeout"
+    }
+  ],
+  "accepted": [
+    {
+      "anchor": "if (route === 'setTimeout') setTimeout(bump, 1);",
+      "reason": "planted for the own-macrotask check (O0c review 3, S4): the toy queues work of its own, which the recorder must see"
+    },
+    {
+      "anchor": "if (route === 'setInterval') { const handle = setInterval(",
+      "reason": "planted for the own-macrotask check (O0c review 3, S4): the toy queues work of its own, which the recorder must see"
+    },
+    {
+      "anchor": "if (route === 'setImmediate') setImmediate(bump);",
+      "reason": "planted for the own-macrotask check (O0c review 3, S4): the toy queues work of its own, which the recorder must see"
+    },
+    {
+      "anchor": "if (route === 'Bun.sleep') void Bun.sleep(1).then(bump);",
+      "reason": "planted for the own-macrotask check (O0c review 3, S4): the toy queues work of its own, which the recorder must see"
+    },
+    {
+      "anchor": "if (route === 'postMessage') { const channel = new MessageChannel();",
+      "reason": "planted for the own-macrotask check (O0c review 3, S4): the toy queues work of its own, which the recorder must see"
+    }
+  ]
+}

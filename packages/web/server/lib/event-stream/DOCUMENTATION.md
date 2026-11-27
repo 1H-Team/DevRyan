@@ -12,7 +12,7 @@ Canonical command-deadline observation receives the trusted outer directory,
 including when the native tool part contains no directory of its own.
 
 ## Entrypoints and structure
-- `packages/web/server/lib/event-stream/index.js`: public entrypoint re-exporting protocol and runtime helpers.
+- `packages/web/server/lib/event-stream/index.js`: entrypoint `application.js` imports, re-exporting the runtime, hub and upstream stall-timeout names it uses.
 - `packages/web/server/lib/event-stream/global-hub.js`: shared global upstream SSE hub for server-side subscribers and browser WS fan-out.
 - `packages/web/server/lib/event-stream/global-ws-bridge.js`: browser-facing global WS bridge that subscribes clients to the shared global hub.
 - `packages/web/server/lib/event-stream/directory-ws-bridge.js`: browser-facing per-directory WS bridge that filters the shared native hub.

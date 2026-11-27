@@ -1,4 +1,3 @@
-const PLAN_CARD_SENTINEL = '<!--plan-->';
 const PLAN_MODE_INSTRUCTION_PREFIX = 'User has requested to enter plan mode';
 const PLAN_IMPLEMENTATION_REQUEST_PREFIX = '[devryan-plan-action:v1] ';
 const LEGACY_PLAN_IMPLEMENTATION_REQUEST_PREFIX = '[openchamber-plan-action:v1] ';
@@ -230,5 +229,3 @@ export const PLAN_READY_DEFAULT_TEMPLATE = {
   title: 'Plan ready',
   message: 'A plan is ready for review',
 };
-
-export const PLAN_CARD_SENTINEL_TEXT = PLAN_CARD_SENTINEL;

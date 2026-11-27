@@ -7,6 +7,8 @@ import viteConfig from './vite.config';
 const { plugins: _buildPlugins, ...resolution } = viteConfig;
 
 // Bun-native suites (`bun run test:native`) and reviewed upstream inputs.
+// Every entry but the reviewed inputs is a `test:native` target in package.json;
+// scripts/test-suite-contract.test.mjs fails when the two lists differ.
 const notVitest = [
   'runtime/reviewed-inputs/**',
   'server/lib/opencode/runtime-host/native-helper.test.js',
@@ -15,6 +17,7 @@ const notVitest = [
   'server/lib/opencode/runtime-host/controller-dispatch.test.ts',
   'server/lib/opencode/runtime-host/native-queued-input.test.ts',
   'server/lib/harness/native-integration/**',
+  'test/isolation-canary-native.test.mjs',
 ];
 // Native runtime-host suites copy bundles, ledgers and databases and spawn
 // processes; they get few workers so filesystem contention cannot push their
@@ -37,7 +40,9 @@ export default defineConfig({
       // File-parallel: real git and process work in some tests runs slower under
       // load than it did serially, so the per-test hang budget is 15 s, not 5 s.
       { extends: true, test: { name: 'web', exclude: runtimeHost, testTimeout: 15_000 } },
-      { extends: true, test: { name: 'web-runtime-host', include: runtimeHost.map((glob) => `${glob}/*.test.{js,mjs,ts}`), maxWorkers: 2, sequence: { groupOrder: 1 } } },
+      // Real bundle, ledger and process work: the same 15 s per-test hang budget
+      // as web, and 15 s for hooks; not an assertion about how fast it runs.
+      { extends: true, test: { name: 'web-runtime-host', include: runtimeHost.map((glob) => `${glob}/*.test.{js,mjs,ts}`), maxWorkers: 2, sequence: { groupOrder: 1 }, testTimeout: 15_000, hookTimeout: 15_000 } },
     ],
   },
 });

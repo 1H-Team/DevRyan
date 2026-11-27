@@ -1,65 +1,22 @@
-import crypto from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 /** Official Sign in with ChatGPT open-source plan-usage method. */
 export const CHATGPT_SIWC_METHOD_ID = 'chatgpt-siwc';
 export const CHATGPT_SIWC_DYNAMIC_CLIENT_ID = 'dynamic_agent_client';
-export const CHATGPT_SIWC_AUTHORIZE_URL = 'https://auth.openai.com/api/accounts/authorize';
 export const CHATGPT_SIWC_TOKEN_URL = 'https://auth.openai.com/api/accounts/oauth/token';
 export const CHATGPT_SIWC_ISSUER = 'https://auth.openai.com';
 export const CHATGPT_SIWC_JWKS_URL = 'https://auth.openai.com/.well-known/jwks.json';
 export const CHATGPT_SIWC_RESOURCE = 'https://api.openai.com/v1';
-export const CHATGPT_SIWC_SCOPES = 'openid profile email offline_access resource.invoke chatgpt.tokens.use.direct';
 export const CHATGPT_SIWC_PLAN_SCOPE = 'chatgpt.tokens.use.direct';
 
 const LEGACY_CODEX_METHODS = new Set(['chatgpt-browser', 'chatgpt-headless']);
 const jwks = createRemoteJWKSet(new URL(CHATGPT_SIWC_JWKS_URL));
 
-export const isChatgptSiwcMethodId = (methodID) => methodID === CHATGPT_SIWC_METHOD_ID;
+const isChatgptSiwcMethodId = (methodID) => methodID === CHATGPT_SIWC_METHOD_ID;
 export const isLegacyCodexChatgptMethodId = (methodID) => LEGACY_CODEX_METHODS.has(methodID);
-export const isSupportedOpenAiOAuthMethodId = (methodID) => isChatgptSiwcMethodId(methodID);
 
-export function failSiwc(code, status = 409) {
+function failSiwc(code, status = 409) {
   return Object.assign(new Error(code), { code, status, statusCode: status });
-}
-
-export function base64Url(buffer) {
-  return Buffer.from(buffer).toString('base64url');
-}
-
-export function createPkcePair() {
-  const verifier = base64Url(crypto.randomBytes(32));
-  const challenge = base64Url(crypto.createHash('sha256').update(verifier).digest());
-  return { verifier, challenge };
-}
-
-export function resolveSiwcHostIdPath(dataDirectory) {
-  return path.join(dataDirectory, 'runtime', 'chatgpt-siwc-host-id');
-}
-
-/** Stable per-install host ID. Created once; never derived from user identity. */
-export function readOrCreateSiwcHostId(dataDirectory, { randomUUID = crypto.randomUUID } = {}) {
-  const file = resolveSiwcHostIdPath(dataDirectory);
-  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  try {
-    const existing = fs.readFileSync(file, 'utf8').trim();
-    if (/^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(existing)) {
-      return existing;
-    }
-  } catch (error) {
-    if (error?.code !== 'ENOENT') throw failSiwc('native_chatgpt_siwc_host_id_unreadable', 503);
-  }
-  const value = `urn:uuid:${randomUUID()}`;
-  const temporary = `${file}.${crypto.randomUUID()}.tmp`;
-  try {
-    fs.writeFileSync(temporary, `${value}\n`, { mode: 0o600, flag: 'wx' });
-    fs.renameSync(temporary, file);
-  } finally {
-    try { fs.rmSync(temporary, { force: true }); } catch { /* preserve write failure */ }
-  }
-  return value;
 }
 
 export function parseScopeList(value) {
@@ -70,37 +27,6 @@ export function parseScopeList(value) {
 
 export function hasSiwcPlanUsage(scopes) {
   return parseScopeList(scopes).includes(CHATGPT_SIWC_PLAN_SCOPE);
-}
-
-export function buildSiwcAuthorizeUrl({
-  clientId,
-  redirectUri,
-  state,
-  nonce,
-  codeChallenge,
-  hostId,
-  agentNameHint,
-  idTokenHint,
-  loginHint,
-}) {
-  const params = new URLSearchParams({
-    client_id: clientId,
-    response_type: 'code',
-    redirect_uri: redirectUri,
-    scope: CHATGPT_SIWC_SCOPES,
-    resource: CHATGPT_SIWC_RESOURCE,
-    state,
-    nonce,
-    code_challenge: codeChallenge,
-    code_challenge_method: 'S256',
-    ext_agent_host_id: hostId,
-  });
-  if (clientId === CHATGPT_SIWC_DYNAMIC_CLIENT_ID && agentNameHint) {
-    params.set('agent_name_hint', agentNameHint);
-  }
-  if (typeof idTokenHint === 'string' && idTokenHint) params.set('id_token_hint', idTokenHint);
-  if (typeof loginHint === 'string' && loginHint) params.set('login_hint', loginHint);
-  return `${CHATGPT_SIWC_AUTHORIZE_URL}?${params.toString()}`;
 }
 
 export async function refreshSiwcAccessToken({
@@ -180,46 +106,6 @@ export async function verifySiwcIdToken(idToken, { audience, nonce, jwksImpl = j
     throw failSiwc('native_chatgpt_siwc_identity_invalid', 400);
   }
   return payload;
-}
-
-export function buildSiwcCredentialValue({
-  access,
-  refresh,
-  expires,
-  clientId,
-  idToken,
-  scopes,
-  subject,
-  email,
-  hostId,
-}) {
-  if (!isSupportedOpenAiOAuthMethodId(CHATGPT_SIWC_METHOD_ID)
-    || typeof access !== 'string' || !access
-    || typeof refresh !== 'string' || !refresh
-    || !Number.isSafeInteger(expires)
-    || typeof clientId !== 'string' || !clientId || clientId === CHATGPT_SIWC_DYNAMIC_CLIENT_ID
-    || typeof idToken !== 'string' || !idToken
-    || typeof subject !== 'string' || !subject
-    || typeof hostId !== 'string' || !hostId) {
-    throw failSiwc('native_chatgpt_siwc_credential_invalid', 400);
-  }
-  return {
-    type: 'oauth',
-    methodID: CHATGPT_SIWC_METHOD_ID,
-    access,
-    refresh,
-    expires,
-    metadata: {
-      accountID: subject,
-      clientId,
-      idToken,
-      scopes: parseScopeList(scopes),
-      subject,
-      ...(typeof email === 'string' && email ? { email } : {}),
-      extAgentHostId: hostId,
-      planUsage: hasSiwcPlanUsage(scopes),
-    },
-  };
 }
 
 export function siwcClientIdFromAuth(auth) {

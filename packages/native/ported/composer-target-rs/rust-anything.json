@@ -1,0 +1,108 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "composer-target.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "composer-target-rs",
+  "exports": [
+    {
+      "name": "resolveComposerTarget",
+      "file": "composer-target.ts",
+      "line": 6,
+      "params": [
+        {
+          "name": "sessionId",
+          "ts_type": "string | null | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "draftId",
+          "ts_type": "string | null | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "(| { kind: \"session\"; id: string }\n  | { kind: \"draft\"; id: string }\n  | { kind: \"none\" })",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getComposerTargetKey",
+      "file": "composer-target.ts",
+      "line": 15,
+      "params": [
+        {
+          "name": "target",
+          "ts_type": "(| { kind: \"session\"; id: string }\n  | { kind: \"draft\"; id: string }\n  | { kind: \"none\" })",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getSessionComposerTargetKey",
+      "file": "composer-target.ts",
+      "line": 20,
+      "params": [
+        {
+          "name": "sessionId",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getDraftComposerTargetKey",
+      "file": "composer-target.ts",
+      "line": 23,
+      "params": [
+        {
+          "name": "draftId",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isPersistableComposerTargetKey",
+      "file": "composer-target.ts",
+      "line": 26,
+      "params": [
+        {
+          "name": "targetKey",
+          "ts_type": "string | null | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "targetKey is string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

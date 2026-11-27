@@ -1,0 +1,247 @@
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"tab\tseparated","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":null,"usage":null,"resolved":false}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":{"$undefined":true},"usage":"x","resolved":true}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"İstanbul","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":{"$undefined":true},"usage":null,"resolved":false}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":":","usage":{"a":"b"},"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":{"$undefined":true},"usage":0,"resolved":false}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"straße","usage":[],"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":null,"usage":{"a":"b"},"resolved":true}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a😀b😀ckey_name-1","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"😀","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"abc","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":{"$undefined":true},"usage":true,"resolved":false}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":null,"usage":0,"resolved":false}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":null,"usage":{"a":{"b":"c"}},"resolved":false}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[0],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":null,"usage":[],"resolved":true}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":{"$undefined":true},"usage":null,"resolved":true}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[null],"error":"Cannot destructure property 'sessionId' of 'object null' as it is null."}
+{"fn":"resolveContextUsageAvailability","args":[{"a":{"b":"c"}}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"","usage":0,"resolved":false}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":{"$undefined":true},"usage":{"a":"b"},"resolved":false}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"key_name-1","usage":"x","resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"hello","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":null,"usage":{},"resolved":true}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":null,"usage":[],"resolved":false}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ünïcödé","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":null,"usage":null,"resolved":true}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"Hello World","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":{"$undefined":true},"usage":"x","resolved":false}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":{"$undefined":true},"usage":["a",1],"resolved":true}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"key_name-1","usage":{"a":{"b":"c"}},"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"日本語のテキスト","usage":["a",1],"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":["x"],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[true],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":null,"usage":true,"resolved":true}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"Hello Worlda:b:c","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"src/a/b.ts","usage":true,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":{"$undefined":true},"usage":0,"resolved":true}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"straßeé","usage":0,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":null,"usage":["a",1],"resolved":true}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":null,"usage":{},"resolved":false}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":{"$undefined":true},"usage":{"a":{"b":"c"}},"resolved":false}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":{"$undefined":true},"usage":[],"resolved":true}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"é","usage":{"a":"b"},"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[["a",1]],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"  padded  ","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":{"$undefined":true},"usage":["a",1],"resolved":false}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[[]],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a..b","usage":{},"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"line1\nline2","usage":{"a":{"b":"c"}},"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"line1\nline2","usage":{"a":"b"},"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":null,"usage":"x","resolved":false}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"./x/**/*.json😀","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":null,"usage":{"a":"b"},"resolved":false}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"straße","usage":true,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":null,"usage":true,"resolved":false}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"straße","usage":0,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":".leading","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"Hello World","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"line1\nline2","usage":{"a":"b"},"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a","usage":"x","resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"{name} has {count} itemsstraße","usage":[],"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"hello","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"./x/**/*.json","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":null,"usage":{"a":{"b":"c"}},"resolved":true}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"straßeabc","usage":{"a":{"b":"c"}},"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"abc","usage":{"a":{"b":"c"}},"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":{"$undefined":true},"usage":{},"resolved":true}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":".leading","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"﻿bom","usage":0,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":{"$undefined":true},"usage":true,"resolved":true}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":null,"usage":["a",1],"resolved":false}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":{"$undefined":true},"usage":{},"resolved":false}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"emoji 👍🏽 mix","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ΣΊΣΥΦΟΣ","usage":true,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"trailing.","usage":0,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":{"$undefined":true},"usage":{"a":{"b":"c"}},"resolved":true}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":null,"usage":"x","resolved":true}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"straße","usage":{"a":"b"},"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a..b","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ΣΊΣΥΦΟΣ","usage":true,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":{"$undefined":true},"usage":[],"resolved":false}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ünïcödé","usage":{},"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"straße","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"{name} has {count} items","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":".leading","usage":[],"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"line1\nline2","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ünïcödé","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"HELLO","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ab","usage":"x","resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"﻿bom","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"éa:b:c","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"HELLO","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"日本語のテキストhello world","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"trailing.","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a","usage":"x","resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"  padded  ","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"./x/**/*.json","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a:b:cstraße","usage":{},"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"line1\nline2","usage":["a",1],"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"hello world","usage":true,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"src/a/b.ts","usage":true,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"日本語のテキスト","usage":"x","resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a😀b😀c","usage":{"a":"b"},"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"trailing.tab\tseparated","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"abc","usage":"x","resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"src/a/b.ts","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a","usage":{},"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":":","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"a":"b"}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":":","usage":[],"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a😀b😀c","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"trailing.","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"é","usage":0,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"straße","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ΣΊΣΥΦΟΣ","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"trailing.","usage":{"a":{"b":"c"}},"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ab","usage":0,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"日本語のテキストHello World","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"","usage":null,"resolved":false}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"line1\nline2ns:key.path","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ns:key.path.leading","usage":["a",1],"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":{"$undefined":true},"usage":{"a":"b"},"resolved":true}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a..b","usage":true,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"abc","usage":"x","resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"hello world","usage":{},"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a.b.c{name} has {count} items","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a😀b😀c","usage":[],"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a.b.c","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"key_name-1","usage":["a",1],"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"﻿bom","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"HELLO  padded  ","usage":["a",1],"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a..b","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":".leading","usage":{"a":{"b":"c"}},"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ahello","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"Hello World","usage":{"a":"b"},"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ünïcödé😀","usage":{"a":"b"},"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ünïcödéé","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"日本語のテキスト","usage":{"a":"b"},"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"hello worldhello","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"HELLO","usage":{},"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"","usage":null,"resolved":true}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"hello world","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a😀b😀cstraße","usage":{},"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"abcemoji 👍🏽 mix","usage":"x","resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"src/a/b.ts","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"emoji 👍🏽 mix","usage":true,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ns:key.path","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a:b:c﻿bom","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ΣΊΣΥΦΟΣ","usage":{},"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"key_name-1","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a😀b😀c","usage":true,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a","usage":{"a":{"b":"c"}},"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"straße","usage":"x","resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ünïcödékey_name-1","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"日本語のテキスト","usage":["a",1],"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"tab\tseparatedhello","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"abcsrc/a/b.ts","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":".leading","usage":"x","resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"  padded  ","usage":"x","resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"trailing.  padded  ","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a:b:chello","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ΣΊΣΥΦΟΣ","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"{name} has {count} items","usage":["a",1],"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ΣΊΣΥΦΟΣ","usage":"x","resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"İstanbul./x/**/*.json","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"é","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ns:key.path","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ünïcödé","usage":["a",1],"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":null,"usage":0,"resolved":true}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"İstanbul","usage":[],"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"﻿bomabc","usage":{"a":{"b":"c"}},"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"😀","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a:b:ca..b","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"é","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"﻿bom","usage":{"a":"b"},"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"日本語のテキスト","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a😀b😀c","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"key_name-1","usage":true,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a:b:c","usage":true,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ΣΊΣΥΦΟΣ日本語のテキスト","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ns:key.patha😀b😀c","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"emoji 👍🏽 mix","usage":{"a":"b"},"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"line1\nline2trailing.","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":".leadingé","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"straße","usage":{"a":"b"},"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"ab","usage":{"a":{"b":"c"}},"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a.b.c","usage":["a",1],"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"日本語のテキストHELLO","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a..b","usage":{"a":{"b":"c"}},"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"HELLO","usage":{"a":{"b":"c"}},"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a.b.cns:key.path","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"é","usage":["a",1],"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"emoji 👍🏽 mix","usage":"x","resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"a:b:c","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":":trailing.","usage":{},"resolved":false}],"ok":"loading"}
+{"fn":"shouldShowComposerContextUsage","args":[{"isMobile":false}],"ok":true}
+{"fn":"shouldShowComposerContextUsage","args":[{"isMobile":true}],"ok":false}
+{"fn":"shouldShowComposerContextUsage","args":["x"],"ok":true}
+{"fn":"shouldShowComposerContextUsage","args":[["a",1]],"ok":true}
+{"fn":"shouldShowComposerContextUsage","args":[true],"ok":true}
+{"fn":"shouldShowComposerContextUsage","args":[[]],"ok":true}
+{"fn":"shouldShowComposerContextUsage","args":[0],"ok":true}
+{"fn":"shouldShowComposerContextUsage","args":[null],"error":"Cannot destructure property 'isMobile' of 'object null' as it is null."}
+{"fn":"shouldShowComposerContextUsage","args":[{}],"ok":true}
+{"fn":"shouldShowComposerContextUsage","args":[{"a":{"b":"c"}}],"ok":true}
+{"fn":"shouldShowComposerContextUsage","args":[{"a":"b"}],"ok":true}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"s1","usage":{"activeInputTokens":10,"lastOutputTokens":0},"resolved":false}],"ok":"available"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"s1","usage":null,"resolved":false}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"s1","usage":null,"resolved":true}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"  ","usage":{"activeInputTokens":5,"lastOutputTokens":0},"resolved":true}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":null,"usage":{"activeInputTokens":5,"lastOutputTokens":0},"resolved":true}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"usage":{"activeInputTokens":5,"lastOutputTokens":0}}],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[null],"error":"Cannot destructure property 'sessionId' of 'object null' as it is null."}
+{"fn":"resolveContextUsageAvailability","args":[],"error":"Cannot destructure property 'sessionId' of 'undefined' as it is undefined."}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":5}],"error":"sessionId?.trim is not a function"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"s","usage":{"activeInputTokens":"5","lastOutputTokens":0}}],"ok":"available"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"s","usage":{"activeInputTokens":" 0x1f ","lastOutputTokens":0}}],"ok":"available"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"s","usage":{"activeInputTokens":[3],"lastOutputTokens":0}}],"ok":"available"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"s","usage":{"activeInputTokens":[[2]],"lastOutputTokens":0}}],"ok":"available"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"s","usage":{"activeInputTokens":[1,2],"lastOutputTokens":0}}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"s","usage":{"activeInputTokens":{},"lastOutputTokens":0}}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"s","usage":{"activeInputTokens":true,"lastOutputTokens":0}}],"ok":"available"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"s","usage":{"activeInputTokens":"Infinity","lastOutputTokens":0}}],"ok":"available"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"s","usage":{"activeInputTokens":"-1","lastOutputTokens":0}}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"s","usage":{"activeInputTokens":{"$num":"Infinity"},"lastOutputTokens":0},"resolved":1}],"ok":"available"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"s","usage":"abc","resolved":"x"}],"ok":"unavailable"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"s","usage":0,"resolved":""}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"s","usage":{"activeInputTokens":"1e3","lastOutputTokens":0}}],"ok":"available"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"s","usage":{"activeInputTokens":".5","lastOutputTokens":0}}],"ok":"available"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"s","usage":{"activeInputTokens":"5.","lastOutputTokens":0}}],"ok":"available"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"s","usage":{"activeInputTokens":"1_0","lastOutputTokens":0}}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":"﻿s"}],"ok":"loading"}
+{"fn":"resolveContextUsageAvailability","args":["str"],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[[1]],"ok":"idle"}
+{"fn":"resolveContextUsageAvailability","args":[{"sessionId":true}],"error":"sessionId?.trim is not a function"}
+{"fn":"shouldShowComposerContextUsage","args":[{"isMobile":false}],"ok":true}
+{"fn":"shouldShowComposerContextUsage","args":[{"isMobile":true}],"ok":false}
+{"fn":"shouldShowComposerContextUsage","args":[{}],"ok":true}
+{"fn":"shouldShowComposerContextUsage","args":[null],"error":"Cannot destructure property 'isMobile' of 'object null' as it is null."}
+{"fn":"shouldShowComposerContextUsage","args":[],"error":"Cannot destructure property 'isMobile' of 'undefined' as it is undefined."}
+{"fn":"shouldShowComposerContextUsage","args":[{"isMobile":"x"}],"ok":false}
+{"fn":"shouldShowComposerContextUsage","args":[5],"ok":true}

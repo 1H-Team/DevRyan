@@ -1,0 +1,11 @@
+{"fn": "resolveGitHubSourceRepo", "args": [{"owner": " fork-owner ", "repo": " project "}]}
+{"fn": "resolveGitHubSourceRepo", "args": [{"owner": "fork-owner"}]}
+{"fn": "resolveGitHubSourceRepo", "args": [null]}
+{"fn": "resolveGitHubSourceRepo", "args": []}
+{"fn": "resolveGitHubSourceRepo", "args": [{"owner": "　a﻿", "repo": "b"}]}
+{"fn": "resolveGitHubSourceRepo", "args": [{"owner": 1, "repo": "x"}]}
+{"fn": "resolveGitHubSourceRepo", "args": [{"owner": "  ", "repo": "x"}]}
+{"fn": "resolveGitHubSourceRepo", "args": [["a", "b"]]}
+{"fn": "resolveGitHubSourceRepo", "args": ["owner"]}
+{"fn": "resolveGitHubSourceRepo", "args": [{"owner": "o", "repo": "r", "extra": 1}]}
+{"fn": "resolveGitHubSourceRepo", "args": [{"owner": " o ", "repo": "\tr\n"}]}

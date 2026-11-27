@@ -502,7 +502,7 @@ const resolveSettingsDirectory=shellRuntimeBundleBindingError
   ? () => { throw shellRuntimeBundleBindingError; }
   : isPreview || isRuntimeServiceControlProbe ? () => hostDataRootDirectory
     : createNativeSettingsDirectory({environment:{...process.env},home:os.homedir(),existsSync:fs.existsSync,readRuntimeBundleBinding});
-const { settingsFilePath, readSettingsRoot, mutateSettingsRoot, normalizeHostUrl, readDesktopHostsConfig, writeDesktopHostsConfig, readWindowState, writeWindowState, debounceWindowStatePersist, holdForCheckpoint: holdDesktopSettingsForCheckpoint } = createDesktopSettings({
+const { settingsFilePath, readSettingsRoot, mutateSettingsRoot, normalizeHostUrl, readDesktopHostsConfig, writeDesktopHostsConfig, readWindowState, debounceWindowStatePersist, holdForCheckpoint: holdDesktopSettingsForCheckpoint } = createDesktopSettings({
   fs, fsp, os, process, log, getMainWindow: () => state.mainWindow,
   minWidth: MIN_WINDOW_WIDTH, minHeight: MIN_WINDOW_HEIGHT, LOCAL_HOST_ID, resolveDataDirectory:resolveSettingsDirectory,
 });
@@ -964,9 +964,11 @@ const startLocalServer = async () => {
 
   if(recoveryOnly)return url;
 
-  // Managed startup invokes getManagedBrowserEnvironment before it can become
-  // ready. If readiness arrives without that callback, the lifecycle selected
-  // an existing external runtime (for example an occupied OPENCODE_PORT).
+  // Managed startup: the native runtime owner invokes
+  // getManagedBrowserEnvironment while it prepares the reviewed browser
+  // plugin, before the controller can become ready. If readiness arrives
+  // without that callback, no managed browser handoff was made and the agent
+  // browser is treated as external.
   const runtimeModeTimer = setInterval(() => {
     if (state.agentBrowserRuntimeMode !== 'pending') {
       clearInterval(runtimeModeTimer);
@@ -1312,8 +1314,6 @@ const startupActionForUrl = (rawUrl) => {
   }
 };
 
-const isStartupRetryUrl = (rawUrl) => startupActionForUrl(rawUrl) === 'retry-startup';
-
 const navigateWindow = async (browserWindow, url, { allowAbort = false } = {}) => {
   try {
     await browserWindow.loadURL(url);
@@ -1427,7 +1427,7 @@ const handleDeepLinks = (urls) => {
 const extractInitialDeepLinks = () =>
   process.argv.filter(isDeepLinkArg);
 
-const { buildMacMenu, dispatchMenuAction, dispatchCheckForUpdates, dispatchDomEventToWindow } = createDesktopMenu({
+const { buildMacMenu } = createDesktopMenu({
   BrowserWindow, Menu, app, shell, log, getMainWindow: () => state.mainWindow,
   getFocusedWebContents: () => webContents.getFocusedWebContents(),
   isAppDocumentWindow,
@@ -2204,7 +2204,6 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
   const useSaved = saved && typeof saved.width === 'number' && typeof saved.height === 'number';
   const desktopLocalOrigin = state.localOrigin || '';
   const desktopServerOrigin = state.sidecarUrl || state.localOrigin || '';
-  const desktopHome = os.homedir() || '';
   const desktopMacosMajor = String(macosMajorVersion());
   const startupSplashPalette = currentStartupSplashPalette();
   const options = createStartupWindowOptions({ app, isPreview, palette: startupSplashPalette,
@@ -3039,49 +3038,6 @@ const buildInstalledApps = async (apps) => {
     results.push({ name, iconDataUrl });
   }
   return results;
-};
-
-const parseSshConfigImports = () => {
-  const sshConfigPath = path.join(os.homedir(), '.ssh', 'config');
-  if (!fs.existsSync(sshConfigPath)) return [];
-  const lines = fs.readFileSync(sshConfigPath, 'utf8').split(/\r?\n/);
-  const results = [];
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#') || !trimmed.toLowerCase().startsWith('host ')) {
-      continue;
-    }
-    const hosts = trimmed.slice(5).trim().split(/\s+/).filter(Boolean);
-    for (const host of hosts) {
-      results.push({
-        host,
-        pattern: /[*?]/.test(host),
-        source: sshConfigPath,
-        sshCommand: `ssh ${host}`,
-      });
-    }
-  }
-  return results;
-};
-
-const readDesktopSshInstances = () => {
-  const root = readSettingsRoot();
-  return { instances: Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances : [] };
-};
-
-const writeDesktopSshInstances = async (config) => {
-  const nextInstances = Array.isArray(config?.instances) ? config.instances : [];
-  await mutateSettingsRoot((root) => {
-    root.desktopSshInstances = nextInstances;
-  });
-  return { instances: nextInstances };
-};
-
-const updateHostUrlForSshInstance = async (id, label, localUrl) => {
-  const config = readDesktopHostsConfig();
-  const nextHosts = config.hosts.filter((entry) => entry.id !== id);
-  nextHosts.push({ id, label, url: localUrl });
-  await writeDesktopHostsConfig({ hosts: nextHosts, defaultHostId: config.defaultHostId });
 };
 
 const JETBRAINS_APP_IDS = new Set([

@@ -96,5 +96,3 @@ export const ChatMetadataBadge = React.forwardRef<HTMLSpanElement, ChatMetadataB
 });
 
 ChatMetadataBadge.displayName = 'ChatMetadataBadge';
-
-export default ChatMetadataBadge;

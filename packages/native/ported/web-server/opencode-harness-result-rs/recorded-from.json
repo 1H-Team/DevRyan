@@ -1,0 +1,19 @@
+{
+  "unit": "harness-result.js",
+  "files": 1,
+  "fingerprint": "0530f823c27e6f07",
+  "cases": 480,
+  "cases_hash": "08fbd0ad62078b45",
+  "coverage": {
+    "lines": 67,
+    "reached": 67,
+    "files": [
+      {
+        "file": "harness-result.js",
+        "lines": 67,
+        "reached": 67,
+        "missed": ""
+      }
+    ]
+  }
+}

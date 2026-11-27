@@ -1,0 +1,70 @@
+{"fn": "isProtectedDotenvPath", "args": [".env"]}
+{"fn": "isProtectedDotenvPath", "args": ["/repo/.env.local"]}
+{"fn": "isProtectedDotenvPath", "args": ["C:\\repo\\.ENV.development.local"]}
+{"fn": "isProtectedDotenvPath", "args": ["/repo/src/local.env"]}
+{"fn": "isProtectedDotenvPath", "args": ["/repo/environment.ts"]}
+{"fn": "isProtectedDotenvPath", "args": [".ENV"]}
+{"fn": "isProtectedDotenvPath", "args": ["  .env  "]}
+{"fn": "isProtectedDotenvPath", "args": ["/a/.env/"]}
+{"fn": "isProtectedDotenvPath", "args": ["/a/.env///"]}
+{"fn": "isProtectedDotenvPath", "args": ["%2eenv"]}
+{"fn": "isProtectedDotenvPath", "args": ["%2Eenv"]}
+{"fn": "isProtectedDotenvPath", "args": ["/a/%2E%65%6E%76"]}
+{"fn": "isProtectedDotenvPath", "args": ["%252eenv"]}
+{"fn": "isProtectedDotenvPath", "args": ["..%2f.env"]}
+{"fn": "isProtectedDotenvPath", "args": ["a%2F.env"]}
+{"fn": "isProtectedDotenvPath", "args": ["a%5C.env"]}
+{"fn": "isProtectedDotenvPath", "args": ["%2e%65nv%2elocal"]}
+{"fn": "isProtectedDotenvPath", "args": ["/a/.env%00"]}
+{"fn": "isProtectedDotenvPath", "args": ["/a/.en%00v"]}
+{"fn": "isProtectedDotenvPath", "args": ["/a/.en\u0000v"]}
+{"fn": "isProtectedDotenvPath", "args": [".env\u0000.txt"]}
+{"fn": "isProtectedDotenvPath", "args": ["/a/.env?x=1"]}
+{"fn": "isProtectedDotenvPath", "args": ["/a/.env."]}
+{"fn": "isProtectedDotenvPath", "args": ["/a/.env.local.bak"]}
+{"fn": "isProtectedDotenvPath", "args": [".envrc"]}
+{"fn": "isProtectedDotenvPath", "args": [".environment"]}
+{"fn": "isProtectedDotenvPath", "args": ["env"]}
+{"fn": "isProtectedDotenvPath", "args": [".env~"]}
+{"fn": "isProtectedDotenvPath", "args": ["/a/.env#x"]}
+{"fn": "isProtectedDotenvPath", "args": ["．env"]}
+{"fn": "isProtectedDotenvPath", "args": ["․env"]}
+{"fn": "isProtectedDotenvPath", "args": [".еnv"]}
+{"fn": "isProtectedDotenvPath", "args": ["%c0%ae%65nv"]}
+{"fn": "isProtectedDotenvPath", "args": ["%e0%80%ae"]}
+{"fn": "isProtectedDotenvPath", "args": ["%"]}
+{"fn": "isProtectedDotenvPath", "args": ["%zz.env"]}
+{"fn": "isProtectedDotenvPath", "args": ["%2e%65nv%"]}
+{"fn": "isProtectedDotenvPath", "args": ["%F0%9F%98%80/.env"]}
+{"fn": "isProtectedDotenvPath", "args": ["\\\\server\\share\\.env"]}
+{"fn": "isProtectedDotenvPath", "args": ["C:/x/.Env.Production"]}
+{"fn": "isProtectedDotenvPath", "args": ["/a/.env\t"]}
+{"fn": "isProtectedDotenvPath", "args": ["　.env"]}
+{"fn": "isProtectedDotenvPath", "args": ["/a/b\\.env"]}
+{"fn": "isProtectedDotenvPath", "args": [".env "]}
+{"fn": "isProtectedDotenvPath", "args": ["%ed%a0%80.env"]}
+{"fn": "isProtectedDotenvPath", "args": ["/.env/../x"]}
+{"fn": "isProtectedDotenvPath", "args": ["/x/../.env"]}
+{"fn": "isProtectedDotenvPath", "args": [{"$utf16": [55296, 47, 46, 101, 110, 118]}]}
+{"fn": "isProtectedDotenvPath", "args": [""]}
+{"fn": "isProtectedDotenvPath", "args": []}
+{"fn": "isProtectedDotenvPath", "args": [5]}
+{"fn": "isProtectedDotenvPath", "args": [[".env"]]}
+{"fn": "isProtectedDotenvPath", "args": [{"path": ".env"}]}
+{"fn": "shouldHideProtectedDotenv", "args": [{"scope": "managed", "role": "developer"}]}
+{"fn": "shouldHideProtectedDotenv", "args": [{"scope": "managed", "role": "senior_developer"}]}
+{"fn": "shouldHideProtectedDotenv", "args": [{"scope": "managed", "role": "admin"}]}
+{"fn": "shouldHideProtectedDotenv", "args": [{"scope": "local", "role": "admin"}]}
+{"fn": "shouldHideProtectedDotenv", "args": [{"scope": "managed", "role": "Developer"}]}
+{"fn": "shouldHideProtectedDotenv", "args": [{"scope": "Managed", "role": "developer"}]}
+{"fn": "shouldHideProtectedDotenv", "args": []}
+{"fn": "shouldHideProtectedDotenv", "args": ["s"]}
+{"fn": "shouldHideProtectedDotenv", "args": [{"scope": "managed"}]}
+{"fn": "filterProtectedDotenvReferences", "args": [{"entries": [{"name": ".env", "path": "/repo/.env", "type": "file"}, {"name": "app.ts", "path": "/repo/src/app.ts", "type": "file"}], "files": [{"path": ".env.local", "index": "M"}, {"path": "src/app.ts", "index": "M"}], "diffStats": {".env.local": {"insertions": 1, "deletions": 1}, "src/app.ts": {"insertions": 2, "deletions": 0}}}]}
+{"fn": "filterProtectedDotenvReferences", "args": [[".env", "a.ts", {"file": "/x/.env.prod"}, {"path": {"text": "/x/.env"}}, {"location": {"uri": "file:///x/.env"}}, {"uri": "%2eenv"}, {"oldFileName": ".env", "newFileName": "x"}, [".env", {"a": ".env"}], null, 5, {"name": "ok", "nested": {".env": 1, "k": [".env.local", "b"]}}]]}
+{"fn": "filterProtectedDotenvReferences", "args": [{"%2eenv": 1, "a": {"$map": [["x", 1]]}, "d": {"$date": "2020-01-01T00:00:00.000Z"}, "s": {"$set": [".env"]}, "b": {"$bytes": [1, 2]}}]}
+{"fn": "filterProtectedDotenvReferences", "args": ["str"]}
+{"fn": "filterProtectedDotenvReferences", "args": []}
+{"fn": "filterProtectedDotenvReferences", "args": [5]}
+{"fn": "filterProtectedDotenvReferences", "args": [{"$map": []}]}
+{"fn": "filterProtectedDotenvReferences", "args": [[{"path": ".env", "x": 1}, {"absolute": "C:\\x\\.ENV"}]]}

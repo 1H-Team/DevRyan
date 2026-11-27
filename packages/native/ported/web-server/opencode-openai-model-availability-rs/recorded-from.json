@@ -1,0 +1,31 @@
+{
+  "unit": "openai-model-availability.js",
+  "files": 1,
+  "fingerprint": "eb0b63bfb38d497b",
+  "cases": 242,
+  "cases_hash": "b277d2e3b8a9dafd",
+  "coverage": {
+    "lines": 167,
+    "reached": 53,
+    "files": [
+      {
+        "file": "openai-model-availability.js",
+        "lines": 32,
+        "reached": 16,
+        "missed": "5-20"
+      },
+      {
+        "file": "runtime-host/native-credential-mutation-owner.js",
+        "lines": 113,
+        "reached": 16,
+        "missed": "10, 16-36, 39-54, 59-117"
+      },
+      {
+        "file": "runtime-host/native-provider-integrations.js",
+        "lines": 22,
+        "reached": 21,
+        "missed": "23"
+      }
+    ]
+  }
+}

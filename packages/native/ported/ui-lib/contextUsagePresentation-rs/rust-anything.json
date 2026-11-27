@@ -1,0 +1,48 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "contextUsagePresentation.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "contextusagepresentation-rs",
+  "exports": [
+    {
+      "name": "resolveContextUsageAvailability",
+      "file": "contextUsagePresentation.ts",
+      "line": 11,
+      "params": [
+        {
+          "name": "arg0",
+          "ts_type": "({\n    sessionId: string | null | undefined;\n    usage: SessionContextUsage | null;\n    resolved: boolean;\n})",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "('idle' | 'loading' | 'unavailable' | 'available')",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "shouldShowComposerContextUsage",
+      "file": "contextUsagePresentation.ts",
+      "line": 22,
+      "params": [
+        {
+          "name": "arg0",
+          "ts_type": "{\n    isMobile: boolean;\n\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

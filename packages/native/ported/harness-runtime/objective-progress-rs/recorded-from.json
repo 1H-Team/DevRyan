@@ -1,0 +1,19 @@
+{
+  "unit": "objective-progress.js",
+  "files": 1,
+  "fingerprint": "d06e81e74bc9f32b",
+  "cases": 322,
+  "cases_hash": "ab11e5d8c69fc808",
+  "coverage": {
+    "lines": 48,
+    "reached": 48,
+    "files": [
+      {
+        "file": "objective-progress.js",
+        "lines": 48,
+        "reached": 48,
+        "missed": ""
+      }
+    ]
+  }
+}

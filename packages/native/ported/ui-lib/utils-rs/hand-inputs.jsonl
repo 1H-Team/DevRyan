@@ -1,0 +1,312 @@
+{"fn": "truncatePathMiddle", "args": ["/Users/someone/projects/devryan/packages/ui/src/lib/utils.ts"]}
+{"fn": "truncatePathMiddle", "args": ["/Users/someone/projects/devryan/packages/ui/src/lib/utils.ts", {}]}
+{"fn": "truncatePathMiddle", "args": ["/Users/someone/projects/devryan/packages/ui/src/lib/utils.ts", {"maxLength": 20}]}
+{"fn": "truncatePathMiddle", "args": ["/Users/someone/projects/devryan/packages/ui/src/lib/utils.ts", {"maxLength": 10}]}
+{"fn": "truncatePathMiddle", "args": ["/Users/someone/projects/devryan/packages/ui/src/lib/utils.ts", {"maxLength": "abc"}]}
+{"fn": "truncatePathMiddle", "args": ["/Users/someone/projects/devryan/packages/ui/src/lib/utils.ts", {"maxLength": null}]}
+{"fn": "truncatePathMiddle", "args": ["/Users/someone/projects/devryan/packages/ui/src/lib/utils.ts", {"maxLength": "30"}]}
+{"fn": "truncatePathMiddle", "args": ["/Users/someone/projects/devryan/packages/ui/src/lib/utils.ts", {"maxLength": [25]}]}
+{"fn": "truncatePathMiddle", "args": ["/Users/someone/projects/devryan/packages/ui/src/lib/utils.ts", {"maxLength": {"$num": "NaN"}}]}
+{"fn": "truncatePathMiddle", "args": ["/Users/someone/projects/devryan/packages/ui/src/lib/utils.ts", {"maxLength": {"$num": "Infinity"}}]}
+{"fn": "truncatePathMiddle", "args": ["/Users/someone/projects/devryan/packages/ui/src/lib/utils.ts", {"maxLength": 20.7}]}
+{"fn": "truncatePathMiddle", "args": ["/Users/someone/projects/devryan/packages/ui/src/lib/utils.ts", {"maxLength": 100}]}
+{"fn": "truncatePathMiddle", "args": ["/Users/someone/projects/devryan/packages/ui/src/lib/utils.ts", "str"]}
+{"fn": "truncatePathMiddle", "args": ["short"]}
+{"fn": "truncatePathMiddle", "args": ["short", {}]}
+{"fn": "truncatePathMiddle", "args": ["short", {"maxLength": 20}]}
+{"fn": "truncatePathMiddle", "args": ["short", {"maxLength": 10}]}
+{"fn": "truncatePathMiddle", "args": ["short", {"maxLength": "abc"}]}
+{"fn": "truncatePathMiddle", "args": ["short", {"maxLength": null}]}
+{"fn": "truncatePathMiddle", "args": ["short", {"maxLength": "30"}]}
+{"fn": "truncatePathMiddle", "args": ["short", {"maxLength": [25]}]}
+{"fn": "truncatePathMiddle", "args": ["short", {"maxLength": {"$num": "NaN"}}]}
+{"fn": "truncatePathMiddle", "args": ["short", {"maxLength": {"$num": "Infinity"}}]}
+{"fn": "truncatePathMiddle", "args": ["short", {"maxLength": 20.7}]}
+{"fn": "truncatePathMiddle", "args": ["short", {"maxLength": 100}]}
+{"fn": "truncatePathMiddle", "args": ["short", "str"]}
+{"fn": "truncatePathMiddle", "args": ["a/b"]}
+{"fn": "truncatePathMiddle", "args": ["a/b", {}]}
+{"fn": "truncatePathMiddle", "args": ["a/b", {"maxLength": 20}]}
+{"fn": "truncatePathMiddle", "args": ["a/b", {"maxLength": 10}]}
+{"fn": "truncatePathMiddle", "args": ["a/b", {"maxLength": "abc"}]}
+{"fn": "truncatePathMiddle", "args": ["a/b", {"maxLength": null}]}
+{"fn": "truncatePathMiddle", "args": ["a/b", {"maxLength": "30"}]}
+{"fn": "truncatePathMiddle", "args": ["a/b", {"maxLength": [25]}]}
+{"fn": "truncatePathMiddle", "args": ["a/b", {"maxLength": {"$num": "NaN"}}]}
+{"fn": "truncatePathMiddle", "args": ["a/b", {"maxLength": {"$num": "Infinity"}}]}
+{"fn": "truncatePathMiddle", "args": ["a/b", {"maxLength": 20.7}]}
+{"fn": "truncatePathMiddle", "args": ["a/b", {"maxLength": 100}]}
+{"fn": "truncatePathMiddle", "args": ["a/b", "str"]}
+{"fn": "truncatePathMiddle", "args": ["/a/very/long/path/with/many/segments/and/a/file-name-that-is-really-long-indeed.tsx"]}
+{"fn": "truncatePathMiddle", "args": ["/a/very/long/path/with/many/segments/and/a/file-name-that-is-really-long-indeed.tsx", {}]}
+{"fn": "truncatePathMiddle", "args": ["/a/very/long/path/with/many/segments/and/a/file-name-that-is-really-long-indeed.tsx", {"maxLength": 20}]}
+{"fn": "truncatePathMiddle", "args": ["/a/very/long/path/with/many/segments/and/a/file-name-that-is-really-long-indeed.tsx", {"maxLength": 10}]}
+{"fn": "truncatePathMiddle", "args": ["/a/very/long/path/with/many/segments/and/a/file-name-that-is-really-long-indeed.tsx", {"maxLength": "abc"}]}
+{"fn": "truncatePathMiddle", "args": ["/a/very/long/path/with/many/segments/and/a/file-name-that-is-really-long-indeed.tsx", {"maxLength": null}]}
+{"fn": "truncatePathMiddle", "args": ["/a/very/long/path/with/many/segments/and/a/file-name-that-is-really-long-indeed.tsx", {"maxLength": "30"}]}
+{"fn": "truncatePathMiddle", "args": ["/a/very/long/path/with/many/segments/and/a/file-name-that-is-really-long-indeed.tsx", {"maxLength": [25]}]}
+{"fn": "truncatePathMiddle", "args": ["/a/very/long/path/with/many/segments/and/a/file-name-that-is-really-long-indeed.tsx", {"maxLength": {"$num": "NaN"}}]}
+{"fn": "truncatePathMiddle", "args": ["/a/very/long/path/with/many/segments/and/a/file-name-that-is-really-long-indeed.tsx", {"maxLength": {"$num": "Infinity"}}]}
+{"fn": "truncatePathMiddle", "args": ["/a/very/long/path/with/many/segments/and/a/file-name-that-is-really-long-indeed.tsx", {"maxLength": 20.7}]}
+{"fn": "truncatePathMiddle", "args": ["/a/very/long/path/with/many/segments/and/a/file-name-that-is-really-long-indeed.tsx", {"maxLength": 100}]}
+{"fn": "truncatePathMiddle", "args": ["/a/very/long/path/with/many/segments/and/a/file-name-that-is-really-long-indeed.tsx", "str"]}
+{"fn": "truncatePathMiddle", "args": ["noslashesbutverylongstringthatexceedsthelimitforsure_x"]}
+{"fn": "truncatePathMiddle", "args": ["noslashesbutverylongstringthatexceedsthelimitforsure_x", {}]}
+{"fn": "truncatePathMiddle", "args": ["noslashesbutverylongstringthatexceedsthelimitforsure_x", {"maxLength": 20}]}
+{"fn": "truncatePathMiddle", "args": ["noslashesbutverylongstringthatexceedsthelimitforsure_x", {"maxLength": 10}]}
+{"fn": "truncatePathMiddle", "args": ["noslashesbutverylongstringthatexceedsthelimitforsure_x", {"maxLength": "abc"}]}
+{"fn": "truncatePathMiddle", "args": ["noslashesbutverylongstringthatexceedsthelimitforsure_x", {"maxLength": null}]}
+{"fn": "truncatePathMiddle", "args": ["noslashesbutverylongstringthatexceedsthelimitforsure_x", {"maxLength": "30"}]}
+{"fn": "truncatePathMiddle", "args": ["noslashesbutverylongstringthatexceedsthelimitforsure_x", {"maxLength": [25]}]}
+{"fn": "truncatePathMiddle", "args": ["noslashesbutverylongstringthatexceedsthelimitforsure_x", {"maxLength": {"$num": "NaN"}}]}
+{"fn": "truncatePathMiddle", "args": ["noslashesbutverylongstringthatexceedsthelimitforsure_x", {"maxLength": {"$num": "Infinity"}}]}
+{"fn": "truncatePathMiddle", "args": ["noslashesbutverylongstringthatexceedsthelimitforsure_x", {"maxLength": 20.7}]}
+{"fn": "truncatePathMiddle", "args": ["noslashesbutverylongstringthatexceedsthelimitforsure_x", {"maxLength": 100}]}
+{"fn": "truncatePathMiddle", "args": ["noslashesbutverylongstringthatexceedsthelimitforsure_x", "str"]}
+{"fn": "truncatePathMiddle", "args": ["/trailing/slash/that/is/quite/long/enough/to/truncate/"]}
+{"fn": "truncatePathMiddle", "args": ["/trailing/slash/that/is/quite/long/enough/to/truncate/", {}]}
+{"fn": "truncatePathMiddle", "args": ["/trailing/slash/that/is/quite/long/enough/to/truncate/", {"maxLength": 20}]}
+{"fn": "truncatePathMiddle", "args": ["/trailing/slash/that/is/quite/long/enough/to/truncate/", {"maxLength": 10}]}
+{"fn": "truncatePathMiddle", "args": ["/trailing/slash/that/is/quite/long/enough/to/truncate/", {"maxLength": "abc"}]}
+{"fn": "truncatePathMiddle", "args": ["/trailing/slash/that/is/quite/long/enough/to/truncate/", {"maxLength": null}]}
+{"fn": "truncatePathMiddle", "args": ["/trailing/slash/that/is/quite/long/enough/to/truncate/", {"maxLength": "30"}]}
+{"fn": "truncatePathMiddle", "args": ["/trailing/slash/that/is/quite/long/enough/to/truncate/", {"maxLength": [25]}]}
+{"fn": "truncatePathMiddle", "args": ["/trailing/slash/that/is/quite/long/enough/to/truncate/", {"maxLength": {"$num": "NaN"}}]}
+{"fn": "truncatePathMiddle", "args": ["/trailing/slash/that/is/quite/long/enough/to/truncate/", {"maxLength": {"$num": "Infinity"}}]}
+{"fn": "truncatePathMiddle", "args": ["/trailing/slash/that/is/quite/long/enough/to/truncate/", {"maxLength": 20.7}]}
+{"fn": "truncatePathMiddle", "args": ["/trailing/slash/that/is/quite/long/enough/to/truncate/", {"maxLength": 100}]}
+{"fn": "truncatePathMiddle", "args": ["/trailing/slash/that/is/quite/long/enough/to/truncate/", "str"]}
+{"fn": "truncatePathMiddle", "args": ["///////////////////////////////////////////file.txt"]}
+{"fn": "truncatePathMiddle", "args": ["///////////////////////////////////////////file.txt", {}]}
+{"fn": "truncatePathMiddle", "args": ["///////////////////////////////////////////file.txt", {"maxLength": 20}]}
+{"fn": "truncatePathMiddle", "args": ["///////////////////////////////////////////file.txt", {"maxLength": 10}]}
+{"fn": "truncatePathMiddle", "args": ["///////////////////////////////////////////file.txt", {"maxLength": "abc"}]}
+{"fn": "truncatePathMiddle", "args": ["///////////////////////////////////////////file.txt", {"maxLength": null}]}
+{"fn": "truncatePathMiddle", "args": ["///////////////////////////////////////////file.txt", {"maxLength": "30"}]}
+{"fn": "truncatePathMiddle", "args": ["///////////////////////////////////////////file.txt", {"maxLength": [25]}]}
+{"fn": "truncatePathMiddle", "args": ["///////////////////////////////////////////file.txt", {"maxLength": {"$num": "NaN"}}]}
+{"fn": "truncatePathMiddle", "args": ["///////////////////////////////////////////file.txt", {"maxLength": {"$num": "Infinity"}}]}
+{"fn": "truncatePathMiddle", "args": ["///////////////////////////////////////////file.txt", {"maxLength": 20.7}]}
+{"fn": "truncatePathMiddle", "args": ["///////////////////////////////////////////file.txt", {"maxLength": 100}]}
+{"fn": "truncatePathMiddle", "args": ["///////////////////////////////////////////file.txt", "str"]}
+{"fn": "truncatePathMiddle", "args": ["😀😀😀😀😀😀😀😀😀😀😀😀😀😀/😀😀😀😀😀😀😀😀😀😀/x.ts"]}
+{"fn": "truncatePathMiddle", "args": ["😀😀😀😀😀😀😀😀😀😀😀😀😀😀/😀😀😀😀😀😀😀😀😀😀/x.ts", {}]}
+{"fn": "truncatePathMiddle", "args": ["😀😀😀😀😀😀😀😀😀😀😀😀😀😀/😀😀😀😀😀😀😀😀😀😀/x.ts", {"maxLength": 20}]}
+{"fn": "truncatePathMiddle", "args": ["😀😀😀😀😀😀😀😀😀😀😀😀😀😀/😀😀😀😀😀😀😀😀😀😀/x.ts", {"maxLength": 10}]}
+{"fn": "truncatePathMiddle", "args": ["😀😀😀😀😀😀😀😀😀😀😀😀😀😀/😀😀😀😀😀😀😀😀😀😀/x.ts", {"maxLength": "abc"}]}
+{"fn": "truncatePathMiddle", "args": ["😀😀😀😀😀😀😀😀😀😀😀😀😀😀/😀😀😀😀😀😀😀😀😀😀/x.ts", {"maxLength": null}]}
+{"fn": "truncatePathMiddle", "args": ["😀😀😀😀😀😀😀😀😀😀😀😀😀😀/😀😀😀😀😀😀😀😀😀😀/x.ts", {"maxLength": "30"}]}
+{"fn": "truncatePathMiddle", "args": ["😀😀😀😀😀😀😀😀😀😀😀😀😀😀/😀😀😀😀😀😀😀😀😀😀/x.ts", {"maxLength": [25]}]}
+{"fn": "truncatePathMiddle", "args": ["😀😀😀😀😀😀😀😀😀😀😀😀😀😀/😀😀😀😀😀😀😀😀😀😀/x.ts", {"maxLength": {"$num": "NaN"}}]}
+{"fn": "truncatePathMiddle", "args": ["😀😀😀😀😀😀😀😀😀😀😀😀😀😀/😀😀😀😀😀😀😀😀😀😀/x.ts", {"maxLength": {"$num": "Infinity"}}]}
+{"fn": "truncatePathMiddle", "args": ["😀😀😀😀😀😀😀😀😀😀😀😀😀😀/😀😀😀😀😀😀😀😀😀😀/x.ts", {"maxLength": 20.7}]}
+{"fn": "truncatePathMiddle", "args": ["😀😀😀😀😀😀😀😀😀😀😀😀😀😀/😀😀😀😀😀😀😀😀😀😀/x.ts", {"maxLength": 100}]}
+{"fn": "truncatePathMiddle", "args": ["😀😀😀😀😀😀😀😀😀😀😀😀😀😀/😀😀😀😀😀😀😀😀😀😀/x.ts", "str"]}
+{"fn": "truncatePathMiddle", "args": ["segment-one-is-long/two/three/file.ts"]}
+{"fn": "truncatePathMiddle", "args": ["segment-one-is-long/two/three/file.ts", {}]}
+{"fn": "truncatePathMiddle", "args": ["segment-one-is-long/two/three/file.ts", {"maxLength": 20}]}
+{"fn": "truncatePathMiddle", "args": ["segment-one-is-long/two/three/file.ts", {"maxLength": 10}]}
+{"fn": "truncatePathMiddle", "args": ["segment-one-is-long/two/three/file.ts", {"maxLength": "abc"}]}
+{"fn": "truncatePathMiddle", "args": ["segment-one-is-long/two/three/file.ts", {"maxLength": null}]}
+{"fn": "truncatePathMiddle", "args": ["segment-one-is-long/two/three/file.ts", {"maxLength": "30"}]}
+{"fn": "truncatePathMiddle", "args": ["segment-one-is-long/two/three/file.ts", {"maxLength": [25]}]}
+{"fn": "truncatePathMiddle", "args": ["segment-one-is-long/two/three/file.ts", {"maxLength": {"$num": "NaN"}}]}
+{"fn": "truncatePathMiddle", "args": ["segment-one-is-long/two/three/file.ts", {"maxLength": {"$num": "Infinity"}}]}
+{"fn": "truncatePathMiddle", "args": ["segment-one-is-long/two/three/file.ts", {"maxLength": 20.7}]}
+{"fn": "truncatePathMiddle", "args": ["segment-one-is-long/two/three/file.ts", {"maxLength": 100}]}
+{"fn": "truncatePathMiddle", "args": ["segment-one-is-long/two/three/file.ts", "str"]}
+{"fn": "truncatePathMiddle", "args": [{"$utf16": [55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 47, 120]}]}
+{"fn": "truncatePathMiddle", "args": [{"$utf16": [55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 47, 120]}, {}]}
+{"fn": "truncatePathMiddle", "args": [{"$utf16": [55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 47, 120]}, {"maxLength": 20}]}
+{"fn": "truncatePathMiddle", "args": [{"$utf16": [55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 47, 120]}, {"maxLength": 10}]}
+{"fn": "truncatePathMiddle", "args": [{"$utf16": [55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 47, 120]}, {"maxLength": "abc"}]}
+{"fn": "truncatePathMiddle", "args": [{"$utf16": [55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 47, 120]}, {"maxLength": null}]}
+{"fn": "truncatePathMiddle", "args": [{"$utf16": [55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 47, 120]}, {"maxLength": "30"}]}
+{"fn": "truncatePathMiddle", "args": [{"$utf16": [55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 47, 120]}, {"maxLength": [25]}]}
+{"fn": "truncatePathMiddle", "args": [{"$utf16": [55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 47, 120]}, {"maxLength": {"$num": "NaN"}}]}
+{"fn": "truncatePathMiddle", "args": [{"$utf16": [55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 47, 120]}, {"maxLength": {"$num": "Infinity"}}]}
+{"fn": "truncatePathMiddle", "args": [{"$utf16": [55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 47, 120]}, {"maxLength": 20.7}]}
+{"fn": "truncatePathMiddle", "args": [{"$utf16": [55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 47, 120]}, {"maxLength": 100}]}
+{"fn": "truncatePathMiddle", "args": [{"$utf16": [55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 55296, 47, 120]}, "str"]}
+{"fn": "truncatePathMiddle", "args": [null]}
+{"fn": "truncatePathMiddle", "args": [null, {}]}
+{"fn": "truncatePathMiddle", "args": [null, {"maxLength": 20}]}
+{"fn": "truncatePathMiddle", "args": [null, {"maxLength": 10}]}
+{"fn": "truncatePathMiddle", "args": [null, {"maxLength": "abc"}]}
+{"fn": "truncatePathMiddle", "args": [null, {"maxLength": null}]}
+{"fn": "truncatePathMiddle", "args": [null, {"maxLength": "30"}]}
+{"fn": "truncatePathMiddle", "args": [null, {"maxLength": [25]}]}
+{"fn": "truncatePathMiddle", "args": [null, {"maxLength": {"$num": "NaN"}}]}
+{"fn": "truncatePathMiddle", "args": [null, {"maxLength": {"$num": "Infinity"}}]}
+{"fn": "truncatePathMiddle", "args": [null, {"maxLength": 20.7}]}
+{"fn": "truncatePathMiddle", "args": [null, {"maxLength": 100}]}
+{"fn": "truncatePathMiddle", "args": [null, "str"]}
+{"fn": "truncatePathMiddle", "args": [""]}
+{"fn": "truncatePathMiddle", "args": ["", {}]}
+{"fn": "truncatePathMiddle", "args": ["", {"maxLength": 20}]}
+{"fn": "truncatePathMiddle", "args": ["", {"maxLength": 10}]}
+{"fn": "truncatePathMiddle", "args": ["", {"maxLength": "abc"}]}
+{"fn": "truncatePathMiddle", "args": ["", {"maxLength": null}]}
+{"fn": "truncatePathMiddle", "args": ["", {"maxLength": "30"}]}
+{"fn": "truncatePathMiddle", "args": ["", {"maxLength": [25]}]}
+{"fn": "truncatePathMiddle", "args": ["", {"maxLength": {"$num": "NaN"}}]}
+{"fn": "truncatePathMiddle", "args": ["", {"maxLength": {"$num": "Infinity"}}]}
+{"fn": "truncatePathMiddle", "args": ["", {"maxLength": 20.7}]}
+{"fn": "truncatePathMiddle", "args": ["", {"maxLength": 100}]}
+{"fn": "truncatePathMiddle", "args": ["", "str"]}
+{"fn": "truncatePathMiddle", "args": [5]}
+{"fn": "truncatePathMiddle", "args": []}
+{"fn": "formatPathForDisplay", "args": [null, null]}
+{"fn": "formatDirectoryName", "args": [null, null]}
+{"fn": "formatPathForDisplay", "args": [null, ""]}
+{"fn": "formatDirectoryName", "args": [null, ""]}
+{"fn": "formatPathForDisplay", "args": [null, "/"]}
+{"fn": "formatDirectoryName", "args": [null, "/"]}
+{"fn": "formatPathForDisplay", "args": [null, "/Users/me"]}
+{"fn": "formatDirectoryName", "args": [null, "/Users/me"]}
+{"fn": "formatPathForDisplay", "args": [null, "/Users/me/"]}
+{"fn": "formatDirectoryName", "args": [null, "/Users/me/"]}
+{"fn": "formatPathForDisplay", "args": [null, "//"]}
+{"fn": "formatDirectoryName", "args": [null, "//"]}
+{"fn": "formatPathForDisplay", "args": [null, "/Users"]}
+{"fn": "formatDirectoryName", "args": [null, "/Users"]}
+{"fn": "formatPathForDisplay", "args": ["", null]}
+{"fn": "formatDirectoryName", "args": ["", null]}
+{"fn": "formatPathForDisplay", "args": ["", ""]}
+{"fn": "formatDirectoryName", "args": ["", ""]}
+{"fn": "formatPathForDisplay", "args": ["", "/"]}
+{"fn": "formatDirectoryName", "args": ["", "/"]}
+{"fn": "formatPathForDisplay", "args": ["", "/Users/me"]}
+{"fn": "formatDirectoryName", "args": ["", "/Users/me"]}
+{"fn": "formatPathForDisplay", "args": ["", "/Users/me/"]}
+{"fn": "formatDirectoryName", "args": ["", "/Users/me/"]}
+{"fn": "formatPathForDisplay", "args": ["", "//"]}
+{"fn": "formatDirectoryName", "args": ["", "//"]}
+{"fn": "formatPathForDisplay", "args": ["", "/Users"]}
+{"fn": "formatDirectoryName", "args": ["", "/Users"]}
+{"fn": "formatPathForDisplay", "args": ["/", null]}
+{"fn": "formatDirectoryName", "args": ["/", null]}
+{"fn": "formatPathForDisplay", "args": ["/", ""]}
+{"fn": "formatDirectoryName", "args": ["/", ""]}
+{"fn": "formatPathForDisplay", "args": ["/", "/"]}
+{"fn": "formatDirectoryName", "args": ["/", "/"]}
+{"fn": "formatPathForDisplay", "args": ["/", "/Users/me"]}
+{"fn": "formatDirectoryName", "args": ["/", "/Users/me"]}
+{"fn": "formatPathForDisplay", "args": ["/", "/Users/me/"]}
+{"fn": "formatDirectoryName", "args": ["/", "/Users/me/"]}
+{"fn": "formatPathForDisplay", "args": ["/", "//"]}
+{"fn": "formatDirectoryName", "args": ["/", "//"]}
+{"fn": "formatPathForDisplay", "args": ["/", "/Users"]}
+{"fn": "formatDirectoryName", "args": ["/", "/Users"]}
+{"fn": "formatPathForDisplay", "args": ["//", null]}
+{"fn": "formatDirectoryName", "args": ["//", null]}
+{"fn": "formatPathForDisplay", "args": ["//", ""]}
+{"fn": "formatDirectoryName", "args": ["//", ""]}
+{"fn": "formatPathForDisplay", "args": ["//", "/"]}
+{"fn": "formatDirectoryName", "args": ["//", "/"]}
+{"fn": "formatPathForDisplay", "args": ["//", "/Users/me"]}
+{"fn": "formatDirectoryName", "args": ["//", "/Users/me"]}
+{"fn": "formatPathForDisplay", "args": ["//", "/Users/me/"]}
+{"fn": "formatDirectoryName", "args": ["//", "/Users/me/"]}
+{"fn": "formatPathForDisplay", "args": ["//", "//"]}
+{"fn": "formatDirectoryName", "args": ["//", "//"]}
+{"fn": "formatPathForDisplay", "args": ["//", "/Users"]}
+{"fn": "formatDirectoryName", "args": ["//", "/Users"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me", null]}
+{"fn": "formatDirectoryName", "args": ["/Users/me", null]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me", ""]}
+{"fn": "formatDirectoryName", "args": ["/Users/me", ""]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me", "/"]}
+{"fn": "formatDirectoryName", "args": ["/Users/me", "/"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me", "/Users/me"]}
+{"fn": "formatDirectoryName", "args": ["/Users/me", "/Users/me"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me", "/Users/me/"]}
+{"fn": "formatDirectoryName", "args": ["/Users/me", "/Users/me/"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me", "//"]}
+{"fn": "formatDirectoryName", "args": ["/Users/me", "//"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me", "/Users"]}
+{"fn": "formatDirectoryName", "args": ["/Users/me", "/Users"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me/", null]}
+{"fn": "formatDirectoryName", "args": ["/Users/me/", null]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me/", ""]}
+{"fn": "formatDirectoryName", "args": ["/Users/me/", ""]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me/", "/"]}
+{"fn": "formatDirectoryName", "args": ["/Users/me/", "/"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me/", "/Users/me"]}
+{"fn": "formatDirectoryName", "args": ["/Users/me/", "/Users/me"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me/", "/Users/me/"]}
+{"fn": "formatDirectoryName", "args": ["/Users/me/", "/Users/me/"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me/", "//"]}
+{"fn": "formatDirectoryName", "args": ["/Users/me/", "//"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me/", "/Users"]}
+{"fn": "formatDirectoryName", "args": ["/Users/me/", "/Users"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me/x/", null]}
+{"fn": "formatDirectoryName", "args": ["/Users/me/x/", null]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me/x/", ""]}
+{"fn": "formatDirectoryName", "args": ["/Users/me/x/", ""]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me/x/", "/"]}
+{"fn": "formatDirectoryName", "args": ["/Users/me/x/", "/"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me/x/", "/Users/me"]}
+{"fn": "formatDirectoryName", "args": ["/Users/me/x/", "/Users/me"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me/x/", "/Users/me/"]}
+{"fn": "formatDirectoryName", "args": ["/Users/me/x/", "/Users/me/"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me/x/", "//"]}
+{"fn": "formatDirectoryName", "args": ["/Users/me/x/", "//"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me/x/", "/Users"]}
+{"fn": "formatDirectoryName", "args": ["/Users/me/x/", "/Users"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/mex", null]}
+{"fn": "formatDirectoryName", "args": ["/Users/mex", null]}
+{"fn": "formatPathForDisplay", "args": ["/Users/mex", ""]}
+{"fn": "formatDirectoryName", "args": ["/Users/mex", ""]}
+{"fn": "formatPathForDisplay", "args": ["/Users/mex", "/"]}
+{"fn": "formatDirectoryName", "args": ["/Users/mex", "/"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/mex", "/Users/me"]}
+{"fn": "formatDirectoryName", "args": ["/Users/mex", "/Users/me"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/mex", "/Users/me/"]}
+{"fn": "formatDirectoryName", "args": ["/Users/mex", "/Users/me/"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/mex", "//"]}
+{"fn": "formatDirectoryName", "args": ["/Users/mex", "//"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/mex", "/Users"]}
+{"fn": "formatDirectoryName", "args": ["/Users/mex", "/Users"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me/a/b", null]}
+{"fn": "formatDirectoryName", "args": ["/Users/me/a/b", null]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me/a/b", ""]}
+{"fn": "formatDirectoryName", "args": ["/Users/me/a/b", ""]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me/a/b", "/"]}
+{"fn": "formatDirectoryName", "args": ["/Users/me/a/b", "/"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me/a/b", "/Users/me"]}
+{"fn": "formatDirectoryName", "args": ["/Users/me/a/b", "/Users/me"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me/a/b", "/Users/me/"]}
+{"fn": "formatDirectoryName", "args": ["/Users/me/a/b", "/Users/me/"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me/a/b", "//"]}
+{"fn": "formatDirectoryName", "args": ["/Users/me/a/b", "//"]}
+{"fn": "formatPathForDisplay", "args": ["/Users/me/a/b", "/Users"]}
+{"fn": "formatDirectoryName", "args": ["/Users/me/a/b", "/Users"]}
+{"fn": "formatPathForDisplay", "args": ["relative/dir/", null]}
+{"fn": "formatDirectoryName", "args": ["relative/dir/", null]}
+{"fn": "formatPathForDisplay", "args": ["relative/dir/", ""]}
+{"fn": "formatDirectoryName", "args": ["relative/dir/", ""]}
+{"fn": "formatPathForDisplay", "args": ["relative/dir/", "/"]}
+{"fn": "formatDirectoryName", "args": ["relative/dir/", "/"]}
+{"fn": "formatPathForDisplay", "args": ["relative/dir/", "/Users/me"]}
+{"fn": "formatDirectoryName", "args": ["relative/dir/", "/Users/me"]}
+{"fn": "formatPathForDisplay", "args": ["relative/dir/", "/Users/me/"]}
+{"fn": "formatDirectoryName", "args": ["relative/dir/", "/Users/me/"]}
+{"fn": "formatPathForDisplay", "args": ["relative/dir/", "//"]}
+{"fn": "formatDirectoryName", "args": ["relative/dir/", "//"]}
+{"fn": "formatPathForDisplay", "args": ["relative/dir/", "/Users"]}
+{"fn": "formatDirectoryName", "args": ["relative/dir/", "/Users"]}
+{"fn": "formatPathForDisplay", "args": ["/a", null]}
+{"fn": "formatDirectoryName", "args": ["/a", null]}
+{"fn": "formatPathForDisplay", "args": ["/a", ""]}
+{"fn": "formatDirectoryName", "args": ["/a", ""]}
+{"fn": "formatPathForDisplay", "args": ["/a", "/"]}
+{"fn": "formatDirectoryName", "args": ["/a", "/"]}
+{"fn": "formatPathForDisplay", "args": ["/a", "/Users/me"]}
+{"fn": "formatDirectoryName", "args": ["/a", "/Users/me"]}
+{"fn": "formatPathForDisplay", "args": ["/a", "/Users/me/"]}
+{"fn": "formatDirectoryName", "args": ["/a", "/Users/me/"]}
+{"fn": "formatPathForDisplay", "args": ["/a", "//"]}
+{"fn": "formatDirectoryName", "args": ["/a", "//"]}
+{"fn": "formatPathForDisplay", "args": ["/a", "/Users"]}
+{"fn": "formatDirectoryName", "args": ["/a", "/Users"]}

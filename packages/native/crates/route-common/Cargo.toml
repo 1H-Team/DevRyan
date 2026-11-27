@@ -1,0 +1,26 @@
+[package]
+name = "devryan-route-common"
+version = "0.1.0"
+description = "What every Rust route group candidate of the backend conformance harness shares: Node's HTTP reading, the product's request decoding, the order of writes, JSON as V8 writes it, Node's file-system texts (tests only; nothing calls it)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# Test-only: the planted behaviour changes of the shared request path (src/plant.rs), switched on by a group
+# candidate's `--plant <id>`. A build without the feature has none.
+plants = []
+
+[dependencies]
+brotli-decompressor.workspace = true
+devryan-config-text.workspace = true
+libc.workspace = true
+serde_json.workspace = true
+httparse.workspace = true
+
+[lints]
+workspace = true

@@ -107,14 +107,16 @@ if (sipEnabled) it('macOS Plan shell denies actual local POST and git push while
     const profile = sessionExecutionProfile({ viewDirectory: lease.viewDirectory, scratchDirectory, readOnly: true });
     const script = `const {spawnSync}=require('node:child_process');const fs=require('node:fs');
       const post=spawnSync('/usr/bin/curl',['--noproxy','*','--max-time','1','--request','POST',${JSON.stringify(url)}],{encoding:'utf8'});
-      const push=spawnSync(${JSON.stringify(git)},['-c','credential.helper=','-c','core.hooksPath=/dev/null','push',${JSON.stringify(url + '/repo')},'HEAD'],{encoding:'utf8',timeout:2000});
+      const push=spawnSync(${JSON.stringify(git)},['-c','credential.helper=','-c','core.hooksPath=/dev/null','push',${JSON.stringify(url + '/repo')},'HEAD'],{encoding:'utf8',timeout:10000});
       console.log(JSON.stringify({read:fs.readFileSync('tracked','utf8'),post:post.status,push:push.status,pushError:push.stderr}));`;
+    // Child timeouts are hang budgets: a denied push and POST fail at once, and the outcomes below,
+    // not the time they took, are the assertion. A busy host can take seconds to start them.
     const result = await run('/usr/bin/sandbox-exec', ['-p', profile, process.execPath, '-e', script], { cwd: f.snapshot,
-      env: gitEnv, timeout:5000 });
+      env: gitEnv, timeout:20000 });
     expect(result.status, `signal=${result.signal} stdout=${result.stdout} stderr=${result.stderr}`).toBe(0);
     const outcomes = JSON.parse(result.stdout);
     expect(outcomes.read).toBe('original'); expect(outcomes.post).toBe(7); expect(outcomes.push, outcomes.pushError).toBe(128);
   } finally { await new Promise(resolve => server.close(resolve)); }
   // close() calls back only after every accepted connection has ended, so any request that arrived is counted.
   expect(requests).toBe(0);
-});
+}, 45_000);

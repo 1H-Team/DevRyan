@@ -1,0 +1,32 @@
+{"fn": "applyEventDialect", "args": ["{\"type\":\"openchamber:x\",\"a\":1}", "devryan"]}
+{"fn": "applyEventDialect", "args": ["{\"type\":\"openchamber:x\",\"a\":1}", null]}
+{"fn": "applyEventDialect", "args": ["{\"type\":\"openchamber:x\",\"a\":1}", "DEVRYAN"]}
+{"fn": "applyEventDialect", "args": ["{\"type\":\"openchamber:x\",\"a\":1}", "x"]}
+{"fn": "applyEventDialect", "args": ["{\"type\":\"devryan:y\"}", "devryan"]}
+{"fn": "applyEventDialect", "args": ["{\"type\":\"devryan:y\"}", null]}
+{"fn": "applyEventDialect", "args": ["{\"type\":\"devryan:y\"}", "DEVRYAN"]}
+{"fn": "applyEventDialect", "args": ["{\"type\":\"devryan:y\"}", "x"]}
+{"fn": "applyEventDialect", "args": ["{\"type\":\"other\"}", "devryan"]}
+{"fn": "applyEventDialect", "args": ["{\"type\":\"other\"}", null]}
+{"fn": "applyEventDialect", "args": ["{\"type\":\"other\"}", "DEVRYAN"]}
+{"fn": "applyEventDialect", "args": ["{\"type\":\"other\"}", "x"]}
+{"fn": "applyEventDialect", "args": [" {\"type\":\"devryan:z\"}", "devryan"]}
+{"fn": "applyEventDialect", "args": [" {\"type\":\"devryan:z\"}", null]}
+{"fn": "applyEventDialect", "args": [" {\"type\":\"devryan:z\"}", "DEVRYAN"]}
+{"fn": "applyEventDialect", "args": [" {\"type\":\"devryan:z\"}", "x"]}
+{"fn": "applyEventDialect", "args": ["", "devryan"]}
+{"fn": "applyEventDialect", "args": ["", null]}
+{"fn": "applyEventDialect", "args": ["", "DEVRYAN"]}
+{"fn": "applyEventDialect", "args": ["", "x"]}
+{"fn": "applyEventDialect", "args": [null, "devryan"]}
+{"fn": "applyEventDialect", "args": [null, null]}
+{"fn": "applyEventDialect", "args": [null, "DEVRYAN"]}
+{"fn": "applyEventDialect", "args": [null, "x"]}
+{"fn": "applyEventDialect", "args": [5, "devryan"]}
+{"fn": "applyEventDialect", "args": [5, null]}
+{"fn": "applyEventDialect", "args": [5, "DEVRYAN"]}
+{"fn": "applyEventDialect", "args": [5, "x"]}
+{"fn": "applyEventDialect", "args": [{"$utf16": [123, 34, 116, 121, 112, 101, 34, 58, 34, 100, 101, 118, 114, 121, 97, 110, 58, 55296]}, "devryan"]}
+{"fn": "applyEventDialect", "args": [{"$utf16": [123, 34, 116, 121, 112, 101, 34, 58, 34, 100, 101, 118, 114, 121, 97, 110, 58, 55296]}, null]}
+{"fn": "applyEventDialect", "args": [{"$utf16": [123, 34, 116, 121, 112, 101, 34, 58, 34, 100, 101, 118, 114, 121, 97, 110, 58, 55296]}, "DEVRYAN"]}
+{"fn": "applyEventDialect", "args": [{"$utf16": [123, 34, 116, 121, 112, 101, 34, 58, 34, 100, 101, 118, 114, 121, 97, 110, 58, 55296]}, "x"]}

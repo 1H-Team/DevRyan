@@ -1,0 +1,25 @@
+{
+  "unit": "policy.js",
+  "files": 1,
+  "fingerprint": "c629ff328d4bcf1c",
+  "cases": 3162,
+  "cases_hash": "faa53e2b635867be",
+  "coverage": {
+    "lines": 601,
+    "reached": 599,
+    "files": [
+      {
+        "file": "policy.js",
+        "lines": 546,
+        "reached": 544,
+        "missed": "120-121"
+      },
+      {
+        "file": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode/notification-settings.js",
+        "lines": 55,
+        "reached": 55,
+        "missed": ""
+      }
+    ]
+  }
+}

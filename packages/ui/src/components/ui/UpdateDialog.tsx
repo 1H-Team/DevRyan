@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -6,14 +6,10 @@ import {
 } from '@/components/ui/dialog';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
-import { RiCheckLine, RiClipboardLine, RiDownloadCloudLine, RiDownloadLine, RiExternalLinkLine, RiLoaderLine, RiRestartLine, RiTerminalLine } from '@remixicon/react';
-import { cn } from '@/lib/utils';
+import { RiDownloadCloudLine, RiDownloadLine, RiExternalLinkLine, RiLoaderLine, RiRestartLine } from '@remixicon/react';
 import type { UpdateInfo, UpdateProgress } from '@/lib/desktop';
-import { copyTextToClipboard } from '@/lib/clipboard';
 import { openExternalUrl } from '@/lib/url';
 import { useI18n } from '@/lib/i18n';
-
-type WebUpdateState = 'idle' | 'updating' | 'restarting' | 'reconnecting' | 'error';
 
 interface UpdateDialogProps {
   open: boolean;
@@ -29,7 +25,11 @@ interface UpdateDialogProps {
   runtimeType?: 'desktop' | 'web' | null;
 }
 
-const GITHUB_RELEASES_URL = 'https://github.com/1H-Team/DevRyan/releases';
+const GITHUB_REPOSITORY_OWNER = '1H-Team';
+const GITHUB_REPOSITORY_NAME = 'DevRyan';
+const GITHUB_RELEASES_URL = `https://github.com/${GITHUB_REPOSITORY_OWNER}/${GITHUB_REPOSITORY_NAME}/releases`;
+// Web pointer target: fixed, never built from update-check response data.
+const RELEASE_PAGE_URL = `${GITHUB_RELEASES_URL}/latest`;
 
 type ChangelogSection = {
   version: string;
@@ -109,84 +109,6 @@ function parseChangelogSections(body: string): ChangelogSection[] {
   });
 }
 
-type InstallWebUpdateResult = {
-  success: boolean;
-  error?: string;
-  autoRestart?: boolean;
-};
-
-const WEB_UPDATE_POLL_INTERVAL_MS = 2000;
-const WEB_UPDATE_MAX_WAIT_MS = 10 * 60 * 1000;
-
-async function installWebUpdate(): Promise<InstallWebUpdateResult> {
-  try {
-    const response = await fetch('/api/devryan/update-install', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
-
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      return { success: false, error: data.error || `Server error: ${response.status}` };
-    }
-
-    const data = await response.json().catch(() => ({}));
-    return {
-      success: true,
-      autoRestart: data.autoRestart !== false,
-    };
-  } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : undefined };
-  }
-}
-
-async function isServerReachable(): Promise<boolean> {
-  try {
-    const response = await fetch('/health', {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
-async function waitForUpdateApplied(
-  previousVersion?: string,
-  maxAttempts = Math.ceil(WEB_UPDATE_MAX_WAIT_MS / WEB_UPDATE_POLL_INTERVAL_MS),
-  intervalMs = WEB_UPDATE_POLL_INTERVAL_MS,
-): Promise<boolean> {
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      const response = await fetch('/api/devryan/update-check', {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-      });
-      if (response.ok) {
-        const data = await response.json().catch(() => null);
-        if (data && data.available === false) {
-          return true;
-        }
-        if (
-          data &&
-          typeof data.currentVersion === 'string' &&
-          typeof previousVersion === 'string' &&
-          data.currentVersion !== previousVersion
-        ) {
-          return true;
-        }
-      } else if ((response.status === 401 || response.status === 403) && await isServerReachable()) {
-        return true;
-      }
-    } catch {
-      // Server may be restarting
-    }
-    await new Promise(resolve => setTimeout(resolve, intervalMs));
-  }
-  return false;
-}
-
 export const UpdateDialog: React.FC<UpdateDialogProps> = ({
   open,
   onOpenChange,
@@ -200,70 +122,25 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
   runtimeType = 'desktop',
 }) => {
   const { t } = useI18n();
-  const [copied, setCopied] = useState(false);
-  const [webUpdateState, setWebUpdateState] = useState<WebUpdateState>('idle');
-  const [webError, setWebError] = useState<string | null>(null);
 
-  const releaseUrl = info?.version
-    ? `${GITHUB_RELEASES_URL}/tag/v${info.version}`
+  // Desktop keeps its tag-page link; the version is one encoded path segment
+  // under the fixed releases URL, so it cannot change the host or path prefix.
+  const desktopReleaseUrl = info?.version
+    ? `${GITHUB_RELEASES_URL}/tag/v${encodeURIComponent(info.version)}`
     : GITHUB_RELEASES_URL;
 
   const progressPercent = progress?.total
     ? Math.round((progress.downloaded / progress.total) * 100)
     : 0;
 
+  // The web runtime (a browser, or the desktop app viewing a remote host) has no
+  // in-app installer: the release must be installed on the machine running the
+  // server, so the dialog only points to the release page.
   const isWebRuntime = runtimeType === 'web';
-  const updateCommand = info?.updateCommand || 'devryan update';
-
-  // Reset state when dialog closes
-  useEffect(() => {
-    if (!open) {
-      setWebUpdateState('idle');
-      setWebError(null);
-    }
-  }, [open]);
-
-  const handleCopyCommand = async () => {
-    const result = await copyTextToClipboard(updateCommand);
-    if (result.ok) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
 
   const handleOpenExternal = useCallback(async (url: string) => {
     await openExternalUrl(url);
   }, []);
-  const handleWebUpdate = useCallback(async () => {
-    setWebUpdateState('updating');
-    setWebError(null);
-
-    const result = await installWebUpdate();
-
-    if (!result.success) {
-      setWebUpdateState('error');
-      setWebError(result.error || t('updateDialog.error.updateFailed'));
-      return;
-    }
-
-    if (result.autoRestart) {
-      setWebUpdateState('restarting');
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    }
-
-    setWebUpdateState('reconnecting');
-
-    const applied = await waitForUpdateApplied(info?.currentVersion);
-
-    if (applied) {
-      window.location.reload();
-    } else {
-      setWebUpdateState('error');
-      setWebError(t('updateDialog.error.takingLonger'));
-    }
-  }, [info?.currentVersion, t]);
-
-  const isWebUpdating = webUpdateState !== 'idle' && webUpdateState !== 'error';
 
   const changelog = useMemo<ParsedChangelog | null>(() => {
     if (!info?.body) {
@@ -298,7 +175,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
   }, [info?.body, t]);
 
   return (
-    <Dialog open={open} onOpenChange={isWebUpdating ? undefined : onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl p-5 bg-background border-[var(--interactive-border)]" showCloseButton={true}>
 
         {/* Header Section */}
@@ -306,9 +183,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
           <DialogTitle className="flex items-center gap-2.5">
             <RiDownloadCloudLine className="h-5 w-5 text-[var(--primary-base)]" />
             <span className="text-lg font-semibold text-foreground">
-              {webUpdateState === 'restarting' || webUpdateState === 'reconnecting'
-                ? t('updateDialog.header.updating')
-                : t('updateDialog.header.updateAvailable')}
+              {t('updateDialog.header.updateAvailable')}
             </span>
           </DialogTitle>
 
@@ -331,25 +206,14 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
         {/* Content Body */}
         <div className="space-y-2">
 
-          {/* Web update progress */}
-          {isWebRuntime && isWebUpdating && (
-            <div className="rounded-lg bg-[var(--surface-elevated)]/30 p-5 border border-[var(--surface-subtle)]">
-              <div className="flex items-center gap-3">
-                <RiLoaderLine className="h-5 w-5 animate-spin text-[var(--primary-base)]" />
-                <div className="typography-ui-label text-foreground">
-                  {webUpdateState === 'updating' && t('updateDialog.status.installingUpdate')}
-                  {webUpdateState === 'restarting' && t('updateDialog.status.serverRestarting')}
-                  {webUpdateState === 'reconnecting' && t('updateDialog.status.waitingForServer')}
-                </div>
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                {t('updateDialog.status.autoReloadHint')}
-              </p>
-            </div>
+          {isWebRuntime && (
+            <p className="typography-meta text-muted-foreground">
+              {t('updateDialog.web.installFromDmg')}
+            </p>
           )}
 
           {/* Changelog Rendering */}
-          {changelog && !isWebUpdating && (
+          {changelog && (
             <div className="rounded-lg border border-[var(--surface-subtle)] bg-[var(--surface-elevated)]/20 overflow-hidden">
               <ScrollableOverlay
                 className="max-h-[400px] p-0"
@@ -404,37 +268,6 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
             </div>
           )}
 
-          {/* Web runtime fallback command */}
-          {isWebRuntime && webUpdateState === 'error' && (
-            <div className="space-y-2 mt-4">
-              <div className="flex items-center gap-2 typography-meta text-muted-foreground">
-                <RiTerminalLine className="h-4 w-4" />
-                <span>{t('updateDialog.fallback.updateViaTerminal')}</span>
-              </div>
-              <div className="flex items-center gap-2 p-1 pl-3 bg-[var(--surface-elevated)]/50 rounded-md border border-[var(--surface-subtle)]">
-                <code className="flex-1 font-mono text-sm text-foreground overflow-x-auto whitespace-nowrap">
-                  {updateCommand}
-                </code>
-                <button
-                  onClick={handleCopyCommand}
-                  className={cn(
-                    'flex items-center justify-center p-2 rounded',
-                    'text-muted-foreground hover:text-foreground hover:bg-[var(--interactive-hover)]',
-                    'transition-colors',
-                    copied && 'text-[var(--status-success)]'
-                  )}
-                  title={copied ? t('updateDialog.actions.copied') : t('updateDialog.actions.copyCommand')}
-                >
-                  {copied ? (
-                    <RiCheckLine className="h-4 w-4" />
-                  ) : (
-                    <RiClipboardLine className="h-4 w-4" />
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Desktop progress bar */}
           {!isWebRuntime && downloading && (
             <div className="space-y-2 mt-4">
@@ -452,9 +285,9 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
           )}
 
           {/* Error display */}
-          {(error || webError) && (
+          {error && (
             <div className="p-3 mt-4 bg-[var(--status-error-background)] border border-[var(--status-error-border)] rounded-lg">
-              <p className="text-sm text-[var(--status-error)]">{error || webError}</p>
+              <p className="text-sm text-[var(--status-error)]">{error}</p>
             </div>
           )}
         </div>
@@ -462,7 +295,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
         {/* Action Footer */}
         <div className="mt-4 flex items-center justify-between gap-4">
           <a
-            href={releaseUrl}
+            href={isWebRuntime ? RELEASE_PAGE_URL : desktopReleaseUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0"
@@ -503,24 +336,14 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
               </button>
             )}
 
-            {/* Web Buttons */}
-            {isWebRuntime && !isWebUpdating && (
+            {/* Web Button */}
+            {isWebRuntime && (
               <button
-                onClick={handleWebUpdate}
+                onClick={() => { void handleOpenExternal(RELEASE_PAGE_URL); }}
                 className="flex items-center justify-center gap-2 px-5 py-2 rounded-md text-sm font-medium bg-[var(--primary-base)] text-[var(--primary-foreground)] hover:opacity-90 transition-opacity"
               >
-                <RiDownloadLine className="h-4 w-4" />
-                {t('updateDialog.actions.updateNow')}
-              </button>
-            )}
-
-            {isWebRuntime && isWebUpdating && (
-              <button
-                disabled
-                className="flex items-center justify-center gap-2 px-5 py-2 rounded-md text-sm font-medium bg-[var(--primary-base)]/50 text-[var(--primary-foreground)] cursor-not-allowed"
-              >
-                <RiLoaderLine className="h-4 w-4 animate-spin" />
-                {t('updateDialog.status.updating')}
+                <RiExternalLinkLine className="h-4 w-4" />
+                {t('updateDialog.actions.openReleasePage')}
               </button>
             )}
           </div>

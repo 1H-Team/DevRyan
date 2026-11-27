@@ -1,0 +1,356 @@
+{"fn": "isResponseStyleLevel", "args": ["provider"]}
+{"fn": "isResponseStylePreset", "args": ["provider"]}
+{"fn": "getResponseStylePresetInstructions", "args": ["provider"]}
+{"fn": "isResponseStyleLevel", "args": ["actions"]}
+{"fn": "isResponseStylePreset", "args": ["actions"]}
+{"fn": "getResponseStylePresetInstructions", "args": ["actions"]}
+{"fn": "isResponseStyleLevel", "args": ["concise"]}
+{"fn": "isResponseStylePreset", "args": ["concise"]}
+{"fn": "getResponseStylePresetInstructions", "args": ["concise"]}
+{"fn": "isResponseStyleLevel", "args": ["detailed"]}
+{"fn": "isResponseStylePreset", "args": ["detailed"]}
+{"fn": "getResponseStylePresetInstructions", "args": ["detailed"]}
+{"fn": "isResponseStyleLevel", "args": ["Concise"]}
+{"fn": "isResponseStylePreset", "args": ["Concise"]}
+{"fn": "getResponseStylePresetInstructions", "args": ["Concise"]}
+{"fn": "isResponseStyleLevel", "args": [""]}
+{"fn": "isResponseStylePreset", "args": [""]}
+{"fn": "getResponseStylePresetInstructions", "args": [""]}
+{"fn": "isResponseStyleLevel", "args": [null]}
+{"fn": "isResponseStylePreset", "args": [null]}
+{"fn": "getResponseStylePresetInstructions", "args": [null]}
+{"fn": "isResponseStyleLevel", "args": [5]}
+{"fn": "isResponseStylePreset", "args": [5]}
+{"fn": "getResponseStylePresetInstructions", "args": [5]}
+{"fn": "isResponseStyleLevel", "args": [["concise"]]}
+{"fn": "isResponseStylePreset", "args": [["concise"]]}
+{"fn": "getResponseStylePresetInstructions", "args": [["concise"]]}
+{"fn": "isResponseStyleLevel", "args": [{"x": 1}]}
+{"fn": "isResponseStylePreset", "args": [{"x": 1}]}
+{"fn": "getResponseStylePresetInstructions", "args": [{"x": 1}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": true, "responseStylePreset": "actions"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": true, "preset": "actions"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": false, "responseStylePreset": "actions"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": false, "preset": "actions"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": "true", "responseStylePreset": "actions"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": "true", "preset": "actions"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": 1, "responseStylePreset": "actions"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": 1, "preset": "actions"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": null, "responseStylePreset": "actions"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": null, "preset": "actions"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": true, "responseStylePreset": "concise"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": true, "preset": "concise"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": false, "responseStylePreset": "concise"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": false, "preset": "concise"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": "true", "responseStylePreset": "concise"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": "true", "preset": "concise"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": 1, "responseStylePreset": "concise"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": 1, "preset": "concise"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": null, "responseStylePreset": "concise"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": null, "preset": "concise"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": true, "responseStylePreset": "detailed"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": true, "preset": "detailed"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": false, "responseStylePreset": "detailed"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": false, "preset": "detailed"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": "true", "responseStylePreset": "detailed"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": "true", "preset": "detailed"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": 1, "responseStylePreset": "detailed"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": 1, "preset": "detailed"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": null, "responseStylePreset": "detailed"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": null, "preset": "detailed"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": true, "responseStylePreset": "noFiller"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": true, "preset": "noFiller"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": false, "responseStylePreset": "noFiller"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": false, "preset": "noFiller"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": "true", "responseStylePreset": "noFiller"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": "true", "preset": "noFiller"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": 1, "responseStylePreset": "noFiller"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": 1, "preset": "noFiller"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": null, "responseStylePreset": "noFiller"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": null, "preset": "noFiller"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": true, "responseStylePreset": "matchEnergy"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": true, "preset": "matchEnergy"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": false, "responseStylePreset": "matchEnergy"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": false, "preset": "matchEnergy"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": "true", "responseStylePreset": "matchEnergy"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": "true", "preset": "matchEnergy"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": 1, "responseStylePreset": "matchEnergy"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": 1, "preset": "matchEnergy"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": null, "responseStylePreset": "matchEnergy"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": null, "preset": "matchEnergy"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": true, "responseStylePreset": "mentor"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": true, "preset": "mentor"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": false, "responseStylePreset": "mentor"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": false, "preset": "mentor"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": "true", "responseStylePreset": "mentor"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": "true", "preset": "mentor"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": 1, "responseStylePreset": "mentor"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": 1, "preset": "mentor"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": null, "responseStylePreset": "mentor"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": null, "preset": "mentor"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": true, "responseStylePreset": "pushback"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": true, "preset": "pushback"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": false, "responseStylePreset": "pushback"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": false, "preset": "pushback"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": "true", "responseStylePreset": "pushback"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": "true", "preset": "pushback"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": 1, "responseStylePreset": "pushback"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": 1, "preset": "pushback"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": null, "responseStylePreset": "pushback"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": null, "preset": "pushback"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": true, "responseStylePreset": "warmPeer"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": true, "preset": "warmPeer"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": false, "responseStylePreset": "warmPeer"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": false, "preset": "warmPeer"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": "true", "responseStylePreset": "warmPeer"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": "true", "preset": "warmPeer"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": 1, "responseStylePreset": "warmPeer"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": 1, "preset": "warmPeer"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": null, "responseStylePreset": "warmPeer"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": null, "preset": "warmPeer"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": true, "responseStylePreset": "custom"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": true, "preset": "custom"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": false, "responseStylePreset": "custom"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": false, "preset": "custom"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": "true", "responseStylePreset": "custom"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": "true", "preset": "custom"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": 1, "responseStylePreset": "custom"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": 1, "preset": "custom"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": null, "responseStylePreset": "custom"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": null, "preset": "custom"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": true, "responseStylePreset": null}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": true, "preset": null}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": false, "responseStylePreset": null}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": false, "preset": null}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": "true", "responseStylePreset": null}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": "true", "preset": null}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": 1, "responseStylePreset": null}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": 1, "preset": null}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": null, "responseStylePreset": null}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": null, "preset": null}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": true, "responseStylePreset": ["mentor"]}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": true, "preset": ["mentor"]}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": false, "responseStylePreset": ["mentor"]}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": false, "preset": ["mentor"]}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": "true", "responseStylePreset": ["mentor"]}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": "true", "preset": ["mentor"]}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": 1, "responseStylePreset": ["mentor"]}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": 1, "preset": ["mentor"]}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": null, "responseStylePreset": ["mentor"]}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": null, "preset": ["mentor"]}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": true, "responseStylePreset": [["concise"]]}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": true, "preset": [["concise"]]}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": false, "responseStylePreset": [["concise"]]}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": false, "preset": [["concise"]]}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": "true", "responseStylePreset": [["concise"]]}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": "true", "preset": [["concise"]]}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": 1, "responseStylePreset": [["concise"]]}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": 1, "preset": [["concise"]]}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": null, "responseStylePreset": [["concise"]]}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": null, "preset": [["concise"]]}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": true, "responseStylePreset": ["actions"]}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": true, "preset": ["actions"]}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": false, "responseStylePreset": ["actions"]}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": false, "preset": ["actions"]}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": "true", "responseStylePreset": ["actions"]}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": "true", "preset": ["actions"]}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": 1, "responseStylePreset": ["actions"]}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": 1, "preset": ["actions"]}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": null, "responseStylePreset": ["actions"]}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": null, "preset": ["actions"]}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": true, "responseStylePreset": 5}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": true, "preset": 5}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": false, "responseStylePreset": 5}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": false, "preset": 5}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": "true", "responseStylePreset": 5}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": "true", "preset": 5}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": 1, "responseStylePreset": 5}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": 1, "preset": 5}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": null, "responseStylePreset": 5}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": null, "preset": 5}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": true, "responseStylePreset": {"a": 1}}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": true, "preset": {"a": 1}}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": false, "responseStylePreset": {"a": 1}}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": false, "preset": {"a": 1}}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": "true", "responseStylePreset": {"a": 1}}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": "true", "preset": {"a": 1}}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": 1, "responseStylePreset": {"a": 1}}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": 1, "preset": {"a": 1}}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": null, "responseStylePreset": {"a": 1}}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": null, "preset": {"a": 1}}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": true, "responseStylePreset": "provider"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": true, "preset": "provider"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": false, "responseStylePreset": "provider"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": false, "preset": "provider"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": "true", "responseStylePreset": "provider"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": "true", "preset": "provider"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": 1, "responseStylePreset": "provider"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": 1, "preset": "provider"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": null, "responseStylePreset": "provider"}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": null, "preset": "provider"}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": true, "responseStylePreset": true}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": true, "preset": true}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": false, "responseStylePreset": true}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": false, "preset": true}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": "true", "responseStylePreset": true}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": "true", "preset": true}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": 1, "responseStylePreset": true}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": 1, "preset": true}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": null, "responseStylePreset": true}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": null, "preset": true}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": true, "responseStylePreset": []}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": true, "preset": []}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": false, "responseStylePreset": []}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": false, "preset": []}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": "true", "responseStylePreset": []}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": "true", "preset": []}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": 1, "responseStylePreset": []}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": 1, "preset": []}]}
+{"fn": "resolveResponseStyleLevel", "args": [{"responseStyleEnabled": null, "responseStylePreset": []}]}
+{"fn": "buildResponseStyleInstruction", "args": [{"enabled": null, "preset": []}]}
+{"fn": "resolveResponseStyleLevel", "args": [null]}
+{"fn": "buildResponseStyleInstruction", "args": [null]}
+{"fn": "resolveResponseStyleLevel", "args": ["str"]}
+{"fn": "buildResponseStyleInstruction", "args": ["str"]}
+{"fn": "resolveResponseStyleLevel", "args": [5]}
+{"fn": "buildResponseStyleInstruction", "args": [5]}
+{"fn": "resolveResponseStyleLevel", "args": [[1]]}
+{"fn": "buildResponseStyleInstruction", "args": [[1]]}
+{"fn": "resolveResponseStyleLevel", "args": [{}]}
+{"fn": "buildResponseStyleInstruction", "args": [{}]}
+{"fn": "resolveResponseStyleLevel", "args": []}
+{"fn": "buildResponseStyleInstruction", "args": []}
+{"fn": "wrapResponseStyleReminder", "args": ["provider", ""]}
+{"fn": "wrapResponseStyleReminder", "args": ["provider", "  "]}
+{"fn": "wrapResponseStyleReminder", "args": ["provider", "do it"]}
+{"fn": "wrapResponseStyleReminder", "args": ["provider", " ﻿do it "]}
+{"fn": "wrapResponseStyleReminder", "args": ["actions", ""]}
+{"fn": "wrapResponseStyleReminder", "args": ["actions", "  "]}
+{"fn": "wrapResponseStyleReminder", "args": ["actions", "do it"]}
+{"fn": "wrapResponseStyleReminder", "args": ["actions", " ﻿do it "]}
+{"fn": "wrapResponseStyleReminder", "args": ["concise", ""]}
+{"fn": "wrapResponseStyleReminder", "args": ["concise", "  "]}
+{"fn": "wrapResponseStyleReminder", "args": ["concise", "do it"]}
+{"fn": "wrapResponseStyleReminder", "args": ["concise", " ﻿do it "]}
+{"fn": "wrapResponseStyleReminder", "args": [5, ""]}
+{"fn": "wrapResponseStyleReminder", "args": [5, "  "]}
+{"fn": "wrapResponseStyleReminder", "args": [5, "do it"]}
+{"fn": "wrapResponseStyleReminder", "args": [5, " ﻿do it "]}
+{"fn": "wrapResponseStyleReminder", "args": [null, ""]}
+{"fn": "wrapResponseStyleReminder", "args": [null, "  "]}
+{"fn": "wrapResponseStyleReminder", "args": [null, "do it"]}
+{"fn": "wrapResponseStyleReminder", "args": [null, " ﻿do it "]}
+{"fn": "wrapResponseStyleReminder", "args": [["a", "b"], ""]}
+{"fn": "wrapResponseStyleReminder", "args": [["a", "b"], "  "]}
+{"fn": "wrapResponseStyleReminder", "args": [["a", "b"], "do it"]}
+{"fn": "wrapResponseStyleReminder", "args": [["a", "b"], " ﻿do it "]}
+{"fn": "wrapResponseStyleReminder", "args": [{"x": 1}, ""]}
+{"fn": "wrapResponseStyleReminder", "args": [{"x": 1}, "  "]}
+{"fn": "wrapResponseStyleReminder", "args": [{"x": 1}, "do it"]}
+{"fn": "wrapResponseStyleReminder", "args": [{"x": 1}, " ﻿do it "]}
+{"fn": "readResponseStyleLevelFromParts", "args": [[{"type": "text", "text": "<system-reminder data-devryan-response-style=\"concise\">\nX\n</system-reminder>", "synthetic": true}]]}
+{"fn": "readResponseStyleLevelFromParts", "args": [[{"type": "text", "text": "<system-reminder data-devryan-response-style=\"detailed\">\nX\n</system-reminder>", "synthetic": false}]]}
+{"fn": "readResponseStyleLevelFromParts", "args": [[{"type": "reasoning", "text": "<system-reminder data-devryan-response-style=\"actions\">\nX\n</system-reminder>", "synthetic": true}]]}
+{"fn": "readResponseStyleLevelFromParts", "args": [[{"type": "text", "text": "<system-reminder data-devryan-response-style=\"provider\">\nX\n</system-reminder>", "synthetic": true}]]}
+{"fn": "readResponseStyleLevelFromParts", "args": [[{"type": "text", "text": "x", "synthetic": true}, {"type": "text", "text": "<system-reminder data-devryan-response-style=\"actions\">\nX\n</system-reminder>", "synthetic": true}]]}
+{"fn": "readResponseStyleLevelFromParts", "args": [[{"type": "text", "text": "<system-reminder　\ndata-devryan-response-style=\"detailed\">", "synthetic": true}]]}
+{"fn": "readResponseStyleLevelFromParts", "args": [[{"type": "text", "text": "<system-reminderdata-devryan-response-style=\"detailed\">", "synthetic": true}]]}
+{"fn": "readResponseStyleLevelFromParts", "args": [[{"type": "text", "text": "<system-reminder <system-reminder data-devryan-response-style=\"concise\">", "synthetic": true}]]}
+{"fn": "readResponseStyleLevelFromParts", "args": [[{"type": "text", "text": "<system-reminder  data-devryan-response-style=\"concised\">", "synthetic": true}]]}
+{"fn": "readResponseStyleLevelFromParts", "args": [[{"type": "text", "text": "<system-reminderdata-devryan-response-style=\"concise\">", "synthetic": true}]]}
+{"fn": "readResponseStyleLevelFromParts", "args": [[{"type": "text", "text": "<system-reminder﻿data-devryan-response-style=\"concise\">", "synthetic": true}]]}
+{"fn": "readResponseStyleLevelFromParts", "args": [[null]]}
+{"fn": "readResponseStyleLevelFromParts", "args": [["abc"]]}
+{"fn": "readResponseStyleLevelFromParts", "args": [[{"type": "text", "text": 5, "synthetic": true}]]}
+{"fn": "readResponseStyleLevelFromParts", "args": [[]]}
+{"fn": "readResponseStyleLevelFromParts", "args": [[{"type": "text", "text": "<system-reminder data-devryan-response-style=\"concise\">\nX\n</system-reminder>", "synthetic": "true"}]]}
+{"fn": "readResponseStyleLevelFromParts", "args": [null]}
+{"fn": "readResponseStyleLevelFromParts", "args": ["ab"]}
+{"fn": "readResponseStyleLevelFromParts", "args": [{}]}
+{"fn": "readSessionResponseStyleLevel", "args": [[{"parts": [{"type": "text", "text": "x", "synthetic": true}]}, {"parts": [{"type": "text", "text": "<system-reminder data-devryan-response-style=\"concise\">\nX\n</system-reminder>", "synthetic": true}]}]]}
+{"fn": "readSessionResponseStyleLevel", "args": [[{"parts": []}]]}
+{"fn": "readSessionResponseStyleLevel", "args": [[]]}
+{"fn": "readSessionResponseStyleLevel", "args": [[null]]}
+{"fn": "readSessionResponseStyleLevel", "args": [["a"]]}
+{"fn": "readSessionResponseStyleLevel", "args": [[{"parts": null}]]}
+{"fn": "readSessionResponseStyleLevel", "args": [[{}]]}
+{"fn": "readSessionResponseStyleLevel", "args": [[{"parts": [{"type": "text", "text": "x", "synthetic": true}, {"type": "text", "text": "<system-reminder data-devryan-response-style=\"actions\">\nX\n</system-reminder>", "synthetic": true}]}, {"parts": [{"type": "text", "text": "<system-reminder data-devryan-response-style=\"concise\">\nX\n</system-reminder>", "synthetic": true}]}]]}
+{"fn": "readSessionResponseStyleLevel", "args": [null]}
+{"fn": "readSessionResponseStyleLevel", "args": [5]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": true, "hasExistingSession": true, "existingSessionHasUserMessages": true}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": true, "hasExistingSession": true, "existingSessionHasUserMessages": false}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": true, "hasExistingSession": true, "existingSessionHasUserMessages": 0}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": true, "hasExistingSession": false, "existingSessionHasUserMessages": true}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": true, "hasExistingSession": false, "existingSessionHasUserMessages": false}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": true, "hasExistingSession": false, "existingSessionHasUserMessages": 0}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": true, "hasExistingSession": "", "existingSessionHasUserMessages": true}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": true, "hasExistingSession": "", "existingSessionHasUserMessages": false}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": true, "hasExistingSession": "", "existingSessionHasUserMessages": 0}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": true, "hasExistingSession": 1, "existingSessionHasUserMessages": true}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": true, "hasExistingSession": 1, "existingSessionHasUserMessages": false}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": true, "hasExistingSession": 1, "existingSessionHasUserMessages": 0}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": false, "hasExistingSession": true, "existingSessionHasUserMessages": true}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": false, "hasExistingSession": true, "existingSessionHasUserMessages": false}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": false, "hasExistingSession": true, "existingSessionHasUserMessages": 0}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": false, "hasExistingSession": false, "existingSessionHasUserMessages": true}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": false, "hasExistingSession": false, "existingSessionHasUserMessages": false}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": false, "hasExistingSession": false, "existingSessionHasUserMessages": 0}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": false, "hasExistingSession": "", "existingSessionHasUserMessages": true}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": false, "hasExistingSession": "", "existingSessionHasUserMessages": false}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": false, "hasExistingSession": "", "existingSessionHasUserMessages": 0}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": false, "hasExistingSession": 1, "existingSessionHasUserMessages": true}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": false, "hasExistingSession": 1, "existingSessionHasUserMessages": false}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": false, "hasExistingSession": 1, "existingSessionHasUserMessages": 0}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": "x", "hasExistingSession": true, "existingSessionHasUserMessages": true}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": "x", "hasExistingSession": true, "existingSessionHasUserMessages": false}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": "x", "hasExistingSession": true, "existingSessionHasUserMessages": 0}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": "x", "hasExistingSession": false, "existingSessionHasUserMessages": true}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": "x", "hasExistingSession": false, "existingSessionHasUserMessages": false}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": "x", "hasExistingSession": false, "existingSessionHasUserMessages": 0}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": "x", "hasExistingSession": "", "existingSessionHasUserMessages": true}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": "x", "hasExistingSession": "", "existingSessionHasUserMessages": false}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": "x", "hasExistingSession": "", "existingSessionHasUserMessages": 0}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": "x", "hasExistingSession": 1, "existingSessionHasUserMessages": true}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": "x", "hasExistingSession": 1, "existingSessionHasUserMessages": false}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": "x", "hasExistingSession": 1, "existingSessionHasUserMessages": 0}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": 0, "hasExistingSession": true, "existingSessionHasUserMessages": true}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": 0, "hasExistingSession": true, "existingSessionHasUserMessages": false}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": 0, "hasExistingSession": true, "existingSessionHasUserMessages": 0}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": 0, "hasExistingSession": false, "existingSessionHasUserMessages": true}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": 0, "hasExistingSession": false, "existingSessionHasUserMessages": false}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": 0, "hasExistingSession": false, "existingSessionHasUserMessages": 0}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": 0, "hasExistingSession": "", "existingSessionHasUserMessages": true}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": 0, "hasExistingSession": "", "existingSessionHasUserMessages": false}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": 0, "hasExistingSession": "", "existingSessionHasUserMessages": 0}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": 0, "hasExistingSession": 1, "existingSessionHasUserMessages": true}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": 0, "hasExistingSession": 1, "existingSessionHasUserMessages": false}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": 0, "hasExistingSession": 1, "existingSessionHasUserMessages": 0}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": null, "hasExistingSession": true, "existingSessionHasUserMessages": true}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": null, "hasExistingSession": true, "existingSessionHasUserMessages": false}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": null, "hasExistingSession": true, "existingSessionHasUserMessages": 0}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": null, "hasExistingSession": false, "existingSessionHasUserMessages": true}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": null, "hasExistingSession": false, "existingSessionHasUserMessages": false}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": null, "hasExistingSession": false, "existingSessionHasUserMessages": 0}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": null, "hasExistingSession": "", "existingSessionHasUserMessages": true}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": null, "hasExistingSession": "", "existingSessionHasUserMessages": false}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": null, "hasExistingSession": "", "existingSessionHasUserMessages": 0}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": null, "hasExistingSession": 1, "existingSessionHasUserMessages": true}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": null, "hasExistingSession": 1, "existingSessionHasUserMessages": false}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{"isNewSessionDraft": null, "hasExistingSession": 1, "existingSessionHasUserMessages": 0}]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [null]}
+{"fn": "shouldAttachResponseStyleReminder", "args": [{}]}
+{"fn": "isResponseStyleInstructionLoaded", "args": []}
+{"fn": "getCachedResponseStyleLevel", "args": []}
+{"fn": "getCachedResponseStyleInstruction", "args": []}
+{"fn": "cacheResponseStyleInstructionFromSettings", "args": [{"responseStyleEnabled": true, "responseStylePreset": "mentor"}]}
+{"fn": "isResponseStyleInstructionLoaded", "args": []}
+{"fn": "getCachedResponseStyleLevel", "args": []}
+{"fn": "getCachedResponseStyleInstruction", "args": []}
+{"fn": "cacheResponseStyleInstructionFromSettings", "args": [null]}
+{"fn": "getCachedResponseStyleLevel", "args": []}
+{"fn": "getCachedResponseStyleInstruction", "args": []}
+{"fn": "cacheResponseStyleInstructionFromSettings", "args": [{"responseStyleEnabled": true, "responseStylePreset": "actions"}]}
+{"fn": "getCachedResponseStyleInstruction", "args": []}
+{"fn": "clearResponseStyleInstructionCacheForTests", "args": []}
+{"fn": "isResponseStyleInstructionLoaded", "args": []}
+{"fn": "getCachedResponseStyleLevel", "args": []}

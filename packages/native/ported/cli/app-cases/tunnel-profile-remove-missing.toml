@@ -1,0 +1,4 @@
+bin.name = "devryan"
+args = ["tunnel", "profile", "remove", "--name", "ghost"]
+status.code = 1
+fs.sandbox = true

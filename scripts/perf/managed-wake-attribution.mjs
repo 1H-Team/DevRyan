@@ -60,10 +60,10 @@ export async function runManagedWakeAttribution({ client, managed, nativeControl
     const beforeObservation = observations.length;
     const beforeOperations = readOperationCounts ? await readOperationCounts() : null;
     let sampler;
-    let reader, streamFailure, streamBytes = 0, nativeEvents = 0, forwardedHints = 0, proof, resources;
+    let streamFailure, streamBytes = 0, nativeEvents = 0, forwardedHints = 0, proof, resources;
     const response = await openEventStream({ url: client.events.url(), signal: abort.signal });
     assert.equal(response.ok, true, 'Actual native event stream refused'); assert.ok(response.body);
-    reader = response.body.getReader();
+    const reader = response.body.getReader();
     try { sampler = Number.isSafeInteger(controlledPid)
       ? await (await import('./native-upgrade-benchmark.mjs')).createProcessSampler(controlledPid) : null;
     } catch (error) { abort.abort(); await reader.cancel(); reader.releaseLock(); throw error; }

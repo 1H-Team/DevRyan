@@ -1,0 +1,49 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode/v2",
+  "unit": "openapi-routes.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "openapi-routes-rs",
+  "exports": [
+    {
+      "name": "openCodeV2RouteKey",
+      "file": "openapi-routes.js",
+      "line": 75,
+      "params": [
+        {
+          "name": "method",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "template",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "extractOpenCodeV2Operations",
+      "file": "openapi-routes.js",
+      "line": 84,
+      "reason": "kept on request"
+    },
+    {
+      "name": "renderOpenCodeV2RoutesModule",
+      "file": "openapi-routes.js",
+      "line": 135,
+      "reason": "kept on request"
+    }
+  ]
+}

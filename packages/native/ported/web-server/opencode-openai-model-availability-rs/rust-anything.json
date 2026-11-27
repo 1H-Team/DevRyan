@@ -1,0 +1,49 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode",
+  "unit": "openai-model-availability.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "openai-model-availability-rs",
+  "exports": [
+    {
+      "name": "annotateOpenAIModelAvailability",
+      "file": "openai-model-availability.js",
+      "line": 23,
+      "params": [
+        {
+          "name": "payload",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "authEntry",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "options",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "readNativeOpenAiMetadata",
+      "file": "openai-model-availability.js",
+      "line": 4,
+      "reason": "async, calls the native runtime owner"
+    }
+  ]
+}

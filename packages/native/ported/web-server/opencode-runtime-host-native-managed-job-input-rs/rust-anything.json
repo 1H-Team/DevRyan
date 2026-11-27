@@ -1,0 +1,36 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode/runtime-host",
+  "unit": "native-managed-job-input.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "native-managed-job-input-rs",
+  "exports": [
+    {
+      "name": "nativeManagedJobInput",
+      "file": "native-managed-job-input.js",
+      "line": 11,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "phase",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

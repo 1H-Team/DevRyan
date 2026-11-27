@@ -11,7 +11,6 @@ import path from 'path';
 import os from 'os';
 import { execFile } from 'child_process';
 import { inspect, promisify } from 'util';
-import { createRequire } from 'module';
 
 import {
   createPostCheckoutHookRunner,
@@ -24,7 +23,6 @@ import { getGitHubAuthById } from '../github/auth.js';
 import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 
 const fsp = fs.promises;
-const require = createRequire(import.meta.url);
 const execFileAsync = promisify(execFile);
 const gpgconfCandidates = ['gpgconf', '/opt/homebrew/bin/gpgconf', '/usr/local/bin/gpgconf'];
 let resolvedGitBinary = null;
@@ -425,7 +423,7 @@ export const buildGitEnv = async (
   if (optionalLocks === false) {
     env.GIT_OPTIONAL_LOCKS = '0';
   }
-  const { principal, assignment } = resolveManagedGitAssignment(directory);
+  const { principal } = resolveManagedGitAssignment(directory);
   const selectedAccountId = principal
     ? principal.githubAccountId || null
     : githubAccountId || null;
@@ -1789,7 +1787,7 @@ export async function getStatus(directory, options = {}) {
       return null;
     };
 
-    let tracking = status.tracking || null;
+    const tracking = status.tracking || null;
     let ahead = status.ahead;
     let behind = status.behind;
 
@@ -1941,32 +1939,6 @@ export async function getRangeDiff(directory, { base, head, path, contextLines =
   }
   const diff = await git.raw(args);
   return diff;
-}
-
-export async function getRangeFiles(directory, { base, head } = {}) {
-  const git = await createGit(directory);
-  const baseRef = typeof base === 'string' ? base.trim() : '';
-  const headRef = typeof head === 'string' ? head.trim() : '';
-  if (!baseRef || !headRef) {
-    throw new Error('base and head are required');
-  }
-
-  let resolvedBase = baseRef;
-  const originCandidate = `refs/remotes/origin/${baseRef}`;
-  try {
-    const verified = await git.raw(['rev-parse', '--verify', originCandidate]);
-    if (verified && verified.trim()) {
-      resolvedBase = `origin/${baseRef}`;
-    }
-  } catch {
-    // ignore
-  }
-
-  const raw = await git.raw(['diff', '--name-only', `${resolvedBase}...${headRef}`]);
-  return String(raw || '')
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean);
 }
 
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp', 'avif'];
@@ -2153,7 +2125,7 @@ async function revertFileUnlocked(directory, filePath) {
     try {
       await git.raw(['clean', '-f', '-d', '--', filePath]);
       return;
-    } catch (cleanError) {
+    } catch {
       try {
         await fsp.rm(absoluteTarget, { recursive: true, force: true });
         return;
@@ -2169,13 +2141,13 @@ async function revertFileUnlocked(directory, filePath) {
 
   try {
     await withIndexLockRetry(() => git.raw(['restore', '--staged', filePath]));
-  } catch (error) {
+  } catch {
     await withIndexLockRetry(() => git.raw(['reset', 'HEAD', '--', filePath])).catch(() => {});
   }
 
   try {
     await withIndexLockRetry(() => git.raw(['restore', filePath]));
-  } catch (error) {
+  } catch {
     try {
       await withIndexLockRetry(() => git.raw(['checkout', '--', filePath]));
     } catch (fallbackError) {
@@ -2275,21 +2247,6 @@ async function applyHunkUnlocked(directory, filePath, options = {}) {
       await fsp.rm(tmpPath, { force: true }).catch(() => {});
     }
   }
-}
-
-export async function collectDiffs(directory, files = []) {
-  const results = [];
-  for (const filePath of files) {
-    try {
-      const diff = await getDiff(directory, { path: filePath });
-      if (diff && diff.trim().length > 0) {
-        results.push({ path: filePath, diff });
-      }
-    } catch (error) {
-      console.error(`Failed to diff ${filePath}:`, error);
-    }
-  }
-  return results;
 }
 
 async function pullUnlocked(directory, options = {}) {

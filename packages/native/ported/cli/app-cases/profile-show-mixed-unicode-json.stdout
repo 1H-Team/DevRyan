@@ -1,0 +1,14 @@
+{
+  "status": "ok",
+  "profile": {
+    "id": "[..]",
+    "name": "unicode-ünï",
+    "provider": "cloudflare",
+    "mode": "managed-remote",
+    "hostname": "ü.example.com",
+    "originPort": 3000,
+    "token": "****n-ßß",
+    "createdAt": 5,
+    "updatedAt": 6
+  }
+}

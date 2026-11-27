@@ -1,0 +1,66 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "sessionChangeAttribution.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "sessionchangeattribution-rs",
+  "exports": [
+    {
+      "name": "projectSessionChangeAttribution",
+      "file": "sessionChangeAttribution.ts",
+      "line": 208,
+      "params": [
+        {
+          "name": "state",
+          "ts_type": "State",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "sessionID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "directory",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{\n  paths: readonly string[]\n  hasUnattributedMutations: boolean\n}",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "areSessionChangeAttributionsEqual",
+      "file": "sessionChangeAttribution.ts",
+      "line": 250,
+      "params": [
+        {
+          "name": "left",
+          "ts_type": "{\n  paths: readonly string[]\n  hasUnattributedMutations: boolean\n} | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "right",
+          "ts_type": "{\n  paths: readonly string[]\n  hasUnattributedMutations: boolean\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

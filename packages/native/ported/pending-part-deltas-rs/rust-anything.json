@@ -1,0 +1,193 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "pending-part-deltas.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "pending-part-deltas-rs",
+  "exports": [
+    {
+      "name": "readPendingPartDeltaFromEvent",
+      "file": "pending-part-deltas.ts",
+      "line": 119,
+      "params": [
+        {
+          "name": "event",
+          "ts_type": "Event",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "Omit<{\n  messageID: string\n  partID: string\n  field: string\n  delta: string\n  updatedAt: number\n}, \"updatedAt\"> | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "buildProvisionalPartFromPendingDeltas",
+      "file": "pending-part-deltas.ts",
+      "line": 292,
+      "params": [
+        {
+          "name": "messageID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "partID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "sessionID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "pendingDeltas",
+          "ts_type": "{\n  messageID: string\n  partID: string\n  field: string\n  delta: string\n  updatedAt: number\n}[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "partTypeHint",
+          "ts_type": "string",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "Part | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "applyPendingPartDeltasToParts",
+      "file": "pending-part-deltas.ts",
+      "line": 323,
+      "params": [
+        {
+          "name": "parts",
+          "ts_type": "Part[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "partID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "pendingDeltas",
+          "ts_type": "{\n  messageID: string\n  partID: string\n  field: string\n  delta: string\n  updatedAt: number\n}[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "options",
+          "ts_type": "{\n  sanitizeAssistantText?: boolean\n}",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "{ parts: Part[]; applied: boolean }",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "applyPendingPartDeltasToState",
+      "file": "pending-part-deltas.ts",
+      "line": 377,
+      "params": [
+        {
+          "name": "state",
+          "ts_type": "({\n  status: \"loading\" | \"partial\" | \"complete\"\n  bootstrapError?: string\n  agent: Agent[]\n  command: Command[]\n  project: string\n  projectMeta: {\n  name?: string\n  icon?: {\n    override?: string\n    color?: string\n  }\n  commands?: {\n    start?: string\n  }\n} | undefined\n  icon: string | undefined\n  provider: ProviderListResponse\n  config: Config\n  path: Path\n  session: Session[]\n  sessionListStatus: (\"idle\" | \"loading\" | \"ready\" | \"error\")\n  sessionListError?: string\n  sessionTotal: number\n  session_status: Record<string, SessionStatus>\n  session_diff: Record<string, {\n  file?: string\n  status?: string\n  additions?: number\n  deletions?: number\n  patch?: string\n  [key: string]: unknown\n}[]>\n  todo: Record<string, Todo[]>\n  permission: Record<string, PermissionRequest[]>\n  question: Record<string, QuestionRequest[]>\n  mcp: Record<string, McpStatus>\n  lsp: LspStatus[]\n  vcs: VcsInfo | undefined\n  limit: number\n  session_user_activity: Record<string, number>\n  revert_transaction: Record<string, {\n  messageID: string\n  hiddenMessageIDs?: ReadonlySet<string>\n  version: number\n  status: (\"pending\" | \"confirmed\" | \"failed\")\n  startedAt: number\n  serverAcknowledged?: boolean\n} | undefined>\n  message: Record<string, Message[]>\n  part: Record<string, Part[]>\n})",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "messageID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "partID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "pendingDeltas",
+          "ts_type": "{\n  messageID: string\n  partID: string\n  field: string\n  delta: string\n  updatedAt: number\n}[]",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{ part: ({\n  status: \"loading\" | \"partial\" | \"complete\"\n  bootstrapError?: string\n  agent: Agent[]\n  command: Command[]\n  project: string\n  projectMeta: {\n  name?: string\n  icon?: {\n    override?: string\n    color?: string\n  }\n  commands?: {\n    start?: string\n  }\n} | undefined\n  icon: string | undefined\n  provider: ProviderListResponse\n  config: Config\n  path: Path\n  session: Session[]\n  sessionListStatus: (\"idle\" | \"loading\" | \"ready\" | \"error\")\n  sessionListError?: string\n  sessionTotal: number\n  session_status: Record<string, SessionStatus>\n  session_diff: Record<string, {\n  file?: string\n  status?: string\n  additions?: number\n  deletions?: number\n  patch?: string\n  [key: string]: unknown\n}[]>\n  todo: Record<string, Todo[]>\n  permission: Record<string, PermissionRequest[]>\n  question: Record<string, QuestionRequest[]>\n  mcp: Record<string, McpStatus>\n  lsp: LspStatus[]\n  vcs: VcsInfo | undefined\n  limit: number\n  session_user_activity: Record<string, number>\n  revert_transaction: Record<string, {\n  messageID: string\n  hiddenMessageIDs?: ReadonlySet<string>\n  version: number\n  status: (\"pending\" | \"confirmed\" | \"failed\")\n  startedAt: number\n  serverAcknowledged?: boolean\n} | undefined>\n  message: Record<string, Message[]>\n  part: Record<string, Part[]>\n})[\"part\"] } | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "recordPartTypeHintFromEvent",
+      "file": "pending-part-deltas.ts",
+      "line": 76,
+      "reason": "mutates its store; proven through the wrapper in mutation/"
+    },
+    {
+      "name": "getPartTypeHint",
+      "file": "pending-part-deltas.ts",
+      "line": 94,
+      "reason": "mutates its store; proven through the wrapper in mutation/"
+    },
+    {
+      "name": "clearPartTypeHintsForDirectory",
+      "file": "pending-part-deltas.ts",
+      "line": 109,
+      "reason": "mutates its store; proven through the wrapper in mutation/"
+    },
+    {
+      "name": "addPendingPartDelta",
+      "file": "pending-part-deltas.ts",
+      "line": 173,
+      "reason": "mutates its store; proven through the wrapper in mutation/"
+    },
+    {
+      "name": "consumePendingPartDeltas",
+      "file": "pending-part-deltas.ts",
+      "line": 196,
+      "reason": "mutates its store; proven through the wrapper in mutation/"
+    },
+    {
+      "name": "hasPendingPartDeltasForMessages",
+      "file": "pending-part-deltas.ts",
+      "line": 224,
+      "reason": "checks `instanceof`: class identity does not survive the bridge"
+    },
+    {
+      "name": "clearPendingPartDeltasForDirectory",
+      "file": "pending-part-deltas.ts",
+      "line": 245,
+      "reason": "mutates its store; proven through the wrapper in mutation/"
+    },
+    {
+      "name": "clearPendingPartDeltasForMessages",
+      "file": "pending-part-deltas.ts",
+      "line": 260,
+      "reason": "mutates its store; proven through the wrapper in mutation/"
+    }
+  ]
+}

@@ -33,7 +33,7 @@ export const canonicalizeManagedQuotaProviderId = (providerId) => {
   return canonical;
 };
 
-export const getQuotaCredentialsDirectory = ({
+const getQuotaCredentialsDirectory = ({
   env = process.env,
   homedir = os.homedir,
   pathImpl = path,

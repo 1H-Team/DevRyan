@@ -1,0 +1,242 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "responseStyle.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "responsestyle-rs",
+  "exports": [
+    {
+      "name": "isResponseStyleLevel",
+      "file": "responseStyle.ts",
+      "line": 11,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "value is typeof RESPONSE_STYLE_LEVELS[number]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isResponseStylePreset",
+      "file": "responseStyle.ts",
+      "line": 15,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "value is Exclude<typeof RESPONSE_STYLE_LEVELS[number], 'provider'>",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "resolveResponseStyleLevel",
+      "file": "responseStyle.ts",
+      "line": 19,
+      "params": [
+        {
+          "name": "settings",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "typeof RESPONSE_STYLE_LEVELS[number]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getResponseStylePresetInstructions",
+      "file": "responseStyle.ts",
+      "line": 35,
+      "params": [
+        {
+          "name": "preset",
+          "ts_type": "Exclude<typeof RESPONSE_STYLE_LEVELS[number], 'provider'>",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "buildResponseStyleInstruction",
+      "file": "responseStyle.ts",
+      "line": 46,
+      "params": [
+        {
+          "name": "arg0",
+          "ts_type": "{\n  enabled?: boolean;\n  preset?: unknown;\n  customInstructions?: unknown;\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "wrapResponseStyleReminder",
+      "file": "responseStyle.ts",
+      "line": 58,
+      "params": [
+        {
+          "name": "level",
+          "ts_type": "typeof RESPONSE_STYLE_LEVELS[number]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "instruction",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "readResponseStyleLevelFromParts",
+      "file": "responseStyle.ts",
+      "line": 66,
+      "params": [
+        {
+          "name": "parts",
+          "ts_type": "Part[]",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "typeof RESPONSE_STYLE_LEVELS[number]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "readSessionResponseStyleLevel",
+      "file": "responseStyle.ts",
+      "line": 78,
+      "params": [
+        {
+          "name": "messages",
+          "ts_type": "readonly { parts: Part[] }[]",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "typeof RESPONSE_STYLE_LEVELS[number]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "shouldAttachResponseStyleReminder",
+      "file": "responseStyle.ts",
+      "line": 88,
+      "params": [
+        {
+          "name": "arg0",
+          "ts_type": "{\n  isNewSessionDraft: boolean;\n  hasExistingSession: boolean;\n  existingSessionHasUserMessages: boolean;\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "cacheResponseStyleInstructionFromSettings",
+      "file": "responseStyle.ts",
+      "line": 108,
+      "params": [
+        {
+          "name": "settings",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getCachedResponseStyleInstruction",
+      "file": "responseStyle.ts",
+      "line": 118,
+      "params": [],
+      "returns": "string | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getCachedResponseStyleLevel",
+      "file": "responseStyle.ts",
+      "line": 120,
+      "params": [],
+      "returns": "typeof RESPONSE_STYLE_LEVELS[number]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isResponseStyleInstructionLoaded",
+      "file": "responseStyle.ts",
+      "line": 122,
+      "params": [],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "clearResponseStyleInstructionCacheForTests",
+      "file": "responseStyle.ts",
+      "line": 124,
+      "params": [],
+      "returns": "void",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

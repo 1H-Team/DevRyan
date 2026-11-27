@@ -1,14 +1,11 @@
-import { afterEach, describe, expect, spyOn } from 'bun:test';
-import { createHash, randomUUID } from 'node:crypto';
+import { afterEach, expect, spyOn } from 'bun:test';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
-import { git } from './session-changes-git.js';
+import './session-changes-git.js';
 import { createSessionMutationRuntime } from './session-mutations.js';
 import { createSessionChangeRuntime } from './session-changes.js';
-import { openChangeStore, changeKey } from './session-changes-store.js';
-import { withExecutionAdmission } from './execution-admission.js';
-import { cleanupRoots, fixture, ledgerState, manyFiles, roots, SMALL_BATCHES, test, withEnv } from '../test/session-mutations-fixture.js';
+import './session-changes-store.js';
+import { cleanupRoots, fixture, test } from '../test/session-mutations-fixture.js';
 
 afterEach(cleanupRoots);
 test('execution outcomes survive restart and never infer non-execution from missing or dirty leases', async () => {

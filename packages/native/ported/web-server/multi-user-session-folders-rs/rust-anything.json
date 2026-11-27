@@ -1,0 +1,41 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/multi-user",
+  "unit": "session-folders.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "session-folders-rs",
+  "exports": [
+    {
+      "name": "emptySessionFolders",
+      "file": "session-folders.js",
+      "line": 7,
+      "params": [],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "normalizeSessionFoldersPayload",
+      "file": "session-folders.js",
+      "line": 23,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

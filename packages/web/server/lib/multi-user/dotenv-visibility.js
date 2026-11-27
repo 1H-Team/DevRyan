@@ -73,7 +73,7 @@ export const filterProtectedDotenvReferences = (value) => {
   return filtered;
 };
 
-export const filterProtectedDotenvResponse = (requestPath, payload) => {
+const filterProtectedDotenvResponse = (requestPath, payload) => {
   const filtered = filterProtectedDotenvReferences(payload);
   if (requestPath !== '/git/status' || !filtered || typeof filtered !== 'object' || Array.isArray(filtered)) {
     return filtered;

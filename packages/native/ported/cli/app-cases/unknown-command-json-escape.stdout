@@ -1,0 +1,13 @@
+{
+  "status": "error",
+  "error": {
+    "message": "Unknown command 'a\"b\\c\u0001'."
+  },
+  "messages": [
+    {
+      "level": "info",
+      "code": "USAGE_HELP",
+      "message": "Use --help to see available commands"
+    }
+  ]
+}

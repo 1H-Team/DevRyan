@@ -89,7 +89,6 @@ updates an existing header without replaying messages or changing the model.
     - `isExpandableTool`
     - `isStaticTool`
     - `isStandaloneTool`
-    - `getStaticGroupToolName`
   - If a tool should switch between static vs expandable, change it here.
 
 - `ReasoningPart.tsx`
@@ -170,8 +169,6 @@ countdown, and active duration labels pause while hidden; labels recompute on
 foreground. Reduced-motion presentation remains readable without a long-lived
 animation; the reasoning disclosure also disables both its panel animation and
 chevron transition while preserving the same user-controlled open state.
-`SessionActiveSpinner.tsx` is not mounted in the current chat tree
-and is outside this performance contract.
 
 - `read` and most search/fetch tools are treated as **static tools** and passive lookup activity rolls up across reasoning text into one dropdown per kind until a hard tool boundary such as shell/question/task.
 - Skill calls keep individual part identities in both render modes. Their names use static text throughout loading and completion; an unknown pending name leaves only the loading status until the runtime supplies a human name. Completing a call updates the existing status node rather than remounting it. Sorted mode retains its normal seven-row collapsed preview.
@@ -223,7 +220,7 @@ presentation grants implementation authority.
 - Text: `AssistantTextPart.tsx`, `UserTextPart.tsx`
 - Tools: `ToolPart.tsx`, `ProgressiveGroup.tsx`, `toolPresentation.tsx`, `toolRenderUtils.ts`, `ToolRevealOnMount.tsx`
 - Reasoning/justification: `ReasoningPart.tsx`, `ReasoningGroup.tsx`, `reasoningGrouping.ts`, `reasoningDuration.ts`, `reasoningDisclosureKeyboard.ts`, `reasoningDisclosureStatus.ts`, `JustificationBlock.tsx`
-- Status/placeholders: `WorkingPlaceholder.tsx`, `SessionActiveSpinner.tsx`, `MigratingPart.tsx`
+- Status/placeholders: `WorkingPlaceholder.tsx`
 - Utility renderers: `VirtualizedCodeBlock.tsx`, `MinDurationShineText.tsx`, `useNearViewport.ts`
 
 Managed stopped tasks retain their canonical terminal status even while a user continues the child chat independently. A server-advertised stopped-recovery capability shows a stopped panel (`ManagedTaskStoppedPanel`, titled "Stopped by you" for an operator stop) in the parent row and opened child, not Model Recovery: Resume as Task continues on the last model, with the model/effort choice behind a secondary Change Model control. It also allows explicit dismissal, but never offers auto-resume for user cancellation. Model Recovery stays for provider, usage, authentication and transport failures, including a stopped task that is not the user's and failed at its provider. Canonical stop presentation takes precedence over the provider fallback for a `Step interrupted` assistant error. Any `MessageAbortedError`, whatever its detail, and a `Tool execution interrupted`/`aborted` detail (the parent's cut-short `devryan_task`) classify as aborts, never as the provider catch-all. A `MessageAbortedError` whose `data.source` names an automatic DevRyan abort (`provider_retry`, `stall_watchdog`, `abort_guard`) renders that cause as an info line instead of the manual-stop presentation. An operator source (`stop_button`, `double_escape`, `status_row`) the view did not correlate itself (another window, a reload) renders "Stopped by you." on the latest message; OpenCode marks every interrupt `reason: "user"`, so the reason alone does not attribute a stop.

@@ -119,7 +119,7 @@ test('packaged app inspection reads Info.plist, the signature, the slices and th
     await fs.mkdir(path.join(app, 'Contents/Resources/revert-runtime/darwin-arm64'), { recursive: true });
     await fs.writeFile(path.join(app, 'Contents/Resources/revert-runtime/darwin-arm64/native-bundle.json'), '{"bundle":1}\n');
     const calls = [];
-    const run = async (command, args) => {
+    const run = async (command, _args) => {
       calls.push(command);
       if (command.endsWith('plutil')) return { stdout: JSON.stringify(info), stderr: '' };
       if (command.endsWith('codesign')) return { stdout: '', stderr: 'Executable=/x\nIdentifier=dev.devryan.desktop\nSignature=adhoc\n' };

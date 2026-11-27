@@ -1,0 +1,274 @@
+{"fn":"parseArtifactDiagnostic","args":[0],"ok":{"$undefined":true}}
+{"fn":"parseArtifactDiagnostic","args":[["a",1]],"ok":{"$undefined":true}}
+{"fn":"parseArtifactDiagnostic","args":["x"],"ok":{"$undefined":true}}
+{"fn":"parseArtifactDiagnostic","args":[null],"ok":{"$undefined":true}}
+{"fn":"parseArtifactDiagnostic","args":[true],"ok":{"$undefined":true}}
+{"fn":"parseArtifactDiagnostic","args":[{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"parseArtifactDiagnostic","args":[[]],"ok":{"$undefined":true}}
+{"fn":"parseArtifactDiagnostic","args":[{}],"ok":{"$undefined":true}}
+{"fn":"parseArtifactDiagnostic","args":[{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"parseArtifactDiagnostic","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":{"$undefined":true}}
+{"fn":"parseArtifactDiagnostic","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":{"$undefined":true}}
+{"fn":"parseArtifactDiagnostic","args":[[3,1,2]],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":[{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":[{}],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":[["a",1]],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":[null],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":["x"],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":[true],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":[0],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":[{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":[[]],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":[[3,1,2]],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[true],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":["x"],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[["a",1]],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[[]],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[0],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[null],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[[3,1,2]],"ok":{"$undefined":true}}
+{"fn":"startupDiagnosticSummary","args":[0],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[[]],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[null],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[["a",1]],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[{}],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[{"a":"b"}],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[true],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[{"a":{"b":"c"}}],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":["x"],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[[3,1,2]],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"describeReferenceFailure","args":[true],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"describeReferenceFailure","args":[{"a":{"b":"c"}}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"describeReferenceFailure","args":[{}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"describeReferenceFailure","args":["x"],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"describeReferenceFailure","args":[{"a":"b"}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"describeReferenceFailure","args":[null],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"describeReferenceFailure","args":[0],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"describeReferenceFailure","args":[[]],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"describeReferenceFailure","args":[["a",1]],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"describeReferenceFailure","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"describeReferenceFailure","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"describeReferenceFailure","args":[[3,1,2]],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"describeArtifactFailure","args":[{}],"ok":"The runtime files could not be verified. Your existing data has not been reset."}
+{"fn":"describeArtifactFailure","args":[true],"ok":"The runtime files could not be verified. Your existing data has not been reset."}
+{"fn":"describeArtifactFailure","args":[0],"ok":"The runtime files could not be verified. Your existing data has not been reset."}
+{"fn":"describeArtifactFailure","args":["x"],"ok":"The runtime files could not be verified. Your existing data has not been reset."}
+{"fn":"describeArtifactFailure","args":[{"a":{"b":"c"}}],"ok":"The runtime files could not be verified. Your existing data has not been reset."}
+{"fn":"describeArtifactFailure","args":[{"a":"b"}],"ok":"The runtime files could not be verified. Your existing data has not been reset."}
+{"fn":"describeArtifactFailure","args":[null],"ok":"The runtime files could not be verified. Your existing data has not been reset."}
+{"fn":"describeArtifactFailure","args":[["a",1]],"ok":"The runtime files could not be verified. Your existing data has not been reset."}
+{"fn":"describeArtifactFailure","args":[[]],"ok":"The runtime files could not be verified. Your existing data has not been reset."}
+{"fn":"describeArtifactFailure","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":"The runtime files could not be verified. Your existing data has not been reset."}
+{"fn":"describeArtifactFailure","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":"The runtime files could not be verified. Your existing data has not been reset."}
+{"fn":"describeArtifactFailure","args":[[3,1,2]],"ok":"The runtime files could not be verified. Your existing data has not been reset."}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"payload","reason":"digest_mismatch","purpose":"current"}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"describeArtifactFailure","args":[{"stage":"payload","reason":"digest_mismatch","purpose":"current"}],"ok":"A runtime file does not match its verified contents. Your existing data has not been reset."}
+{"fn":"artifactDiagnostic","args":[{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"artifactDiagnostic","args":[{"cause":{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"native-bundle.json"}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"native-bundle.json"}}
+{"fn":"describeArtifactFailure","args":[{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"native-bundle.json"}],"ok":"A runtime file does not match its verified contents. File: native-bundle.json. Your existing data has not been reset."}
+{"fn":"artifactDiagnostic","args":[{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"native-bundle.json"}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"native-bundle.json"}}
+{"fn":"artifactDiagnostic","args":[{"cause":{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"native-bundle.json"}}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"native-bundle.json"}}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-2.0.1-arm64.dmg"}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-2.0.1-arm64.dmg"}}
+{"fn":"describeArtifactFailure","args":[{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-2.0.1-arm64.dmg"}],"ok":"A runtime file does not match its verified contents. File: DevRyan-2.0.1-arm64.dmg. Your existing data has not been reset."}
+{"fn":"artifactDiagnostic","args":[{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-2.0.1-arm64.dmg"}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-2.0.1-arm64.dmg"}}
+{"fn":"artifactDiagnostic","args":[{"cause":{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-2.0.1-arm64.dmg"}}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-2.0.1-arm64.dmg"}}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-"}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"describeArtifactFailure","args":[{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-"}],"ok":"A runtime file does not match its verified contents. Your existing data has not been reset."}
+{"fn":"artifactDiagnostic","args":[{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-"}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"artifactDiagnostic","args":[{"cause":{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-"}}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}
+{"fn":"describeArtifactFailure","args":[{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"ok":"A runtime file does not match its verified contents. File: DevRyan-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa. Your existing data has not been reset."}
+{"fn":"artifactDiagnostic","args":[{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}
+{"fn":"artifactDiagnostic","args":[{"cause":{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"describeArtifactFailure","args":[{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"ok":"A runtime file does not match its verified contents. Your existing data has not been reset."}
+{"fn":"artifactDiagnostic","args":[{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"artifactDiagnostic","args":[{"cause":{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"../x"}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"describeArtifactFailure","args":[{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"../x"}],"ok":"A runtime file does not match its verified contents. Your existing data has not been reset."}
+{"fn":"artifactDiagnostic","args":[{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"../x"}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"artifactDiagnostic","args":[{"cause":{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"../x"}}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-é"}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"describeArtifactFailure","args":[{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-é"}],"ok":"A runtime file does not match its verified contents. Your existing data has not been reset."}
+{"fn":"artifactDiagnostic","args":[{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-é"}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"artifactDiagnostic","args":[{"cause":{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-é"}}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":5}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"describeArtifactFailure","args":[{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":5}],"ok":"A runtime file does not match its verified contents. Your existing data has not been reset."}
+{"fn":"artifactDiagnostic","args":[{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":5}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"artifactDiagnostic","args":[{"cause":{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":5}}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"x","reason":"digest_mismatch","purpose":"current"}],"ok":{"$undefined":true}}
+{"fn":"describeArtifactFailure","args":[{"stage":"x","reason":"digest_mismatch","purpose":"current"}],"ok":"The runtime files could not be verified. Your existing data has not been reset."}
+{"fn":"artifactDiagnostic","args":[{"diagnostic":{"stage":"x","reason":"digest_mismatch","purpose":"current"}}],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":[{"cause":{"diagnostic":{"stage":"x","reason":"digest_mismatch","purpose":"current"}}}],"ok":{"$undefined":true}}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"payload","reason":"nope","purpose":"current"}],"ok":{"$undefined":true}}
+{"fn":"describeArtifactFailure","args":[{"stage":"payload","reason":"nope","purpose":"current"}],"ok":"The runtime files could not be verified. Your existing data has not been reset."}
+{"fn":"artifactDiagnostic","args":[{"diagnostic":{"stage":"payload","reason":"nope","purpose":"current"}}],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":[{"cause":{"diagnostic":{"stage":"payload","reason":"nope","purpose":"current"}}}],"ok":{"$undefined":true}}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"launcher","reason":"launcher_rejected","purpose":"update-candidate"}],"ok":{"stage":"launcher","reason":"launcher_rejected","purpose":"update-candidate"}}
+{"fn":"describeArtifactFailure","args":[{"stage":"launcher","reason":"launcher_rejected","purpose":"update-candidate"}],"ok":"The runtime execution launcher could not be verified. Your existing data has not been reset."}
+{"fn":"artifactDiagnostic","args":[{"diagnostic":{"stage":"launcher","reason":"launcher_rejected","purpose":"update-candidate"}}],"ok":{"stage":"launcher","reason":"launcher_rejected","purpose":"update-candidate"}}
+{"fn":"artifactDiagnostic","args":[{"cause":{"diagnostic":{"stage":"launcher","reason":"launcher_rejected","purpose":"update-candidate"}}}],"ok":{"stage":"launcher","reason":"launcher_rejected","purpose":"update-candidate"}}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"payload","reason":"digest_mismatch","purpose":"current","extra":1}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"describeArtifactFailure","args":[{"stage":"payload","reason":"digest_mismatch","purpose":"current","extra":1}],"ok":"A runtime file does not match its verified contents. Your existing data has not been reset."}
+{"fn":"artifactDiagnostic","args":[{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current","extra":1}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"artifactDiagnostic","args":[{"cause":{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current","extra":1}}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"parseArtifactDiagnostic","args":[null],"ok":{"$undefined":true}}
+{"fn":"describeArtifactFailure","args":[null],"ok":"The runtime files could not be verified. Your existing data has not been reset."}
+{"fn":"artifactDiagnostic","args":[{"diagnostic":null}],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":[{"cause":{"diagnostic":null}}],"ok":{"$undefined":true}}
+{"fn":"parseArtifactDiagnostic","args":[{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"describeArtifactFailure","args":[{"$undefined":true}],"ok":"The runtime files could not be verified. Your existing data has not been reset."}
+{"fn":"artifactDiagnostic","args":[{"diagnostic":{"$undefined":true}}],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":[{"cause":{"diagnostic":{"$undefined":true}}}],"ok":{"$undefined":true}}
+{"fn":"parseArtifactDiagnostic","args":["x"],"ok":{"$undefined":true}}
+{"fn":"describeArtifactFailure","args":["x"],"ok":"The runtime files could not be verified. Your existing data has not been reset."}
+{"fn":"artifactDiagnostic","args":[{"diagnostic":"x"}],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":[{"cause":{"diagnostic":"x"}}],"ok":{"$undefined":true}}
+{"fn":"parseArtifactDiagnostic","args":[[]],"ok":{"$undefined":true}}
+{"fn":"describeArtifactFailure","args":[[]],"ok":"The runtime files could not be verified. Your existing data has not been reset."}
+{"fn":"artifactDiagnostic","args":[{"diagnostic":[]}],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":[{"cause":{"diagnostic":[]}}],"ok":{"$undefined":true}}
+{"fn":"parseArtifactDiagnostic","args":[{}],"ok":{"$undefined":true}}
+{"fn":"describeArtifactFailure","args":[{}],"ok":"The runtime files could not be verified. Your existing data has not been reset."}
+{"fn":"artifactDiagnostic","args":[{"diagnostic":{}}],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":[{"cause":{"diagnostic":{}}}],"ok":{"$undefined":true}}
+{"fn":"parseArtifactDiagnostic","args":[0],"ok":{"$undefined":true}}
+{"fn":"describeArtifactFailure","args":[0],"ok":"The runtime files could not be verified. Your existing data has not been reset."}
+{"fn":"artifactDiagnostic","args":[{"diagnostic":0}],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":[{"cause":{"diagnostic":0}}],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":[{"diagnostic":{"stage":"x","reason":"digest_mismatch","purpose":"current"},"cause":{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"artifactDiagnostic","args":[null],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":["s"],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"detail":{"ledger":"tx","key":"sessions/abc"}}],"ok":{"ledger":"tx","key":"sessions/abc"}}
+{"fn":"startupFailureDetail","args":[{"cause":{"detail":{"ledger":"tx","key":"sessions/abc"}}}],"ok":{"ledger":"tx","key":"sessions/abc"}}
+{"fn":"describeReferenceFailure","args":[{"detail":{"ledger":"tx","key":"sessions/abc"}}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Record: tx/sessions/abc. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupFailureDetail","args":[{"detail":{"ledger":"tx","key":"a/../b"}}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"cause":{"detail":{"ledger":"tx","key":"a/../b"}}}],"ok":{"$undefined":true}}
+{"fn":"describeReferenceFailure","args":[{"detail":{"ledger":"tx","key":"a/../b"}}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupFailureDetail","args":[{"detail":{"ledger":"tx","key":"a//b"}}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"cause":{"detail":{"ledger":"tx","key":"a//b"}}}],"ok":{"$undefined":true}}
+{"fn":"describeReferenceFailure","args":[{"detail":{"ledger":"tx","key":"a//b"}}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupFailureDetail","args":[{"detail":{"ledger":"tx","key":"/a"}}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"cause":{"detail":{"ledger":"tx","key":"/a"}}}],"ok":{"$undefined":true}}
+{"fn":"describeReferenceFailure","args":[{"detail":{"ledger":"tx","key":"/a"}}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupFailureDetail","args":[{"detail":{"ledger":"tx","key":".a"}}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"cause":{"detail":{"ledger":"tx","key":".a"}}}],"ok":{"$undefined":true}}
+{"fn":"describeReferenceFailure","args":[{"detail":{"ledger":"tx","key":".a"}}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupFailureDetail","args":[{"detail":{"ledger":"tx","key":"a/"}}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"cause":{"detail":{"ledger":"tx","key":"a/"}}}],"ok":{"$undefined":true}}
+{"fn":"describeReferenceFailure","args":[{"detail":{"ledger":"tx","key":"a/"}}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupFailureDetail","args":[{"detail":{"ledger":"tx","key":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}],"ok":{"ledger":"tx","key":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}
+{"fn":"startupFailureDetail","args":[{"cause":{"detail":{"ledger":"tx","key":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}],"ok":{"ledger":"tx","key":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}
+{"fn":"describeReferenceFailure","args":[{"detail":{"ledger":"tx","key":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Record: tx/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupFailureDetail","args":[{"detail":{"ledger":"tx","key":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"cause":{"detail":{"ledger":"tx","key":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}],"ok":{"$undefined":true}}
+{"fn":"describeReferenceFailure","args":[{"detail":{"ledger":"tx","key":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupFailureDetail","args":[{"detail":{"ledger":"bad ledger","key":"k"}}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"cause":{"detail":{"ledger":"bad ledger","key":"k"}}}],"ok":{"$undefined":true}}
+{"fn":"describeReferenceFailure","args":[{"detail":{"ledger":"bad ledger","key":"k"}}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupFailureDetail","args":[{"detail":{"ledger":"","key":"k"}}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"cause":{"detail":{"ledger":"","key":"k"}}}],"ok":{"$undefined":true}}
+{"fn":"describeReferenceFailure","args":[{"detail":{"ledger":"","key":"k"}}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupFailureDetail","args":[{"detail":{"ledger":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"cause":{"detail":{"ledger":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}],"ok":{"$undefined":true}}
+{"fn":"describeReferenceFailure","args":[{"detail":{"ledger":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupFailureDetail","args":[{"detail":{"ledger":"tx","leases":[]}}],"ok":{"ledger":"tx","leases":[]}}
+{"fn":"startupFailureDetail","args":[{"cause":{"detail":{"ledger":"tx","leases":[]}}}],"ok":{"ledger":"tx","leases":[]}}
+{"fn":"describeReferenceFailure","args":[{"detail":{"ledger":"tx","leases":[]}}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupFailureDetail","args":[{"detail":{"ledger":"tx","leases":[{"token":"t","state":"s","kind":"k"},{"token":"t","state":"s","kind":"k","cleanupPending":true},null,{"token":"bad token","state":"s","kind":"k"},"x"]}}],"ok":{"ledger":"tx","leases":[{"token":"t","state":"s","kind":"k","cleanupPending":false},{"token":"t","state":"s","kind":"k","cleanupPending":true}]}}
+{"fn":"startupFailureDetail","args":[{"cause":{"detail":{"ledger":"tx","leases":[{"token":"t","state":"s","kind":"k"},{"token":"t","state":"s","kind":"k","cleanupPending":true},null,{"token":"bad token","state":"s","kind":"k"},"x"]}}}],"ok":{"ledger":"tx","leases":[{"token":"t","state":"s","kind":"k","cleanupPending":false},{"token":"t","state":"s","kind":"k","cleanupPending":true}]}}
+{"fn":"describeReferenceFailure","args":[{"detail":{"ledger":"tx","leases":[{"token":"t","state":"s","kind":"k"},{"token":"t","state":"s","kind":"k","cleanupPending":true},null,{"token":"bad token","state":"s","kind":"k"},"x"]}}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupFailureDetail","args":[{"detail":{"ledger":"tx","leases":[{"token":"t0","state":"s","kind":"k","cleanupPending":1},{"token":"t1","state":"s","kind":"k","cleanupPending":1},{"token":"t2","state":"s","kind":"k","cleanupPending":1},{"token":"t3","state":"s","kind":"k","cleanupPending":1},{"token":"t4","state":"s","kind":"k","cleanupPending":1},{"token":"t5","state":"s","kind":"k","cleanupPending":1},{"token":"t6","state":"s","kind":"k","cleanupPending":1},{"token":"t7","state":"s","kind":"k","cleanupPending":1},{"token":"t8","state":"s","kind":"k","cleanupPending":1},{"token":"t9","state":"s","kind":"k","cleanupPending":1}]}}],"ok":{"ledger":"tx","leases":[{"token":"t0","state":"s","kind":"k","cleanupPending":false},{"token":"t1","state":"s","kind":"k","cleanupPending":false},{"token":"t2","state":"s","kind":"k","cleanupPending":false},{"token":"t3","state":"s","kind":"k","cleanupPending":false},{"token":"t4","state":"s","kind":"k","cleanupPending":false},{"token":"t5","state":"s","kind":"k","cleanupPending":false},{"token":"t6","state":"s","kind":"k","cleanupPending":false},{"token":"t7","state":"s","kind":"k","cleanupPending":false}]}}
+{"fn":"startupFailureDetail","args":[{"cause":{"detail":{"ledger":"tx","leases":[{"token":"t0","state":"s","kind":"k","cleanupPending":1},{"token":"t1","state":"s","kind":"k","cleanupPending":1},{"token":"t2","state":"s","kind":"k","cleanupPending":1},{"token":"t3","state":"s","kind":"k","cleanupPending":1},{"token":"t4","state":"s","kind":"k","cleanupPending":1},{"token":"t5","state":"s","kind":"k","cleanupPending":1},{"token":"t6","state":"s","kind":"k","cleanupPending":1},{"token":"t7","state":"s","kind":"k","cleanupPending":1},{"token":"t8","state":"s","kind":"k","cleanupPending":1},{"token":"t9","state":"s","kind":"k","cleanupPending":1}]}}}],"ok":{"ledger":"tx","leases":[{"token":"t0","state":"s","kind":"k","cleanupPending":false},{"token":"t1","state":"s","kind":"k","cleanupPending":false},{"token":"t2","state":"s","kind":"k","cleanupPending":false},{"token":"t3","state":"s","kind":"k","cleanupPending":false},{"token":"t4","state":"s","kind":"k","cleanupPending":false},{"token":"t5","state":"s","kind":"k","cleanupPending":false},{"token":"t6","state":"s","kind":"k","cleanupPending":false},{"token":"t7","state":"s","kind":"k","cleanupPending":false}]}}
+{"fn":"describeReferenceFailure","args":[{"detail":{"ledger":"tx","leases":[{"token":"t0","state":"s","kind":"k","cleanupPending":1},{"token":"t1","state":"s","kind":"k","cleanupPending":1},{"token":"t2","state":"s","kind":"k","cleanupPending":1},{"token":"t3","state":"s","kind":"k","cleanupPending":1},{"token":"t4","state":"s","kind":"k","cleanupPending":1},{"token":"t5","state":"s","kind":"k","cleanupPending":1},{"token":"t6","state":"s","kind":"k","cleanupPending":1},{"token":"t7","state":"s","kind":"k","cleanupPending":1},{"token":"t8","state":"s","kind":"k","cleanupPending":1},{"token":"t9","state":"s","kind":"k","cleanupPending":1}]}}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupFailureDetail","args":[{"detail":{"ledger":"tx","leases":"x"}}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"cause":{"detail":{"ledger":"tx","leases":"x"}}}],"ok":{"$undefined":true}}
+{"fn":"describeReferenceFailure","args":[{"detail":{"ledger":"tx","leases":"x"}}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupFailureDetail","args":[{"detail":{"ledger":"tx"}}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"cause":{"detail":{"ledger":"tx"}}}],"ok":{"$undefined":true}}
+{"fn":"describeReferenceFailure","args":[{"detail":{"ledger":"tx"}}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupFailureDetail","args":[{"detail":{"ledger":"tx","key":5,"leases":[]}}],"ok":{"ledger":"tx","leases":[]}}
+{"fn":"startupFailureDetail","args":[{"cause":{"detail":{"ledger":"tx","key":5,"leases":[]}}}],"ok":{"ledger":"tx","leases":[]}}
+{"fn":"describeReferenceFailure","args":[{"detail":{"ledger":"tx","key":5,"leases":[]}}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupFailureDetail","args":[{"detail":null}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"cause":{"detail":null}}],"ok":{"$undefined":true}}
+{"fn":"describeReferenceFailure","args":[{"detail":null}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupFailureDetail","args":[{"detail":"x"}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"cause":{"detail":"x"}}],"ok":{"$undefined":true}}
+{"fn":"describeReferenceFailure","args":[{"detail":"x"}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupFailureDetail","args":[{"detail":[]}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"cause":{"detail":[]}}],"ok":{"$undefined":true}}
+{"fn":"describeReferenceFailure","args":[{"detail":[]}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupFailureDetail","args":[{"detail":null,"cause":{"detail":{"ledger":"tx","key":"sessions/abc"}}}],"ok":{"ledger":"tx","key":"sessions/abc"}}
+{"fn":"startupFailureDetail","args":[{"detail":0,"cause":{"detail":{"ledger":"tx","key":"sessions/abc"}}}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[null],"ok":{"$undefined":true}}
+{"fn":"startupDiagnosticSummary","args":[{"code":"native_bad_thing"}],"ok":"{\n  \"code\": \"native_bad_thing\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[{"code":"opencode_x"}],"ok":"{\n  \"code\": \"opencode_x\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[{"code":"bundle_"}],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[{"code":"runtime_A"}],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[{"code":"other_x"}],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[{"code":"native_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"ok":"{\n  \"code\": \"native_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[{"code":"native_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[{"code":5}],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[{}],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[{"code":"native_x","attempt":0}],"ok":"{\n  \"code\": \"native_x\",\n  \"attempt\": 0\n}"}
+{"fn":"startupDiagnosticSummary","args":[{"code":"native_x","attempt":{"$num":"-0"}}],"ok":"{\n  \"code\": \"native_x\",\n  \"attempt\": 0\n}"}
+{"fn":"startupDiagnosticSummary","args":[{"attempt":3}],"ok":"{\n  \"code\": \"opencode_startup_failed\",\n  \"attempt\": 3\n}"}
+{"fn":"startupDiagnosticSummary","args":[{"attempt":-1}],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[{"attempt":1.5}],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[{"attempt":9007199254740992}],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[{"attempt":"3"}],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"native-bundle.json"},"detail":{"ledger":"tx","key":"sessions/abc"},"attempt":2}],"ok":"{\n  \"code\": \"opencode_startup_failed\",\n  \"attempt\": 2,\n  \"diagnostic\": {\n    \"stage\": \"payload\",\n    \"reason\": \"digest_mismatch\",\n    \"purpose\": \"current\",\n    \"artifact\": \"native-bundle.json\"\n  },\n  \"detail\": {\n    \"ledger\": \"tx\",\n    \"key\": \"sessions/abc\"\n  }\n}"}
+{"fn":"startupDiagnosticSummary","args":[{"cause":{"diagnostic":{"stage":"payload","reason":"digest_mismatch","purpose":"current"},"detail":{"ledger":"tx","leases":[{"token":"t","state":"s","kind":"k"},{"token":"t","state":"s","kind":"k","cleanupPending":true},null,{"token":"bad token","state":"s","kind":"k"},"x"]}}}],"ok":"{\n  \"code\": \"opencode_startup_failed\",\n  \"diagnostic\": {\n    \"stage\": \"payload\",\n    \"reason\": \"digest_mismatch\",\n    \"purpose\": \"current\"\n  },\n  \"detail\": {\n    \"ledger\": \"tx\",\n    \"leases\": [\n      {\n        \"token\": \"t\",\n        \"state\": \"s\",\n        \"kind\": \"k\",\n        \"cleanupPending\": false\n      },\n      {\n        \"token\": \"t\",\n        \"state\": \"s\",\n        \"kind\": \"k\",\n        \"cleanupPending\": true\n      }\n    ]\n  }\n}"}
+{"fn":"startupDiagnosticSummary","args":[null],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":["x"],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"startupDiagnosticSummary","args":[{"code":"native_é"}],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"payload","reason":"digest_mismatch","artifact":"DevRyan-native-controller","purpose":"current","secret":"private"}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-native-controller"}}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"payload","reason":"digest_mismatch","artifact":"/private/account","purpose":"current"}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"payload","reason":"digest_mismatch","artifact":"../DevRyan-token","purpose":"current"}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"payload","reason":"digest_mismatch","artifact":"DevRyan-a\nsecret","purpose":"current"}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"payload","reason":"digest_mismatch","artifact":"DevRyan-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","purpose":"current"}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current"}}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"secret","reason":"digest_mismatch","artifact":"DevRyan-native-controller","purpose":"current"}],"ok":{"$undefined":true}}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"payload","reason":"secret","artifact":"DevRyan-native-controller","purpose":"current"}],"ok":{"$undefined":true}}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"payload","reason":"digest_mismatch","artifact":"DevRyan-native-controller","purpose":"secret"}],"ok":{"$undefined":true}}
+{"fn":"artifactDiagnostic","args":[{"cause":{"diagnostic":{"stage":"payload","reason":"digest_mismatch","artifact":"DevRyan-native-controller","purpose":"current"}}}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-native-controller"}}
+{"fn":"parseArtifactDiagnostic","args":[{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"parseArtifactDiagnostic","args":[{"stage":"payload","reason":"digest_mismatch","artifact":"DevRyan-native-controller","purpose":"current"}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-native-controller"}}
+{"fn":"startupDiagnosticSummary","args":[{"code":"native_runtime_artifacts_unverified","diagnostic":{"stage":"payload","reason":"digest_mismatch","artifact":"DevRyan-native-controller","purpose":"current"},"attempt":2,"message":"token","stack":"/private"}],"ok":"{\n  \"code\": \"native_runtime_artifacts_unverified\",\n  \"attempt\": 2,\n  \"diagnostic\": {\n    \"stage\": \"payload\",\n    \"reason\": \"digest_mismatch\",\n    \"purpose\": \"current\",\n    \"artifact\": \"DevRyan-native-controller\"\n  }\n}"}
+{"fn":"artifactDiagnostic","args":[{"code":"native_runtime_artifacts_unverified","diagnostic":{"stage":"payload","reason":"digest_mismatch","artifact":"DevRyan-native-controller","purpose":"current"},"attempt":2,"message":"token","stack":"/private"}],"ok":{"stage":"payload","reason":"digest_mismatch","purpose":"current","artifact":"DevRyan-native-controller"}}
+{"fn":"startupFailureDetail","args":[{"code":"native_runtime_artifacts_unverified","diagnostic":{"stage":"payload","reason":"digest_mismatch","artifact":"DevRyan-native-controller","purpose":"current"},"attempt":2,"message":"token","stack":"/private"}],"ok":{"$undefined":true}}
+{"fn":"startupDiagnosticSummary","args":[{"code":"/private/token","attempt":-1}],"ok":"{\n  \"code\": \"opencode_startup_failed\"\n}"}
+{"fn":"artifactDiagnostic","args":[{"code":"/private/token","attempt":-1}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"code":"/private/token","attempt":-1}],"ok":{"$undefined":true}}
+{"fn":"describeArtifactFailure","args":[{"stage":"payload","reason":"digest_mismatch","artifact":"DevRyan-native-controller","purpose":"current"}],"ok":"A runtime file does not match its verified contents. File: DevRyan-native-controller. Your existing data has not been reset."}
+{"fn":"startupDiagnosticSummary","args":[{"code":"bundle_execution_unsettled","cause":{"detail":{"ledger":"8a7eca4fb393","secret":"private","leases":[{"token":"ac1af5a2-b846-40d3-80fb-a50fbbbadd2d","state":"ready","kind":"process","cleanupPending":false,"scope":{"text":"private"}},{"token":"/private/path","state":"ready","kind":"process"}]}}}],"ok":"{\n  \"code\": \"bundle_execution_unsettled\",\n  \"detail\": {\n    \"ledger\": \"8a7eca4fb393\",\n    \"leases\": [\n      {\n        \"token\": \"ac1af5a2-b846-40d3-80fb-a50fbbbadd2d\",\n        \"state\": \"ready\",\n        \"kind\": \"process\",\n        \"cleanupPending\": false\n      }\n    ]\n  }\n}"}
+{"fn":"artifactDiagnostic","args":[{"code":"bundle_execution_unsettled","cause":{"detail":{"ledger":"8a7eca4fb393","secret":"private","leases":[{"token":"ac1af5a2-b846-40d3-80fb-a50fbbbadd2d","state":"ready","kind":"process","cleanupPending":false,"scope":{"text":"private"}},{"token":"/private/path","state":"ready","kind":"process"}]}}}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"code":"bundle_execution_unsettled","cause":{"detail":{"ledger":"8a7eca4fb393","secret":"private","leases":[{"token":"ac1af5a2-b846-40d3-80fb-a50fbbbadd2d","state":"ready","kind":"process","cleanupPending":false,"scope":{"text":"private"}},{"token":"/private/path","state":"ready","kind":"process"}]}}}],"ok":{"ledger":"8a7eca4fb393","leases":[{"token":"ac1af5a2-b846-40d3-80fb-a50fbbbadd2d","state":"ready","kind":"process","cleanupPending":false}]}}
+{"fn":"startupDiagnosticSummary","args":[{"code":"bundle_execution_unsettled","detail":{"ledger":"../x","leases":[]}}],"ok":"{\n  \"code\": \"bundle_execution_unsettled\"\n}"}
+{"fn":"artifactDiagnostic","args":[{"code":"bundle_execution_unsettled","detail":{"ledger":"../x","leases":[]}}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"code":"bundle_execution_unsettled","detail":{"ledger":"../x","leases":[]}}],"ok":{"$undefined":true}}
+{"fn":"startupDiagnosticSummary","args":[{"code":"bundle_message_reference_lost","detail":{"ledger":"8a7eca4fb393","key":"transactions/8052fc42b36dd8f448d427eae5be5e1c570a17c6dec524285d3e2c7bed826357.json","text":"private"}}],"ok":"{\n  \"code\": \"bundle_message_reference_lost\",\n  \"detail\": {\n    \"ledger\": \"8a7eca4fb393\",\n    \"key\": \"transactions/8052fc42b36dd8f448d427eae5be5e1c570a17c6dec524285d3e2c7bed826357.json\"\n  }\n}"}
+{"fn":"artifactDiagnostic","args":[{"code":"bundle_message_reference_lost","detail":{"ledger":"8a7eca4fb393","key":"transactions/8052fc42b36dd8f448d427eae5be5e1c570a17c6dec524285d3e2c7bed826357.json","text":"private"}}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"code":"bundle_message_reference_lost","detail":{"ledger":"8a7eca4fb393","key":"transactions/8052fc42b36dd8f448d427eae5be5e1c570a17c6dec524285d3e2c7bed826357.json","text":"private"}}],"ok":{"ledger":"8a7eca4fb393","key":"transactions/8052fc42b36dd8f448d427eae5be5e1c570a17c6dec524285d3e2c7bed826357.json"}}
+{"fn":"describeReferenceFailure","args":[{"code":"bundle_message_reference_lost","detail":{"ledger":"8a7eca4fb393","key":"transactions/8052fc42b36dd8f448d427eae5be5e1c570a17c6dec524285d3e2c7bed826357.json","text":"private"}}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Record: 8a7eca4fb393/transactions/8052fc42b36dd8f448d427eae5be5e1c570a17c6dec524285d3e2c7bed826357.json. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupDiagnosticSummary","args":[{"code":"bundle_message_reference_lost","detail":{"ledger":"8a7eca4fb393","key":"../secret"}}],"ok":"{\n  \"code\": \"bundle_message_reference_lost\"\n}"}
+{"fn":"artifactDiagnostic","args":[{"code":"bundle_message_reference_lost","detail":{"ledger":"8a7eca4fb393","key":"../secret"}}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"code":"bundle_message_reference_lost","detail":{"ledger":"8a7eca4fb393","key":"../secret"}}],"ok":{"$undefined":true}}
+{"fn":"startupDiagnosticSummary","args":[{"code":"bundle_message_reference_lost","detail":{"ledger":"8a7eca4fb393","key":"/private/token"}}],"ok":"{\n  \"code\": \"bundle_message_reference_lost\"\n}"}
+{"fn":"artifactDiagnostic","args":[{"code":"bundle_message_reference_lost","detail":{"ledger":"8a7eca4fb393","key":"/private/token"}}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"code":"bundle_message_reference_lost","detail":{"ledger":"8a7eca4fb393","key":"/private/token"}}],"ok":{"$undefined":true}}
+{"fn":"startupDiagnosticSummary","args":[{"code":"bundle_message_reference_lost","detail":{"ledger":"8a7eca4fb393","key":"a\nb"}}],"ok":"{\n  \"code\": \"bundle_message_reference_lost\"\n}"}
+{"fn":"artifactDiagnostic","args":[{"code":"bundle_message_reference_lost","detail":{"ledger":"8a7eca4fb393","key":"a\nb"}}],"ok":{"$undefined":true}}
+{"fn":"startupFailureDetail","args":[{"code":"bundle_message_reference_lost","detail":{"ledger":"8a7eca4fb393","key":"a\nb"}}],"ok":{"$undefined":true}}
+{"fn":"describeReferenceFailure","args":[{"code":"bundle_message_reference_lost"}],"ok":"DevRyan found a saved record that refers to a deleted session or message, so it did not start. Install the latest DevRyan update. Your existing data has not been reset."}
+{"fn":"startupFailureDetail","args":[{"code":"bundle_message_reference_lost"}],"ok":{"$undefined":true}}

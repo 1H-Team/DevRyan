@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildSiwcCredentialValue } from './chatgpt-siwc.js';
+import { hasSiwcPlanUsage } from './chatgpt-siwc.js';
 import { projectNativeSetupCredentials } from './runtime-host/native-setup-credential-data.js';
 import { annotateOpenAIModelAvailability } from './openai-model-availability.js';
 const metadata = { accountID: 'workspace-a', subject: 'subject-a', clientId: 'issued-a', idToken: 'fixture-id-token', scopes: ['openid'], extAgentHostId: 'fixture-host', planUsage: false };
 describe('SIWC native owner contracts', () => {
   it('retains verified sign-in without inference scope', () => {
-    expect(buildSiwcCredentialValue({ access: 'fixture-access', refresh: 'fixture-refresh', expires: 120000, clientId: 'issued-a', idToken: 'fixture-id-token', scopes: ['openid'], subject: 'subject-a', hostId: 'fixture-host' }).metadata.planUsage).toBe(false);
+    expect(hasSiwcPlanUsage(['openid'])).toBe(false);
   });
   it('preserves SIWC metadata in the restart import', () => {
     const auth = { openai: { type: 'oauth', methodID: 'chatgpt-siwc', access: 'fixture-access', refresh: 'fixture-refresh', expires: 120000, metadata } };

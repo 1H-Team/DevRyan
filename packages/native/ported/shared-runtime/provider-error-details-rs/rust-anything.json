@@ -1,0 +1,84 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/shared-runtime",
+  "unit": "lib/provider-error-details.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "provider-error-details-rs",
+  "exports": [
+    {
+      "name": "isSafeProviderCode",
+      "file": "lib/provider-error-details.js",
+      "line": 25,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isSafeProviderParam",
+      "file": "lib/provider-error-details.js",
+      "line": 26,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isSafeErrorType",
+      "file": "lib/provider-error-details.js",
+      "line": 27,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "providerErrorDetails",
+      "file": "lib/provider-error-details.js",
+      "line": 30,
+      "params": [
+        {
+          "name": "body",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

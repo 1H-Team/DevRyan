@@ -1,0 +1,200 @@
+{"fn":"hasTerminalAssistantFinish","args":[{"$undefined":true}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_u","sessionID":"ses_1","role":"user","time":{"created":1},"finish":"stop"}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1}}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":1}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":null}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":true}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":""}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":" \t\n"}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":" "}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"tool-calls"}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"  TOOL-CALLS  "}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"length"}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"error"}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"unknown"}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"STOP"}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":" stop "}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"tool_calls"}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"toolcalls"}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"tool-calls."}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"​"}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":{"$utf16":[55296]}}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2}}]}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"tool-calls"}]}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":" Tool-Calls\n"}]}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"tool_calls"}]}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"tool-call"}]}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"}]}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":""}]}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":0}]}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1}}]}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_u","sessionID":"ses_1","role":"user","time":{"created":1},"finish":"tool-calls"}]}
+{"fn":"hasToolCallAssistantFinish","args":[{"$undefined":true}]}
+{"fn":"isAssistantTurnComplete","args":[{"$undefined":true}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_u","sessionID":"ses_1","role":"user","time":{"created":1,"completed":2},"status":"done"}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"streaming":true,"status":"completed","finish":"stop"}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":"true","finish":"stop"}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":"true","finish":"stop"}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":"true","finish":"stop"}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":1,"finish":"stop"}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":1,"finish":"stop"}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":1,"finish":"stop"}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":false}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":false}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":false}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"status":"running","finish":"stop"}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"status":"pending","finish":"stop"}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"status":"streaming","finish":"stop"}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"status":" RUNNING ","finish":"stop"}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"status":"Pending","finish":"stop"}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"complete"}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"completed"}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"done"}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":" DONE "}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"done","finish":"tool-calls"}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"in_progress"}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"in_progress"}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"in_progress"}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"in_progress","finish":"stop"}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"in_progress","finish":"stop"}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"in_progress","finish":"stop"}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"error"}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"error"}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"error"}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":3},"status":""}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":3},"status":""}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":5,"finish":"stop"}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":5,"finish":"stop"}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":5,"finish":"stop"}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":5}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":5}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":5}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":1}}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":1}}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":0.5}}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":0.5}}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":1.7976931348623157e+308}}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":1.7976931348623157e+308}}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":0}}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":0}}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":0}}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":{"$num":"-0"}}}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":{"$num":"-0"}}}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":{"$num":"-0"}}}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":-1}}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":-1}}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":-1}}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":{"$num":"NaN"}}}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":{"$num":"NaN"}}}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":{"$num":"NaN"}}}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":{"$num":"Infinity"}}}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":{"$num":"Infinity"}}}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":{"$num":"Infinity"}}}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":"2"}}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":"2"}}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":"2"}}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":null}}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":null}}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":null}}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"$undefined":true}}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"$undefined":true}}]}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"$undefined":true}}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"tool-calls"}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"tool-calls"}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"tool-calls"}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"tool-calls"}]}
+{"fn":"isIncompleteAssistantMessage","args":[{"$undefined":true}]}
+{"fn":"isIncompleteAssistantMessage","args":[{"id":"msg_u","sessionID":"ses_1","role":"user","time":{"created":1}}]}
+{"fn":"isIncompleteAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1}}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1}}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1}}]}
+{"fn":"isIncompleteAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"tool-calls"}]}
+{"fn":"isIncompleteAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":true,"finish":"stop"}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":true,"finish":"stop"}]}
+{"fn":"isIncompleteAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"}]}
+{"fn":"isIncompleteAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"done"}]}
+{"fn":"hasInFlightToolParts","args":[{"$undefined":true}]}
+{"fn":"hasInFlightToolParts","args":[[]]}
+{"fn":"hasInFlightToolParts","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"hi"},{"id":"p2","sessionID":"ses_1","messageID":"msg_a","type":"reasoning","text":"think","state":{"status":"running"}},{"id":"p3","sessionID":"ses_1","messageID":"msg_a","type":"step-start","state":{"status":"running"}}]]}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running","time":{"start":1}}}]]}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"pending"}}]]}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"queued"}}]]}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash"}]]}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":null}]]}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"completed"}}]]}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"error","time":{"start":1,"end":2}}}]]}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running","time":{"start":1,"end":2}}}]]}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"completed","time":{"start":5,"end":1}}}]]}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running","time":{"start":5,"end":1}}}]]}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"completed"}},{"id":"t2","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running"}}]]}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t2","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running"}},{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"completed"}}]]}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"completed"}},{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"completed"}}]]}
+{"fn":"hasVisibleAssistantSummary","args":[{"$undefined":true}]}
+{"fn":"hasVisibleAssistantSummary","args":[[]]}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"Done."}]]}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"reasoning","text":"  thinking  "}]]}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":""}]]}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":" \n\t"}]]}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"  ﻿"}]]}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"​"}]]}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":{"$utf16":[55296]}}]]}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"😀"}]]}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"  ","output":"result"}]]}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"reasoning","output":"result"}]]}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":3,"output":" x "}]]}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"","output":"  "}]]}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","output":42}]]}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"tool","text":"hello","output":"hello"},{"id":"p2","sessionID":"ses_1","messageID":"msg_a","type":"step-finish","text":"hello"},{"id":"p3","sessionID":"ses_1","messageID":"msg_a","type":"file","text":"hello"}]]}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":""},{"id":"p2","sessionID":"ses_1","messageID":"msg_a","type":"tool","text":"x"},{"id":"p3","sessionID":"ses_1","messageID":"msg_a","type":"reasoning","text":"seen"}]]}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]]}
+{"fn":"hasInFlightToolParts","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]]}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]]}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2}},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2}}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2}}]}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2}}]}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"done"},[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"completed"}},{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]]}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"done"}]}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"completed"}},{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]]}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"completed"}},{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]]}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1}},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]]}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":true,"finish":"stop"},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]]}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]]}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_u","sessionID":"ses_1","role":"user","time":{"created":1},"finish":"stop"},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_u","sessionID":"ses_1","role":"user","time":{"created":1},"finish":"stop"}]}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"tool-calls"},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]]}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"tool-calls"}]}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"completed","finish":"TOOL-CALLS"},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"completed","finish":"TOOL-CALLS"}]}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"completed","finish":"TOOL-CALLS"}]}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."},{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running"}}]]}
+{"fn":"hasInFlightToolParts","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."},{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running"}}]]}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":" "},{"id":"p2","sessionID":"ses_1","messageID":"msg_a","type":"reasoning","text":"Summary in reasoning."}]]}
+{"fn":"hasInFlightToolParts","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":" "},{"id":"p2","sessionID":"ses_1","messageID":"msg_a","type":"reasoning","text":"Summary in reasoning."}]]}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":" "},{"id":"p2","sessionID":"ses_1","messageID":"msg_a","type":"reasoning","text":"Summary in reasoning."}]]}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"}]}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"},[]]}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":" "}]]}
+{"fn":"hasInFlightToolParts","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":" "}]]}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":" "}]]}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running"}}]]}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_u","sessionID":"ses_1","role":"user","time":{"created":1}},[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running"}}]]}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1}}]}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1}},[]]}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"tool-calls"}]}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"tool-calls"},[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running"}}]]}
+{"fn":"isIncompleteAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"tool-calls"}]}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running"}}]]}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"tool-calls"},[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash"}]]}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"tool-calls"},[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"completed"}}]]}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"tool-calls"},[]]}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"tool-calls"}]}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"stop"},[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running"}}]]}
+{"fn":"isIncompleteAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"stop"}]}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"stop"}]}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"stop"}]}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"stop"}]}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"done"},[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running"}}]]}

@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "note": "Port map of the replayer's own toy family (package C0d): a pure family whose effects come from a microtask, two port calls in one step, hidden module state, aliasing, UTF-16 text, a draft with a clock time and a random id. Package C0e adds a store and timer family: a zustand-like store with module state beside it, timeouts, a timer that sets another, an interval its own callback clears, fake timers.",
+  "families": [
+    {
+      "name": "toy-relay",
+      "module": "toy-relay.mjs",
+      "allExports": true,
+      "entries": [
+        {
+          "export": "stamp",
+          "draft": 0,
+          "reason": "mutates the draft copy-on-write"
+        }
+      ],
+      "ports": [
+        {
+          "module": "../toy-log.mjs",
+          "exports": [
+            "log"
+          ],
+          "reason": "the toy logger, a module port"
+        }
+      ]
+    },
+    {
+      "name": "toy-store",
+      "module": "toy-store.mjs",
+      "allExports": true,
+      "store": "counterStore",
+      "moduleState": {
+        "bindings": [
+          "remembered",
+          "boxes",
+          "ticks"
+        ],
+        "reason": "a module Map, the boxes it handed out by name and a tick counter beside the store, which no export snapshots"
+      },
+      "ports": [
+        {
+          "module": "../toy-log.mjs",
+          "exports": [
+            "log"
+          ],
+          "reason": "the toy logger, a module port"
+        }
+      ],
+      "injected": [
+        {
+          "entry": "loadInto",
+          "arg": 0,
+          "name": "load",
+          "reason": "the caller's loader, a port whose promise answer settles as an input"
+        }
+      ]
+    }
+  ]
+}

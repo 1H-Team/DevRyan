@@ -15,7 +15,7 @@ import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sa
 import { createRunRoot, scratchParent } from './run-root.mjs';
 
 test('native input manifest covers every copied file and rejects changed, missing, additional and symlinked state', async () => {
-  const root = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/qa-native-input-')));
+  const root = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/qa/qa-native-input-')));
   const sourceHome = path.join(root, 'source'), artifactRoot = path.join(root, 'artifacts');
   await fs.mkdir(sourceHome); await fs.mkdir(artifactRoot);
   const bytes = '{"agents":{"orchestrator":{"model":"saved/model"}}}\n';
@@ -36,7 +36,7 @@ test('native input manifest covers every copied file and rejects changed, missin
 test('native input verifier accepts generated temp source only with its run scope and cache artifact root', async () => {
   const run = createRunRoot({ parent: scratchParent('qa'), owner: 'native-input-test', signals: false, argv: [], env: {} });
   const sourceHome = path.join(run.dir, 'runtime/mirror');
-  const artifactRoot = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/qa-native-artifact-')));
+  const artifactRoot = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/qa/qa-native-artifact-')));
   const bytes = 'fixture';
   try {
     await fs.mkdir(sourceHome, { recursive: true, mode: 0o700 }); await fs.writeFile(path.join(sourceHome, 'config.json'), bytes);
@@ -87,7 +87,7 @@ test('native live branch requires constructor preparation instead of legacy home
 });
 
 test('preparation failure still checks source immutability and refuses symlink parents before mkdir', async () => {
-  const root = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/qa-native-source-')));
+  const root = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/qa/qa-native-source-')));
   const sourceHome = path.join(root, 'source'), artifactRoot = path.join(root, 'artifacts'), workspace = path.join(root, 'workspace');
   for (const directory of [sourceHome, artifactRoot, workspace]) await fs.mkdir(directory);
   const file = path.join(sourceHome, 'original'), bytes = 'original'; await fs.writeFile(file, bytes);
@@ -108,7 +108,7 @@ test('preparation failure still checks source immutability and refuses symlink p
 });
 
 test('the offline source home must exist canonically inside the private runtime', async () => {
-  const root = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/qa-native-globals-'))), runtimeRoot = path.join(root, 'runtime');
+  const root = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/qa/qa-native-globals-'))), runtimeRoot = path.join(root, 'runtime');
   await fs.mkdir(runtimeRoot);
   const database = path.join(runtimeRoot, 'source.db'); await fs.writeFile(database, 'preflight fixture only');
   const global = Object.fromEntries(['home', 'config', 'data', 'state', 'cache', 'tmp', 'bin', 'log', 'repos'].map(key => [key, path.join(runtimeRoot, key)]));
@@ -153,7 +153,7 @@ test('offline migration sources reject runnable controller and artifact fields',
 });
 
 test('the bound input verifier retains its original manifest through the complete cell lifetime', async () => {
-  const root = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/qa-native-recheck-')));
+  const root = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/qa/qa-native-recheck-')));
   const sourceHome = path.join(root, 'source'), artifactRoot = path.join(root, 'artifacts');
   await fs.mkdir(sourceHome); await fs.mkdir(artifactRoot);
   const file = path.join(sourceHome, 'saved'), bytes = 'saved original'; await fs.writeFile(file, bytes);
@@ -167,7 +167,7 @@ test('the bound input verifier retains its original manifest through the complet
 });
 
 test('native controller logs are bounded, sanitized and archived from the verified exact log root', async () => {
-  const root = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/qa-native-logs-')));
+  const root = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/qa/qa-native-logs-')));
   const logRoot = path.join(root, 'log'), evidence = path.join(root, 'evidence'); await fs.mkdir(logRoot); await fs.mkdir(evidence);
   const file = path.join(logRoot, 'native-controller.jsonl');
   const profile = { nativeLogRoot: logRoot, env: { DEVRYAN_QA_RUNTIME_ROOT: root } };

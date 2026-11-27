@@ -1,0 +1,19 @@
+{
+  "unit": "mobileKeyboardMode.ts",
+  "files": 1,
+  "fingerprint": "4df5f5c376fc3411",
+  "cases": 261,
+  "cases_hash": "f0c552f5c44db6af",
+  "coverage": {
+    "lines": 80,
+    "reached": 29,
+    "files": [
+      {
+        "file": "mobileKeyboardMode.ts",
+        "lines": 80,
+        "reached": 29,
+        "missed": "9-11, 13-17, 19, 23-26, 43-46, 50-52, 54-58, 62, 64-74, 76, 80, 82-84, 86, 88-94, 96"
+      }
+    ]
+  }
+}

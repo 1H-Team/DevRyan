@@ -1,0 +1,150 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "sessionDiffStats.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "sessiondiffstats-rs",
+  "exports": [
+    {
+      "name": "parseSessionDiffCount",
+      "file": "sessionDiffStats.ts",
+      "line": 27,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "number | string | null | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "number",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getSessionSummaryDiffTotals",
+      "file": "sessionDiffStats.ts",
+      "line": 38,
+      "params": [
+        {
+          "name": "summary",
+          "ts_type": "(({\n  file?: string | null\n  additions?: number | string | null\n  deletions?: number | string | null\n  [key: string]: unknown\n}) & {\n  files?: number | null\n  diffs?: ({\n  file?: string | null\n  additions?: number | string | null\n  deletions?: number | string | null\n  [key: string]: unknown\n})[] | null\n}) | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "{\n  additions: number\n  deletions: number\n}",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "resolveSessionDiffStats",
+      "file": "sessionDiffStats.ts",
+      "line": 59,
+      "params": [
+        {
+          "name": "summary",
+          "ts_type": "(({\n  file?: string | null\n  additions?: number | string | null\n  deletions?: number | string | null\n  [key: string]: unknown\n}) & {\n  files?: number | null\n  diffs?: ({\n  file?: string | null\n  additions?: number | string | null\n  deletions?: number | string | null\n  [key: string]: unknown\n})[] | null\n}) | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "{\n  additions: number\n  deletions: number\n} | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "resolveTouchedFileWorkingTreeDiffStats",
+      "file": "sessionDiffStats.ts",
+      "line": 68,
+      "params": [
+        {
+          "name": "touchedFiles",
+          "ts_type": "readonly string[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "diffStats",
+          "ts_type": "(Record<string, {\n  insertions?: number | null\n  deletions?: number | null\n}>) | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{\n  additions: number\n  deletions: number\n} | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getScopedMessageDiffTotals",
+      "file": "sessionDiffStats.ts",
+      "line": 84,
+      "params": [
+        {
+          "name": "summary",
+          "ts_type": "(({\n  file?: string | null\n  additions?: number | string | null\n  deletions?: number | string | null\n  [key: string]: unknown\n}) & {\n  files?: number | null\n  diffs?: ({\n  file?: string | null\n  additions?: number | string | null\n  deletions?: number | string | null\n  [key: string]: unknown\n})[] | null\n}) | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "{\n  additions: number\n  deletions: number\n}",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "stripUntrustedSessionDiffSummary",
+      "file": "sessionDiffStats.ts",
+      "line": 99,
+      "params": [
+        {
+          "name": "target",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "normalizeChatOwnedDiffSummary",
+      "file": "sessionDiffStats.ts",
+      "line": 125,
+      "params": [
+        {
+          "name": "target",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "messages",
+          "ts_type": "readonly unknown[] | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

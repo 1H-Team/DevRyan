@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "note": "Candidate census of the toy families (the comparer's self-test corpus). `judged` pins, per family, the cases a candidate reproduces and the items they exercise (a ratchet: a complete run must meet it exactly, so an item that loses its judged cases fails); `items` and `unjudged` are what a candidate is not judged on, each with its reason. The toy fixtures that are unrecordable on purpose are the recording census's (the recorder's and the replayer's fixture lists), not listed here.",
+  "judged": {
+    "toy-clock": {"cases": 26, "exports": ["later", "online", "ping", "readClock", "roll"], "ports": [], "events": []},
+    "toy-flow": {"cases": 7, "exports": ["createFlow"], "ports": ["module:scripts/client-conformance/toy/toy-guard.mjs#guard"], "events": []},
+    "toy-reducer": {"cases": 15, "exports": ["applyEvent", "createState"], "ports": [], "events": ["fail", "message.added", "message.hidden", "probe", "session.created", "status"]},
+    "toy-relay": {"cases": 9, "exports": ["ids", "label", "note", "pair", "relay", "settle", "share", "stamp", "tally"], "ports": ["module:scripts/client-conformance/toy/toy-log.mjs#log"], "events": []},
+    "toy-sched": {"cases": 1, "exports": ["visit"], "ports": [], "events": []},
+    "toy-store": {"cases": 15, "exports": ["cancel", "chain", "counterStore", "counterStore.add", "counterStore.keep", "counterStore.persist", "counterStore.recall", "counterStore.remember", "counterStore.setState", "counterStore.subscribe", "counterStore.tag", "later", "laterThen", "loadInto", "makeBox", "rememberLater", "stamp", "tickTwice"], "ports": ["module:scripts/client-conformance/toy/toy-log.mjs#log"], "events": []},
+    "toy-transport": {"cases": 27, "exports": ["connect"], "ports": ["module:scripts/client-conformance/toy/toy-log.mjs#log", "module:scripts/client-conformance/toy/toy-log.mjs#logSession"], "events": []}
+  },
+  "items": [
+    {"family": "toy-gate", "kind": "family", "reason": "the gate toy snapshots its module state through an export (gateState) instead of naming its store or bindings, so no case of it is replayable until the toy port map names them (the replayer's later package for state)"},
+    {"family": "toy-guard", "kind": "family", "reason": "the guard toy snapshots its module state through an export (guardState) instead of naming its store or bindings, so no case of it is replayable until the toy port map names them"},
+    {"family": "toy-timers", "kind": "family", "reason": "the debouncer toy snapshots its module state through an export (snapshotState) instead of naming its store or bindings, so no case of it is replayable until the toy port map names them"},
+    {"family": "toy-sched", "kind": "export", "name": "sinkLater", "reason": "called only by the test that mocks toy-sink.mjs, which is not replayable yet (a module the test mocked, answered by its factory)"},
+    {"family": "toy-sched", "kind": "export", "name": "sinkTo", "reason": "called only by the test that mocks toy-sink.mjs, which is not replayable yet (a module the test mocked, answered by its factory)"}
+  ],
+  "unjudged": [
+    {"family": "toy-gate", "outcome": "not-replayable", "reason": "the gate toy snapshots its module state through an export instead of naming its store or bindings (not replayable until the toy port map names them)"},
+    {"family": "toy-guard", "outcome": "not-replayable", "reason": "the guard toy snapshots its module state through an export instead of naming its store or bindings"},
+    {"family": "toy-timers", "outcome": "not-replayable", "reason": "the debouncer toy snapshots its module state through an export instead of naming its store or bindings"},
+    {"family": "toy-sched", "outcome": "not-replayable", "file": "scripts/client-conformance/toy/toy-mocked.toy.mjs", "tests": ["the engine's call of a mocked object's method is a port effect; the test's own calls of mocked members record nothing"], "reason": "the engine calls toy-sink.mjs, which the test mocks: a module the test mocked is answered by its factory, which no replay has yet"}
+  ]
+}

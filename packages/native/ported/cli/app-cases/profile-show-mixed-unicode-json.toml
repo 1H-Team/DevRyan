@@ -1,0 +1,5 @@
+bin.name = "devryan"
+args = ["tunnel", "profile", "show", "--name", "UNICODE-ÜNÏ", "--json"]
+status.code = 0
+fs.sandbox = true
+fs.base = "profile-show-mixed-unicode-json.in"

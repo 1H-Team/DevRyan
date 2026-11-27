@@ -1,0 +1,332 @@
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":null,"response":{}},"abtab\tseparated"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"response":{"status":3}},"src/a/b.ts"],"error":"src/a/b.ts returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":[],"error":null,"response":{"status":2147483648}},"straßehello world"],"ok":[]}
+{"fn":"unwrapSdkResult","args":[{"data":{},"error":{"a":{"b":"c"}}},"ünïcödé"],"error":"ünïcödé failed: {\"a\":{\"b\":\"c\"}}"}
+{"fn":"unwrapSdkResult","args":[{"data":[],"error":{"a":"b"},"response":{"status":2}},"😀"],"error":"😀 failed (2): {\"a\":\"b\"}"}
+{"fn":"unwrapSdkResult","args":[{"data":0,"error":{"a":{"b":"c"}}},"日本語のテキスト"],"error":"日本語のテキスト failed: {\"a\":{\"b\":\"c\"}}"}
+{"fn":"unwrapSdkResult","args":[{"data":0},"﻿bom"],"ok":0}
+{"fn":"unwrapSdkResult","args":[{"data":{},"error":true,"response":{}},"a.b.c"],"error":"a.b.c failed: true"}
+{"fn":"unwrapSdkResult","args":[[],"a"],"error":"a returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":"x","error":"x","response":{"status":2}},"﻿bom"],"error":"﻿bom failed (2): x"}
+{"fn":"unwrapSdkResult","args":[{"data":"x","error":[]},"﻿bom"],"error":"﻿bom failed: []"}
+{"fn":"unwrapSdkResult","args":[{"data":[],"response":{"status":9007199254740992}},"HELLO"],"ok":[]}
+{"fn":"unwrapSdkResult","args":[{"data":["a",1],"error":0,"response":{"status":{"$num":"Infinity"}}},"ünïcödé"],"ok":["a",1]}
+{"fn":"unwrapSdkResult","args":[{"error":"x"},"İstanbul"],"error":"İstanbul failed: x"}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":{"b":"c"}},"error":["a",1],"response":{"status":-2.5}},"trailing."],"error":"trailing. failed (-2.5): [\"a\",1]"}
+{"fn":"unwrapSdkResult","args":[{"error":{},"response":{"status":9007199254740992}},"a😀b😀c"],"error":"a😀b😀c failed (9007199254740992): {}"}
+{"fn":"unwrapSdkResult","args":[{"error":{},"response":{"status":0}},"日本語のテキストa"],"error":"日本語のテキストa failed (0): {}"}
+{"fn":"unwrapSdkResult","args":[{"response":{"status":{"$num":"-0"}}},"straße./x/**/*.json"],"error":"straße./x/**/*.json returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":{"b":"c"}},"error":{"a":"b"},"response":{"status":2147483648}},"HELLO"],"error":"HELLO failed (2147483648): {\"a\":\"b\"}"}
+{"fn":"unwrapSdkResult","args":[{"data":"x","error":true},"./x/**/*.json"],"error":"./x/**/*.json failed: true"}
+{"fn":"unwrapSdkResult","args":[{"error":"x"},"emoji 👍🏽 mix"],"error":"emoji 👍🏽 mix failed: x"}
+{"fn":"unwrapSdkResult","args":[{},"HELLOİstanbul"],"error":"HELLOİstanbul returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":{"b":"c"}},"response":{}},"emoji 👍🏽 mixünïcödé"],"ok":{"a":{"b":"c"}}}
+{"fn":"unwrapSdkResult","args":[{"error":{"a":{"b":"c"}},"response":{"status":1}},".leading"],"error":".leading failed (1): {\"a\":{\"b\":\"c\"}}"}
+{"fn":"unwrapSdkResult","args":[{"data":0,"error":{"a":"b"}},"a.b.c😀"],"error":"a.b.c😀 failed: {\"a\":\"b\"}"}
+{"fn":"unwrapSdkResult","args":[{"a":{"b":"c"}},"ns:key.path"],"error":"ns:key.path returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":null,"response":{"status":{"$num":"Infinity"}}},"hello worldünïcödé"],"error":"hello worldünïcödé returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":0},"  padded  "],"error":"  padded   returned no data"}
+{"fn":"unwrapSdkResult","args":[true,"emoji 👍🏽 mixstraße"],"error":"emoji 👍🏽 mixstraße returned no data"}
+{"fn":"unwrapSdkResult","args":[{"response":{"status":42}},"😀"],"error":"😀 returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":null,"response":{"status":{"$num":"-Infinity"}}},"﻿bom"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"response":{"status":1}},"Hello World"],"error":"Hello World returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":true,"response":{"status":1000000}},""],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"error":[],"response":{}},".leading"],"error":".leading failed: []"}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":["a",1]},"a.b.c"],"error":"a.b.c failed: [\"a\",1]"}
+{"fn":"unwrapSdkResult","args":[{"data":["a",1]},"key_name-1"],"ok":["a",1]}
+{"fn":"unwrapSdkResult","args":[{"data":["a",1],"error":"x","response":{"status":0.5}},"a..b"],"error":"a..b failed (0.5): x"}
+{"fn":"unwrapSdkResult","args":[{"data":0,"error":0},"./x/**/*.json"],"ok":0}
+{"fn":"unwrapSdkResult","args":[{"data":["a",1],"response":{"status":0}},"ΣΊΣΥΦΟΣ"],"ok":["a",1]}
+{"fn":"unwrapSdkResult","args":[true,"Hello World"],"error":"Hello World returned no data"}
+{"fn":"unwrapSdkResult","args":[{},"aa"],"error":"aa returned no data"}
+{"fn":"unwrapSdkResult","args":[[],"straßens:key.path"],"error":"straßens:key.path returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":{"b":"c"}},"error":{"a":"b"}},"ns:key.path"],"error":"ns:key.path failed: {\"a\":\"b\"}"}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":{"b":"c"}},"error":["a",1]},"{name} has {count} itemsa😀b😀c"],"error":"{name} has {count} itemsa😀b😀c failed: [\"a\",1]"}
+{"fn":"unwrapSdkResult","args":[{"a":{"b":"c"}},"ünïcödé"],"error":"ünïcödé returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":{"b":"c"}},"response":{}},"straße"],"ok":{"a":{"b":"c"}}}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":{"b":"c"}},"error":["a",1],"response":{"status":{"$num":"-0"}}},"a"],"error":"a failed (0): [\"a\",1]"}
+{"fn":"unwrapSdkResult","args":[{"data":"x","response":{}},"hello world"],"ok":"x"}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":{"b":"c"}},"error":true,"response":{"status":-2.5}},"abc"],"error":"abc failed (-2.5): true"}
+{"fn":"unwrapSdkResult","args":[{"error":{"a":"b"}},":"],"error":": failed: {\"a\":\"b\"}"}
+{"fn":"unwrapSdkResult","args":[{"data":true,"response":{"status":{"$num":"-Infinity"}}},""],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"error":"x","response":{"status":10}},"src/a/b.ts"],"error":"src/a/b.ts failed (10): x"}
+{"fn":"unwrapSdkResult","args":[{"data":0,"error":true,"response":{"status":2147483648}},"﻿bom"],"error":"﻿bom failed (2147483648): true"}
+{"fn":"unwrapSdkResult","args":[{"error":"x","response":{}},"日本語のテキスト"],"error":"日本語のテキスト failed: x"}
+{"fn":"unwrapSdkResult","args":[{},"{name} has {count} items😀"],"error":"{name} has {count} items😀 returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":["a",1],"error":{"a":"b"},"response":{"status":0}},"ΣΊΣΥΦΟΣ"],"error":"ΣΊΣΥΦΟΣ failed (0): {\"a\":\"b\"}"}
+{"fn":"unwrapSdkResult","args":[{"data":{},"error":{"a":{"b":"c"}},"response":{}},"a"],"error":"a failed: {\"a\":{\"b\":\"c\"}}"}
+{"fn":"unwrapSdkResult","args":[{"data":{},"error":{"a":{"b":"c"}},"response":{"status":{"$num":"-0"}}},".leadinga😀b😀c"],"error":".leadinga😀b😀c failed (0): {\"a\":{\"b\":\"c\"}}"}
+{"fn":"unwrapSdkResult","args":[{"data":true,"response":{"status":-1}},"hello worldabc"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{},"😀﻿bom"],"error":"😀﻿bom returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":"b"}},"ab"],"ok":{"a":"b"}}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":{"b":"c"}},"error":0},"./x/**/*.json"],"ok":{"a":{"b":"c"}}}
+{"fn":"unwrapSdkResult","args":[0,"Hello World"],"error":"Hello World returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":0,"error":null,"response":{"status":42}},"﻿bom"],"ok":0}
+{"fn":"unwrapSdkResult","args":[{"data":[],"error":"x","response":{"status":2147483648}},"hello world"],"error":"hello world failed (2147483648): x"}
+{"fn":"unwrapSdkResult","args":[{"data":{},"error":{"a":{"b":"c"}},"response":{"status":2}},"ünïcödé"],"error":"ünïcödé failed (2): {\"a\":{\"b\":\"c\"}}"}
+{"fn":"unwrapSdkResult","args":[{"error":0,"response":{"status":10}},"./x/**/*.json"],"error":"./x/**/*.json returned no data"}
+{"fn":"unwrapSdkResult","args":[{"response":{"status":100}},"emoji 👍🏽 mix"],"error":"emoji 👍🏽 mix returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":["a",1]},"a.b.c"],"error":"a.b.c failed: [\"a\",1]"}
+{"fn":"unwrapSdkResult","args":[{"data":"x","error":true,"response":{"status":0.5}},"日本語のテキスト"],"error":"日本語のテキスト failed (0.5): true"}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":{"b":"c"}},"error":true,"response":{"status":0}},"line1\nline2HELLO"],"error":"line1\nline2HELLO failed (0): true"}
+{"fn":"unwrapSdkResult","args":[{"response":{}},".leading"],"error":".leading returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":[],"error":{"a":{"b":"c"}},"response":{"status":2147483648}},":"],"error":": failed (2147483648): {\"a\":{\"b\":\"c\"}}"}
+{"fn":"unwrapSdkResult","args":[{"data":null,"error":true,"response":{"status":1}},"ΣΊΣΥΦΟΣ"],"error":"ΣΊΣΥΦΟΣ failed (1): true"}
+{"fn":"unwrapSdkResult","args":[{"data":null,"response":{"status":1}},"helloHello World"],"ok":null}
+{"fn":"unwrapSdkResult","args":[null,"a..b"],"error":"Cannot read properties of null (reading 'error')"}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":{"b":"c"}},"error":[],"response":{"status":0}},"  padded  "],"error":"  padded   failed (0): []"}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":"b"},"response":{"status":-1}},".leading"],"ok":{"a":"b"}}
+{"fn":"unwrapSdkResult","args":[{"data":{},"error":{},"response":{"status":{"$num":"-0"}}},":ab"],"error":":ab failed (0): {}"}
+{"fn":"unwrapSdkResult","args":[{"data":"x","error":null,"response":{"status":-2.5}},"😀{name} has {count} items"],"ok":"x"}
+{"fn":"unwrapSdkResult","args":[{"data":0,"error":[],"response":{"status":9007199254740992}},".leadingHELLO"],"error":".leadingHELLO failed (9007199254740992): []"}
+{"fn":"unwrapSdkResult","args":[{"error":true,"response":{}},"a"],"error":"a failed: true"}
+{"fn":"unwrapSdkResult","args":[{"data":null,"error":{},"response":{"status":3}},""],"error":" failed (3): {}"}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":{"b":"c"}},"response":{}},"﻿bom"],"ok":{"a":{"b":"c"}}}
+{"fn":"unwrapSdkResult","args":[{"data":"x","error":0},"./x/**/*.json"],"ok":"x"}
+{"fn":"unwrapSdkResult","args":[{"data":"x","error":{},"response":{"status":{"$num":"Infinity"}}},""],"error":" failed (Infinity): {}"}
+{"fn":"unwrapSdkResult","args":[{"a":"b"},""],"error":" returned no data"}
+{"fn":"unwrapSdkResult","args":[true,"İstanbul"],"error":"İstanbul returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":"x","response":{"status":1000000}},".leading{name} has {count} items"],"error":".leading{name} has {count} items failed (1000000): x"}
+{"fn":"unwrapSdkResult","args":[{"data":"x","error":[]},"HELLO"],"error":"HELLO failed: []"}
+{"fn":"unwrapSdkResult","args":[{"error":[],"response":{"status":{"$num":"Infinity"}}},"tab\tseparated"],"error":"tab\tseparated failed (Infinity): []"}
+{"fn":"unwrapSdkResult","args":[{"data":0,"error":{},"response":{"status":0}},"abcHello World"],"error":"abcHello World failed (0): {}"}
+{"fn":"unwrapSdkResult","args":[{"data":0,"error":true,"response":{"status":1}},"ünïcödé"],"error":"ünïcödé failed (1): true"}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":["a",1],"response":{}},"  padded  "],"error":"  padded   failed: [\"a\",1]"}
+{"fn":"unwrapSdkResult","args":[{"error":{"a":"b"},"response":{"status":100}},"ΣΊΣΥΦΟΣa:b:c"],"error":"ΣΊΣΥΦΟΣa:b:c failed (100): {\"a\":\"b\"}"}
+{"fn":"unwrapSdkResult","args":[{"data":null,"error":0},"tab\tseparatedhello world"],"ok":null}
+{"fn":"unwrapSdkResult","args":[{"a":{"b":"c"}},"key_name-1"],"error":"key_name-1 returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":null,"error":{"a":{"b":"c"}},"response":{"status":{"$num":"-0"}}},"a:b:c"],"error":"a:b:c failed (0): {\"a\":{\"b\":\"c\"}}"}
+{"fn":"unwrapSdkResult","args":[{"error":["a",1],"response":{"status":-1}},"straße"],"error":"straße failed (-1): [\"a\",1]"}
+{"fn":"unwrapSdkResult","args":[{"data":{},"error":{}},"{name} has {count} items"],"error":"{name} has {count} items failed: {}"}
+{"fn":"unwrapSdkResult","args":[{"data":["a",1],"error":{"a":"b"},"response":{}},"hello"],"error":"hello failed: {\"a\":\"b\"}"}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":true},"a😀b😀c"],"error":"a😀b😀c failed: true"}
+{"fn":"unwrapSdkResult","args":[{"error":[]},"key_name-1"],"error":"key_name-1 failed: []"}
+{"fn":"unwrapSdkResult","args":[{"error":["a",1],"response":{}},"a.b.c"],"error":"a.b.c failed: [\"a\",1]"}
+{"fn":"unwrapSdkResult","args":["x","tab\tseparated"],"error":"tab\tseparated returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":[],"error":{"a":"b"},"response":{}},".leadingtrailing."],"error":".leadingtrailing. failed: {\"a\":\"b\"}"}
+{"fn":"unwrapSdkResult","args":[{"data":{},"error":{"a":{"b":"c"}},"response":{"status":10}},""],"error":" failed (10): {\"a\":{\"b\":\"c\"}}"}
+{"fn":"unwrapSdkResult","args":[{"data":["a",1],"response":{"status":1000000}},".leadingstraße"],"ok":["a",1]}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":{"b":"c"}},"error":{"a":{"b":"c"}},"response":{"status":3}},"İstanbul"],"error":"İstanbul failed (3): {\"a\":{\"b\":\"c\"}}"}
+{"fn":"unwrapSdkResult","args":[{"error":["a",1]},"Hello Worldstraße"],"error":"Hello Worldstraße failed: [\"a\",1]"}
+{"fn":"unwrapSdkResult","args":[{"response":{"status":1}},"trailing."],"error":"trailing. returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":0,"response":{"status":1000}},"{name} has {count} items"],"error":"{name} has {count} items returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":[],"response":{"status":9007199254740992}},"tab\tseparated"],"ok":[]}
+{"fn":"unwrapSdkResult","args":[{"data":[],"error":{}},"a..b"],"error":"a..b failed: {}"}
+{"fn":"unwrapSdkResult","args":["x","x"],"error":"x returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":["a",1],"error":{},"response":{"status":1000}},"tab\tseparated"],"error":"tab\tseparated failed (1000): {}"}
+{"fn":"unwrapSdkResult","args":[[],"emoji 👍🏽 mix"],"error":"emoji 👍🏽 mix returned no data"}
+{"fn":"unwrapSdkResult","args":[null,""],"error":"Cannot read properties of null (reading 'error')"}
+{"fn":"unwrapSdkResult","args":[{"data":null,"error":"x","response":{"status":3}},"./x/**/*.json"],"error":"./x/**/*.json failed (3): x"}
+{"fn":"unwrapSdkResult","args":[{"data":null,"error":true,"response":{"status":2}},"a..b"],"error":"a..b failed (2): true"}
+{"fn":"unwrapSdkResult","args":[{"data":["a",1],"error":0,"response":{"status":100}},"trailing.trailing."],"ok":["a",1]}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":{"a":"b"},"response":{"status":3}},"abc"],"error":"abc failed (3): {\"a\":\"b\"}"}
+{"fn":"unwrapSdkResult","args":[0,"line1\nline2"],"error":"line1\nline2 returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":{},"error":true,"response":{"status":-2.5}},"ab"],"error":"ab failed (-2.5): true"}
+{"fn":"unwrapSdkResult","args":[[],"日本語のテキストtrailing."],"error":"日本語のテキストtrailing. returned no data"}
+{"fn":"unwrapSdkResult","args":[{"a":"b"},"éhello world"],"error":"éhello world returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":"x"},"{name} has {count} itemsa..b"],"ok":"x"}
+{"fn":"unwrapSdkResult","args":[{"data":["a",1],"error":{},"response":{"status":1000000}},"src/a/b.ts"],"error":"src/a/b.ts failed (1000000): {}"}
+{"fn":"unwrapSdkResult","args":[{"data":"x","error":{"a":{"b":"c"}},"response":{"status":100}},"a"],"error":"a failed (100): {\"a\":{\"b\":\"c\"}}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"a":{"b":"c"}},"response":{}},"a:b:c"],"error":"a:b:c failed: {\"a\":{\"b\":\"c\"}}"}
+{"fn":"unwrapSdkResult","args":[{"data":"x","error":true,"response":{"status":{"$num":"NaN"}}},"src/a/b.ts"],"error":"src/a/b.ts failed (NaN): true"}
+{"fn":"unwrapSdkResult","args":[{"data":"x","error":[],"response":{}},"ab"],"error":"ab failed: []"}
+{"fn":"unwrapSdkResult","args":[{"data":["a",1],"error":["a",1],"response":{"status":3}},"a.b.c"],"error":"a.b.c failed (3): [\"a\",1]"}
+{"fn":"unwrapSdkResult","args":[{"data":["a",1],"error":"x","response":{"status":0.5}},"tab\tseparatedsrc/a/b.ts"],"error":"tab\tseparatedsrc/a/b.ts failed (0.5): x"}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":[]},""],"error":" failed: []"}
+{"fn":"unwrapSdkResult","args":[{"response":{"status":3}},"日本語のテキストa"],"error":"日本語のテキストa returned no data"}
+{"fn":"unwrapSdkResult","args":[true,"emoji 👍🏽 mixa😀b😀c"],"error":"emoji 👍🏽 mixa😀b😀c returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":[]},"😀"],"error":"😀 failed: []"}
+{"fn":"unwrapSdkResult","args":[{"data":0,"response":{"status":42}},"a😀b😀c"],"ok":0}
+{"fn":"unwrapSdkResult","args":[{"error":{},"response":{"status":3}},"HELLO"],"error":"HELLO failed (3): {}"}
+{"fn":"unwrapSdkResult","args":[{"data":true,"response":{"status":-2.5}},"emoji 👍🏽 mix"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":"b"},"error":{"a":{"b":"c"}}},"{name} has {count} items"],"error":"{name} has {count} items failed: {\"a\":{\"b\":\"c\"}}"}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":"b"},"error":["a",1],"response":{"status":{"$num":"NaN"}}},"abab"],"error":"abab failed (NaN): [\"a\",1]"}
+{"fn":"unwrapSdkResult","args":[{"error":0},"key_name-1"],"error":"key_name-1 returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":["a",1],"error":{"a":"b"},"response":{"status":0}},"ns:key.path"],"error":"ns:key.path failed (0): {\"a\":\"b\"}"}
+{"fn":"unwrapSdkResult","args":[null,"a.b.c"],"error":"Cannot read properties of null (reading 'error')"}
+{"fn":"unwrapSdkResult","args":[null,"  padded  Hello World"],"error":"Cannot read properties of null (reading 'error')"}
+{"fn":"unwrapSdkResult","args":[{"error":{"a":{"b":"c"}},"response":{"status":1}},"İstanbul"],"error":"İstanbul failed (1): {\"a\":{\"b\":\"c\"}}"}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":0,"response":{}},"trailing.src/a/b.ts"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":"b"},"error":[],"response":{"status":{"$num":"-0"}}},"ünïcödé"],"error":"ünïcödé failed (0): []"}
+{"fn":"unwrapSdkResult","args":[{"data":[],"error":null,"response":{"status":0.5}},"﻿bom"],"ok":[]}
+{"fn":"unwrapSdkResult","args":[{"data":["a",1],"response":{}},"src/a/b.ts"],"ok":["a",1]}
+{"fn":"unwrapSdkResult","args":[{"data":[],"error":"x","response":{}},"trailing."],"error":"trailing. failed: x"}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":null,"response":{"status":1000}},""],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"error":0,"response":{"status":9007199254740992}},"﻿bom"],"error":"﻿bom returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":{},"response":{}},"日本語のテキスト"],"ok":{}}
+{"fn":"unwrapSdkResult","args":[{"error":true},"hello world"],"error":"hello world failed: true"}
+{"fn":"unwrapSdkResult","args":[["a",1],"ΣΊΣΥΦΟΣhello world"],"error":"ΣΊΣΥΦΟΣhello world returned no data"}
+{"fn":"unwrapSdkResult","args":[null,"emoji 👍🏽 mix"],"error":"Cannot read properties of null (reading 'error')"}
+{"fn":"unwrapSdkResult","args":[{"error":"x","response":{"status":1}},"straße"],"error":"straße failed (1): x"}
+{"fn":"unwrapSdkResult","args":["x","hello"],"error":"hello returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":{"a":{"b":"c"}},"response":{}},"straße"],"error":"straße failed: {\"a\":{\"b\":\"c\"}}"}
+{"fn":"unwrapSdkResult","args":[{"response":{"status":10}},"İstanbul"],"error":"İstanbul returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":"x"},"😀"],"error":"😀 failed: x"}
+{"fn":"unwrapSdkResult","args":[{"data":"x","error":true,"response":{}},"{name} has {count} items"],"error":"{name} has {count} items failed: true"}
+{"fn":"unwrapSdkResult","args":[{"data":["a",1],"error":null,"response":{"status":{"$num":"-Infinity"}}},"﻿bom"],"ok":["a",1]}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":"b"},"error":0},"a:b:c"],"ok":{"a":"b"}}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":{"b":"c"}},"response":{"status":0}},"HELLO"],"ok":{"a":{"b":"c"}}}
+{"fn":"unwrapSdkResult","args":[{"data":[],"error":[]},"hello"],"error":"hello failed: []"}
+{"fn":"unwrapSdkResult","args":[{"error":{"a":"b"},"response":{}},"./x/**/*.json{name} has {count} items"],"error":"./x/**/*.json{name} has {count} items failed: {\"a\":\"b\"}"}
+{"fn":"unwrapSdkResult","args":[{"data":0,"error":["a",1],"response":{"status":100}},"Hello World"],"error":"Hello World failed (100): [\"a\",1]"}
+{"fn":"unwrapSdkResult","args":[{"data":true,"response":{}},"emoji 👍🏽 mix"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":"b"},"error":0,"response":{"status":-2.5}},"ns:key.path"],"ok":{"a":"b"}}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":"b"},"error":true,"response":{"status":1000}},"a..b"],"error":"a..b failed (1000): true"}
+{"fn":"unwrapSdkResult","args":[{"error":null},"éHELLO"],"error":"éHELLO returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":{"a":{"b":"c"}},"response":{"status":{"$num":"-0"}}},"src/a/b.ts"],"error":"src/a/b.ts failed (0): {\"a\":{\"b\":\"c\"}}"}
+{"fn":"unwrapSdkResult","args":[{"data":[],"error":0},"日本語のテキストemoji 👍🏽 mix"],"ok":[]}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":{"b":"c"}},"error":null,"response":{"status":2147483648}},"HELLOa:b:c"],"ok":{"a":{"b":"c"}}}
+{"fn":"unwrapSdkResult","args":[{"error":{},"response":{"status":9007199254740992}},"abHELLO"],"error":"abHELLO failed (9007199254740992): {}"}
+{"fn":"unwrapSdkResult","args":[{"data":{},"error":{"a":{"b":"c"}},"response":{"status":{"$num":"-0"}}},"a.b.c"],"error":"a.b.c failed (0): {\"a\":{\"b\":\"c\"}}"}
+{"fn":"unwrapSdkResult","args":[{"data":null,"error":{"a":{"b":"c"}},"response":{"status":1000}},"ΣΊΣΥΦΟΣ"],"error":"ΣΊΣΥΦΟΣ failed (1000): {\"a\":{\"b\":\"c\"}}"}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":"b"}},"a"],"ok":{"a":"b"}}
+{"fn":"unwrapSdkResult","args":[{"data":"x","error":{"a":"b"},"response":{"status":-1}},"./x/**/*.json"],"error":"./x/**/*.json failed (-1): {\"a\":\"b\"}"}
+{"fn":"unwrapSdkResult","args":[{"a":"b"},"😀"],"error":"😀 returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":{"b":"c"}},"error":[]},"tab\tseparated"],"error":"tab\tseparated failed: []"}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":[],"response":{"status":1000}},"a:b:c"],"error":"a:b:c failed (1000): []"}
+{"fn":"unwrapSdkResult","args":[{"error":"x"},"ns:key.path"],"error":"ns:key.path failed: x"}
+{"fn":"unwrapSdkResult","args":[{"data":true,"response":{"status":{"$num":"-Infinity"}}},"ΣΊΣΥΦΟΣ"],"ok":true}
+{"fn":"unwrapSdkResult","args":[["a",1],"abcstraße"],"error":"abcstraße returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":{"a":{"b":"c"}},"response":{"status":2}},"  padded  "],"error":"  padded   failed (2): {\"a\":{\"b\":\"c\"}}"}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":"b"},"error":"x","response":{"status":{"$num":"NaN"}}},"😀ab"],"error":"😀ab failed (NaN): x"}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":{"b":"c"}},"error":true},"tab\tseparated"],"error":"tab\tseparated failed: true"}
+{"fn":"unwrapSdkResult","args":[{"data":["a",1],"error":true,"response":{}},":"],"error":": failed: true"}
+{"fn":"unwrapSdkResult","args":[{"data":0,"error":{}},"﻿bom"],"error":"﻿bom failed: {}"}
+{"fn":"unwrapSdkResult","args":[{"response":{"status":{"$num":"NaN"}}},"helloemoji 👍🏽 mix"],"error":"helloemoji 👍🏽 mix returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":0,"response":{"status":42}},"trailing."],"error":"trailing. returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":null,"response":{}},"Hello World"],"error":"Hello World returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":"x","response":{"status":9007199254740992}},"日本語のテキスト"],"error":"日本語のテキスト failed (9007199254740992): x"}
+{"fn":"unwrapSdkResult","args":[{"error":{"a":{"b":"c"}}},"key_name-1a"],"error":"key_name-1a failed: {\"a\":{\"b\":\"c\"}}"}
+{"fn":"unwrapSdkResult","args":[{"data":["a",1]},"emoji 👍🏽 mix"],"ok":["a",1]}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":null,"response":{}},"héllo wörld"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":null,"response":{}},"👍🏽 thumbs"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":null,"response":{}},"日本語"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":null,"response":{}},""],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":null,"response":{}},"é"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":null,"response":{}},"İstanbul"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":null,"response":{}},"straße"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":null,"response":{}},"ılık ırmak"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":null,"response":{}},"👨‍👩‍👧 family"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":null,"response":{}},"a b"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":null,"response":{}},"ΣΊΣΥΦΟΣ"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":null,"response":{}},"a😀b"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":null,"response":{}},"﻿bom"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":null,"response":{}},"a²b x½ y①"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":null,"response":{}},"aⅠb Ⅻ"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":null,"response":{}},"a𐐀b 𝐀bc"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"data":true,"error":null,"response":{}},"कि ٣٤"],"ok":true}
+{"fn":"unwrapSdkResult","args":[{"error":{"$undefined":true}},"op"],"error":"op returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":{"$undefined":true},"response":{"status":404}},"op"],"error":"op returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":{"$undefined":true},"data":1,"response":{}},"op"],"ok":1}
+{"fn":"unwrapSdkResult","args":[{"error":null},"op"],"error":"op returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":null,"response":{"status":404}},"op"],"error":"op returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":null,"data":1,"response":{}},"op"],"ok":1}
+{"fn":"unwrapSdkResult","args":[{"error":0},"op"],"error":"op returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":0,"response":{"status":404}},"op"],"error":"op returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":0,"data":1,"response":{}},"op"],"ok":1}
+{"fn":"unwrapSdkResult","args":[{"error":""},"op"],"error":"op returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":"","response":{"status":404}},"op"],"error":"op returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":"","data":1,"response":{}},"op"],"ok":1}
+{"fn":"unwrapSdkResult","args":[{"error":" "},"op"],"error":"op failed:  "}
+{"fn":"unwrapSdkResult","args":[{"error":" ","response":{"status":404}},"op"],"error":"op failed (404):  "}
+{"fn":"unwrapSdkResult","args":[{"error":" ","data":1,"response":{}},"op"],"error":"op failed:  "}
+{"fn":"unwrapSdkResult","args":[{"error":"boom"},"op"],"error":"op failed: boom"}
+{"fn":"unwrapSdkResult","args":[{"error":"boom","response":{"status":404}},"op"],"error":"op failed (404): boom"}
+{"fn":"unwrapSdkResult","args":[{"error":"boom","data":1,"response":{}},"op"],"error":"op failed: boom"}
+{"fn":"unwrapSdkResult","args":[{"error":" x "},"op"],"error":"op failed:  x "}
+{"fn":"unwrapSdkResult","args":[{"error":" x ","response":{"status":404}},"op"],"error":"op failed (404):  x "}
+{"fn":"unwrapSdkResult","args":[{"error":" x ","data":1,"response":{}},"op"],"error":"op failed:  x "}
+{"fn":"unwrapSdkResult","args":[{"error":5},"op"],"error":"op failed: 5"}
+{"fn":"unwrapSdkResult","args":[{"error":5,"response":{"status":404}},"op"],"error":"op failed (404): 5"}
+{"fn":"unwrapSdkResult","args":[{"error":5,"data":1,"response":{}},"op"],"error":"op failed: 5"}
+{"fn":"unwrapSdkResult","args":[{"error":{"$num":"-0"}},"op"],"error":"op returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":{"$num":"-0"},"response":{"status":404}},"op"],"error":"op returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":{"$num":"-0"},"data":1,"response":{}},"op"],"ok":1}
+{"fn":"unwrapSdkResult","args":[{"error":true},"op"],"error":"op failed: true"}
+{"fn":"unwrapSdkResult","args":[{"error":true,"response":{"status":404}},"op"],"error":"op failed (404): true"}
+{"fn":"unwrapSdkResult","args":[{"error":true,"data":1,"response":{}},"op"],"error":"op failed: true"}
+{"fn":"unwrapSdkResult","args":[{"error":{"$num":"NaN"}},"op"],"error":"op returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":{"$num":"NaN"},"response":{"status":404}},"op"],"error":"op returned no data"}
+{"fn":"unwrapSdkResult","args":[{"error":{"$num":"NaN"},"data":1,"response":{}},"op"],"ok":1}
+{"fn":"unwrapSdkResult","args":[{"error":[]},"op"],"error":"op failed: []"}
+{"fn":"unwrapSdkResult","args":[{"error":[],"response":{"status":404}},"op"],"error":"op failed (404): []"}
+{"fn":"unwrapSdkResult","args":[{"error":[],"data":1,"response":{}},"op"],"error":"op failed: []"}
+{"fn":"unwrapSdkResult","args":[{"error":[1,[2,3]]},"op"],"error":"op failed: [1,[2,3]]"}
+{"fn":"unwrapSdkResult","args":[{"error":[1,[2,3]],"response":{"status":404}},"op"],"error":"op failed (404): [1,[2,3]]"}
+{"fn":"unwrapSdkResult","args":[{"error":[1,[2,3]],"data":1,"response":{}},"op"],"error":"op failed: [1,[2,3]]"}
+{"fn":"unwrapSdkResult","args":[{"error":{}},"op"],"error":"op failed: {}"}
+{"fn":"unwrapSdkResult","args":[{"error":{},"response":{"status":404}},"op"],"error":"op failed (404): {}"}
+{"fn":"unwrapSdkResult","args":[{"error":{},"data":1,"response":{}},"op"],"error":"op failed: {}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"message":"m"}},"op"],"error":"op failed: m"}
+{"fn":"unwrapSdkResult","args":[{"error":{"message":"m"},"response":{"status":404}},"op"],"error":"op failed (404): m"}
+{"fn":"unwrapSdkResult","args":[{"error":{"message":"m"},"data":1,"response":{}},"op"],"error":"op failed: m"}
+{"fn":"unwrapSdkResult","args":[{"error":{"message":"  "}},"op"],"error":"op failed: {\"message\":\"  \"}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"message":"  "},"response":{"status":404}},"op"],"error":"op failed (404): {\"message\":\"  \"}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"message":"  "},"data":1,"response":{}},"op"],"error":"op failed: {\"message\":\"  \"}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"message":5,"error":"e"}},"op"],"error":"op failed: e"}
+{"fn":"unwrapSdkResult","args":[{"error":{"message":5,"error":"e"},"response":{"status":404}},"op"],"error":"op failed (404): e"}
+{"fn":"unwrapSdkResult","args":[{"error":{"message":5,"error":"e"},"data":1,"response":{}},"op"],"error":"op failed: e"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":"  ","message":""}},"op"],"error":"op failed: {\"error\":\"  \",\"message\":\"\"}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":"  ","message":""},"response":{"status":404}},"op"],"error":"op failed (404): {\"error\":\"  \",\"message\":\"\"}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":"  ","message":""},"data":1,"response":{}},"op"],"error":"op failed: {\"error\":\"  \",\"message\":\"\"}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":{"message":"inner"}}},"op"],"error":"op failed: inner"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":{"message":"inner"}},"response":{"status":404}},"op"],"error":"op failed (404): inner"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":{"message":"inner"}},"data":1,"response":{}},"op"],"error":"op failed: inner"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":{"error":{"message":"deep"}}}},"op"],"error":"op failed: deep"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":{"error":{"message":"deep"}}},"response":{"status":404}},"op"],"error":"op failed (404): deep"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":{"error":{"message":"deep"}}},"data":1,"response":{}},"op"],"error":"op failed: deep"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":{}}},"op"],"error":"op failed: {}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":{}},"response":{"status":404}},"op"],"error":"op failed (404): {}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":{}},"data":1,"response":{}},"op"],"error":"op failed: {}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":[]}},"op"],"error":"op failed: []"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":[]},"response":{"status":404}},"op"],"error":"op failed (404): []"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":[]},"data":1,"response":{}},"op"],"error":"op failed: []"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":{"error":"Unknown error"}}},"op"],"error":"op failed: {\"error\":{\"error\":\"Unknown error\"}}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":{"error":"Unknown error"}},"response":{"status":404}},"op"],"error":"op failed (404): {\"error\":{\"error\":\"Unknown error\"}}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":{"error":"Unknown error"}},"data":1,"response":{}},"op"],"error":"op failed: {\"error\":{\"error\":\"Unknown error\"}}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"name":"x","data":{"a":[1,"q\"\n "]}}},"op"],"error":"op failed: {\"name\":\"x\",\"data\":{\"a\":[1,\"q\\\"\\n \"]}}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"name":"x","data":{"a":[1,"q\"\n "]}},"response":{"status":404}},"op"],"error":"op failed (404): {\"name\":\"x\",\"data\":{\"a\":[1,\"q\\\"\\n \"]}}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"name":"x","data":{"a":[1,"q\"\n "]}},"data":1,"response":{}},"op"],"error":"op failed: {\"name\":\"x\",\"data\":{\"a\":[1,\"q\\\"\\n \"]}}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"a":{"$undefined":true},"b":{"$num":"NaN"},"c":{"$num":"Infinity"},"d":{"$num":"-0"}}},"op"],"error":"op failed: {\"b\":null,\"c\":null,\"d\":0}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"a":{"$undefined":true},"b":{"$num":"NaN"},"c":{"$num":"Infinity"},"d":{"$num":"-0"}},"response":{"status":404}},"op"],"error":"op failed (404): {\"b\":null,\"c\":null,\"d\":0}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"a":{"$undefined":true},"b":{"$num":"NaN"},"c":{"$num":"Infinity"},"d":{"$num":"-0"}},"data":1,"response":{}},"op"],"error":"op failed: {\"b\":null,\"c\":null,\"d\":0}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"$set":[1]}},"op"],"error":"op failed: {}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"$set":[1]},"response":{"status":404}},"op"],"error":"op failed (404): {}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"$set":[1]},"data":1,"response":{}},"op"],"error":"op failed: {}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":{"$set":[]}}},"op"],"error":"op failed: {}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":{"$set":[]}},"response":{"status":404}},"op"],"error":"op failed (404): {}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":{"$set":[]}},"data":1,"response":{}},"op"],"error":"op failed: {}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"message":"Unknown error"}},"op"],"error":"op failed: Unknown error"}
+{"fn":"unwrapSdkResult","args":[{"error":{"message":"Unknown error"},"response":{"status":404}},"op"],"error":"op failed (404): Unknown error"}
+{"fn":"unwrapSdkResult","args":[{"error":{"message":"Unknown error"},"data":1,"response":{}},"op"],"error":"op failed: Unknown error"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":{"message":" "},"x":1}},"op"],"error":"op failed: {\"message\":\" \"}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":{"message":" "},"x":1},"response":{"status":404}},"op"],"error":"op failed (404): {\"message\":\" \"}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"error":{"message":" "},"x":1},"data":1,"response":{}},"op"],"error":"op failed: {\"message\":\" \"}"}
+{"fn":"unwrapSdkResult","args":[{"error":"Unknown error"},"op"],"error":"op failed: Unknown error"}
+{"fn":"unwrapSdkResult","args":[{"error":"Unknown error","response":{"status":404}},"op"],"error":"op failed (404): Unknown error"}
+{"fn":"unwrapSdkResult","args":[{"error":"Unknown error","data":1,"response":{}},"op"],"error":"op failed: Unknown error"}
+{"fn":"unwrapSdkResult","args":[{"error":{"e":"\u0007\u001f"}},"op"],"error":"op failed: {\"e\":\"\\u0007\\u001f\"}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"e":"\u0007\u001f"},"response":{"status":404}},"op"],"error":"op failed (404): {\"e\":\"\\u0007\\u001f\"}"}
+{"fn":"unwrapSdkResult","args":[{"error":{"e":"\u0007\u001f"},"data":1,"response":{}},"op"],"error":"op failed: {\"e\":\"\\u0007\\u001f\"}"}
+{"fn":"unwrapSdkResult","args":[{"error":"e","response":{"status":0}},"n"],"error":"n failed (0): e"}
+{"fn":"unwrapSdkResult","args":[{"error":"e","response":{"status":{"$num":"-0"}}},"n"],"error":"n failed (0): e"}
+{"fn":"unwrapSdkResult","args":[{"error":"e","response":{"status":"x"}},"n"],"error":"n failed (x): e"}
+{"fn":"unwrapSdkResult","args":[{"error":"e","response":{"status":null}},"n"],"error":"n failed (null): e"}
+{"fn":"unwrapSdkResult","args":[{"error":"e","response":{"status":{"$num":"NaN"}}},"n"],"error":"n failed (NaN): e"}
+{"fn":"unwrapSdkResult","args":[{"error":"e","response":{"status":[1,2]}},"n"],"error":"n failed (1,2): e"}
+{"fn":"unwrapSdkResult","args":[{"error":"e","response":{"status":{}}},"n"],"error":"n failed ([object Object]): e"}
+{"fn":"unwrapSdkResult","args":[{"error":"e","response":{"status":{"$undefined":true}}},"n"],"error":"n failed: e"}
+{"fn":"unwrapSdkResult","args":[{"error":"e","response":null},"n"],"error":"n failed: e"}
+{"fn":"unwrapSdkResult","args":[{"error":"e","response":"str"},"n"],"error":"n failed: e"}
+{"fn":"unwrapSdkResult","args":[{"data":{"$undefined":true}},"get"],"error":"get returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":null},"get"],"ok":null}
+{"fn":"unwrapSdkResult","args":[{"data":0},"get"],"ok":0}
+{"fn":"unwrapSdkResult","args":[{"data":""},"get"],"ok":""}
+{"fn":"unwrapSdkResult","args":[{"data":{"a":1}},"get"],"ok":{"a":1}}
+{"fn":"unwrapSdkResult","args":[{"data":[1]},"get"],"ok":[1]}
+{"fn":"unwrapSdkResult","args":[{"data":false},"get"],"ok":false}
+{"fn":"unwrapSdkResult","args":[{},"x"],"error":"x returned no data"}
+{"fn":"unwrapSdkResult","args":[null,"x"],"error":"Cannot read properties of null (reading 'error')"}
+{"fn":"unwrapSdkResult","args":[{"$undefined":true},"x"],"error":"Cannot read properties of undefined (reading 'error')"}
+{"fn":"unwrapSdkResult","args":["s","x"],"error":"x returned no data"}
+{"fn":"unwrapSdkResult","args":[{"data":1},""],"ok":1}

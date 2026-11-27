@@ -288,7 +288,7 @@ export const sanitizeActivityForReviewer = (rows, { isAdmin }) => {
     .map((row) => ({ ...row, metadata: {} }));
 };
 
-export const isDirectActivityAction = (action) => (
+const isDirectActivityAction = (action) => (
   typeof action === 'string'
   && !NON_ACTIVITY_PREFIXES.some((prefix) => action === prefix || action.startsWith(prefix))
   && (DETAILED_ACTIONS.has(action) || /^(?:settings|user|project|invite|github\.account)\./.test(action))

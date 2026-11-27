@@ -1,0 +1,68 @@
+{"fn": "normalizeNotificationTemplates", "args": [null]}
+{"fn": "normalizeNotificationTemplates", "args": [null, null]}
+{"fn": "normalizeNotificationTemplates", "args": [null, {"error": {"title": "FE", "message": "FM"}}]}
+{"fn": "normalizeNotificationTemplates", "args": [null, {"error": "bad"}]}
+{"fn": "normalizeNotificationTemplates", "args": [null, [1]]}
+{"fn": "normalizeNotificationTemplates", "args": [null, "s"]}
+{"fn": "normalizeNotificationTemplates", "args": [{}]}
+{"fn": "normalizeNotificationTemplates", "args": [{}, null]}
+{"fn": "normalizeNotificationTemplates", "args": [{}, {"error": {"title": "FE", "message": "FM"}}]}
+{"fn": "normalizeNotificationTemplates", "args": [{}, {"error": "bad"}]}
+{"fn": "normalizeNotificationTemplates", "args": [{}, [1]]}
+{"fn": "normalizeNotificationTemplates", "args": [{}, "s"]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "completion t", "message": "completion m"}, "planReady": {"title": "planReady t", "message": "planReady m"}, "error": {"title": "error t", "message": "error m"}, "question": {"title": "question t", "message": "question m"}, "permission": {"title": "permission t", "message": "permission m"}, "subtask": {"title": "subtask t", "message": "subtask m"}}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "completion t", "message": "completion m"}, "planReady": {"title": "planReady t", "message": "planReady m"}, "error": {"title": "error t", "message": "error m"}, "question": {"title": "question t", "message": "question m"}, "permission": {"title": "permission t", "message": "permission m"}, "subtask": {"title": "subtask t", "message": "subtask m"}}, null]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "completion t", "message": "completion m"}, "planReady": {"title": "planReady t", "message": "planReady m"}, "error": {"title": "error t", "message": "error m"}, "question": {"title": "question t", "message": "question m"}, "permission": {"title": "permission t", "message": "permission m"}, "subtask": {"title": "subtask t", "message": "subtask m"}}, {"error": {"title": "FE", "message": "FM"}}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "completion t", "message": "completion m"}, "planReady": {"title": "planReady t", "message": "planReady m"}, "error": {"title": "error t", "message": "error m"}, "question": {"title": "question t", "message": "question m"}, "permission": {"title": "permission t", "message": "permission m"}, "subtask": {"title": "subtask t", "message": "subtask m"}}, {"error": "bad"}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "completion t", "message": "completion m"}, "planReady": {"title": "planReady t", "message": "planReady m"}, "error": {"title": "error t", "message": "error m"}, "question": {"title": "question t", "message": "question m"}, "permission": {"title": "permission t", "message": "permission m"}, "subtask": {"title": "subtask t", "message": "subtask m"}}, [1]]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "completion t", "message": "completion m"}, "planReady": {"title": "planReady t", "message": "planReady m"}, "error": {"title": "error t", "message": "error m"}, "question": {"title": "question t", "message": "question m"}, "permission": {"title": "permission t", "message": "permission m"}, "subtask": {"title": "subtask t", "message": "subtask m"}}, "s"]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "{agent_name} is ready", "message": "{model_name} completed the task"}}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "{agent_name} is ready", "message": "{model_name} completed the task"}}, null]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "{agent_name} is ready", "message": "{model_name} completed the task"}}, {"error": {"title": "FE", "message": "FM"}}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "{agent_name} is ready", "message": "{model_name} completed the task"}}, {"error": "bad"}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "{agent_name} is ready", "message": "{model_name} completed the task"}}, [1]]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "{agent_name} is ready", "message": "{model_name} completed the task"}}, "s"]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "{agent_name} is ready", "message": "{last_message}"}}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "{agent_name} is ready", "message": "{last_message}"}}, null]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "{agent_name} is ready", "message": "{last_message}"}}, {"error": {"title": "FE", "message": "FM"}}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "{agent_name} is ready", "message": "{last_message}"}}, {"error": "bad"}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "{agent_name} is ready", "message": "{last_message}"}}, [1]]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "{agent_name} is ready", "message": "{last_message}"}}, "s"]}
+{"fn": "normalizeNotificationTemplates", "args": [{"error": {"title": 5, "message": "x"}}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"error": {"title": 5, "message": "x"}}, null]}
+{"fn": "normalizeNotificationTemplates", "args": [{"error": {"title": 5, "message": "x"}}, {"error": {"title": "FE", "message": "FM"}}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"error": {"title": 5, "message": "x"}}, {"error": "bad"}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"error": {"title": 5, "message": "x"}}, [1]]}
+{"fn": "normalizeNotificationTemplates", "args": [{"error": {"title": 5, "message": "x"}}, "s"]}
+{"fn": "normalizeNotificationTemplates", "args": [{"question": "str"}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"question": "str"}, null]}
+{"fn": "normalizeNotificationTemplates", "args": [{"question": "str"}, {"error": {"title": "FE", "message": "FM"}}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"question": "str"}, {"error": "bad"}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"question": "str"}, [1]]}
+{"fn": "normalizeNotificationTemplates", "args": [{"question": "str"}, "s"]}
+{"fn": "normalizeNotificationTemplates", "args": [[{"completion": {"title": "completion t", "message": "completion m"}, "planReady": {"title": "planReady t", "message": "planReady m"}, "error": {"title": "error t", "message": "error m"}, "question": {"title": "question t", "message": "question m"}, "permission": {"title": "permission t", "message": "permission m"}, "subtask": {"title": "subtask t", "message": "subtask m"}}]]}
+{"fn": "normalizeNotificationTemplates", "args": [[{"completion": {"title": "completion t", "message": "completion m"}, "planReady": {"title": "planReady t", "message": "planReady m"}, "error": {"title": "error t", "message": "error m"}, "question": {"title": "question t", "message": "question m"}, "permission": {"title": "permission t", "message": "permission m"}, "subtask": {"title": "subtask t", "message": "subtask m"}}], null]}
+{"fn": "normalizeNotificationTemplates", "args": [[{"completion": {"title": "completion t", "message": "completion m"}, "planReady": {"title": "planReady t", "message": "planReady m"}, "error": {"title": "error t", "message": "error m"}, "question": {"title": "question t", "message": "question m"}, "permission": {"title": "permission t", "message": "permission m"}, "subtask": {"title": "subtask t", "message": "subtask m"}}], {"error": {"title": "FE", "message": "FM"}}]}
+{"fn": "normalizeNotificationTemplates", "args": [[{"completion": {"title": "completion t", "message": "completion m"}, "planReady": {"title": "planReady t", "message": "planReady m"}, "error": {"title": "error t", "message": "error m"}, "question": {"title": "question t", "message": "question m"}, "permission": {"title": "permission t", "message": "permission m"}, "subtask": {"title": "subtask t", "message": "subtask m"}}], {"error": "bad"}]}
+{"fn": "normalizeNotificationTemplates", "args": [[{"completion": {"title": "completion t", "message": "completion m"}, "planReady": {"title": "planReady t", "message": "planReady m"}, "error": {"title": "error t", "message": "error m"}, "question": {"title": "question t", "message": "question m"}, "permission": {"title": "permission t", "message": "permission m"}, "subtask": {"title": "subtask t", "message": "subtask m"}}], [1]]}
+{"fn": "normalizeNotificationTemplates", "args": [[{"completion": {"title": "completion t", "message": "completion m"}, "planReady": {"title": "planReady t", "message": "planReady m"}, "error": {"title": "error t", "message": "error m"}, "question": {"title": "question t", "message": "question m"}, "permission": {"title": "permission t", "message": "permission m"}, "subtask": {"title": "subtask t", "message": "subtask m"}}], "s"]}
+{"fn": "normalizeNotificationTemplates", "args": ["s"]}
+{"fn": "normalizeNotificationTemplates", "args": ["s", null]}
+{"fn": "normalizeNotificationTemplates", "args": ["s", {"error": {"title": "FE", "message": "FM"}}]}
+{"fn": "normalizeNotificationTemplates", "args": ["s", {"error": "bad"}]}
+{"fn": "normalizeNotificationTemplates", "args": ["s", [1]]}
+{"fn": "normalizeNotificationTemplates", "args": ["s", "s"]}
+{"fn": "normalizeNotificationTemplates", "args": [{"$map": []}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"$map": []}, null]}
+{"fn": "normalizeNotificationTemplates", "args": [{"$map": []}, {"error": {"title": "FE", "message": "FM"}}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"$map": []}, {"error": "bad"}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"$map": []}, [1]]}
+{"fn": "normalizeNotificationTemplates", "args": [{"$map": []}, "s"]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "a", "message": "b"}, "extra": 1}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "a", "message": "b"}, "extra": 1}, null]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "a", "message": "b"}, "extra": 1}, {"error": {"title": "FE", "message": "FM"}}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "a", "message": "b"}, "extra": 1}, {"error": "bad"}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "a", "message": "b"}, "extra": 1}, [1]]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "a", "message": "b"}, "extra": 1}, "s"]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "Custom", "message": "Done"}}]}
+{"fn": "normalizeNotificationTemplates", "args": [{"completion": {"title": "Personal completion", "message": "Personal message"}}, {"completion": {"title": "Session complete", "message": "{session_name} is ready to review"}, "planReady": {"title": "Plan ready", "message": "A plan is ready for review"}, "error": {"title": "Host error", "message": "Host message"}, "question": {"title": "Input needed", "message": "{last_message}"}, "permission": {"title": "Permissions needed", "message": "Folder access is required: {last_message}"}, "subtask": {"title": "{agent_name} is ready", "message": "{model_name} completed the task"}}]}

@@ -1,0 +1,49 @@
+{
+  "unit": "materialization.ts",
+  "files": 1,
+  "fingerprint": "37388615aff661aa",
+  "cases": 548,
+  "cases_hash": "8b18af568e4b8efc",
+  "coverage": {
+    "lines": 623,
+    "reached": 459,
+    "files": [
+      {
+        "file": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/lib/messages/nativeCursorText.ts",
+        "lines": 10,
+        "reached": 10,
+        "missed": ""
+      },
+      {
+        "file": "materialization.ts",
+        "lines": 279,
+        "reached": 279,
+        "missed": ""
+      },
+      {
+        "file": "message-order.ts",
+        "lines": 60,
+        "reached": 46,
+        "missed": "29-42"
+      },
+      {
+        "file": "revert-transactions.ts",
+        "lines": 98,
+        "reached": 47,
+        "missed": "26-28, 31-33, 36-45, 48-50, 72-87, 90-105"
+      },
+      {
+        "file": "session-working.ts",
+        "lines": 119,
+        "reached": 35,
+        "missed": "13-16, 43-48, 51-57, 59-60, 63-64, 66-67, 69-71, 73-74, 77-84, 87-93, 96-109, 111-123, 125-133, 135-139"
+      },
+      {
+        "file": "tool-output.ts",
+        "lines": 57,
+        "reached": 42,
+        "missed": "24-26, 53-64"
+      }
+    ]
+  }
+}

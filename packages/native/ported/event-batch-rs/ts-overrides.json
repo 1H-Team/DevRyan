@@ -1,0 +1,4 @@
+{
+  "note": "event-batch.ts has a constructor parameter property Node's type stripping refuses; the error-text checker loads a Bun build of it (with its relative imports bundled).",
+  "files": [{ "file": "packages/ui/src/sync/event-batch.ts", "bundle": true }]
+}

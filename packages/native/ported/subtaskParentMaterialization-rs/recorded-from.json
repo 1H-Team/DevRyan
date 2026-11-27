@@ -1,0 +1,19 @@
+{
+  "unit": "subtaskParentMaterialization.ts",
+  "files": 1,
+  "fingerprint": "c35f5a69a85e3e17",
+  "cases": 235,
+  "cases_hash": "c7fa28745010a940",
+  "coverage": {
+    "lines": 28,
+    "reached": 28,
+    "files": [
+      {
+        "file": "subtaskParentMaterialization.ts",
+        "lines": 28,
+        "reached": 28,
+        "missed": ""
+      }
+    ]
+  }
+}

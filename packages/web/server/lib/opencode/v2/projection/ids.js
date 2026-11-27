@@ -235,7 +235,7 @@ export const clampIncreasingTimes = (times, previous) => {
 
 /** Retained original ACP IDs, only on explicitly marked external Cursor rows.
  * @param {unknown} metadata @param {unknown} item */
-export const readCursorPartID = (metadata, item) => {
+const readCursorPartID = (metadata, item) => {
   if (!isRecord(metadata) || !isRecord(metadata.devryan) || !isRecord(metadata.devryan.cursor)
     || metadata.devryan.cursor.source !== 'cursor-acp' || !isRecord(item)) return null;
   const state = item.native ?? (item.type === 'tool' ? item.providerState : item.state);

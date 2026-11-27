@@ -1,0 +1,193 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "startup/",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "startup-rs",
+  "exports": [
+    {
+      "name": "createStartupReadinessSnapshot",
+      "file": "startup/readiness.ts",
+      "line": 80,
+      "params": [
+        {
+          "name": "status",
+          "ts_type": "(\"idle\" | \"loading\" | \"ready\" | \"error\")",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "Record<typeof STARTUP_READINESS_PHASES[number], StartupPhaseSnapshot>",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "withStartupReadinessPhase",
+      "file": "startup/readiness.ts",
+      "line": 87,
+      "params": [
+        {
+          "name": "snapshot",
+          "ts_type": "Record<typeof STARTUP_READINESS_PHASES[number], StartupPhaseSnapshot>",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "phase",
+          "ts_type": "typeof STARTUP_READINESS_PHASES[number]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "next",
+          "ts_type": "StartupPhaseSnapshot",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "Record<typeof STARTUP_READINESS_PHASES[number], StartupPhaseSnapshot>",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "withStartupBootstrapReadiness",
+      "file": "startup/readiness.ts",
+      "line": 103,
+      "params": [
+        {
+          "name": "snapshot",
+          "ts_type": "Record<typeof STARTUP_READINESS_PHASES[number], StartupPhaseSnapshot>",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "readiness",
+          "ts_type": "StartupBootstrapReadiness",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "Record<typeof STARTUP_READINESS_PHASES[number], StartupPhaseSnapshot>",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "summarizeStartupReadiness",
+      "file": "startup/readiness.ts",
+      "line": 125,
+      "params": [
+        {
+          "name": "snapshot",
+          "ts_type": "Record<typeof STARTUP_READINESS_PHASES[number], StartupPhaseSnapshot>",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "options",
+          "ts_type": "StartupReadinessOptions",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "StartupReadinessSummary",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "shouldShowStartupReadinessScreen",
+      "file": "startup/readiness.ts",
+      "line": 151,
+      "params": [
+        {
+          "name": "summary",
+          "ts_type": "StartupReadinessSummary",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "hasCompletedStartup",
+          "ts_type": "boolean",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "shouldRestartOpenCodeForStartupRecovery",
+      "file": "startup/readiness.ts",
+      "line": 156,
+      "params": [
+        {
+          "name": "health",
+          "ts_type": "StartupRecoveryHealth | null",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "warmAgentRuntime",
+      "file": "startup/agent-runtime-warmup.ts",
+      "line": 58,
+      "reason": "async"
+    },
+    {
+      "name": "warmChatRuntime",
+      "file": "startup/chat-runtime-warmup.ts",
+      "line": 30,
+      "reason": "async dynamic imports"
+    },
+    {
+      "name": "parseStartupHealth",
+      "file": "startup/health.ts",
+      "line": 15,
+      "reason": "rests on @devryan/shared-runtime startup diagnostics"
+    },
+    {
+      "name": "waitForStartupHealth",
+      "file": "startup/health.ts",
+      "line": 64,
+      "reason": "async polling"
+    },
+    {
+      "name": "watchStartupRecovery",
+      "file": "startup/health.ts",
+      "line": 133,
+      "reason": "async polling"
+    },
+    {
+      "name": "markStartupReadiness",
+      "file": "startup/readiness.ts",
+      "line": 25,
+      "reason": "writes performance marks and mutates its Set"
+    },
+    {
+      "name": "recoverStartupInitialization",
+      "file": "startup/readiness.ts",
+      "line": 164,
+      "reason": "async, calls its dependencies"
+    }
+  ]
+}

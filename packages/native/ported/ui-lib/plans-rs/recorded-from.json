@@ -1,0 +1,25 @@
+{
+  "unit": "plans/",
+  "files": 8,
+  "fingerprint": "465af4aa90dacb74",
+  "cases": 449,
+  "cases_hash": "e2d54dc4c2ad9fe2",
+  "coverage": {
+    "lines": 123,
+    "reached": 60,
+    "files": [
+      {
+        "file": "plans/planSettlement.ts",
+        "lines": 27,
+        "reached": 21,
+        "missed": "15-20"
+      },
+      {
+        "file": "plans/sessionPlanFile.ts",
+        "lines": 96,
+        "reached": 39,
+        "missed": "29-30, 34-37, 51-62, 64-66, 68-70, 74-80, 82-85, 87-89, 91-96, 98-102, 104-111"
+      }
+    ]
+  }
+}

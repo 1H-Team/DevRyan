@@ -1,0 +1,84 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode",
+  "unit": "diff-summary.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "diff-summary-rs",
+  "exports": [
+    {
+      "name": "stripMessageDiffSummary",
+      "file": "diff-summary.js",
+      "line": 26,
+      "params": [
+        {
+          "name": "record",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "stripMessageDiffContent",
+      "file": "diff-summary.js",
+      "line": 58,
+      "params": [
+        {
+          "name": "record",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "stripSessionDiffContent",
+      "file": "diff-summary.js",
+      "line": 66,
+      "params": [
+        {
+          "name": "session",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "stripEventDiffContent",
+      "file": "diff-summary.js",
+      "line": 80,
+      "params": [
+        {
+          "name": "payload",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

@@ -207,15 +207,21 @@ describe('GET /api/fs/watch', () => {
   it('filters the selected parent by basename and treats a null filename as a generic hint', async () => {
     const fake = createFakeWatch();
     const { hub, server } = await startApp({ watch: fake.watch });
-    const stream = await openWatch(server, { selected: 'sub/file.txt' });
+    // src is expanded only to carry the barrier below.
+    const stream = await openWatch(server, { expanded: ['src'], selected: 'sub/file.txt' });
     await waitForEvent(stream, (event) => event.type === 'ready');
-    // Root plus the selected file's parent; never the file itself.
-    expect(fake.watch.mock.calls.map(([directory]) => directory).sort()).toEqual([workspace, path.join(workspace, 'sub')].sort());
-    expect(hub.getStats().handles).toBe(2);
+    // Root, the expanded directory and the selected file's parent; never the file itself.
+    expect(fake.watch.mock.calls.map(([directory]) => directory).sort())
+      .toEqual([workspace, path.join(workspace, 'src'), path.join(workspace, 'sub')].sort());
+    expect(hub.getStats().handles).toBe(3);
 
+    // A src event after the sibling is the barrier: one coalescing window flushes slots in the
+    // order they were hinted, so any hint the sibling leaked (selected or root) arrives first.
     fake.emit(path.join(workspace, 'sub'), 'sibling.txt');
-    await sleep(150);
-    expect(stream.events.filter((event) => event.type === 'invalidate')).toEqual([]);
+    fake.emit(path.join(workspace, 'src'), 'barrier');
+    await waitForEvent(stream, isInvalidate('expanded', 0));
+    expect(stream.events.filter((event) => event.type === 'invalidate').map((event) => event.slot.kind)).toEqual(['expanded']);
+    stream.events.length = 0;
 
     fake.emit(path.join(workspace, 'sub'), null);
     await waitForEvent(stream, isInvalidate('selected'));
@@ -230,7 +236,10 @@ describe('GET /api/fs/watch', () => {
     await waitForEvent(stream, (event) => event.type === 'ready');
     for (let index = 0; index < 10; index += 1) fake.emit(workspace, `f${index}`);
     await waitForEvent(stream, isInvalidate('root'));
-    await sleep(120);
+    // A later window on another slot is the barrier: any second flush of the burst was scheduled
+    // before it with the same delay, so it would arrive first.
+    fake.emit(path.join(workspace, 'src'), 'barrier');
+    await waitForEvent(stream, isInvalidate('expanded', 0));
     expect(stream.events.filter(isInvalidate('root'))).toHaveLength(1);
 
     stream.events.length = 0;
@@ -319,7 +328,8 @@ describe('GET /api/fs/watch', () => {
       expect(blocked.body).toEqual({ error: 'File not found' });
     }
 
-    const developer = await openWatch(server, { principal: 'dev-1:developer' });
+    // The developer also expands src, whose events are the barrier for what the root watch sent.
+    const developer = await openWatch(server, { expanded: ['src'], principal: 'dev-1:developer' });
     const admin = await openWatch(server, { selected: '.env', principal: 'admin-1:admin' });
     await waitForEvent(developer, (event) => event.type === 'ready');
     await waitForEvent(admin, (event) => event.type === 'ready');
@@ -328,8 +338,12 @@ describe('GET /api/fs/watch', () => {
 
     fake.emit(workspace, '.env.local');
     await waitForEvent(admin, isInvalidate('root'));
-    await sleep(120);
-    expect(developer.events.filter((event) => event.type === 'invalidate')).toEqual([]);
+    // A later window on the developer's src slot: a leaked root hint was scheduled before it with
+    // the same delay, so it would arrive first.
+    fake.emit(path.join(workspace, 'src'), 'barrier');
+    await waitForEvent(developer, isInvalidate('expanded', 0));
+    expect(developer.events.filter((event) => event.type === 'invalidate').map((event) => event.slot.kind)).toEqual(['expanded']);
+    developer.events.length = 0;
     fake.emit(workspace, '.env');
     await waitForEvent(admin, isInvalidate('selected'));
     fake.emit(workspace, 'visible.ts');

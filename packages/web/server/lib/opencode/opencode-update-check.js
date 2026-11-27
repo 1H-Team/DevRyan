@@ -21,7 +21,7 @@ export const OPENCODE_UPDATE_CHECK_CODES = Object.freeze({
 
 const KNOWN_CODES = new Set(Object.values(OPENCODE_UPDATE_CHECK_CODES));
 
-export class OpenCodeUpdateCheckError extends Error {
+class OpenCodeUpdateCheckError extends Error {
   constructor(code) {
     super(code);
     this.name = 'OpenCodeUpdateCheckError';
@@ -31,7 +31,7 @@ export class OpenCodeUpdateCheckError extends Error {
 
 const fail = (code) => new OpenCodeUpdateCheckError(code);
 
-export const isStableOpenCodeV2Version = (value) => typeof value === 'string' && STABLE_V2_VERSION.test(value);
+const isStableOpenCodeV2Version = (value) => typeof value === 'string' && STABLE_V2_VERSION.test(value);
 
 const readBoundedText = async (response, maxBytes) => {
   const declared = Number(response.headers?.get?.('content-length'));
@@ -62,7 +62,7 @@ const readBoundedText = async (response, maxBytes) => {
  * `code` is one of OPENCODE_UPDATE_CHECK_CODES. Upstream error text is never
  * propagated.
  */
-export const checkLatestRegistryRelease = async ({
+const checkLatestRegistryRelease = async ({
   registryUrl,
   isSupportedVersion,
   fetchImpl = globalThis.fetch,
@@ -110,7 +110,7 @@ export const checkLatestOpenCodeRelease = (options = {}) => checkLatestRegistryR
   ...options, registryUrl: OPENCODE_UPDATE_REGISTRY_URL, isSupportedVersion: isStableOpenCodeV2Version,
 });
 
-export const openCodeUpdateCheckFailureBody = (error) => ({
+const openCodeUpdateCheckFailureBody = (error) => ({
   error: 'opencode_update_check_failed',
   code: KNOWN_CODES.has(error?.code) ? error.code : OPENCODE_UPDATE_CHECK_CODES.registryUnavailable,
 });

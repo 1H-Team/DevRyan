@@ -1,0 +1,29 @@
+[package]
+name = "ledger-native"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# Test-only: the stub methods the protocol conformance suite calls, the
+# virtual clock and executor, and the `ledger-native-probe` binary
+# (scripts/ledger-native/). Never packaged, never shipped.
+test-hooks = []
+
+[[bin]]
+name = "devryan-ledger"
+path = "src/main.rs"
+
+[[bin]]
+name = "ledger-native-probe"
+path = "src/bin/ledger-native-probe.rs"
+required-features = ["test-hooks"]
+
+[dependencies]
+# JavaScript values, strings, numbers, JSON and base64.
+ledger-core = { path = "../../ledger-core" }
+# The open-file limit Node raises at start (and, from L3c, the file system).
+ledger-io = { path = "../ledger-io" }

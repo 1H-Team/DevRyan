@@ -1,0 +1,19 @@
+{
+  "unit": "projectMeta.ts",
+  "files": 1,
+  "fingerprint": "3e9089fbb53d25d4",
+  "cases": 399,
+  "cases_hash": "1afb56511333ffe2",
+  "coverage": {
+    "lines": 78,
+    "reached": 78,
+    "files": [
+      {
+        "file": "projectMeta.ts",
+        "lines": 78,
+        "reached": 78,
+        "missed": ""
+      }
+    ]
+  }
+}

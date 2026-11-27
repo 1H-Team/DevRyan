@@ -1,0 +1,315 @@
+{"fn":"scopeMatches","args":[{},"tab\tseparated"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":["commands"],"source":"straßea😀b😀c","timestamp":-2.5},"ns:key.path"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["all","providers","skills"],"source":"key_name-1","timestamp":1000},"line1\nline2"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["providers","commands","skills"],"timestamp":0.5},"ΣΊΣΥΦΟΣ"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"timestamp":2},"line1\nline2"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"ab","timestamp":2},"日本語のテキスト"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents","all"],"source":"ünïcödé","timestamp":3},"hello"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["agents","skills","skills"],"source":".leadingabc","timestamp":3},"ΣΊΣΥΦΟΣ"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["skills"],"source":"Hello World","timestamp":0},"hello"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents","providers"],"source":"straße","timestamp":10},"ünïcödé"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"straße","timestamp":{"$num":"-Infinity"}},"src/a/b.tsabc"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["skills","skills"],"source":"key_name-1","timestamp":{"$num":"-Infinity"}},"﻿bomİstanbul"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["commands"],"source":"ünïcödé","timestamp":1},"a:b:c"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["skills","providers","agents"],"source":"src/a/b.ts","timestamp":{"$num":"NaN"}},"HELLOa:b:c"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"é","timestamp":1},"İstanbul"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents"],"source":"src/a/b.tsa","timestamp":100},"line1\nline2"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["commands","commands"],"source":"./x/**/*.json","timestamp":2},"ΣΊΣΥΦΟΣ"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["all","commands","skills"],"source":"key_name-1hello world","timestamp":1},"key_name-1"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["skills","providers","skills"],"source":"ünïcödé","timestamp":1},"é"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["skills","agents"],"source":"a😀b😀c","timestamp":2},"a.b.c"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents","providers"],"source":"😀","timestamp":{"$num":"-0"}},"key_name-1"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"a:b:c","timestamp":{"$num":"-0"}},"./x/**/*.json"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["commands","commands"],"source":"key_name-1","timestamp":{"$num":"-0"}},"hello"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"timestamp":9007199254740992},"ab"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["providers","commands"],"source":"abc","timestamp":2},"日本語のテキスト"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents"],"source":"a..b","timestamp":3},"Hello World"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents","all","agents"],"timestamp":10},"a"],"ok":true}
+{"fn":"scopeMatches","args":[["a",1],"ΣΊΣΥΦΟΣ"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":[],"timestamp":0.5},"a😀b😀ca"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["providers"],"source":"src/a/b.ts","timestamp":2147483648},"😀"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["skills","agents"],"source":"éa.b.c","timestamp":-2.5},"HELLO"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["providers","all"],"source":"{name} has {count} itemsΣΊΣΥΦΟΣ","timestamp":42},"hello"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"abc","timestamp":-1},"a.b.c"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"a😀b😀c","timestamp":{"$num":"-Infinity"}},"ns:key.path"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["providers","agents","all"],"source":"İstanbul","timestamp":100},"a:b:c"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["agents","skills"],"source":"src/a/b.ts","timestamp":1000},"a.b.c"],"ok":false}
+{"fn":"scopeMatches","args":[0,"tab\tseparated"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":["skills","all"],"source":"日本語のテキスト","timestamp":42},"hello world"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":[],"timestamp":{"$num":"Infinity"}},"a😀b😀c"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"HELLO","timestamp":42},"line1\nline2"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents","commands","agents"],"source":"日本語のテキスト","timestamp":42},"trailing."],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["all","agents","all"],"timestamp":2},"é"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"a..b","timestamp":{"$num":"-0"}},".leading"],"ok":false}
+{"fn":"scopeMatches","args":[[],"ab"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"a":{"b":"c"}},"emoji 👍🏽 mix"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":["providers","commands","providers"],"source":"./x/**/*.json","timestamp":42},"é"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"timestamp":100},"a😀b😀ca..b"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"hello world","timestamp":9007199254740992},"tab\tseparated"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"tab\tseparated","timestamp":0},"a..b"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["commands","agents","commands"],"source":"Hello World","timestamp":0.5},":"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"a..b","timestamp":100},"{name} has {count} items"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["providers","agents"],"timestamp":2},".leading"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["providers","all"],"source":"😀ΣΊΣΥΦΟΣ","timestamp":1000},":"],"ok":true}
+{"fn":"scopeMatches","args":[{"a":"b"},"ns:key.pathtrailing."],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":["agents","skills"],"source":"Hello World","timestamp":1},"hello world"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents","all","providers"],"source":":src/a/b.ts","timestamp":9007199254740992},"é"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["commands"],"source":"abc","timestamp":42},"ünïcödé"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["skills","agents","commands"],"source":":","timestamp":{"$num":"-Infinity"}},"😀é"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents","agents"],"source":"a😀b😀c","timestamp":9007199254740992},"tab\tseparated"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["skills"],"source":"straße","timestamp":{"$num":"-Infinity"}},"﻿bom"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["all","providers","agents"],"source":"HELLO","timestamp":0.5},"src/a/b.ts"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["agents","providers"],"source":"hello world","timestamp":9007199254740992},"HELLO.leading"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["providers","agents"],"source":"Hello World","timestamp":42},"a😀b😀c"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":".leading","timestamp":{"$num":"Infinity"}},"é"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"timestamp":9007199254740992},"Hello World"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["all","commands","commands"],"timestamp":3},"ΣΊΣΥΦΟΣ"],"ok":true}
+{"fn":"scopeMatches","args":[null,""],"error":"Cannot read properties of null (reading 'scopes')"}
+{"fn":"scopeMatches","args":[{"scopes":["skills","providers","providers"],"timestamp":0},"😀"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["providers","skills"],"source":"a:b:c","timestamp":9007199254740992},"é"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["skills"],"source":"src/a/b.tsa:b:c","timestamp":2147483648},"😀"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["all","providers","all"],"timestamp":100},"key_name-1"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["all"],"source":"Hello World","timestamp":1000000},"a😀b😀c"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"hello","timestamp":0.5},"./x/**/*.jsona😀b😀c"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents"],"source":"line1\nline2","timestamp":-1},"éline1\nline2"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["skills"],"source":"éa.b.c","timestamp":2147483648},"a.b.ca:b:c"],"ok":false}
+{"fn":"scopeMatches","args":["x","x"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":["providers","commands","agents"],"source":"emoji 👍🏽 mix日本語のテキスト","timestamp":2},"hello"],"ok":false}
+{"fn":"scopeMatches","args":[0,"İstanbul"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":["providers","all"],"source":"ns:key.patha.b.c","timestamp":0.5},"ünïcödéa"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["providers","providers"],"source":"a.leading","timestamp":-2.5},"straße"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"ns:key.path","timestamp":{"$num":"Infinity"}},"  padded  "],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"﻿bom./x/**/*.json","timestamp":{"$num":"-Infinity"}},"{name} has {count} items"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["skills"],"source":"./x/**/*.json","timestamp":9007199254740992},"ns:key.path"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents","skills"],"source":"src/a/b.ts","timestamp":0.5},"é"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents","agents","providers"],"source":"a..b","timestamp":0.5},"src/a/b.ts"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"timestamp":100},"Hello World"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["skills"],"timestamp":0},"﻿bom"],"ok":false}
+{"fn":"scopeMatches","args":[{},"HELLO  padded  "],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":[],"timestamp":10},"src/a/b.ts"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["commands","commands","providers"],"source":":","timestamp":-1},":"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["skills","all","skills"],"timestamp":0},"abc"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["commands","commands","skills"],"source":"İstanbul","timestamp":{"$num":"Infinity"}},"a..b"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["skills","all"],"source":"ab","timestamp":9007199254740992},"a😀b😀c"],"ok":true}
+{"fn":"scopeMatches","args":["a","a"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":["providers"],"source":"ns:key.path","timestamp":-1},"trailing."],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["providers"],"source":"日本語のテキスト","timestamp":0},"a"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["commands","skills"],"source":"line1\nline2","timestamp":{"$num":"-Infinity"}},"abc"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["skills"],"source":".leading","timestamp":9007199254740992},"a..b"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["skills"],"timestamp":9007199254740992},"HELLO"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"ΣΊΣΥΦΟΣ","timestamp":{"$num":"NaN"}},"ΣΊΣΥΦΟΣ"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"ns:key.path","timestamp":0.5},"ΣΊΣΥΦΟΣ"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["skills","agents"],"source":"ns:key.path","timestamp":9007199254740992},"a"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"helloHELLO","timestamp":0.5},":"],"ok":false}
+{"fn":"scopeMatches","args":[{"a":"b"},"emoji 👍🏽 mixa😀b😀c"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":["agents"],"source":"﻿bom","timestamp":100},"😀"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents"],"source":"straße","timestamp":2147483648},"abc"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"timestamp":1},"a"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["skills"],"source":"{name} has {count} items","timestamp":{"$num":"-Infinity"}},"a.b.c"],"ok":false}
+{"fn":"scopeMatches","args":[[],"{name} has {count} items"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[0,"src/a/b.ts"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":["skills"],"source":"é","timestamp":0.5},"ab"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["all"],"source":"Hello World","timestamp":2147483648},"a..b"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["agents"],"timestamp":-1},"hello{name} has {count} items"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["commands","all"],"source":"line1\nline2","timestamp":0},"日本語のテキスト"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["commands","providers","all"],"source":"é","timestamp":-2.5},"HELLO:"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["all","agents","all"],"timestamp":100},"﻿bom"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["commands","providers","agents"],"source":"tab\tseparated","timestamp":42},":"],"ok":false}
+{"fn":"scopeMatches","args":[0,"a:b:c"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":["all","skills"],"source":"  padded  ","timestamp":{"$num":"-0"}},"HELLO"],"ok":true}
+{"fn":"scopeMatches","args":[["a",1],"src/a/b.ts"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":["skills"],"source":"a:b:c","timestamp":0},"line1\nline2"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["all","all"],"timestamp":2},"a"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["all","all"],"source":":","timestamp":1},".leading"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["all","commands","commands"],"source":"a:b:c","timestamp":0.5},"hello"],"ok":true}
+{"fn":"scopeMatches","args":[{},"ab"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":["all","providers","providers"],"timestamp":1000000},"a:b:c﻿bom"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["skills","skills","providers"],"source":"hello world","timestamp":1},"a"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["commands","all","all"],"source":"line1\nline2","timestamp":{"$num":"Infinity"}},"a:b:c"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"  padded  ","timestamp":-1},"﻿bom"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["commands","all"],"timestamp":{"$num":"-Infinity"}},"a:b:c"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["commands","commands","all"],"source":"ns:key.path","timestamp":2147483648},"İstanbul"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["skills"],"source":"a:b:cabc","timestamp":9007199254740992},"src/a/b.ts"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["all"],"source":"ünïcödé","timestamp":{"$num":"-Infinity"}},"a..b"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["commands","skills"],"source":":","timestamp":100},"straße"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents","providers","skills"],"source":"tab\tseparated","timestamp":0.5},"é"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["skills","agents","agents"],"source":"😀","timestamp":2147483648},".leading"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"abc","timestamp":-1},"a..b"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents","commands","all"],"source":"a😀b😀c","timestamp":1},"ans:key.path"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["all","providers","providers"],"source":":","timestamp":1000000},"key_name-1./x/**/*.json"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["skills","commands"],"timestamp":9007199254740992},"emoji 👍🏽 mix"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["all","commands"],"source":"HELLO","timestamp":1000000},"é"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":[],"timestamp":10},"{name} has {count} itemsab"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["all","all","commands"],"source":"","timestamp":9007199254740992},"a"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"tab\tseparated{name} has {count} items","timestamp":2},"src/a/b.ts"],"ok":false}
+{"fn":"scopeMatches","args":[{},"日本語のテキスト"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"ékey_name-1","timestamp":10},"a.b.c"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"timestamp":{"$num":"Infinity"}},"./x/**/*.json"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["providers","agents","skills"],"source":"a..ba..b","timestamp":2147483648},"İstanbul"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["all","agents","agents"],"source":"﻿bomsrc/a/b.ts","timestamp":0},"./x/**/*.json"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["agents","skills"],"source":"./x/**/*.jsonHELLO","timestamp":1},"{name} has {count} items"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["skills","skills","providers"],"source":"a😀b😀c","timestamp":-1},"emoji 👍🏽 mix"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"timestamp":42},"hello worldΣΊΣΥΦΟΣ"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents"],"source":"a..b","timestamp":1},"Hello World"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"  padded  ","timestamp":-2.5},"./x/**/*.json"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["commands"],"source":"a","timestamp":42},"hello"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"key_name-1a:b:c","timestamp":10},"trailing."],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents"],"timestamp":1000000},"straße"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents"],"source":"Hello World","timestamp":42},"{name} has {count} items"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"İstanbulns:key.path","timestamp":{"$num":"NaN"}},"﻿bom"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents"],"timestamp":10},":"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["providers"],"source":"{name} has {count} items","timestamp":-2.5},"{name} has {count} items"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["providers","skills","agents"],"source":"hello worldİstanbul","timestamp":1000},"İstanbul"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["all","skills"],"source":"key_name-1","timestamp":-1},"hello world"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["agents"],"source":"trailing.","timestamp":1000},"src/a/b.ts"],"ok":false}
+{"fn":"scopeMatches","args":[true,"a"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":[],"timestamp":0},"Hello World"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"😀","timestamp":1000},"😀"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"key_name-1","timestamp":2147483648},":"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["providers","providers","skills"],"timestamp":9007199254740992},"é"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["all"],"source":".leading","timestamp":1},"tab\tseparatedé"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":":","timestamp":3},"﻿bom"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["commands","commands","all"],"timestamp":0},"ΣΊΣΥΦΟΣ"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["all","all","skills"],"source":"a.b.c","timestamp":100},"trailing.  padded  "],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"ns:key.path","timestamp":{"$num":"Infinity"}},"HELLO"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["all","skills","commands"],"source":"src/a/b.ts","timestamp":{"$num":"-0"}},"  padded  "],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["skills","skills","all"],"source":"ns:key.path","timestamp":{"$num":"Infinity"}},"hello world"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["agents","agents","agents"],"source":"日本語のテキスト","timestamp":100},"a😀b😀c"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["providers"],"source":"hello","timestamp":-1},"HELLO"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["all","providers","skills"],"timestamp":1000000},"a:b:c"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["all"],"source":"{name} has {count} items","timestamp":3},"key_name-1"],"ok":true}
+{"fn":"scopeMatches","args":[{"a":"b"},"a  padded  "],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"key_name-1hello","timestamp":1},"HELLOkey_name-1"],"ok":false}
+{"fn":"scopeMatches","args":[{"a":"b"},"  padded  "],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":["agents","skills"],"source":"ns:key.path","timestamp":{"$num":"-Infinity"}},"hello world"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"İstanbul","timestamp":100},"  padded  "],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"a:b:c","timestamp":1000},"hello world"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents","providers"],"source":"a..b","timestamp":{"$num":"Infinity"}},"abc"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["all"],"timestamp":9007199254740992},"😀"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":[],"timestamp":-2.5},"hello world"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["skills"],"timestamp":{"$num":"NaN"}},"😀"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["providers","commands","providers"],"timestamp":42},"straße"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[],"source":"é","timestamp":2147483648},"straße"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["skills","providers","providers"],"source":"é","timestamp":-1},"./x/**/*.json"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["commands","commands"],"timestamp":0.5},":"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["commands","skills","all"],"source":"a😀b😀c","timestamp":10},"key_name-1"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["commands","skills","agents"],"source":"trailing.","timestamp":100},"a.b.c"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents","commands"],"source":"tab\tseparated","timestamp":-2.5},":"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["all"],"timestamp":-1},"😀日本語のテキスト"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":[],"timestamp":2},"ünïcödé😀"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["providers","skills","providers"],"source":"ünïcödéa😀b😀c","timestamp":100},"abc"],"ok":false}
+{"fn":"scopeMatches","args":[{},"héllo wörld"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},"👍🏽 thumbs"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},"日本語"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},""],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},"é"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},"İstanbul"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},"straße"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},"ılık ırmak"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},"👨‍👩‍👧 family"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},"a b"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},"ΣΊΣΥΦΟΣ"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},"a😀b"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},"﻿bom"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},"a²b x½ y①"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},"aⅠb Ⅻ"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},"a𐐀b 𝐀bc"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},"कि ٣٤"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":["all"]},"agents"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["all"]},"providers"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["all"]},"all"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["all"]},""],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["all"]}],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["all"]},{"$num":"NaN"}],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["all"]},"agents,providers"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["agents","skills"]},"agents"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":["agents","skills"]},"providers"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents","skills"]},"all"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents","skills"]},""],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents","skills"]}],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents","skills"]},{"$num":"NaN"}],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":["agents","skills"]},"agents,providers"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[]},"agents"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[]},"providers"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[]},"all"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[]},""],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[]}],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[]},{"$num":"NaN"}],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[]},"agents,providers"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":"all"},"agents"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":"all"},"providers"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":"all"},"all"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":"all"},""],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":"all"}],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":"all"},{"$num":"NaN"}],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":"all"},"agents,providers"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":"agents,providers"},"agents"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":"agents,providers"},"providers"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":"agents,providers"},"all"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":"agents,providers"},""],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":"agents,providers"}],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":"agents,providers"},{"$num":"NaN"}],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":"agents,providers"},"agents,providers"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":"smallest"},"agents"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":"smallest"},"providers"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":"smallest"},"all"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":"smallest"},""],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":"smallest"}],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":"smallest"},{"$num":"NaN"}],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":"smallest"},"agents,providers"],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":""},"agents"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":""},"providers"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":""},"all"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":""},""],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":""}],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":""},{"$num":"NaN"}],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":""},"agents,providers"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":null},"agents"],"error":"Cannot read properties of null (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":null},"providers"],"error":"Cannot read properties of null (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":null},"all"],"error":"Cannot read properties of null (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":null},""],"error":"Cannot read properties of null (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":null}],"error":"Cannot read properties of null (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":null},{"$num":"NaN"}],"error":"Cannot read properties of null (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":null},"agents,providers"],"error":"Cannot read properties of null (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},"agents"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},"providers"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},"all"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},""],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{}],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},{"$num":"NaN"}],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{},"agents,providers"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[null,"agents"],"error":"Cannot read properties of null (reading 'scopes')"}
+{"fn":"scopeMatches","args":[null,"providers"],"error":"Cannot read properties of null (reading 'scopes')"}
+{"fn":"scopeMatches","args":[null,"all"],"error":"Cannot read properties of null (reading 'scopes')"}
+{"fn":"scopeMatches","args":[null,""],"error":"Cannot read properties of null (reading 'scopes')"}
+{"fn":"scopeMatches","args":[null],"error":"Cannot read properties of null (reading 'scopes')"}
+{"fn":"scopeMatches","args":[null,{"$num":"NaN"}],"error":"Cannot read properties of null (reading 'scopes')"}
+{"fn":"scopeMatches","args":[null,"agents,providers"],"error":"Cannot read properties of null (reading 'scopes')"}
+{"fn":"scopeMatches","args":["str","agents"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":["str","providers"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":["str","all"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":["str",""],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":["str"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":["str",{"$num":"NaN"}],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":["str","agents,providers"],"error":"Cannot read properties of undefined (reading 'includes')"}
+{"fn":"scopeMatches","args":[{"scopes":5},"agents"],"error":"event.scopes.includes is not a function"}
+{"fn":"scopeMatches","args":[{"scopes":5},"providers"],"error":"event.scopes.includes is not a function"}
+{"fn":"scopeMatches","args":[{"scopes":5},"all"],"error":"event.scopes.includes is not a function"}
+{"fn":"scopeMatches","args":[{"scopes":5},""],"error":"event.scopes.includes is not a function"}
+{"fn":"scopeMatches","args":[{"scopes":5}],"error":"event.scopes.includes is not a function"}
+{"fn":"scopeMatches","args":[{"scopes":5},{"$num":"NaN"}],"error":"event.scopes.includes is not a function"}
+{"fn":"scopeMatches","args":[{"scopes":5},"agents,providers"],"error":"event.scopes.includes is not a function"}
+{"fn":"scopeMatches","args":[{"scopes":{"$set":["all"]}},"agents"],"error":"event.scopes.includes is not a function"}
+{"fn":"scopeMatches","args":[{"scopes":{"$set":["all"]}},"providers"],"error":"event.scopes.includes is not a function"}
+{"fn":"scopeMatches","args":[{"scopes":{"$set":["all"]}},"all"],"error":"event.scopes.includes is not a function"}
+{"fn":"scopeMatches","args":[{"scopes":{"$set":["all"]}},""],"error":"event.scopes.includes is not a function"}
+{"fn":"scopeMatches","args":[{"scopes":{"$set":["all"]}}],"error":"event.scopes.includes is not a function"}
+{"fn":"scopeMatches","args":[{"scopes":{"$set":["all"]}},{"$num":"NaN"}],"error":"event.scopes.includes is not a function"}
+{"fn":"scopeMatches","args":[{"scopes":{"$set":["all"]}},"agents,providers"],"error":"event.scopes.includes is not a function"}
+{"fn":"scopeMatches","args":[{"scopes":[{"$num":"NaN"}]},"agents"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[{"$num":"NaN"}]},"providers"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[{"$num":"NaN"}]},"all"],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[{"$num":"NaN"}]},""],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[{"$num":"NaN"}]}],"ok":false}
+{"fn":"scopeMatches","args":[{"scopes":[{"$num":"NaN"}]},{"$num":"NaN"}],"ok":true}
+{"fn":"scopeMatches","args":[{"scopes":[{"$num":"NaN"}]},"agents,providers"],"ok":false}

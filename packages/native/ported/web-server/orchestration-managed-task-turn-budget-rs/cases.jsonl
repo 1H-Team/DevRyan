@@ -1,0 +1,30 @@
+{"fn":"resolveManagedTaskTurnBudget","args":[{"a":"b"}],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[[]],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":["x"],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"a":{"b":"c"}}],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[true],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[null],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[0],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[{}],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[["a",1]],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[[3,1,2]],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[null],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[{}],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":"designer"}],"ok":260}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":" Fixer "}],"ok":150}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":"builder"}],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":5}],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":["designer"],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":"DESIGNER﻿"}],"ok":260}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":"fixer"}],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":"designer"}],"ok":260}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":"fixer"}],"ok":150}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":" Designer "}],"ok":260}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":"explorer"}],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":"librarian"}],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":"oracle"}],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":"builder"}],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[{"agent":{"$undefined":true}}],"ok":null}
+{"fn":"resolveManagedTaskTurnBudget","args":[null],"ok":null}

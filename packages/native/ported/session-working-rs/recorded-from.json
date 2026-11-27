@@ -1,0 +1,19 @@
+{
+  "unit": "session-working.ts",
+  "files": 1,
+  "fingerprint": "34f5d4df7269e3a3",
+  "cases": 1255,
+  "cases_hash": "9d9f342486bb3acd",
+  "coverage": {
+    "lines": 119,
+    "reached": 117,
+    "files": [
+      {
+        "file": "session-working.ts",
+        "lines": 119,
+        "reached": 117,
+        "missed": "122-123"
+      }
+    ]
+  }
+}

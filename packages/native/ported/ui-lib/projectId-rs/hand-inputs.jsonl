@@ -1,0 +1,10 @@
+{"fn":"createProjectIdFromPath","args":["/Users/a/project"]}
+{"fn":"createProjectIdFromPath","args":["C:\\a\\b\\"]}
+{"fn":"createProjectIdFromPath","args":["///"]}
+{"fn":"createProjectIdFromPath","args":["a/ "]}
+{"fn":"createProjectIdFromPath","args":[" /a// "]}
+{"fn":"createProjectIdFromPath","args":["é😀/x"]}
+{"fn":"createProjectIdFromPath","args":["ab"]}
+{"fn":"createProjectIdFromPath","args":["abc"]}
+{"fn":"createProjectIdFromPath","args":["abcd"]}
+{"fn":"createProjectIdFromPath","args":["\u00ff\u00fe>?"]}

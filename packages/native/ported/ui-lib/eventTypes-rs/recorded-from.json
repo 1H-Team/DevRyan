@@ -1,0 +1,19 @@
+{
+  "unit": "eventTypes.ts",
+  "files": 1,
+  "fingerprint": "c9225687f3dab861",
+  "cases": 218,
+  "cases_hash": "f1031af1c1812bce",
+  "coverage": {
+    "lines": 12,
+    "reached": 12,
+    "files": [
+      {
+        "file": "eventTypes.ts",
+        "lines": 12,
+        "reached": 12,
+        "missed": ""
+      }
+    ]
+  }
+}

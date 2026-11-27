@@ -48,7 +48,7 @@ const normalizePositiveInteger = (value) => {
   return Math.trunc(number);
 };
 
-export const normalizeDirectory = (value) => {
+const normalizeDirectory = (value) => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   if (!trimmed) return null;

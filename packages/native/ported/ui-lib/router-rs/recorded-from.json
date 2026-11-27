@@ -1,0 +1,19 @@
+{
+  "unit": "router/",
+  "files": 6,
+  "fingerprint": "c36f3c6e9d4d90cc",
+  "cases": 1028,
+  "cases_hash": "ac53817f00acbb8b",
+  "coverage": {
+    "lines": 34,
+    "reached": 34,
+    "files": [
+      {
+        "file": "router/routedSessionDirectory.ts",
+        "lines": 34,
+        "reached": 34,
+        "missed": ""
+      }
+    ]
+  }
+}

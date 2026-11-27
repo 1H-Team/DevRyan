@@ -1,0 +1,25 @@
+{
+  "unit": "abort-sources-scenario.js",
+  "files": 1,
+  "fingerprint": "125d10e7c483cf4a",
+  "cases": 241,
+  "cases_hash": "9266c57fed1fe328",
+  "coverage": {
+    "lines": 100,
+    "reached": 100,
+    "files": [
+      {
+        "file": "abort-sources-scenario.js",
+        "lines": 23,
+        "reached": 23,
+        "missed": ""
+      },
+      {
+        "file": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/orchestration-runtime/abort-sources.js",
+        "lines": 77,
+        "reached": 77,
+        "missed": ""
+      }
+    ]
+  }
+}

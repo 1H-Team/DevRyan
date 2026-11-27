@@ -1,0 +1,319 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode/v2/projection",
+  "unit": "sessions.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "sessions-rs",
+  "exports": [
+    {
+      "name": "readOwnedDevryanEntry",
+      "file": "sessions.js",
+      "line": 65,
+      "params": [
+        {
+          "name": "metadata",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "key",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "sessionID",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "readArchiveOverride",
+      "file": "sessions.js",
+      "line": 81,
+      "params": [
+        {
+          "name": "metadata",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "sessionID",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isArchiveOverrideArchived",
+      "file": "sessions.js",
+      "line": 93,
+      "params": [
+        {
+          "name": "override",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "readSessionTodo",
+      "file": "sessions.js",
+      "line": 107,
+      "params": [
+        {
+          "name": "metadata",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "sessionID",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1SessionTodos",
+      "file": "sessions.js",
+      "line": 119,
+      "params": [
+        {
+          "name": "session",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "stripDevryanMetadata",
+      "file": "sessions.js",
+      "line": 129,
+      "params": [
+        {
+          "name": "metadata",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1PermissionRuleset",
+      "file": "sessions.js",
+      "line": 148,
+      "params": [
+        {
+          "name": "rules",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1Revert",
+      "file": "sessions.js",
+      "line": 164,
+      "params": [
+        {
+          "name": "revert",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1Fork",
+      "file": "sessions.js",
+      "line": 203,
+      "params": [
+        {
+          "name": "fork",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "sessionDirectory",
+      "file": "sessions.js",
+      "line": 216,
+      "params": [
+        {
+          "name": "session",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1Session",
+      "file": "sessions.js",
+      "line": 237,
+      "params": [
+        {
+          "name": "info",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "options",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1SessionFromCreated",
+      "file": "sessions.js",
+      "line": 288,
+      "params": [
+        {
+          "name": "data",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "created",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isV1SessionArchived",
+      "file": "sessions.js",
+      "line": 320,
+      "params": [
+        {
+          "name": "session",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "sessionMessageContext",
+      "file": "sessions.js",
+      "line": 364,
+      "params": [
+        {
+          "name": "info",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "toV1SessionList",
+      "file": "sessions.js",
+      "line": 302,
+      "reason": "kept on request"
+    },
+    {
+      "name": "sortSessionPage",
+      "file": "sessions.js",
+      "line": 336,
+      "reason": "kept on request"
+    },
+    {
+      "name": "pageV1Sessions",
+      "file": "sessions.js",
+      "line": 349,
+      "reason": "kept on request"
+    }
+  ]
+}

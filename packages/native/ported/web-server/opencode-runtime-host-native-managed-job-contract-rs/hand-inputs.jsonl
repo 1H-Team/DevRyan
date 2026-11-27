@@ -1,0 +1,9 @@
+{"fn": "hasNativeManagedSubagentJobs", "args": [null]}
+{"fn": "hasNativeManagedSubagentJobs", "args": [{}]}
+{"fn": "hasNativeManagedSubagentJobs", "args": [{"compiledContracts": ["devryan.managed-subagent-jobs/1"]}]}
+{"fn": "hasNativeManagedSubagentJobs", "args": [{"compiledContracts": ["x"]}]}
+{"fn": "hasNativeManagedSubagentJobs", "args": [{"compiledContracts": "devryan.managed-subagent-jobs/1"}]}
+{"fn": "hasNativeManagedSubagentJobs", "args": [{"compiledContracts": [["devryan.managed-subagent-jobs/1"]]}]}
+{"fn": "hasNativeManagedSubagentJobs", "args": ["s"]}
+{"fn": "hasNativeManagedSubagentJobs", "args": [{"compiledContracts": []}]}
+{"fn": "hasNativeManagedSubagentJobs", "args": [[1]]}

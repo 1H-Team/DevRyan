@@ -1,0 +1,67 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "mobileKeyboardMode.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "mobilekeyboardmode-rs",
+  "exports": [
+    {
+      "name": "normalizeMobileKeyboardMode",
+      "file": "mobileKeyboardMode.ts",
+      "line": 32,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "fallback",
+          "ts_type": "('native' | 'resize-content') | undefined",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "('native' | 'resize-content') | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "supportsMobileKeyboardResizeContent",
+      "file": "mobileKeyboardMode.ts",
+      "line": 8,
+      "reason": "reads navigator"
+    },
+    {
+      "name": "getViewportContentForMobileKeyboardMode",
+      "file": "mobileKeyboardMode.ts",
+      "line": 42,
+      "reason": "reads navigator"
+    },
+    {
+      "name": "getStoredMobileKeyboardMode",
+      "file": "mobileKeyboardMode.ts",
+      "line": 49,
+      "reason": "reads browser storage"
+    },
+    {
+      "name": "setStoredMobileKeyboardMode",
+      "file": "mobileKeyboardMode.ts",
+      "line": 61,
+      "reason": "writes browser storage"
+    },
+    {
+      "name": "applyMobileKeyboardMode",
+      "file": "mobileKeyboardMode.ts",
+      "line": 79,
+      "reason": "writes document"
+    }
+  ]
+}

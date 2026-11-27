@@ -1,0 +1,36 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "fileOpenLimits.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "fileopenlimits-rs",
+  "exports": [
+    {
+      "name": "countLinesWithLimit",
+      "file": "fileOpenLimits.ts",
+      "line": 3,
+      "params": [
+        {
+          "name": "content",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "limit",
+          "ts_type": "number",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "number",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

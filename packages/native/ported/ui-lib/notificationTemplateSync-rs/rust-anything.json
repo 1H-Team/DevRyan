@@ -1,0 +1,30 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/ui/src/lib",
+  "unit": "notificationTemplateSync.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "notificationtemplatesync-rs",
+  "exports": [
+    {
+      "name": "resolveNotificationTemplatesFromSettingsSnapshot",
+      "file": "notificationTemplateSync.ts",
+      "line": 1,
+      "params": [
+        {
+          "name": "arg0",
+          "ts_type": "{\n  baseline?: unknown;\n  current: unknown;\n  incoming: unknown;\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

@@ -1,0 +1,47 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [],
+  "product": [],
+  "engine": [
+    {
+      "site": "packages/ui/src/sync/session-worktree-contract.ts:140",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'legacy')"
+    },
+    {
+      "site": "packages/ui/src/sync/session-worktree-contract.ts:156",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'worktreeStatus')"
+    },
+    {
+      "site": "packages/ui/src/sync/session-worktree-contract.ts:206",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'projectRoot')"
+    },
+    {
+      "site": "packages/ui/src/sync/session-worktree-contract.ts:218",
+      "class": "TypeError",
+      "sample": "input.worktrees is not iterable"
+    },
+    {
+      "site": "packages/ui/src/sync/session-worktree-contract.ts:224",
+      "class": "TypeError",
+      "sample": "wt.branch?.trim is not a function"
+    },
+    {
+      "site": "packages/ui/src/sync/session-worktree-contract.ts:30",
+      "class": "TypeError",
+      "sample": "value.replace is not a function"
+    },
+    {
+      "site": "packages/ui/src/sync/session-worktree-contract.ts:69",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'existingAttachment')"
+    },
+    {
+      "site": "packages/ui/src/sync/session-worktree-contract.ts:91",
+      "class": "TypeError",
+      "sample": "Cannot destructure property 'sessionDirectory' of 'input' as it is null."
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "unit": "session-cache-mutation.ts",
+  "files": 1,
+  "fingerprint": "6f4b8115dbf3bc62",
+  "cases": 433,
+  "cases_hash": "f6087bd8c1accbb2",
+  "coverage": {
+    "lines": 117,
+    "reached": 90,
+    "files": [
+      {
+        "file": "session-cache-mutation.ts",
+        "lines": 23,
+        "reached": 23,
+        "missed": ""
+      },
+      {
+        "file": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync/session-cache.ts",
+        "lines": 94,
+        "reached": 67,
+        "missed": "22, 24-28, 30-34, 36-40, 42-50, 52-53"
+      }
+    ]
+  }
+}

@@ -970,13 +970,6 @@ export const useIsGitRepo = (directory: string | null) => {
   });
 };
 
-export const useGitBranchLabel = (directory: string | null) => {
-  return useGitStore((state) => {
-    if (!directory) return null;
-    return state.directories.get(directory)?.status?.current?.trim() ?? null;
-  });
-};
-
 const allBranchesCacheRef = { current: new Map<string, string | null>() };
 
 export const useGitAllBranches = () => {

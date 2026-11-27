@@ -1,0 +1,31 @@
+{
+  "unit": "tool-output-limits.js",
+  "files": 1,
+  "fingerprint": "9df3ebb91057da31",
+  "cases": 212,
+  "cases_hash": "2fd65658c2404fcf",
+  "coverage": {
+    "lines": 420,
+    "reached": 192,
+    "files": [
+      {
+        "file": "codec-primitives.js",
+        "lines": 120,
+        "reached": 97,
+        "missed": "90-99, 107-110, 119-126, 131"
+      },
+      {
+        "file": "managed-result-projection.js",
+        "lines": 232,
+        "reached": 40,
+        "missed": "14-17, 21-25, 29, 33, 37-39, 43-44, 48-59, 63-101, 105-108, 112-130, 134-154, 158-163, 168-181, 183-203, 207-211, 215-223, 225-232, 234-243, 245-252"
+      },
+      {
+        "file": "tool-output-limits.js",
+        "lines": 68,
+        "reached": 55,
+        "missed": "62-74"
+      }
+    ]
+  }
+}

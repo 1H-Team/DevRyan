@@ -1,0 +1,7 @@
+{
+  "status": "error",
+  "error": {
+    "code": "bundle_command_invalid",
+    "message": "bundle_command_invalid"
+  }
+}

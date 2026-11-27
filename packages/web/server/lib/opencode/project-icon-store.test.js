@@ -214,7 +214,7 @@ describe('project icon store', () => {
   });
 
   it('ignores legacy icon files that have no manifest entry', async () => {
-    const { dataDirectory, store } = await createFixture();
+    const { store } = await createFixture();
     const project = { id: 'legacy-project', path: '/tmp/legacy-project', iconImage: null };
     const legacyPath = store.candidatePaths(project.id)[0];
     await fs.mkdir(path.dirname(legacyPath), { recursive: true });

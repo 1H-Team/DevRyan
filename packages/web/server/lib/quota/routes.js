@@ -176,12 +176,9 @@ const credentialStatus = (providerId, runtime) => ({
 export function registerQuotaRoutes(app, {
   getQuotaProviders,
   resolveProjectDirectory,
-  buildOpenCodeUrl,
-  getOpenCodeAuthHeaders = () => ({}),
   isExternalOpenCode = () => false,
   openCodeClient = null,
   getNativeRuntimeOwner = () => null,
-  devryanDataDir,
   ownsSession,
   credentialRuntime: credentialRuntimeOverrides,
   runtimeReadinessHoldMs = RUNTIME_READINESS_HOLD_MS,
@@ -215,7 +212,7 @@ export function registerQuotaRoutes(app, {
   };
 
   // Native discovery. Returns null when the runtime is still not ready.
-  const listNativeQuotaProviders = async ({ req, res, listConfiguredQuotaProviders, workingDirectory }) => {
+  const listNativeQuotaProviders = async ({ listConfiguredQuotaProviders, workingDirectory }) => {
     let base = [];
     try {
       base = listConfiguredQuotaProviders({

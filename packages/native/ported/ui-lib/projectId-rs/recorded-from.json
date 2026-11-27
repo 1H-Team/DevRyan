@@ -1,0 +1,19 @@
+{
+  "unit": "projectId.ts",
+  "files": 1,
+  "fingerprint": "e81f1aeed6901213",
+  "cases": 233,
+  "cases_hash": "ecae240c5093d46d",
+  "coverage": {
+    "lines": 15,
+    "reached": 15,
+    "files": [
+      {
+        "file": "projectId.ts",
+        "lines": 15,
+        "reached": 15,
+        "missed": ""
+      }
+    ]
+  }
+}

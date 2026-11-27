@@ -1,0 +1,120 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/shared-runtime",
+  "unit": "startup-diagnostics.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "startup-diagnostics-rs",
+  "exports": [
+    {
+      "name": "parseArtifactDiagnostic",
+      "file": "startup-diagnostics.js",
+      "line": 7,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "ArtifactDiagnostic | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "artifactDiagnostic",
+      "file": "startup-diagnostics.js",
+      "line": 15,
+      "params": [
+        {
+          "name": "error",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "ArtifactDiagnostic | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "startupFailureDetail",
+      "file": "startup-diagnostics.js",
+      "line": 20,
+      "params": [
+        {
+          "name": "error",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{ ledger: string; key: string } | { ledger: string; leases: Array<{ token: string; state: string; kind: string; cleanupPending: boolean }> } | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "startupDiagnosticSummary",
+      "file": "startup-diagnostics.js",
+      "line": 30,
+      "params": [
+        {
+          "name": "error",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "describeReferenceFailure",
+      "file": "startup-diagnostics.js",
+      "line": 52,
+      "params": [
+        {
+          "name": "error",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "describeArtifactFailure",
+      "file": "startup-diagnostics.js",
+      "line": 57,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

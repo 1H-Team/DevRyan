@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { runPreagedUpgrades } from './release-preaged-upgrades.mjs';
+import { classifyQualificationFailure, describeQualificationError } from './release-qualification-failure.mjs';
 
 const infra = () => Object.assign(new Error('Qualification gh exited (1)'), { code: 'qa_release_upgrade_command', command: 'gh', exitCode: 1, stderr: 'HTTP 502: Bad Gateway' });
 
@@ -86,5 +87,33 @@ test('a second infrastructure failure or any product failure in setup is not ret
       const timings = JSON.parse(await fs.readFile(path.join(reportDirectory, 'qualification-timings.json'), 'utf8'));
       assert.equal(timings.passed, false);
     } finally { await fs.rm(reportDirectory, { recursive: true, force: true }); }
+  }
+});
+
+test('a profile cleanup failure is reported with, never instead of, the qualification failure', async () => {
+  const cleanupError = new Error('profile cleanup EBUSY');
+  for (const [primary, cleanupFails] of [[true, false], [false, true], [true, true]]) {
+    const reportDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-preaged-test-'));
+    let thrown;
+    try {
+      await assert.rejects(runPreagedUpgrades({ reportDirectory, digest: async () => 'same', log: () => {},
+        prepare: async () => ({ qualify: async () => ({ passed: true }), cleanup: async () => { if (cleanupFails) throw cleanupError; } }),
+        acquire: async () => { if (primary) throw infra(); return '/candidate'; } }), error => { thrown = error; return true; });
+      const timings = JSON.parse(await fs.readFile(path.join(reportDirectory, 'qualification-timings.json'), 'utf8'));
+      assert.equal(timings.passed, false, 'the phase timings are still written');
+    } finally { await fs.rm(reportDirectory, { recursive: true, force: true }); }
+    if (primary && !cleanupFails) {
+      assert.equal(thrown.code, 'qa_release_upgrade_command');
+      assert.equal(classifyQualificationFailure(thrown), 'infra');
+    } else if (!primary) {
+      assert.equal(thrown.message, 'Profile cleanup failed');
+      assert.equal(classifyQualificationFailure(thrown), 'product');
+    } else {
+      assert.ok(thrown instanceof AggregateError, `expected both failures, got: ${thrown.message}`);
+      assert.equal(thrown.errors[0].code, 'qa_release_upgrade_command', 'the qualification failure comes first');
+      assert.equal(thrown.errors[1], cleanupError);
+      assert.equal(classifyQualificationFailure(thrown), 'infra', 'the release log names the qualification failure class');
+      assert.match(describeQualificationError(thrown), /^Qualification gh exited \(1\); profile cleanup also failed \[gh exit 1\] stderr: HTTP 502: Bad Gateway/);
+    }
   }
 });

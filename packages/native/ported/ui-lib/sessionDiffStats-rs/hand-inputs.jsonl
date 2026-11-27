@@ -1,0 +1,142 @@
+{"fn": "parseSessionDiffCount", "args": [0]}
+{"fn": "parseSessionDiffCount", "args": [7]}
+{"fn": "parseSessionDiffCount", "args": [2.5]}
+{"fn": "parseSessionDiffCount", "args": [9007199254740991]}
+{"fn": "parseSessionDiffCount", "args": [1.7976931348623157e+308]}
+{"fn": "parseSessionDiffCount", "args": [-1]}
+{"fn": "parseSessionDiffCount", "args": [-0.5]}
+{"fn": "parseSessionDiffCount", "args": [-1.7976931348623157e+308]}
+{"fn": "parseSessionDiffCount", "args": [{"$num": "-0"}]}
+{"fn": "parseSessionDiffCount", "args": [{"$num": "NaN"}]}
+{"fn": "parseSessionDiffCount", "args": [{"$num": "Infinity"}]}
+{"fn": "parseSessionDiffCount", "args": [{"$num": "-Infinity"}]}
+{"fn": "parseSessionDiffCount", "args": []}
+{"fn": "parseSessionDiffCount", "args": ["12"]}
+{"fn": "parseSessionDiffCount", "args": [" 12 "]}
+{"fn": "parseSessionDiffCount", "args": [" 12\n"]}
+{"fn": "parseSessionDiffCount", "args": ["1.5"]}
+{"fn": "parseSessionDiffCount", "args": ["1e3"]}
+{"fn": "parseSessionDiffCount", "args": ["0x10"]}
+{"fn": "parseSessionDiffCount", "args": ["0b11"]}
+{"fn": "parseSessionDiffCount", "args": ["+4"]}
+{"fn": "parseSessionDiffCount", "args": [""]}
+{"fn": "parseSessionDiffCount", "args": ["   "]}
+{"fn": "parseSessionDiffCount", "args": ["-4"]}
+{"fn": "parseSessionDiffCount", "args": ["abc"]}
+{"fn": "parseSessionDiffCount", "args": ["5px"]}
+{"fn": "parseSessionDiffCount", "args": ["1,000"]}
+{"fn": "parseSessionDiffCount", "args": ["Infinity"]}
+{"fn": "parseSessionDiffCount", "args": ["NaN"]}
+{"fn": "parseSessionDiffCount", "args": ["١٢"]}
+{"fn": "parseSessionDiffCount", "args": ["0o17"]}
+{"fn": "parseSessionDiffCount", "args": ["-0x10"]}
+{"fn": "parseSessionDiffCount", "args": ["0x"]}
+{"fn": "parseSessionDiffCount", "args": ["1e"]}
+{"fn": "parseSessionDiffCount", "args": ["1e+2"]}
+{"fn": "parseSessionDiffCount", "args": [".5"]}
+{"fn": "parseSessionDiffCount", "args": ["5."]}
+{"fn": "parseSessionDiffCount", "args": ["+.5e-1"]}
+{"fn": "parseSessionDiffCount", "args": ["+Infinity"]}
+{"fn": "parseSessionDiffCount", "args": ["-Infinity"]}
+{"fn": "parseSessionDiffCount", "args": [true]}
+{"fn": "parseSessionDiffCount", "args": [[3]]}
+{"fn": "parseSessionDiffCount", "args": [{}]}
+{"fn": "parseSessionDiffCount", "args": ["﻿3﻿"]}
+{"fn": "parseSessionDiffCount", "args": ["3"]}
+{"fn": "parseSessionDiffCount", "args": [null]}
+{"fn": "getSessionSummaryDiffTotals", "args": []}
+{"fn": "resolveSessionDiffStats", "args": []}
+{"fn": "getScopedMessageDiffTotals", "args": []}
+{"fn": "getSessionSummaryDiffTotals", "args": [{}]}
+{"fn": "resolveSessionDiffStats", "args": [{}]}
+{"fn": "getScopedMessageDiffTotals", "args": [{}]}
+{"fn": "getSessionSummaryDiffTotals", "args": [{"additions": 1}]}
+{"fn": "resolveSessionDiffStats", "args": [{"additions": 1}]}
+{"fn": "getScopedMessageDiffTotals", "args": [{"additions": 1}]}
+{"fn": "getSessionSummaryDiffTotals", "args": [{"deletions": "2"}]}
+{"fn": "resolveSessionDiffStats", "args": [{"deletions": "2"}]}
+{"fn": "getScopedMessageDiffTotals", "args": [{"deletions": "2"}]}
+{"fn": "getSessionSummaryDiffTotals", "args": [{"additions": null, "diffs": [{"additions": 5}]}]}
+{"fn": "resolveSessionDiffStats", "args": [{"additions": null, "diffs": [{"additions": 5}]}]}
+{"fn": "getScopedMessageDiffTotals", "args": [{"additions": null, "diffs": [{"additions": 5}]}]}
+{"fn": "getSessionSummaryDiffTotals", "args": [{"diffs": [{"additions": 5, "deletions": "0x2"}, {"additions": -3}]}]}
+{"fn": "resolveSessionDiffStats", "args": [{"diffs": [{"additions": 5, "deletions": "0x2"}, {"additions": -3}]}]}
+{"fn": "getScopedMessageDiffTotals", "args": [{"diffs": [{"additions": 5, "deletions": "0x2"}, {"additions": -3}]}]}
+{"fn": "getSessionSummaryDiffTotals", "args": [{"diffs": null}]}
+{"fn": "resolveSessionDiffStats", "args": [{"diffs": null}]}
+{"fn": "getScopedMessageDiffTotals", "args": [{"diffs": null}]}
+{"fn": "getSessionSummaryDiffTotals", "args": [{"diffs": "ab"}]}
+{"fn": "resolveSessionDiffStats", "args": [{"diffs": "ab"}]}
+{"fn": "getScopedMessageDiffTotals", "args": [{"diffs": "ab"}]}
+{"fn": "getSessionSummaryDiffTotals", "args": [{"diffs": 5}]}
+{"fn": "resolveSessionDiffStats", "args": [{"diffs": 5}]}
+{"fn": "getScopedMessageDiffTotals", "args": [{"diffs": 5}]}
+{"fn": "getSessionSummaryDiffTotals", "args": [{"diffs": [null]}]}
+{"fn": "resolveSessionDiffStats", "args": [{"diffs": [null]}]}
+{"fn": "getScopedMessageDiffTotals", "args": [{"diffs": [null]}]}
+{"fn": "getSessionSummaryDiffTotals", "args": [{"diffs": {"$set": [{"additions": 1}]}}]}
+{"fn": "resolveSessionDiffStats", "args": [{"diffs": {"$set": [{"additions": 1}]}}]}
+{"fn": "getScopedMessageDiffTotals", "args": [{"diffs": {"$set": [{"additions": 1}]}}]}
+{"fn": "getSessionSummaryDiffTotals", "args": ["str"]}
+{"fn": "resolveSessionDiffStats", "args": ["str"]}
+{"fn": "getScopedMessageDiffTotals", "args": ["str"]}
+{"fn": "getSessionSummaryDiffTotals", "args": [5]}
+{"fn": "resolveSessionDiffStats", "args": [5]}
+{"fn": "getScopedMessageDiffTotals", "args": [5]}
+{"fn": "getSessionSummaryDiffTotals", "args": [[1]]}
+{"fn": "resolveSessionDiffStats", "args": [[1]]}
+{"fn": "getScopedMessageDiffTotals", "args": [[1]]}
+{"fn": "getSessionSummaryDiffTotals", "args": [{"additions": {"$undefined": true}, "diffs": [{"additions": 4}]}]}
+{"fn": "resolveSessionDiffStats", "args": [{"additions": {"$undefined": true}, "diffs": [{"additions": 4}]}]}
+{"fn": "getScopedMessageDiffTotals", "args": [{"additions": {"$undefined": true}, "diffs": [{"additions": 4}]}]}
+{"fn": "getSessionSummaryDiffTotals", "args": [{"diffs": []}]}
+{"fn": "resolveSessionDiffStats", "args": [{"diffs": []}]}
+{"fn": "getScopedMessageDiffTotals", "args": [{"diffs": []}]}
+{"fn": "resolveTouchedFileWorkingTreeDiffStats", "args": [["./src/owned.ts"], {"src/owned.ts": {"insertions": 3, "deletions": 1}, "src/unrelated.ts": {"insertions": 50, "deletions": 10}}]}
+{"fn": "resolveTouchedFileWorkingTreeDiffStats", "args": [["src/owned.ts"], {}]}
+{"fn": "resolveTouchedFileWorkingTreeDiffStats", "args": [["src/owned.ts"]]}
+{"fn": "resolveTouchedFileWorkingTreeDiffStats", "args": [["a\\b.ts", "./a/b.ts", "././c"], {"a/b.ts": {"insertions": "2"}, "./c": {"deletions": 1}}]}
+{"fn": "resolveTouchedFileWorkingTreeDiffStats", "args": [["0", "1"], [{"insertions": 4}, null]]}
+{"fn": "resolveTouchedFileWorkingTreeDiffStats", "args": [["0"], "xyz"]}
+{"fn": "resolveTouchedFileWorkingTreeDiffStats", "args": [[5], {}]}
+{"fn": "resolveTouchedFileWorkingTreeDiffStats", "args": [[null], {}]}
+{"fn": "resolveTouchedFileWorkingTreeDiffStats", "args": [null, {}]}
+{"fn": "resolveTouchedFileWorkingTreeDiffStats", "args": ["ab", {"a": {"insertions": 1}}]}
+{"fn": "resolveTouchedFileWorkingTreeDiffStats", "args": [["x"], {"x": null}]}
+{"fn": "resolveTouchedFileWorkingTreeDiffStats", "args": [["x"], {"x": "str"}]}
+{"fn": "resolveTouchedFileWorkingTreeDiffStats", "args": [["__proto__", "constructor", "toString"], {}]}
+{"fn": "resolveTouchedFileWorkingTreeDiffStats", "args": [["length"], [1, 2]]}
+{"fn": "stripUntrustedSessionDiffSummary", "args": [{"id": "ses_1", "summary": {"title": "Preserved title", "additions": 95, "deletions": 3, "files": 2, "diffs": [{"file": "src/unrelated.ts", "additions": 95, "deletions": 3}]}}]}
+{"fn": "normalizeChatOwnedDiffSummary", "args": [{"id": "ses_1", "summary": {"title": "Preserved title", "additions": 95, "deletions": 3, "files": 2, "diffs": [{"file": "src/unrelated.ts", "additions": 95, "deletions": 3}]}}, []]}
+{"fn": "stripUntrustedSessionDiffSummary", "args": [{"id": "ses_1", "summary": {"additions": 95, "deletions": 3, "files": 2, "diffs": [{"additions": 95, "deletions": 3}]}}]}
+{"fn": "normalizeChatOwnedDiffSummary", "args": [{"id": "ses_1", "summary": {"additions": 95, "deletions": 3, "files": 2, "diffs": [{"additions": 95, "deletions": 3}]}}, []]}
+{"fn": "stripUntrustedSessionDiffSummary", "args": [{"id": "ses_1", "summary": {"title": "Preserved title", "additions": 95, "deletions": 3}}]}
+{"fn": "normalizeChatOwnedDiffSummary", "args": [{"id": "ses_1", "summary": {"title": "Preserved title", "additions": 95, "deletions": 3}}, []]}
+{"fn": "stripUntrustedSessionDiffSummary", "args": [{"id": 1}]}
+{"fn": "normalizeChatOwnedDiffSummary", "args": [{"id": 1}, []]}
+{"fn": "stripUntrustedSessionDiffSummary", "args": [{"summary": null}]}
+{"fn": "normalizeChatOwnedDiffSummary", "args": [{"summary": null}, []]}
+{"fn": "stripUntrustedSessionDiffSummary", "args": [{"summary": "abc"}]}
+{"fn": "normalizeChatOwnedDiffSummary", "args": [{"summary": "abc"}, []]}
+{"fn": "stripUntrustedSessionDiffSummary", "args": [{"summary": ["a"]}]}
+{"fn": "normalizeChatOwnedDiffSummary", "args": [{"summary": ["a"]}, []]}
+{"fn": "stripUntrustedSessionDiffSummary", "args": [{"summary": 5}]}
+{"fn": "normalizeChatOwnedDiffSummary", "args": [{"summary": 5}, []]}
+{"fn": "stripUntrustedSessionDiffSummary", "args": [{"summary": {"title": "x"}}]}
+{"fn": "normalizeChatOwnedDiffSummary", "args": [{"summary": {"title": "x"}}, []]}
+{"fn": "stripUntrustedSessionDiffSummary", "args": [{"a": 1, "summary": {"files": 1}, "b": 2}]}
+{"fn": "normalizeChatOwnedDiffSummary", "args": [{"a": 1, "summary": {"files": 1}, "b": 2}, []]}
+{"fn": "stripUntrustedSessionDiffSummary", "args": [{"summary": {"files": {"$undefined": true}, "x": {"$undefined": true}}}]}
+{"fn": "normalizeChatOwnedDiffSummary", "args": [{"summary": {"files": {"$undefined": true}, "x": {"$undefined": true}}}, []]}
+{"fn": "stripUntrustedSessionDiffSummary", "args": [{"summary": {"$map": [["additions", 1]]}}]}
+{"fn": "normalizeChatOwnedDiffSummary", "args": [{"summary": {"$map": [["additions", 1]]}}, []]}
+{"fn": "stripUntrustedSessionDiffSummary", "args": []}
+{"fn": "normalizeChatOwnedDiffSummary", "args": []}
+{"fn": "stripUntrustedSessionDiffSummary", "args": ["str"]}
+{"fn": "normalizeChatOwnedDiffSummary", "args": ["str", []]}
+{"fn": "stripUntrustedSessionDiffSummary", "args": [[1]]}
+{"fn": "normalizeChatOwnedDiffSummary", "args": [[1], []]}
+{"fn": "stripUntrustedSessionDiffSummary", "args": [{"2": 1, "summary": {"1": 2, "additions": 3}, "z": 0}]}
+{"fn": "normalizeChatOwnedDiffSummary", "args": [{"2": 1, "summary": {"1": 2, "additions": 3}, "z": 0}, []]}
+{"fn": "normalizeChatOwnedDiffSummary", "args": [{"id": "ses_1", "summary": {"title": "Preserved title", "additions": 95, "deletions": 3, "files": 2, "diffs": [{"file": "src/unrelated.ts", "additions": 95, "deletions": 3}]}}, [{"role": "user"}]]}
+{"fn": "normalizeChatOwnedDiffSummary", "args": [{"id": "ses_1", "summary": {"title": "Preserved title", "additions": 95, "deletions": 3}}, "notarray"]}

@@ -1,0 +1,88 @@
+{
+  "version": 2,
+  "profiles": [
+    {
+      "id": "k-1",
+      "name": "kept",
+      "provider": "cloudflare",
+      "mode": "managed-remote",
+      "hostname": "app.example.com",
+      "originPort": "0x400",
+      "token": "fake-token-aaaa1111",
+      "createdAt": 1e+21,
+      "updatedAt": 12
+    },
+    {
+      "id": "k-2",
+      "name": "KEPT",
+      "provider": "cloudflare",
+      "mode": "managed-remote",
+      "hostname": "app.example.com",
+      "originPort": 3000,
+      "token": "dup",
+      "createdAt": 1600000000000,
+      "updatedAt": 1600000000500
+    },
+    {
+      "id": "k-3",
+      "name": "other-provider",
+      "provider": "ngrok",
+      "mode": "managed-remote",
+      "hostname": "app.example.com",
+      "originPort": 80,
+      "token": "fake-token-aaaa1111",
+      "createdAt": 1600000000000,
+      "updatedAt": 1600000000500
+    },
+    {
+      "id": "k-4",
+      "name": "kept",
+      "provider": "ngrok",
+      "mode": "managed-remote",
+      "hostname": "app.example.com",
+      "originPort": 1024.5,
+      "token": "x",
+      "createdAt": 1600000000000,
+      "updatedAt": 1600000000500
+    },
+    {
+      "id": "n-1",
+      "name": "no-token",
+      "provider": "cloudflare",
+      "mode": "managed-remote",
+      "hostname": "h.example.com"
+    },
+    {
+      "id": "n-2",
+      "name": "no-host",
+      "provider": "cloudflare",
+      "mode": "managed-remote",
+      "token": "fake"
+    },
+    {
+      "name": "",
+      "provider": "cloudflare",
+      "mode": "managed-remote",
+      "hostname": "h",
+      "token": "t"
+    },
+    null,
+    7,
+    "text",
+    [
+      1,
+      2
+    ],
+    {
+      "id": "  ",
+      "name": "unicode-ünï",
+      "provider": "cloudflare",
+      "mode": "managed-remote",
+      "hostname": "ü.example.com",
+      "originPort": "abc",
+      "token": "tökén-ßß",
+      "createdAt": 5,
+      "updatedAt": 6
+    }
+  ]
+}

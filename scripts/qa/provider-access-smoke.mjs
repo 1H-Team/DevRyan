@@ -107,7 +107,7 @@ export async function inspectProviderResponse(response, provider, request) {
   }
   return { ...output, outcome: finished ? 'completed' : 'incomplete', nativeParserAccepted: true,
     answerWasOk: answer.trim() === 'OK', ...(request ? { lookupCalled } : {}), quotaEventSeen, frames: frames.length };
-  } catch (error) {
+  } catch {
     return { ...output, outcome: 'failed', stage };
   }
 }

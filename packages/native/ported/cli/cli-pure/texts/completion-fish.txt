@@ -1,0 +1,35 @@
+# Fish completion for devryan tunnel
+# Save to ~/.config/fish/completions/devryan.fish
+
+complete -c openchamber --wraps devryan
+complete -c devryan -n '__fish_use_subcommand' -a 'serve' -d 'Start the web server'
+complete -c devryan -n '__fish_seen_subcommand_from serve' -l foreground -d 'Run in foreground (for systemd/process managers)'
+complete -c devryan -n '__fish_seen_subcommand_from serve' -l no-daemon -d 'Run in foreground (alias for --foreground)'
+complete -c devryan -n '__fish_use_subcommand' -a 'stop' -d 'Stop running instance(s)'
+complete -c devryan -n '__fish_use_subcommand' -a 'restart' -d 'Stop and start the server'
+complete -c devryan -n '__fish_use_subcommand' -a 'status' -d 'Show server status'
+complete -c devryan -n '__fish_use_subcommand' -a 'tunnel' -d 'Tunnel lifecycle commands'
+complete -c devryan -n '__fish_use_subcommand' -a 'logs' -d 'Tail logs'
+complete -c devryan -n '__fish_use_subcommand' -a 'update' -d 'Check for a newer release'
+
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'help' -d 'Show tunnel help'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'providers' -d 'Show providers'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'ready' -d 'Check readiness'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'doctor' -d 'Run diagnostics'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'status' -d 'Show tunnel status'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'start' -d 'Start a tunnel'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'stop' -d 'Stop tunnel'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'profile' -d 'Manage profiles'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'completion' -d 'Generate completions'
+
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l provider -d 'Provider id'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l mode -d 'Tunnel mode'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l profile -d 'Profile name'
+complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l config -d 'Config path'
+complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l token -d 'Token'
+complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l token-file -d 'Token file path'
+complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l token-stdin -d 'Read token from stdin'
+complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l hostname -d 'Hostname'
+complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start profile' -l origin-port -d 'Fixed Cloudflare origin port'
+complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l dry-run -d 'Validate without applying'
+complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l qr -d 'Show QR code'

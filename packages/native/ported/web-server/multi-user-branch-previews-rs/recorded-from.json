@@ -1,0 +1,19 @@
+{
+  "unit": "branch-previews.js",
+  "files": 1,
+  "fingerprint": "f8bfc6f4e4c1abce",
+  "cases": 53,
+  "cases_hash": "3dbda1cc9118780f",
+  "coverage": {
+    "lines": 283,
+    "reached": 31,
+    "files": [
+      {
+        "file": "branch-previews.js",
+        "lines": 283,
+        "reached": 31,
+        "missed": "13-14, 18-31, 35-50, 64-68, 72-78, 82-141, 145-147, 149-153, 155-158, 160-169, 171-182, 184-188, 190-203, 205-239, 241-251, 253-263, 265, 267-281, 283-304"
+      }
+    ]
+  }
+}

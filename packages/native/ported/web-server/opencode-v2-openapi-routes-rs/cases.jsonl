@@ -1,0 +1,162 @@
+{"fn":"openCodeV2RouteKey","args":[0,0],"ok":"0 0"}
+{"fn":"openCodeV2RouteKey","args":[null,true],"ok":"null true"}
+{"fn":"openCodeV2RouteKey","args":[true,"x"],"ok":"true x"}
+{"fn":"openCodeV2RouteKey","args":[true,{"a":"b"}],"ok":"true [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[{"a":{"b":"c"}},0],"ok":"[object Object] 0"}
+{"fn":"openCodeV2RouteKey","args":[[],{"a":"b"}],"ok":" [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[null,0],"ok":"null 0"}
+{"fn":"openCodeV2RouteKey","args":[[],{}],"ok":" [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[{"a":"b"},["a",1]],"ok":"[object Object] a,1"}
+{"fn":"openCodeV2RouteKey","args":[{"a":"b"},{"a":"b"}],"ok":"[object Object] [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[{"a":"b"},"x"],"ok":"[object Object] x"}
+{"fn":"openCodeV2RouteKey","args":[{},"x"],"ok":"[object Object] x"}
+{"fn":"openCodeV2RouteKey","args":[true,0],"ok":"true 0"}
+{"fn":"openCodeV2RouteKey","args":[true,true],"ok":"true true"}
+{"fn":"openCodeV2RouteKey","args":[["a",1],{}],"ok":"a,1 [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[["a",1],[]],"ok":"a,1 "}
+{"fn":"openCodeV2RouteKey","args":[true,{}],"ok":"true [object Object]"}
+{"fn":"openCodeV2RouteKey","args":["x",["a",1]],"ok":"x a,1"}
+{"fn":"openCodeV2RouteKey","args":[[],[]],"ok":" "}
+{"fn":"openCodeV2RouteKey","args":[{"a":{"b":"c"}},null],"ok":"[object Object] null"}
+{"fn":"openCodeV2RouteKey","args":[{},{"a":"b"}],"ok":"[object Object] [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[0,[]],"ok":"0 "}
+{"fn":"openCodeV2RouteKey","args":[["a",1],true],"ok":"a,1 true"}
+{"fn":"openCodeV2RouteKey","args":[{},true],"ok":"[object Object] true"}
+{"fn":"openCodeV2RouteKey","args":[{},{"a":{"b":"c"}}],"ok":"[object Object] [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[{"a":{"b":"c"}},["a",1]],"ok":"[object Object] a,1"}
+{"fn":"openCodeV2RouteKey","args":[true,["a",1]],"ok":"true a,1"}
+{"fn":"openCodeV2RouteKey","args":["x",{}],"ok":"x [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[true,[]],"ok":"true "}
+{"fn":"openCodeV2RouteKey","args":[0,{"a":"b"}],"ok":"0 [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[{"a":{"b":"c"}},"x"],"ok":"[object Object] x"}
+{"fn":"openCodeV2RouteKey","args":[true,{"a":{"b":"c"}}],"ok":"true [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[[],["a",1]],"ok":" a,1"}
+{"fn":"openCodeV2RouteKey","args":[0,true],"ok":"0 true"}
+{"fn":"openCodeV2RouteKey","args":[0,{}],"ok":"0 [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[null,null],"ok":"null null"}
+{"fn":"openCodeV2RouteKey","args":["x",[]],"ok":"x "}
+{"fn":"openCodeV2RouteKey","args":[{"a":{"b":"c"}},[]],"ok":"[object Object] "}
+{"fn":"openCodeV2RouteKey","args":[null,{"a":"b"}],"ok":"null [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[{"a":"b"},[]],"ok":"[object Object] "}
+{"fn":"openCodeV2RouteKey","args":[null,["a",1]],"ok":"null a,1"}
+{"fn":"openCodeV2RouteKey","args":[[],true],"ok":" true"}
+{"fn":"openCodeV2RouteKey","args":[{"a":"b"},true],"ok":"[object Object] true"}
+{"fn":"openCodeV2RouteKey","args":["x",0],"ok":"x 0"}
+{"fn":"openCodeV2RouteKey","args":[[],{"a":{"b":"c"}}],"ok":" [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[[],"x"],"ok":" x"}
+{"fn":"openCodeV2RouteKey","args":[0,{"a":{"b":"c"}}],"ok":"0 [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[[],null],"ok":" null"}
+{"fn":"openCodeV2RouteKey","args":[null,"x"],"ok":"null x"}
+{"fn":"openCodeV2RouteKey","args":[null,[]],"ok":"null "}
+{"fn":"openCodeV2RouteKey","args":[{"a":"b"},{}],"ok":"[object Object] [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[{"a":"b"},{"a":{"b":"c"}}],"ok":"[object Object] [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[{"a":{"b":"c"}},{}],"ok":"[object Object] [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[null,{"a":{"b":"c"}}],"ok":"null [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[["a",1],0],"ok":"a,1 0"}
+{"fn":"openCodeV2RouteKey","args":[0,"x"],"ok":"0 x"}
+{"fn":"openCodeV2RouteKey","args":[null,{}],"ok":"null [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[0,["a",1]],"ok":"0 a,1"}
+{"fn":"openCodeV2RouteKey","args":["x",{"a":{"b":"c"}}],"ok":"x [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[["a",1],{"a":{"b":"c"}}],"ok":"a,1 [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[["a",1],"x"],"ok":"a,1 x"}
+{"fn":"openCodeV2RouteKey","args":[{"a":"b"},null],"ok":"[object Object] null"}
+{"fn":"openCodeV2RouteKey","args":[{},null],"ok":"[object Object] null"}
+{"fn":"openCodeV2RouteKey","args":[true,null],"ok":"true null"}
+{"fn":"openCodeV2RouteKey","args":[{"a":"b"},0],"ok":"[object Object] 0"}
+{"fn":"openCodeV2RouteKey","args":[{"a":{"b":"c"}},{"a":{"b":"c"}}],"ok":"[object Object] [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[{},[]],"ok":"[object Object] "}
+{"fn":"openCodeV2RouteKey","args":["x",{"a":"b"}],"ok":"x [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[{},{}],"ok":"[object Object] [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[[],0],"ok":" 0"}
+{"fn":"openCodeV2RouteKey","args":[{},["a",1]],"ok":"[object Object] a,1"}
+{"fn":"openCodeV2RouteKey","args":[["a",1],{"a":"b"}],"ok":"a,1 [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[["a",1],null],"ok":"a,1 null"}
+{"fn":"openCodeV2RouteKey","args":[0,null],"ok":"0 null"}
+{"fn":"openCodeV2RouteKey","args":[{"a":{"b":"c"}},true],"ok":"[object Object] true"}
+{"fn":"openCodeV2RouteKey","args":["x",true],"ok":"x true"}
+{"fn":"openCodeV2RouteKey","args":[{"a":{"b":"c"}},{"a":"b"}],"ok":"[object Object] [object Object]"}
+{"fn":"openCodeV2RouteKey","args":["x",null],"ok":"x null"}
+{"fn":"openCodeV2RouteKey","args":[["a",1],["a",1]],"ok":"a,1 a,1"}
+{"fn":"openCodeV2RouteKey","args":[{},0],"ok":"[object Object] 0"}
+{"fn":"openCodeV2RouteKey","args":["x","x"],"ok":"x x"}
+{"fn":"openCodeV2RouteKey","args":["X","x"],"ok":"X x"}
+{"fn":"openCodeV2RouteKey","args":["x","X"],"ok":"x X"}
+{"fn":"openCodeV2RouteKey","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6},0],"ok":"[object Object] 0"}
+{"fn":"openCodeV2RouteKey","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7},0],"ok":"[object Object] 0"}
+{"fn":"openCodeV2RouteKey","args":[[3,1,2],0],"ok":"3,1,2 0"}
+{"fn":"openCodeV2RouteKey","args":[0,{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":"0 [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[0,{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":"0 [object Object]"}
+{"fn":"openCodeV2RouteKey","args":[0,[3,1,2]],"ok":"0 3,1,2"}
+{"fn":"openCodeV2RouteKey","args":["GET","GET"],"ok":"GET GET"}
+{"fn":"openCodeV2RouteKey","args":["GET","/session/{id}"],"ok":"GET /session/{id}"}
+{"fn":"openCodeV2RouteKey","args":["GET",""],"ok":"GET "}
+{"fn":"openCodeV2RouteKey","args":["GET",null],"ok":"GET null"}
+{"fn":"openCodeV2RouteKey","args":["GET",{"$undefined":true}],"ok":"GET undefined"}
+{"fn":"openCodeV2RouteKey","args":["GET",5],"ok":"GET 5"}
+{"fn":"openCodeV2RouteKey","args":["/session/{id}","GET"],"ok":"/session/{id} GET"}
+{"fn":"openCodeV2RouteKey","args":["/session/{id}","/session/{id}"],"ok":"/session/{id} /session/{id}"}
+{"fn":"openCodeV2RouteKey","args":["/session/{id}",""],"ok":"/session/{id} "}
+{"fn":"openCodeV2RouteKey","args":["/session/{id}",null],"ok":"/session/{id} null"}
+{"fn":"openCodeV2RouteKey","args":["/session/{id}",{"$undefined":true}],"ok":"/session/{id} undefined"}
+{"fn":"openCodeV2RouteKey","args":["/session/{id}",5],"ok":"/session/{id} 5"}
+{"fn":"openCodeV2RouteKey","args":["","GET"],"ok":" GET"}
+{"fn":"openCodeV2RouteKey","args":["","/session/{id}"],"ok":" /session/{id}"}
+{"fn":"openCodeV2RouteKey","args":["",""],"ok":" "}
+{"fn":"openCodeV2RouteKey","args":["",null],"ok":" null"}
+{"fn":"openCodeV2RouteKey","args":["",{"$undefined":true}],"ok":" undefined"}
+{"fn":"openCodeV2RouteKey","args":["",5],"ok":" 5"}
+{"fn":"openCodeV2RouteKey","args":[null,"GET"],"ok":"null GET"}
+{"fn":"openCodeV2RouteKey","args":[null,"/session/{id}"],"ok":"null /session/{id}"}
+{"fn":"openCodeV2RouteKey","args":[null,""],"ok":"null "}
+{"fn":"openCodeV2RouteKey","args":[null,null],"ok":"null null"}
+{"fn":"openCodeV2RouteKey","args":[null,{"$undefined":true}],"ok":"null undefined"}
+{"fn":"openCodeV2RouteKey","args":[null,5],"ok":"null 5"}
+{"fn":"openCodeV2RouteKey","args":[{"$undefined":true},"GET"],"ok":"undefined GET"}
+{"fn":"openCodeV2RouteKey","args":[{"$undefined":true},"/session/{id}"],"ok":"undefined /session/{id}"}
+{"fn":"openCodeV2RouteKey","args":[{"$undefined":true},""],"ok":"undefined "}
+{"fn":"openCodeV2RouteKey","args":[{"$undefined":true},null],"ok":"undefined null"}
+{"fn":"openCodeV2RouteKey","args":[{"$undefined":true},{"$undefined":true}],"ok":"undefined undefined"}
+{"fn":"openCodeV2RouteKey","args":[{"$undefined":true},5],"ok":"undefined 5"}
+{"fn":"openCodeV2RouteKey","args":[5,"GET"],"ok":"5 GET"}
+{"fn":"openCodeV2RouteKey","args":[5,"/session/{id}"],"ok":"5 /session/{id}"}
+{"fn":"openCodeV2RouteKey","args":[5,""],"ok":"5 "}
+{"fn":"openCodeV2RouteKey","args":[5,null],"ok":"5 null"}
+{"fn":"openCodeV2RouteKey","args":[5,{"$undefined":true}],"ok":"5 undefined"}
+{"fn":"openCodeV2RouteKey","args":[5,5],"ok":"5 5"}
+{"fn":"openCodeV2RouteKey","args":[{"$num":"-0"},"GET"],"ok":"0 GET"}
+{"fn":"openCodeV2RouteKey","args":[{"$num":"-0"},"/session/{id}"],"ok":"0 /session/{id}"}
+{"fn":"openCodeV2RouteKey","args":[{"$num":"-0"},""],"ok":"0 "}
+{"fn":"openCodeV2RouteKey","args":[{"$num":"-0"},null],"ok":"0 null"}
+{"fn":"openCodeV2RouteKey","args":[{"$num":"-0"},{"$undefined":true}],"ok":"0 undefined"}
+{"fn":"openCodeV2RouteKey","args":[{"$num":"-0"},5],"ok":"0 5"}
+{"fn":"openCodeV2RouteKey","args":[["a","b"],"GET"],"ok":"a,b GET"}
+{"fn":"openCodeV2RouteKey","args":[["a","b"],"/session/{id}"],"ok":"a,b /session/{id}"}
+{"fn":"openCodeV2RouteKey","args":[["a","b"],""],"ok":"a,b "}
+{"fn":"openCodeV2RouteKey","args":[["a","b"],null],"ok":"a,b null"}
+{"fn":"openCodeV2RouteKey","args":[["a","b"],{"$undefined":true}],"ok":"a,b undefined"}
+{"fn":"openCodeV2RouteKey","args":[["a","b"],5],"ok":"a,b 5"}
+{"fn":"openCodeV2RouteKey","args":[{"a":1},"GET"],"ok":"[object Object] GET"}
+{"fn":"openCodeV2RouteKey","args":[{"a":1},"/session/{id}"],"ok":"[object Object] /session/{id}"}
+{"fn":"openCodeV2RouteKey","args":[{"a":1},""],"ok":"[object Object] "}
+{"fn":"openCodeV2RouteKey","args":[{"a":1},null],"ok":"[object Object] null"}
+{"fn":"openCodeV2RouteKey","args":[{"a":1},{"$undefined":true}],"ok":"[object Object] undefined"}
+{"fn":"openCodeV2RouteKey","args":[{"a":1},5],"ok":"[object Object] 5"}
+{"fn":"openCodeV2RouteKey","args":[true,"GET"],"ok":"true GET"}
+{"fn":"openCodeV2RouteKey","args":[true,"/session/{id}"],"ok":"true /session/{id}"}
+{"fn":"openCodeV2RouteKey","args":[true,""],"ok":"true "}
+{"fn":"openCodeV2RouteKey","args":[true,null],"ok":"true null"}
+{"fn":"openCodeV2RouteKey","args":[true,{"$undefined":true}],"ok":"true undefined"}
+{"fn":"openCodeV2RouteKey","args":[true,5],"ok":"true 5"}
+{"fn":"openCodeV2RouteKey","args":[{"$utf16":[55296]},"GET"],"ok":{"$utf16":[55296,32,71,69,84]}}
+{"fn":"openCodeV2RouteKey","args":[{"$utf16":[55296]},"/session/{id}"],"ok":{"$utf16":[55296,32,47,115,101,115,115,105,111,110,47,123,105,100,125]}}
+{"fn":"openCodeV2RouteKey","args":[{"$utf16":[55296]},""],"ok":{"$utf16":[55296,32]}}
+{"fn":"openCodeV2RouteKey","args":[{"$utf16":[55296]},null],"ok":{"$utf16":[55296,32,110,117,108,108]}}
+{"fn":"openCodeV2RouteKey","args":[{"$utf16":[55296]},{"$undefined":true}],"ok":{"$utf16":[55296,32,117,110,100,101,102,105,110,101,100]}}
+{"fn":"openCodeV2RouteKey","args":[{"$utf16":[55296]},5],"ok":{"$utf16":[55296,32,53]}}
+{"fn":"openCodeV2RouteKey","args":[{"$map":[]},"GET"],"ok":"[object Map] GET"}
+{"fn":"openCodeV2RouteKey","args":[{"$map":[]},"/session/{id}"],"ok":"[object Map] /session/{id}"}
+{"fn":"openCodeV2RouteKey","args":[{"$map":[]},""],"ok":"[object Map] "}
+{"fn":"openCodeV2RouteKey","args":[{"$map":[]},null],"ok":"[object Map] null"}
+{"fn":"openCodeV2RouteKey","args":[{"$map":[]},{"$undefined":true}],"ok":"[object Map] undefined"}
+{"fn":"openCodeV2RouteKey","args":[{"$map":[]},5],"ok":"[object Map] 5"}
+{"fn":"openCodeV2RouteKey","args":[],"ok":"undefined undefined"}

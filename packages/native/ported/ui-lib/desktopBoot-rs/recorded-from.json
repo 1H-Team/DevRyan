@@ -1,0 +1,19 @@
+{
+  "unit": "desktopBoot.ts",
+  "files": 1,
+  "fingerprint": "0d5268ae413f90bb",
+  "cases": 597,
+  "cases_hash": "ae63b3afa9c2dc1a",
+  "coverage": {
+    "lines": 254,
+    "reached": 167,
+    "files": [
+      {
+        "file": "desktopBoot.ts",
+        "lines": 254,
+        "reached": 167,
+        "missed": "71-74, 76-78, 80-83, 85-88, 90-95, 97-103, 105-116, 118-124, 126-133, 135-139, 141-145, 147-148, 267-270, 272-273, 275-277, 288-290, 292-293, 295-297, 299-301"
+      }
+    ]
+  }
+}

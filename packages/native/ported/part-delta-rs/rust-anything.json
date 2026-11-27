@@ -1,0 +1,216 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "part-delta.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "part-delta-rs",
+  "exports": [
+    {
+      "name": "appendNonOverlappingDelta",
+      "file": "part-delta.ts",
+      "line": 20,
+      "params": [
+        {
+          "name": "existingValue",
+          "ts_type": "string | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "delta",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "context",
+          "ts_type": "{ messageID?: string; partID?: string; field?: string }",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "collapseExactAdjacentTextRepeats",
+      "file": "part-delta.ts",
+      "line": 151,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "stripInternalToolRunnerDiagnostics",
+      "file": "part-delta.ts",
+      "line": 209,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "normalizeAssistantVisibleText",
+      "file": "part-delta.ts",
+      "line": 265,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "normalizeAssistantReasoningText",
+      "file": "part-delta.ts",
+      "line": 271,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "normalizeAssistantPartText",
+      "file": "part-delta.ts",
+      "line": 275,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "partType",
+          "ts_type": "string | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "appendStreamingTextDelta",
+      "file": "part-delta.ts",
+      "line": 296,
+      "params": [
+        {
+          "name": "existingValue",
+          "ts_type": "string | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "delta",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "appendStreamingOutputDelta",
+      "file": "part-delta.ts",
+      "line": 321,
+      "params": [
+        {
+          "name": "existingValue",
+          "ts_type": "string | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "delta",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "appendStreamingFieldDelta",
+      "file": "part-delta.ts",
+      "line": 327,
+      "params": [
+        {
+          "name": "field",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "existingValue",
+          "ts_type": "string | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "delta",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

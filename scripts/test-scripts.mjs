@@ -8,6 +8,7 @@ import os from 'node:os';
 
 import { discoverTestFiles, isBunTestSource } from './test-runner-utils.mjs';
 import { runTestUnits, summarizeTestUnits, testConcurrency } from './test-pool.mjs';
+import { NODE_ISOLATION_ARGS, createTestIsolation } from './test-isolation-guard.mjs';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 /** Exclusive pool resource shared by native graph files (see planScriptTests). */
@@ -31,10 +32,12 @@ export function discoverScriptTestFiles(root = repositoryRoot) {
  * Node files, and one `bun test` process per Bun file, because native graph
  * fixtures must not share Bun's resolver and loader state. Graph files are
  * listed first so a bounded pool starts the longest processes early.
+ * `files` narrows the run to those suite files (fast validate's selection,
+ * scripts/test-select.mjs); by default every discovered file runs.
  */
-export function planScriptTests(root = repositoryRoot, environment = process.env) {
+export function planScriptTests(root = repositoryRoot, environment = process.env, { files } = {}) {
   const bun = [], node = [], heavyNative = new Set();
-  for (const file of discoverScriptTestFiles(root)) {
+  for (const file of files ?? discoverScriptTestFiles(root)) {
     const source = readFileSync(path.join(root, file), 'utf8');
     // Native graph files build and spawn the pinned runtime (CPU-heavy, and the
     // shared fixture's real OAuth flow binds localhost:1455): one at a time.
@@ -45,13 +48,14 @@ export function planScriptTests(root = repositoryRoot, environment = process.env
   // The Node batch runs beside other package suites in the outer pool.
   // Each test gets a deadline and the file exits once its tests settle, so a
   // never-resolving await or a leaked handle fails that test instead of hanging.
-  const args = ['--test', '--test-concurrency=1', '--test-timeout=300000', '--test-force-exit'];
+  // The isolation import refuses any file process outside the guard's environment.
+  const args = [...NODE_ISOLATION_ARGS, '--test', '--test-concurrency=1', '--test-timeout=300000', '--test-force-exit'];
   const concurrency = environment.DEVRYAN_SCRIPT_TEST_CONCURRENCY;
   if (concurrency !== undefined) {
     if (!/^[1-9]\d*$/.test(concurrency) || !Number.isSafeInteger(Number(concurrency))) {
       throw new Error('DEVRYAN_SCRIPT_TEST_CONCURRENCY must be a positive integer');
     }
-    args[1] = `--test-concurrency=${concurrency}`;
+    args[args.indexOf('--test-concurrency=1')] = `--test-concurrency=${concurrency}`;
   }
   const graphFirst = [...bun].sort((left, right) => Number(right.includes('.graph.')) - Number(left.includes('.graph.')) || left.localeCompare(right));
   return [
@@ -62,23 +66,27 @@ export function planScriptTests(root = repositoryRoot, environment = process.env
 }
 
 /**
- * Fixtures that must stay inside the repository create their run dirs under
- * these .cache families and assume the family exists; a fresh checkout or a
- * pruned .cache has none. QA fixtures require their parent to be private.
- * Returns the environment with a private per-run TMPDIR (inside any
- * caller-chosen TMPDIR) and a cleanup that removes it, so suite leaks cannot
- * accumulate.
+ * The environment of every test process a pool runs (test:full, test:scripts,
+ * validate and the CI lanes): the private HOME, XDG folders and Git
+ * configuration of the test isolation guard (scripts/test-isolation-guard.mjs,
+ * reused when `environment` is already isolated), plus a private per-run TMPDIR
+ * (inside any caller-chosen TMPDIR). `cleanup` removes both, so suite leaks
+ * cannot accumulate. Fixtures that must stay inside the repository create
+ * their run dirs under these .cache families and assume the family exists; a
+ * fresh checkout or a pruned .cache has none. QA fixtures require their parent
+ * to be private.
  */
 export function prepareScriptTestEnvironment(root = repositoryRoot, environment = process.env) {
   for (const family of ['v2-validation', 'perf', 'qa']) mkdirSync(path.join(root, '.cache', family), { recursive: true, mode: 0o700 });
   chmodSync(path.join(root, '.cache', 'qa'), 0o700);
+  const isolation = createTestIsolation({ environment });
   const parent = environment.TMPDIR || os.tmpdir();
   mkdirSync(parent, { recursive: true });
   const temporary = mkdtempSync(path.join(parent, 'devryan-script-tests-'));
-  const env = { ...environment, TMPDIR: temporary };
+  const env = { ...isolation.env, TMPDIR: temporary };
   delete env.DEVRYAN_MUTATION_TEST_SHARD;
   delete env.DEVRYAN_STREAM_TEST_SHARD;
-  return { env, cleanup: () => rmSync(temporary, { recursive: true, force: true }) };
+  return { env, root: isolation.root, cleanup: () => { rmSync(temporary, { recursive: true, force: true }); isolation.cleanup(); } };
 }
 
 export async function runScriptTests(root = repositoryRoot) {
