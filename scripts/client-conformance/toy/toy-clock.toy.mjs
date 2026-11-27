@@ -17,8 +17,8 @@ test.skip('a skipped test records nothing and shifts nothing', () => {
 });
 
 test('new Date() and Date.now() read the same clock', () => {
-  const [now, made, performanceNow] = readClock();
-  expect(made).toBe(now);
+  let reading = readClock(); for (let tries = 1; reading[1] !== reading[0] && tries < 5; tries++) reading = readClock(); // real time without the recorder: read again if a millisecond passed between the two reads (one call under it)
+  const [now, made, performanceNow] = reading; expect(made).toBe(now);
   expect(typeof performanceNow).toBe('number');
   expect(new Date().constructor).toBe(Date);
   expect(Object.getOwnPropertyDescriptor(Date, 'now').value).toBe(Date.now);
