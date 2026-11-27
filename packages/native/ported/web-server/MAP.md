@@ -18,7 +18,7 @@ random numbers. Functions that act on `req`/`res`, take callbacks or return clos
 JavaScript. Every crate also passes `scripts/rust-anything/error-texts.mjs` (product-built
 errors match class and message; `error-sources.json` keeps the throw sites).
 
-58 units done.
+63 units done.
 
 | Unit | State | Recorded | Fuzz | JS | Rust | Notes |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
@@ -80,9 +80,14 @@ errors match class and message; `error-sources.json` keeps the throw sites).
 | `skills-catalog/source.js` | done | 346/346 | 0/0 | 70 | 100 | `parseSkillRepoSource`; its three patterns matched by hand (`\s`, `.`, ASCII `/i`). 242 cases incl. look-alike hosts (`github.com.evil.com`), traversal subpaths and Unicode spaces. |
 | `opencode/cli-options.js` | done | 97/97 | 0/0 | 113 | 146 | `parseServeCliOptions` over the caller's `argv`/`env` (nothing read from the process). `parseInt` and `trim` written out; a non-string argument throws as `arg.startsWith` does. 85 hand cases (inline and following values, `--` lookalikes, env fallbacks and truthiness). Tests: `cli-entry-runtime.test.js` stubs it, no calls. |
 | `opencode/runtime-host/native-credential-mutation-owner.js` | done | 177/177 | 0/0 | 114 | 172 | `parseCredentialMutationBinding`, `parseCredentialResolutionBinding`; `credentialMutationFingerprint` (SHA-256) and the owner factory are kept. Security: 114 threat cases (kind/valueType/method combinations, delegated and MCP integration ids, create-vs-update fingerprints, MCP server bounds, permit shape and session equality, directory bounds). Quirk kept: `RegExp#test` reads `String(sessionID)`, so an array passes the pattern (then fails the permit's `===`). 138 refusals match by message. Its test run under the guard (39 calls captured). |
+| `multi-user/policy.js` | done | 3162/3162 | 851/851 | 587 | 1084 | All 12 functions. Security: its test run under the guard (274 calls) plus 2128 hand cases (roles incl. case variants, arrays and `Object.prototype` names; missing, primitive and malformed principals, rows and user policies; slug case/space/alias variants; 100 request paths with case, encoding, dot-segment, double-slash, trailing-slash and NUL tricks; effective settings and change validation per role). JS semantics written out: property reads on any value, `hasOwnProperty`/entries of strings and arrays, `String#includes` vs `Array#includes`, `JSON.stringify` change detection. Findings below. |
+| `opencode/harness-result.js` | done | 480/480 | 0/0 | 67 | 110 | All 5. Its test run under the guard (10 calls) plus 245 hand cases. |
+| `opencode/runtime-surface-policy.js` | done | 126/126 | 0/0 | 418 | 117 | All 5; the managed-plugin lookup as in `managed-plugins-rs`. 67 hand cases (managed vs legacy specs, blocked MCP names with spaces and case, forbidden tool prefixes). |
+| `opencode/runtime-host/native-claude-lifecycle.js` | matches, gate fails | 856/856 | 579/579 | 158 | 551 | 6 of 9 (the record/grant fingerprints and `hasLegacyClaudeFence` are SHA-256). Security: the lifecycle parsers and the transition state machine; 510 product refusals match by code. Its test calls captured and de-duplicated (the recorder's own capture was 42 MB) plus 293 hand cases (every kind, phase, field bound, uniqueness and capacity edge). Gate fails only the 3x size heuristic (3.5x over a dense 158-line source). |
+| `opencode/v2/openapi-routes.js` | matches, gate fails | 162/162 | 0/0 | 134 | 29 | `openCodeV2RouteKey`; `extractOpenCodeV2Operations` and `renderOpenCodeV2RoutesModule` throw a product `TypeError` (kept). Gate fails only on the tool assigning a kept function's throw to the arrow export, as for `native-verification-order`. |
 Skipped (reason): `http-compression-policy.js` (returns closures), `indexing-policy.js` (registers routes on an app), `security/direct-local-request.js` (WHATWG URL parsing of `Origin`), `tunnels/managed-token.js` (throws a custom `Error` subclass the bindings cannot reproduce), `opencode/session-tree.js` (async client reads), `multi-user/session-visibility.js`'s and `terminal/terminal-ws-protocol.js`'s kept exports as noted, `skills-catalog/curated-sources.js` (constant data copy, nothing to port), `opencode/native-mutation-result.js` (20 dense lines needing Node's `path.resolve`/`relative`: over the 3x size bound), `opencode/startup-timing.js` and `opencode/selection-timing.js` (log to the console, time, `req`/`res`), `opencode/runtime-host/native-retention.js`, `native-owned-requests.js`, `opencode/session-activity-gate.js`, `tunnels/registry.js`, `opencode/native-search-output.js`, `event-stream/canonical-ingestion.js`, `notifications/emitter-runtime.js` (factories returning closures), `opencode/opencode-client/{errors,location}.js` (custom `Error` subclass), `opencode/opencode-generation.js` (calls a client method), `opencode/env-config.js` (WHATWG URL parsing and a logger), `opencode/standard-preview/capabilities.js` and `opencode/runtime-host/native-plan-denial-owner.js` (return `Error` objects; async owners), `opencode/runtime-host/native-shell-completion.js`, `reviewed-document-transform.js`, `native-setup-credential-ack.js` and `native-bundle-credential-contract.js` (SHA-256, no crate), `quota/native-credentials.js`, `startup-notices.js`, `orchestration/provider-reset-probe.js`, `opencode/settings-normalization-runtime.js` (factories over the caller's `os`/`path`/process, or module state). Not taken: every file whose import closure reaches `fs`, `child_process`, `net`, `http(s)`, `os`, `ws`, `express`, sqlite or a pty, or that uses `fetch`, timers, `process.env`, the clock or random numbers (most of `opencode/`, `git/`, `fs/`, `multi-user/policy.js`...).
 
-Not attempted yet among the screened-pure files (candidates for a later batch): `multi-user/policy.js` (role and settings permissions, security), `opencode/runtime-host/native-claude-lifecycle.js` (its parsers; the fingerprints are SHA-256), `opencode/runtime-surface-policy.js`, `opencode/harness-result.js`, `opencode/harness-duplicate-profiles.js`, `opencode/v2/openapi-routes.js` (`openCodeV2RouteKey`, `extractOpenCodeV2Operations`, `renderOpenCodeV2RoutesModule`), `opencode/opencode-routes.js`, `quota/providers/interface.js`. The full per-file state of `packages/web/server/lib` is in the program's `RA-webserver.md` closing summary.
+Not attempted yet among the screened-pure files: none. `opencode/harness-duplicate-profiles.js` (frozen data), `opencode/opencode-routes.js` (constant payload) and `quota/providers/interface.js` (JSDoc only) have nothing to port. The full per-file state of `packages/web/server/lib` is in the program's `RA-webserver.md` closing summary.
 
 ## Security units: threat-model cases
 
@@ -141,3 +146,17 @@ writes nothing is run under plain Node with a no-op stand-in for `vitest` and th
 wrapped to log their arguments (scratch outside the repository, deleted after the run); the
 logged calls become hand cases. Tests that write files (`project-environment`) or use `bun:test`
 fixtures (`native-helper`) had their calls copied by hand instead.
+
+`multi-user/policy.js`: reproduced as is (reported, not changed). The role table is read with
+`String(role)`, so an array role `["admin"]` receives the admin template while the `role ===
+'admin'` shortcuts do not apply; `Object.prototype` names as roles throw a `TypeError`. A string
+`settingsPages` is matched with `String#includes` (substring; `"*"` grants every page). Slugs are
+trimmed and lowercased, `settingsPages` entries are not. `settingsPageForRequest` matches the literal
+path: case, percent-encoded, dot-segment, double-slash, NUL and trailing-slash variants map to no
+page, `/admin/../config` maps to `users`. Tunnel read access exposes `managedRemoteTunnelToken` and
+`managedRemoteTunnelPresetTokens`; `publicPrincipal` keeps every assignment field except the
+repository path, worktree container path and remote URL. The existing tests cover the canonical
+paths, role templates, overrides and validation, none of these variants.
+
+`opencode/runtime-host/native-claude-lifecycle.js`: every operation kind, phase, field bound,
+uniqueness rule and capacity limit; no bypass found.

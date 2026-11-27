@@ -1,0 +1,102 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode",
+  "unit": "runtime-surface-policy.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "runtime-surface-policy-rs",
+  "exports": [
+    {
+      "name": "buildBlockedManagedRuntimeMcpOverlay",
+      "file": "runtime-surface-policy.js",
+      "line": 55,
+      "params": [
+        {
+          "name": "configs",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "filterManagedRuntimePluginEntries",
+      "file": "runtime-surface-policy.js",
+      "line": 44,
+      "params": [
+        {
+          "name": "entries",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isAllowedManagedRuntimePluginSpec",
+      "file": "runtime-surface-policy.js",
+      "line": 32,
+      "params": [
+        {
+          "name": "spec",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isBlockedManagedRuntimeMcpName",
+      "file": "runtime-surface-policy.js",
+      "line": 50,
+      "params": [
+        {
+          "name": "name",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isForbiddenManagedRuntimeToolId",
+      "file": "runtime-surface-policy.js",
+      "line": 73,
+      "params": [
+        {
+          "name": "toolId",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

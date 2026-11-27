@@ -1,0 +1,245 @@
+{"fn": "createHarnessResult", "args": ["success", {"$undefined": true}]}
+{"fn": "createHarnessResult", "args": ["success", {}]}
+{"fn": "createHarnessResult", "args": ["success", null]}
+{"fn": "createHarnessResult", "args": ["success", "x"]}
+{"fn": "createHarnessResult", "args": ["success", 5]}
+{"fn": "createHarnessResult", "args": ["success", []]}
+{"fn": "createHarnessResult", "args": ["success", {"summary": "  done  ", "nextActions": ["a", null, {"$undefined": true}, 0, ""], "artifacts": "x", "recovery": {"rootCauseHint": " r ", "safeRetry": "", "stopCondition": 5, "retryable": 0}}]}
+{"fn": "createHarnessResult", "args": ["success", {"summary": "\u3000", "recovery": []}]}
+{"fn": "createHarnessResult", "args": ["success", {"recovery": {"retryable": false}}]}
+{"fn": "createHarnessResult", "args": ["success", {"recovery": {"$map": []}}]}
+{"fn": "createHarnessResult", "args": ["success", {"summary": {"$utf16": [32, 55296, 32]}}]}
+{"fn": "createHarnessResult", "args": ["warning", {"$undefined": true}]}
+{"fn": "createHarnessResult", "args": ["warning", {}]}
+{"fn": "createHarnessResult", "args": ["warning", null]}
+{"fn": "createHarnessResult", "args": ["warning", "x"]}
+{"fn": "createHarnessResult", "args": ["warning", 5]}
+{"fn": "createHarnessResult", "args": ["warning", []]}
+{"fn": "createHarnessResult", "args": ["warning", {"summary": "  done  ", "nextActions": ["a", null, {"$undefined": true}, 0, ""], "artifacts": "x", "recovery": {"rootCauseHint": " r ", "safeRetry": "", "stopCondition": 5, "retryable": 0}}]}
+{"fn": "createHarnessResult", "args": ["warning", {"summary": "\u3000", "recovery": []}]}
+{"fn": "createHarnessResult", "args": ["warning", {"recovery": {"retryable": false}}]}
+{"fn": "createHarnessResult", "args": ["warning", {"recovery": {"$map": []}}]}
+{"fn": "createHarnessResult", "args": ["warning", {"summary": {"$utf16": [32, 55296, 32]}}]}
+{"fn": "createHarnessResult", "args": ["error", {"$undefined": true}]}
+{"fn": "createHarnessResult", "args": ["error", {}]}
+{"fn": "createHarnessResult", "args": ["error", null]}
+{"fn": "createHarnessResult", "args": ["error", "x"]}
+{"fn": "createHarnessResult", "args": ["error", 5]}
+{"fn": "createHarnessResult", "args": ["error", []]}
+{"fn": "createHarnessResult", "args": ["error", {"summary": "  done  ", "nextActions": ["a", null, {"$undefined": true}, 0, ""], "artifacts": "x", "recovery": {"rootCauseHint": " r ", "safeRetry": "", "stopCondition": 5, "retryable": 0}}]}
+{"fn": "createHarnessResult", "args": ["error", {"summary": "\u3000", "recovery": []}]}
+{"fn": "createHarnessResult", "args": ["error", {"recovery": {"retryable": false}}]}
+{"fn": "createHarnessResult", "args": ["error", {"recovery": {"$map": []}}]}
+{"fn": "createHarnessResult", "args": ["error", {"summary": {"$utf16": [32, 55296, 32]}}]}
+{"fn": "createHarnessResult", "args": ["SUCCESS", {"$undefined": true}]}
+{"fn": "createHarnessResult", "args": ["SUCCESS", {}]}
+{"fn": "createHarnessResult", "args": ["SUCCESS", null]}
+{"fn": "createHarnessResult", "args": ["SUCCESS", "x"]}
+{"fn": "createHarnessResult", "args": ["SUCCESS", 5]}
+{"fn": "createHarnessResult", "args": ["SUCCESS", []]}
+{"fn": "createHarnessResult", "args": ["SUCCESS", {"summary": "  done  ", "nextActions": ["a", null, {"$undefined": true}, 0, ""], "artifacts": "x", "recovery": {"rootCauseHint": " r ", "safeRetry": "", "stopCondition": 5, "retryable": 0}}]}
+{"fn": "createHarnessResult", "args": ["SUCCESS", {"summary": "\u3000", "recovery": []}]}
+{"fn": "createHarnessResult", "args": ["SUCCESS", {"recovery": {"retryable": false}}]}
+{"fn": "createHarnessResult", "args": ["SUCCESS", {"recovery": {"$map": []}}]}
+{"fn": "createHarnessResult", "args": ["SUCCESS", {"summary": {"$utf16": [32, 55296, 32]}}]}
+{"fn": "createHarnessResult", "args": ["", {"$undefined": true}]}
+{"fn": "createHarnessResult", "args": ["", {}]}
+{"fn": "createHarnessResult", "args": ["", null]}
+{"fn": "createHarnessResult", "args": ["", "x"]}
+{"fn": "createHarnessResult", "args": ["", 5]}
+{"fn": "createHarnessResult", "args": ["", []]}
+{"fn": "createHarnessResult", "args": ["", {"summary": "  done  ", "nextActions": ["a", null, {"$undefined": true}, 0, ""], "artifacts": "x", "recovery": {"rootCauseHint": " r ", "safeRetry": "", "stopCondition": 5, "retryable": 0}}]}
+{"fn": "createHarnessResult", "args": ["", {"summary": "\u3000", "recovery": []}]}
+{"fn": "createHarnessResult", "args": ["", {"recovery": {"retryable": false}}]}
+{"fn": "createHarnessResult", "args": ["", {"recovery": {"$map": []}}]}
+{"fn": "createHarnessResult", "args": ["", {"summary": {"$utf16": [32, 55296, 32]}}]}
+{"fn": "createHarnessResult", "args": [null, {"$undefined": true}]}
+{"fn": "createHarnessResult", "args": [null, {}]}
+{"fn": "createHarnessResult", "args": [null, null]}
+{"fn": "createHarnessResult", "args": [null, "x"]}
+{"fn": "createHarnessResult", "args": [null, 5]}
+{"fn": "createHarnessResult", "args": [null, []]}
+{"fn": "createHarnessResult", "args": [null, {"summary": "  done  ", "nextActions": ["a", null, {"$undefined": true}, 0, ""], "artifacts": "x", "recovery": {"rootCauseHint": " r ", "safeRetry": "", "stopCondition": 5, "retryable": 0}}]}
+{"fn": "createHarnessResult", "args": [null, {"summary": "\u3000", "recovery": []}]}
+{"fn": "createHarnessResult", "args": [null, {"recovery": {"retryable": false}}]}
+{"fn": "createHarnessResult", "args": [null, {"recovery": {"$map": []}}]}
+{"fn": "createHarnessResult", "args": [null, {"summary": {"$utf16": [32, 55296, 32]}}]}
+{"fn": "createHarnessResult", "args": [{"$undefined": true}, {"$undefined": true}]}
+{"fn": "createHarnessResult", "args": [{"$undefined": true}, {}]}
+{"fn": "createHarnessResult", "args": [{"$undefined": true}, null]}
+{"fn": "createHarnessResult", "args": [{"$undefined": true}, "x"]}
+{"fn": "createHarnessResult", "args": [{"$undefined": true}, 5]}
+{"fn": "createHarnessResult", "args": [{"$undefined": true}, []]}
+{"fn": "createHarnessResult", "args": [{"$undefined": true}, {"summary": "  done  ", "nextActions": ["a", null, {"$undefined": true}, 0, ""], "artifacts": "x", "recovery": {"rootCauseHint": " r ", "safeRetry": "", "stopCondition": 5, "retryable": 0}}]}
+{"fn": "createHarnessResult", "args": [{"$undefined": true}, {"summary": "\u3000", "recovery": []}]}
+{"fn": "createHarnessResult", "args": [{"$undefined": true}, {"recovery": {"retryable": false}}]}
+{"fn": "createHarnessResult", "args": [{"$undefined": true}, {"recovery": {"$map": []}}]}
+{"fn": "createHarnessResult", "args": [{"$undefined": true}, {"summary": {"$utf16": [32, 55296, 32]}}]}
+{"fn": "createHarnessResult", "args": [5, {"$undefined": true}]}
+{"fn": "createHarnessResult", "args": [5, {}]}
+{"fn": "createHarnessResult", "args": [5, null]}
+{"fn": "createHarnessResult", "args": [5, "x"]}
+{"fn": "createHarnessResult", "args": [5, 5]}
+{"fn": "createHarnessResult", "args": [5, []]}
+{"fn": "createHarnessResult", "args": [5, {"summary": "  done  ", "nextActions": ["a", null, {"$undefined": true}, 0, ""], "artifacts": "x", "recovery": {"rootCauseHint": " r ", "safeRetry": "", "stopCondition": 5, "retryable": 0}}]}
+{"fn": "createHarnessResult", "args": [5, {"summary": "\u3000", "recovery": []}]}
+{"fn": "createHarnessResult", "args": [5, {"recovery": {"retryable": false}}]}
+{"fn": "createHarnessResult", "args": [5, {"recovery": {"$map": []}}]}
+{"fn": "createHarnessResult", "args": [5, {"summary": {"$utf16": [32, 55296, 32]}}]}
+{"fn": "createHarnessResult", "args": [["success"], {"$undefined": true}]}
+{"fn": "createHarnessResult", "args": [["success"], {}]}
+{"fn": "createHarnessResult", "args": [["success"], null]}
+{"fn": "createHarnessResult", "args": [["success"], "x"]}
+{"fn": "createHarnessResult", "args": [["success"], 5]}
+{"fn": "createHarnessResult", "args": [["success"], []]}
+{"fn": "createHarnessResult", "args": [["success"], {"summary": "  done  ", "nextActions": ["a", null, {"$undefined": true}, 0, ""], "artifacts": "x", "recovery": {"rootCauseHint": " r ", "safeRetry": "", "stopCondition": 5, "retryable": 0}}]}
+{"fn": "createHarnessResult", "args": [["success"], {"summary": "\u3000", "recovery": []}]}
+{"fn": "createHarnessResult", "args": [["success"], {"recovery": {"retryable": false}}]}
+{"fn": "createHarnessResult", "args": [["success"], {"recovery": {"$map": []}}]}
+{"fn": "createHarnessResult", "args": [["success"], {"summary": {"$utf16": [32, 55296, 32]}}]}
+{"fn": "createHarnessSuccess", "args": [{"$undefined": true}]}
+{"fn": "createHarnessWarning", "args": [{"$undefined": true}]}
+{"fn": "createHarnessError", "args": [{"$undefined": true}]}
+{"fn": "createHarnessSuccess", "args": [{}]}
+{"fn": "createHarnessWarning", "args": [{}]}
+{"fn": "createHarnessError", "args": [{}]}
+{"fn": "createHarnessSuccess", "args": [null]}
+{"fn": "createHarnessWarning", "args": [null]}
+{"fn": "createHarnessError", "args": [null]}
+{"fn": "createHarnessSuccess", "args": ["x"]}
+{"fn": "createHarnessWarning", "args": ["x"]}
+{"fn": "createHarnessError", "args": ["x"]}
+{"fn": "createHarnessSuccess", "args": [5]}
+{"fn": "createHarnessWarning", "args": [5]}
+{"fn": "createHarnessError", "args": [5]}
+{"fn": "createHarnessSuccess", "args": [[]]}
+{"fn": "createHarnessWarning", "args": [[]]}
+{"fn": "createHarnessError", "args": [[]]}
+{"fn": "createHarnessSuccess", "args": [{"summary": "  done  ", "nextActions": ["a", null, {"$undefined": true}, 0, ""], "artifacts": "x", "recovery": {"rootCauseHint": " r ", "safeRetry": "", "stopCondition": 5, "retryable": 0}}]}
+{"fn": "createHarnessWarning", "args": [{"summary": "  done  ", "nextActions": ["a", null, {"$undefined": true}, 0, ""], "artifacts": "x", "recovery": {"rootCauseHint": " r ", "safeRetry": "", "stopCondition": 5, "retryable": 0}}]}
+{"fn": "createHarnessError", "args": [{"summary": "  done  ", "nextActions": ["a", null, {"$undefined": true}, 0, ""], "artifacts": "x", "recovery": {"rootCauseHint": " r ", "safeRetry": "", "stopCondition": 5, "retryable": 0}}]}
+{"fn": "createHarnessSuccess", "args": [{"summary": "\u3000", "recovery": []}]}
+{"fn": "createHarnessWarning", "args": [{"summary": "\u3000", "recovery": []}]}
+{"fn": "createHarnessError", "args": [{"summary": "\u3000", "recovery": []}]}
+{"fn": "createHarnessSuccess", "args": [{"recovery": {"retryable": false}}]}
+{"fn": "createHarnessWarning", "args": [{"recovery": {"retryable": false}}]}
+{"fn": "createHarnessError", "args": [{"recovery": {"retryable": false}}]}
+{"fn": "createHarnessSuccess", "args": [{"recovery": {"$map": []}}]}
+{"fn": "createHarnessWarning", "args": [{"recovery": {"$map": []}}]}
+{"fn": "createHarnessError", "args": [{"recovery": {"$map": []}}]}
+{"fn": "createHarnessSuccess", "args": [{"summary": {"$utf16": [32, 55296, 32]}}]}
+{"fn": "createHarnessWarning", "args": [{"summary": {"$utf16": [32, 55296, 32]}}]}
+{"fn": "createHarnessError", "args": [{"summary": {"$utf16": [32, 55296, 32]}}]}
+{"fn": "createHarnessResult", "args": []}
+{"fn": "createHarnessSuccess", "args": []}
+{"fn": "createHarnessWarning", "args": []}
+{"fn": "createHarnessError", "args": []}
+{"fn": "withHarnessResult", "args": []}
+{"fn": "withHarnessResult", "args": [{"$undefined": true}, {"$undefined": true}]}
+{"fn": "withHarnessResult", "args": [{"$undefined": true}, null]}
+{"fn": "withHarnessResult", "args": [{"$undefined": true}, "x"]}
+{"fn": "withHarnessResult", "args": [{"$undefined": true}, []]}
+{"fn": "withHarnessResult", "args": [{"$undefined": true}, {}]}
+{"fn": "withHarnessResult", "args": [{"$undefined": true}, {"status": "success", "summary": "ok"}]}
+{"fn": "withHarnessResult", "args": [{"$undefined": true}, {"status": "bogus"}]}
+{"fn": "withHarnessResult", "args": [{"$undefined": true}, {"status": "warning", "recovery": {"retryable": true}}]}
+{"fn": "withHarnessResult", "args": [{"$undefined": true}, {"$map": []}]}
+{"fn": "withHarnessResult", "args": [null, {"$undefined": true}]}
+{"fn": "withHarnessResult", "args": [null, null]}
+{"fn": "withHarnessResult", "args": [null, "x"]}
+{"fn": "withHarnessResult", "args": [null, []]}
+{"fn": "withHarnessResult", "args": [null, {}]}
+{"fn": "withHarnessResult", "args": [null, {"status": "success", "summary": "ok"}]}
+{"fn": "withHarnessResult", "args": [null, {"status": "bogus"}]}
+{"fn": "withHarnessResult", "args": [null, {"status": "warning", "recovery": {"retryable": true}}]}
+{"fn": "withHarnessResult", "args": [null, {"$map": []}]}
+{"fn": "withHarnessResult", "args": [5, {"$undefined": true}]}
+{"fn": "withHarnessResult", "args": [5, null]}
+{"fn": "withHarnessResult", "args": [5, "x"]}
+{"fn": "withHarnessResult", "args": [5, []]}
+{"fn": "withHarnessResult", "args": [5, {}]}
+{"fn": "withHarnessResult", "args": [5, {"status": "success", "summary": "ok"}]}
+{"fn": "withHarnessResult", "args": [5, {"status": "bogus"}]}
+{"fn": "withHarnessResult", "args": [5, {"status": "warning", "recovery": {"retryable": true}}]}
+{"fn": "withHarnessResult", "args": [5, {"$map": []}]}
+{"fn": "withHarnessResult", "args": ["s", {"$undefined": true}]}
+{"fn": "withHarnessResult", "args": ["s", null]}
+{"fn": "withHarnessResult", "args": ["s", "x"]}
+{"fn": "withHarnessResult", "args": ["s", []]}
+{"fn": "withHarnessResult", "args": ["s", {}]}
+{"fn": "withHarnessResult", "args": ["s", {"status": "success", "summary": "ok"}]}
+{"fn": "withHarnessResult", "args": ["s", {"status": "bogus"}]}
+{"fn": "withHarnessResult", "args": ["s", {"status": "warning", "recovery": {"retryable": true}}]}
+{"fn": "withHarnessResult", "args": ["s", {"$map": []}]}
+{"fn": "withHarnessResult", "args": [[1], {"$undefined": true}]}
+{"fn": "withHarnessResult", "args": [[1], null]}
+{"fn": "withHarnessResult", "args": [[1], "x"]}
+{"fn": "withHarnessResult", "args": [[1], []]}
+{"fn": "withHarnessResult", "args": [[1], {}]}
+{"fn": "withHarnessResult", "args": [[1], {"status": "success", "summary": "ok"}]}
+{"fn": "withHarnessResult", "args": [[1], {"status": "bogus"}]}
+{"fn": "withHarnessResult", "args": [[1], {"status": "warning", "recovery": {"retryable": true}}]}
+{"fn": "withHarnessResult", "args": [[1], {"$map": []}]}
+{"fn": "withHarnessResult", "args": [{}, {"$undefined": true}]}
+{"fn": "withHarnessResult", "args": [{}, null]}
+{"fn": "withHarnessResult", "args": [{}, "x"]}
+{"fn": "withHarnessResult", "args": [{}, []]}
+{"fn": "withHarnessResult", "args": [{}, {}]}
+{"fn": "withHarnessResult", "args": [{}, {"status": "success", "summary": "ok"}]}
+{"fn": "withHarnessResult", "args": [{}, {"status": "bogus"}]}
+{"fn": "withHarnessResult", "args": [{}, {"status": "warning", "recovery": {"retryable": true}}]}
+{"fn": "withHarnessResult", "args": [{}, {"$map": []}]}
+{"fn": "withHarnessResult", "args": [{"x": 1}, {"$undefined": true}]}
+{"fn": "withHarnessResult", "args": [{"x": 1}, null]}
+{"fn": "withHarnessResult", "args": [{"x": 1}, "x"]}
+{"fn": "withHarnessResult", "args": [{"x": 1}, []]}
+{"fn": "withHarnessResult", "args": [{"x": 1}, {}]}
+{"fn": "withHarnessResult", "args": [{"x": 1}, {"status": "success", "summary": "ok"}]}
+{"fn": "withHarnessResult", "args": [{"x": 1}, {"status": "bogus"}]}
+{"fn": "withHarnessResult", "args": [{"x": 1}, {"status": "warning", "recovery": {"retryable": true}}]}
+{"fn": "withHarnessResult", "args": [{"x": 1}, {"$map": []}]}
+{"fn": "withHarnessResult", "args": [{"status": "mine", "harness": "old", "2": "two"}, {"$undefined": true}]}
+{"fn": "withHarnessResult", "args": [{"status": "mine", "harness": "old", "2": "two"}, null]}
+{"fn": "withHarnessResult", "args": [{"status": "mine", "harness": "old", "2": "two"}, "x"]}
+{"fn": "withHarnessResult", "args": [{"status": "mine", "harness": "old", "2": "two"}, []]}
+{"fn": "withHarnessResult", "args": [{"status": "mine", "harness": "old", "2": "two"}, {}]}
+{"fn": "withHarnessResult", "args": [{"status": "mine", "harness": "old", "2": "two"}, {"status": "success", "summary": "ok"}]}
+{"fn": "withHarnessResult", "args": [{"status": "mine", "harness": "old", "2": "two"}, {"status": "bogus"}]}
+{"fn": "withHarnessResult", "args": [{"status": "mine", "harness": "old", "2": "two"}, {"status": "warning", "recovery": {"retryable": true}}]}
+{"fn": "withHarnessResult", "args": [{"status": "mine", "harness": "old", "2": "two"}, {"$map": []}]}
+{"fn": "withHarnessResult", "args": [{"summary": {"$undefined": true}}, {"$undefined": true}]}
+{"fn": "withHarnessResult", "args": [{"summary": {"$undefined": true}}, null]}
+{"fn": "withHarnessResult", "args": [{"summary": {"$undefined": true}}, "x"]}
+{"fn": "withHarnessResult", "args": [{"summary": {"$undefined": true}}, []]}
+{"fn": "withHarnessResult", "args": [{"summary": {"$undefined": true}}, {}]}
+{"fn": "withHarnessResult", "args": [{"summary": {"$undefined": true}}, {"status": "success", "summary": "ok"}]}
+{"fn": "withHarnessResult", "args": [{"summary": {"$undefined": true}}, {"status": "bogus"}]}
+{"fn": "withHarnessResult", "args": [{"summary": {"$undefined": true}}, {"status": "warning", "recovery": {"retryable": true}}]}
+{"fn": "withHarnessResult", "args": [{"summary": {"$undefined": true}}, {"$map": []}]}
+{"fn": "withHarnessResult", "args": [{"$map": []}, {"$undefined": true}]}
+{"fn": "withHarnessResult", "args": [{"$map": []}, null]}
+{"fn": "withHarnessResult", "args": [{"$map": []}, "x"]}
+{"fn": "withHarnessResult", "args": [{"$map": []}, []]}
+{"fn": "withHarnessResult", "args": [{"$map": []}, {}]}
+{"fn": "withHarnessResult", "args": [{"$map": []}, {"status": "success", "summary": "ok"}]}
+{"fn": "withHarnessResult", "args": [{"$map": []}, {"status": "bogus"}]}
+{"fn": "withHarnessResult", "args": [{"$map": []}, {"status": "warning", "recovery": {"retryable": true}}]}
+{"fn": "withHarnessResult", "args": [{"$map": []}, {"$map": []}]}
+{"fn": "withHarnessResult", "args": [{"$num": "NaN"}, {"$undefined": true}]}
+{"fn": "withHarnessResult", "args": [{"$num": "NaN"}, null]}
+{"fn": "withHarnessResult", "args": [{"$num": "NaN"}, "x"]}
+{"fn": "withHarnessResult", "args": [{"$num": "NaN"}, []]}
+{"fn": "withHarnessResult", "args": [{"$num": "NaN"}, {}]}
+{"fn": "withHarnessResult", "args": [{"$num": "NaN"}, {"status": "success", "summary": "ok"}]}
+{"fn": "withHarnessResult", "args": [{"$num": "NaN"}, {"status": "bogus"}]}
+{"fn": "withHarnessResult", "args": [{"$num": "NaN"}, {"status": "warning", "recovery": {"retryable": true}}]}
+{"fn": "withHarnessResult", "args": [{"$num": "NaN"}, {"$map": []}]}
+{"fn": "withHarnessResult", "args": [{"$date": "2020-01-01T00:00:00.000Z"}, {"$undefined": true}]}
+{"fn": "withHarnessResult", "args": [{"$date": "2020-01-01T00:00:00.000Z"}, null]}
+{"fn": "withHarnessResult", "args": [{"$date": "2020-01-01T00:00:00.000Z"}, "x"]}
+{"fn": "withHarnessResult", "args": [{"$date": "2020-01-01T00:00:00.000Z"}, []]}
+{"fn": "withHarnessResult", "args": [{"$date": "2020-01-01T00:00:00.000Z"}, {}]}
+{"fn": "withHarnessResult", "args": [{"$date": "2020-01-01T00:00:00.000Z"}, {"status": "success", "summary": "ok"}]}
+{"fn": "withHarnessResult", "args": [{"$date": "2020-01-01T00:00:00.000Z"}, {"status": "bogus"}]}
+{"fn": "withHarnessResult", "args": [{"$date": "2020-01-01T00:00:00.000Z"}, {"status": "warning", "recovery": {"retryable": true}}]}
+{"fn": "withHarnessResult", "args": [{"$date": "2020-01-01T00:00:00.000Z"}, {"$map": []}]}

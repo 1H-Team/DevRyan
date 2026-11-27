@@ -1,0 +1,73 @@
+{"fn": "openCodeV2RouteKey", "args": ["GET", "GET"]}
+{"fn": "openCodeV2RouteKey", "args": ["GET", "/session/{id}"]}
+{"fn": "openCodeV2RouteKey", "args": ["GET", ""]}
+{"fn": "openCodeV2RouteKey", "args": ["GET", null]}
+{"fn": "openCodeV2RouteKey", "args": ["GET", {"$undefined": true}]}
+{"fn": "openCodeV2RouteKey", "args": ["GET", 5]}
+{"fn": "openCodeV2RouteKey", "args": ["/session/{id}", "GET"]}
+{"fn": "openCodeV2RouteKey", "args": ["/session/{id}", "/session/{id}"]}
+{"fn": "openCodeV2RouteKey", "args": ["/session/{id}", ""]}
+{"fn": "openCodeV2RouteKey", "args": ["/session/{id}", null]}
+{"fn": "openCodeV2RouteKey", "args": ["/session/{id}", {"$undefined": true}]}
+{"fn": "openCodeV2RouteKey", "args": ["/session/{id}", 5]}
+{"fn": "openCodeV2RouteKey", "args": ["", "GET"]}
+{"fn": "openCodeV2RouteKey", "args": ["", "/session/{id}"]}
+{"fn": "openCodeV2RouteKey", "args": ["", ""]}
+{"fn": "openCodeV2RouteKey", "args": ["", null]}
+{"fn": "openCodeV2RouteKey", "args": ["", {"$undefined": true}]}
+{"fn": "openCodeV2RouteKey", "args": ["", 5]}
+{"fn": "openCodeV2RouteKey", "args": [null, "GET"]}
+{"fn": "openCodeV2RouteKey", "args": [null, "/session/{id}"]}
+{"fn": "openCodeV2RouteKey", "args": [null, ""]}
+{"fn": "openCodeV2RouteKey", "args": [null, null]}
+{"fn": "openCodeV2RouteKey", "args": [null, {"$undefined": true}]}
+{"fn": "openCodeV2RouteKey", "args": [null, 5]}
+{"fn": "openCodeV2RouteKey", "args": [{"$undefined": true}, "GET"]}
+{"fn": "openCodeV2RouteKey", "args": [{"$undefined": true}, "/session/{id}"]}
+{"fn": "openCodeV2RouteKey", "args": [{"$undefined": true}, ""]}
+{"fn": "openCodeV2RouteKey", "args": [{"$undefined": true}, null]}
+{"fn": "openCodeV2RouteKey", "args": [{"$undefined": true}, {"$undefined": true}]}
+{"fn": "openCodeV2RouteKey", "args": [{"$undefined": true}, 5]}
+{"fn": "openCodeV2RouteKey", "args": [5, "GET"]}
+{"fn": "openCodeV2RouteKey", "args": [5, "/session/{id}"]}
+{"fn": "openCodeV2RouteKey", "args": [5, ""]}
+{"fn": "openCodeV2RouteKey", "args": [5, null]}
+{"fn": "openCodeV2RouteKey", "args": [5, {"$undefined": true}]}
+{"fn": "openCodeV2RouteKey", "args": [5, 5]}
+{"fn": "openCodeV2RouteKey", "args": [{"$num": "-0"}, "GET"]}
+{"fn": "openCodeV2RouteKey", "args": [{"$num": "-0"}, "/session/{id}"]}
+{"fn": "openCodeV2RouteKey", "args": [{"$num": "-0"}, ""]}
+{"fn": "openCodeV2RouteKey", "args": [{"$num": "-0"}, null]}
+{"fn": "openCodeV2RouteKey", "args": [{"$num": "-0"}, {"$undefined": true}]}
+{"fn": "openCodeV2RouteKey", "args": [{"$num": "-0"}, 5]}
+{"fn": "openCodeV2RouteKey", "args": [["a", "b"], "GET"]}
+{"fn": "openCodeV2RouteKey", "args": [["a", "b"], "/session/{id}"]}
+{"fn": "openCodeV2RouteKey", "args": [["a", "b"], ""]}
+{"fn": "openCodeV2RouteKey", "args": [["a", "b"], null]}
+{"fn": "openCodeV2RouteKey", "args": [["a", "b"], {"$undefined": true}]}
+{"fn": "openCodeV2RouteKey", "args": [["a", "b"], 5]}
+{"fn": "openCodeV2RouteKey", "args": [{"a": 1}, "GET"]}
+{"fn": "openCodeV2RouteKey", "args": [{"a": 1}, "/session/{id}"]}
+{"fn": "openCodeV2RouteKey", "args": [{"a": 1}, ""]}
+{"fn": "openCodeV2RouteKey", "args": [{"a": 1}, null]}
+{"fn": "openCodeV2RouteKey", "args": [{"a": 1}, {"$undefined": true}]}
+{"fn": "openCodeV2RouteKey", "args": [{"a": 1}, 5]}
+{"fn": "openCodeV2RouteKey", "args": [true, "GET"]}
+{"fn": "openCodeV2RouteKey", "args": [true, "/session/{id}"]}
+{"fn": "openCodeV2RouteKey", "args": [true, ""]}
+{"fn": "openCodeV2RouteKey", "args": [true, null]}
+{"fn": "openCodeV2RouteKey", "args": [true, {"$undefined": true}]}
+{"fn": "openCodeV2RouteKey", "args": [true, 5]}
+{"fn": "openCodeV2RouteKey", "args": [{"$utf16": [55296]}, "GET"]}
+{"fn": "openCodeV2RouteKey", "args": [{"$utf16": [55296]}, "/session/{id}"]}
+{"fn": "openCodeV2RouteKey", "args": [{"$utf16": [55296]}, ""]}
+{"fn": "openCodeV2RouteKey", "args": [{"$utf16": [55296]}, null]}
+{"fn": "openCodeV2RouteKey", "args": [{"$utf16": [55296]}, {"$undefined": true}]}
+{"fn": "openCodeV2RouteKey", "args": [{"$utf16": [55296]}, 5]}
+{"fn": "openCodeV2RouteKey", "args": [{"$map": []}, "GET"]}
+{"fn": "openCodeV2RouteKey", "args": [{"$map": []}, "/session/{id}"]}
+{"fn": "openCodeV2RouteKey", "args": [{"$map": []}, ""]}
+{"fn": "openCodeV2RouteKey", "args": [{"$map": []}, null]}
+{"fn": "openCodeV2RouteKey", "args": [{"$map": []}, {"$undefined": true}]}
+{"fn": "openCodeV2RouteKey", "args": [{"$map": []}, 5]}
+{"fn": "openCodeV2RouteKey", "args": []}

@@ -1,0 +1,67 @@
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": ["./plugins/devryan-open-cursor.mjs"]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": [" ./plugins/devryan-open-cursor.mjs "]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": ["@rama_nigg/open-cursor"]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": ["@rama_nigg/open-cursor@latest"]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": ["@rama_nigg/open-cursor@2"]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": ["opencode-gpt-imagegen"]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": ["opencode-gpt-imagegen@0.1.12"]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": ["opencode-gpt-imagegen@0.2.0"]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": ["./node_modules/opencode-gpt-imagegen/dist/index.js"]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": ["./plugins/devryan-skill-context.mjs"]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": [".\\plugins\\devryan-skill-context.mjs"]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": ["file:///x/plugins/devryan-document-reader.mjs"]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": ["./plugins/openai-tool-schema-sanitizer.mjs"]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": ["./node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js"]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": ["cursor-acp"]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": ["user-plugin"]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": [""]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": [null]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": [{"$undefined": true}]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": [5]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": [["./plugins/devryan-skill-context.mjs"]]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": ["\u00a0opencode-gpt-imagegen@1\u00a0"]}
+{"fn": "filterManagedRuntimePluginEntries", "args": [["./plugins/devryan-open-cursor.mjs", " ./plugins/devryan-open-cursor.mjs ", "@rama_nigg/open-cursor", "@rama_nigg/open-cursor@latest", "@rama_nigg/open-cursor@2", "opencode-gpt-imagegen", "opencode-gpt-imagegen@0.1.12", "opencode-gpt-imagegen@0.2.0", "./node_modules/opencode-gpt-imagegen/dist/index.js", "./plugins/devryan-skill-context.mjs", ".\\plugins\\devryan-skill-context.mjs", "file:///x/plugins/devryan-document-reader.mjs", "./plugins/openai-tool-schema-sanitizer.mjs", "./node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js", "cursor-acp", "user-plugin", "", null, {"$undefined": true}, 5, ["./plugins/devryan-skill-context.mjs"], "\u00a0opencode-gpt-imagegen@1\u00a0", ["./plugins/devryan-open-cursor.mjs", {"x": 1}], [" opencode-gpt-imagegen@3"], [], [5], {"a": 1}, {"$num": "NaN"}]]}
+{"fn": "filterManagedRuntimePluginEntries", "args": [{"$undefined": true}]}
+{"fn": "filterManagedRuntimePluginEntries", "args": [null]}
+{"fn": "filterManagedRuntimePluginEntries", "args": ["x"]}
+{"fn": "filterManagedRuntimePluginEntries", "args": [{}]}
+{"fn": "filterManagedRuntimePluginEntries", "args": [[]]}
+{"fn": "isBlockedManagedRuntimeMcpName", "args": ["ghgrep"]}
+{"fn": "isBlockedManagedRuntimeMcpName", "args": [" gh-grep "]}
+{"fn": "isBlockedManagedRuntimeMcpName", "args": ["GHGREP"]}
+{"fn": "isBlockedManagedRuntimeMcpName", "args": ["gh_grep\n"]}
+{"fn": "isBlockedManagedRuntimeMcpName", "args": ["grep-app"]}
+{"fn": "isBlockedManagedRuntimeMcpName", "args": ["grep_app"]}
+{"fn": "isBlockedManagedRuntimeMcpName", "args": ["grepapp"]}
+{"fn": "isBlockedManagedRuntimeMcpName", "args": [""]}
+{"fn": "isBlockedManagedRuntimeMcpName", "args": [null]}
+{"fn": "isBlockedManagedRuntimeMcpName", "args": [5]}
+{"fn": "isBlockedManagedRuntimeMcpName", "args": [["ghgrep"]]}
+{"fn": "isBlockedManagedRuntimeMcpName", "args": ["\u3000grep_app"]}
+{"fn": "buildBlockedManagedRuntimeMcpOverlay", "args": [{"$undefined": true}]}
+{"fn": "buildBlockedManagedRuntimeMcpOverlay", "args": [null]}
+{"fn": "buildBlockedManagedRuntimeMcpOverlay", "args": ["x"]}
+{"fn": "buildBlockedManagedRuntimeMcpOverlay", "args": [[]]}
+{"fn": "buildBlockedManagedRuntimeMcpOverlay", "args": [[{"name": "ghgrep"}]]}
+{"fn": "buildBlockedManagedRuntimeMcpOverlay", "args": [[{"name": " grep_app "}, {"name": "GH-GREP"}, null, {"name": 5}, "gh_grep", {"name": ""}]]}
+{"fn": "buildBlockedManagedRuntimeMcpOverlay", "args": [[{"name": "ghgrep"}, {"name": "gh-grep"}, {"name": "gh_grep"}, {"name": "grep-app"}, {"name": "grep_app"}]]}
+{"fn": "buildBlockedManagedRuntimeMcpOverlay", "args": [[{"$map": []}]]}
+{"fn": "isForbiddenManagedRuntimeToolId", "args": ["invalid"]}
+{"fn": "isForbiddenManagedRuntimeToolId", "args": [" invalid "]}
+{"fn": "isForbiddenManagedRuntimeToolId", "args": ["INVALID"]}
+{"fn": "isForbiddenManagedRuntimeToolId", "args": ["ghgrep_search"]}
+{"fn": "isForbiddenManagedRuntimeToolId", "args": ["grep_app_x"]}
+{"fn": "isForbiddenManagedRuntimeToolId", "args": [" ghgrep_x"]}
+{"fn": "isForbiddenManagedRuntimeToolId", "args": ["ghgrep"]}
+{"fn": "isForbiddenManagedRuntimeToolId", "args": ["grep_app"]}
+{"fn": "isForbiddenManagedRuntimeToolId", "args": ["grep_appx"]}
+{"fn": "isForbiddenManagedRuntimeToolId", "args": [""]}
+{"fn": "isForbiddenManagedRuntimeToolId", "args": [null]}
+{"fn": "isForbiddenManagedRuntimeToolId", "args": [5]}
+{"fn": "isForbiddenManagedRuntimeToolId", "args": ["invalid2"]}
+{"fn": "isForbiddenManagedRuntimeToolId", "args": ["read"]}
+{"fn": "isAllowedManagedRuntimePluginSpec", "args": []}
+{"fn": "filterManagedRuntimePluginEntries", "args": []}
+{"fn": "isBlockedManagedRuntimeMcpName", "args": []}
+{"fn": "buildBlockedManagedRuntimeMcpOverlay", "args": []}
+{"fn": "isForbiddenManagedRuntimeToolId", "args": []}
