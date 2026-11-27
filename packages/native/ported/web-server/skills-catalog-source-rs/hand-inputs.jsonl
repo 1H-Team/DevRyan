@@ -1,0 +1,242 @@
+{"fn": "parseSkillRepoSource", "args": ["anthropics/skills", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["anthropics/skills", {}]}
+{"fn": "parseSkillRepoSource", "args": ["anthropics/skills", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["anthropics/skills", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["anthropics/skills/skills/pdf", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["anthropics/skills/skills/pdf", {}]}
+{"fn": "parseSkillRepoSource", "args": ["anthropics/skills/skills/pdf", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["anthropics/skills/skills/pdf", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["  anthropics/skills  ", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["  anthropics/skills  ", {}]}
+{"fn": "parseSkillRepoSource", "args": ["  anthropics/skills  ", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["  anthropics/skills  ", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/repo.git", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/repo.git", {}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/repo.git", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/repo.git", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/repo", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/repo", {}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/repo", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/repo", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["GIT@GITHUB.COM:Owner/Repo.GIT", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["GIT@GITHUB.COM:Owner/Repo.GIT", {}]}
+{"fn": "parseSkillRepoSource", "args": ["GIT@GITHUB.COM:Owner/Repo.GIT", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["GIT@GITHUB.COM:Owner/Repo.GIT", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/repo/extra", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/repo/extra", {}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/repo/extra", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/repo/extra", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/repo#frag", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/repo#frag", {}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/repo#frag", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/repo#frag", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:/repo", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:/repo", {}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:/repo", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:/repo", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/", {}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/.git", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/.git", {}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/.git", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/.git", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:own er/repo", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:own er/repo", {}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:own er/repo", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:own er/repo", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com/owner/repo", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com/owner/repo", {}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com/owner/repo", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com/owner/repo", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["http://github.com/owner/repo.git", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["http://github.com/owner/repo.git", {}]}
+{"fn": "parseSkillRepoSource", "args": ["http://github.com/owner/repo.git", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["http://github.com/owner/repo.git", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["HTTPS://GitHub.com/owner/repo/tree/main", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["HTTPS://GitHub.com/owner/repo/tree/main", {}]}
+{"fn": "parseSkillRepoSource", "args": ["HTTPS://GitHub.com/owner/repo/tree/main", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["HTTPS://GitHub.com/owner/repo/tree/main", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com/owner/repo#readme", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com/owner/repo#readme", {}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com/owner/repo#readme", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com/owner/repo#readme", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com/owner", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com/owner", {}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com/owner", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com/owner", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com//repo", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com//repo", {}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com//repo", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com//repo", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com/owner/.git", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com/owner/.git", {}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com/owner/.git", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com/owner/.git", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["https://gitlab.com/owner/repo", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["https://gitlab.com/owner/repo", {}]}
+{"fn": "parseSkillRepoSource", "args": ["https://gitlab.com/owner/repo", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["https://gitlab.com/owner/repo", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com.evil.com/owner/repo", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com.evil.com/owner/repo", {}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com.evil.com/owner/repo", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["https://github.com.evil.com/owner/repo", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["https://evil.com/github.com/owner/repo", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["https://evil.com/github.com/owner/repo", {}]}
+{"fn": "parseSkillRepoSource", "args": ["https://evil.com/github.com/owner/repo", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["https://evil.com/github.com/owner/repo", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/sub dir/x", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/sub dir/x", {}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/sub dir/x", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/sub dir/x", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/", {}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["owner//repo", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["owner//repo", {}]}
+{"fn": "parseSkillRepoSource", "args": ["owner//repo", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["owner//repo", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["/owner/repo", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["/owner/repo", {}]}
+{"fn": "parseSkillRepoSource", "args": ["/owner/repo", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["/owner/repo", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/a\nb", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/a\nb", {}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/a\nb", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/a\nb", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/ ", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/ ", {}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/ ", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/ ", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/.git", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/.git", {}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/.git", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/.git", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/x.git/sub", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/x.git/sub", {}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/x.git/sub", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/x.git/sub", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["owner", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["owner", {}]}
+{"fn": "parseSkillRepoSource", "args": ["owner", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["owner", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["", {}]}
+{"fn": "parseSkillRepoSource", "args": ["", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["   ", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["   ", {}]}
+{"fn": "parseSkillRepoSource", "args": ["   ", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["   ", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": [null, {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": [null, {}]}
+{"fn": "parseSkillRepoSource", "args": [null, {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": [null, {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": [5, {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": [5, {}]}
+{"fn": "parseSkillRepoSource", "args": [5, {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": [5, {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": [["a/b"], {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": [["a/b"], {}]}
+{"fn": "parseSkillRepoSource", "args": [["a/b"], {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": [["a/b"], {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo\u00a0x", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo\u00a0x", {}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo\u00a0x", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo\u00a0x", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["own\u2028er/repo", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["own\u2028er/repo", {}]}
+{"fn": "parseSkillRepoSource", "args": ["own\u2028er/repo", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["own\u2028er/repo", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["o/r/\u2029", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["o/r/\u2029", {}]}
+{"fn": "parseSkillRepoSource", "args": ["o/r/\u2029", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["o/r/\u2029", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["ow\ufeffner/repo", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["ow\ufeffner/repo", {}]}
+{"fn": "parseSkillRepoSource", "args": ["ow\ufeffner/repo", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["ow\ufeffner/repo", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo.GiT", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo.GiT", {}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo.GiT", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo.GiT", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo.git.git", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo.git.git", {}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo.git.git", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo.git.git", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/repo.git\u3000", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/repo.git\u3000", {}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/repo.git\u3000", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/repo.git\u3000", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["file:///etc/passwd", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["file:///etc/passwd", {}]}
+{"fn": "parseSkillRepoSource", "args": ["file:///etc/passwd", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["file:///etc/passwd", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["../../etc/passwd", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["../../etc/passwd", {}]}
+{"fn": "parseSkillRepoSource", "args": ["../../etc/passwd", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["../../etc/passwd", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/../../../etc", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/../../../etc", {}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/../../../etc", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/../../../etc", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/re po", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/re po", {}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/re po", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/re po", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/rep\tx", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/rep\tx", {}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/rep\tx", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:owner/rep\tx", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["ssh://git@github.com/owner/repo", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["ssh://git@github.com/owner/repo", {}]}
+{"fn": "parseSkillRepoSource", "args": ["ssh://git@github.com/owner/repo", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["ssh://git@github.com/owner/repo", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo\u000bsub", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo\u000bsub", {}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo\u000bsub", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo\u000bsub", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": [{"$utf16": [111, 47, 55296]}, {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": [{"$utf16": [111, 47, 55296]}, {}]}
+{"fn": "parseSkillRepoSource", "args": [{"$utf16": [111, 47, 55296]}, {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": [{"$utf16": [111, 47, 55296]}, {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/sub", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:o/r", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["x", {"$undefined": true}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/sub", {}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:o/r", {}]}
+{"fn": "parseSkillRepoSource", "args": ["", {}]}
+{"fn": "parseSkillRepoSource", "args": ["x", {}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/sub", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:o/r", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["x", {"subpath": "skills/x"}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/sub", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:o/r", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["x", {"subpath": "  "}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/sub", {"subpath": " a "}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:o/r", {"subpath": " a "}]}
+{"fn": "parseSkillRepoSource", "args": ["", {"subpath": " a "}]}
+{"fn": "parseSkillRepoSource", "args": ["x", {"subpath": " a "}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/sub", {"subpath": 5}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:o/r", {"subpath": 5}]}
+{"fn": "parseSkillRepoSource", "args": ["", {"subpath": 5}]}
+{"fn": "parseSkillRepoSource", "args": ["x", {"subpath": 5}]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/sub", null]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:o/r", null]}
+{"fn": "parseSkillRepoSource", "args": ["", null]}
+{"fn": "parseSkillRepoSource", "args": ["x", null]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/sub", "x"]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:o/r", "x"]}
+{"fn": "parseSkillRepoSource", "args": ["", "x"]}
+{"fn": "parseSkillRepoSource", "args": ["x", "x"]}
+{"fn": "parseSkillRepoSource", "args": ["owner/repo/sub", {"$map": []}]}
+{"fn": "parseSkillRepoSource", "args": ["git@github.com:o/r", {"$map": []}]}
+{"fn": "parseSkillRepoSource", "args": ["", {"$map": []}]}
+{"fn": "parseSkillRepoSource", "args": ["x", {"$map": []}]}
+{"fn": "parseSkillRepoSource", "args": ["o/r"]}
+{"fn": "parseSkillRepoSource", "args": []}

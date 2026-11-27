@@ -1,0 +1,55 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/terminal",
+  "unit": "project-environment.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "project-environment-rs",
+  "exports": [
+    {
+      "name": "parseProjectEnvironment",
+      "file": "project-environment.js",
+      "line": 73,
+      "params": [
+        {
+          "name": "source",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isBrowserPublicProjectEnvironmentKey",
+      "file": "project-environment.js",
+      "line": 105,
+      "params": [
+        {
+          "name": "key",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "loadProjectPublicEnvironment",
+      "file": "project-environment.js",
+      "line": 159,
+      "reason": "kept on request"
+    }
+  ]
+}

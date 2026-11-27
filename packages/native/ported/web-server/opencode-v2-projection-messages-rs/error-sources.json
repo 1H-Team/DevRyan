@@ -1,0 +1,47 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [
+    {
+      "site": "packages/web/server/lib/opencode/v2/projection/messages.js:999",
+      "text": "throw new InvalidMessagePageError('Invalid OpenCode message page');"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/v2/projection/messages.js:1002",
+      "text": "if (cursor.next != null && !isNonEmptyString(cursor.next)) throw new InvalidMessagePageError('Invalid OpenCode message cursor');"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/v2/projection/messages.js:1036",
+      "text": "if (cursorIn === null) throw new InvalidMessageCursorError();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/v2/projection/messages.js:1052",
+      "text": "if (seenCursors.has(page.next)) throw new InvalidMessagePageError();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/v2/projection/messages.js:1076",
+      "text": "if (parentCursors.has(page.next)) throw new InvalidMessagePageError();"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/v2/projection/messages.js:1079",
+      "text": "if (lookups === MAX_PARENT_LOOKUP_PAGES - 1) throw Object.assign(new Error('The OpenCode message parent exceeded the sequence-read budget'),"
+    }
+  ],
+  "product": [],
+  "engine": [
+    {
+      "site": "packages/web/server/lib/opencode/v2/projection/messages.js:274",
+      "class": "TypeError",
+      "sample": "Cannot read properties of undefined (reading 'id')"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/v2/projection/messages.js:669",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'userID')"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/v2/projection/messages.js:690",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'deliveredAt')"
+    }
+  ]
+}

@@ -1,0 +1,1331 @@
+{"fn": "toV1Session", "args": [{"id": "ses_x"}]}
+{"fn": "toV1Session", "args": [{"title": "no id"}]}
+{"fn": "toV1Session", "args": [null]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "projectID": "p", "location": {"directory": "/repo"}, "subpath": "pkg", "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "time": {"created": 1, "updated": 2, "idle": 3, "viewed": 4, "archived": 5}}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2, "busy": 1767225700000, "idle": 1767225699001, "viewed": 0}, "outcome": "interrupted", "fork": {"sessionID": "ses_origin", "boundary": {"type": "through", "messageID": "msg_7"}}}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2}, "outcome": "succeeded"}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2}, "outcome": "failed"}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2}, "outcome": "interrupted"}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2, "busy": -1, "idle": -1, "viewed": -1}}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2, "busy": {"$num": "NaN"}, "idle": {"$num": "NaN"}, "viewed": {"$num": "NaN"}}}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2, "busy": {"$num": "Infinity"}, "idle": {"$num": "Infinity"}, "viewed": {"$num": "Infinity"}}}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2, "busy": "5", "idle": "5", "viewed": "5"}}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2, "busy": null, "idle": null, "viewed": null}}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2, "busy": {}, "idle": {}, "viewed": {}}}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2}, "outcome": "aborted"}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2}, "outcome": "SUCCEEDED"}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2}, "outcome": ""}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2}, "outcome": 1}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2}, "outcome": null}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2}}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2}}]}
+{"fn": "toV1Fork", "args": [{"sessionID": "ses_origin", "boundary": {"type": "before", "messageID": "msg_1"}}]}
+{"fn": "toV1Fork", "args": [{"sessionID": "ses_origin", "boundary": {"type": "before", "messageID": "msg_1", "extra": 2}, "extra": 1}]}
+{"fn": "toV1Fork", "args": [{"$undefined": true}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2}, "fork": {"$undefined": true}}]}
+{"fn": "toV1Fork", "args": [null]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2}, "fork": null}]}
+{"fn": "toV1Fork", "args": ["ses_origin"]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2}, "fork": "ses_origin"}]}
+{"fn": "toV1Fork", "args": [[]]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2}, "fork": []}]}
+{"fn": "toV1Fork", "args": [{"boundary": {"type": "before", "messageID": "msg_1"}}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2}, "fork": {"boundary": {"type": "before", "messageID": "msg_1"}}}]}
+{"fn": "toV1Fork", "args": [{"sessionID": "", "boundary": {"type": "before", "messageID": "msg_1"}}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2}, "fork": {"sessionID": "", "boundary": {"type": "before", "messageID": "msg_1"}}}]}
+{"fn": "toV1Fork", "args": [{"sessionID": "ses_origin"}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2}, "fork": {"sessionID": "ses_origin"}}]}
+{"fn": "toV1Fork", "args": [{"sessionID": "ses_origin", "boundary": {"type": "after", "messageID": "msg_1"}}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2}, "fork": {"sessionID": "ses_origin", "boundary": {"type": "after", "messageID": "msg_1"}}}]}
+{"fn": "toV1Fork", "args": [{"sessionID": "ses_origin", "boundary": {"type": "before"}}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2}, "fork": {"sessionID": "ses_origin", "boundary": {"type": "before"}}}]}
+{"fn": "toV1Fork", "args": [{"sessionID": "ses_origin", "boundary": {"type": "before", "messageID": ""}}]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "time": {"created": 1, "updated": 2}, "fork": {"sessionID": "ses_origin", "boundary": {"type": "before", "messageID": ""}}}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_parent", "at": 10}}}, "ses_child"]}
+{"fn": "toV1Session", "args": [{"id": "ses_child", "metadata": {"devryan": {"archive": {"sessionID": "ses_parent", "at": 10}}}, "time": {"created": 1, "updated": 1}}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_x", "at": null}}}, "ses_x"]}
+{"fn": "toV1Session", "args": [{"id": "ses_x", "metadata": {"devryan": {"archive": {"sessionID": "ses_x", "at": null}}}, "time": {"created": 1, "updated": 1, "archived": 9}}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_x", "at": "soon"}}}, "ses_x"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_x"}}}, "todo", ""]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "ses_x", "items": [{"content": "ok", "status": "pending", "priority": "high"}, {"content": 1}, "x"]}}}, "ses_x"]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "ses_x", "items": "nope"}}}, "ses_x"]}
+{"fn": "stripDevryanMetadata", "args": [{"devryan": {"todo": {}}}]}
+{"fn": "stripDevryanMetadata", "args": [{"devryan": {}, "keep": 1}]}
+{"fn": "stripDevryanMetadata", "args": [{"keep": 1}]}
+{"fn": "stripDevryanMetadata", "args": [{}]}
+{"fn": "stripDevryanMetadata", "args": [{"$undefined": true}]}
+{"fn": "toV1PermissionRuleset", "args": [[{"action": "shell", "resource": "git *", "effect": "allow"}, {"action": "edit", "resource": "*"}]]}
+{"fn": "toV1PermissionRuleset", "args": [{"$undefined": true}]}
+{"fn": "sessionDirectory", "args": [{"location": {"directory": "/repo"}}]}
+{"fn": "sessionDirectory", "args": [{}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_x", "location": {"directory": "/repo/pkg"}, "subpath": "pkg", "agent": "build", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"title": "x"}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [{"$undefined": true}, "ses_1"]}
+{"fn": "readSessionTodo", "args": [{"$undefined": true}, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [{"$undefined": true}, ""]}
+{"fn": "readSessionTodo", "args": [{"$undefined": true}, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [{"$undefined": true}, 5]}
+{"fn": "readSessionTodo", "args": [{"$undefined": true}, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [{"$undefined": true}, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [{"$undefined": true}, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$undefined": true}, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [{"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [{"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": {"$undefined": true}}]}
+{"fn": "stripDevryanMetadata", "args": [{"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [null, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [null, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [null, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [null, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [null, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [null, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [null, "ses_1"]}
+{"fn": "readSessionTodo", "args": [null, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [null, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [null, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [null, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [null, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [null, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [null, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [null, ""]}
+{"fn": "readSessionTodo", "args": [null, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [null, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [null, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [null, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [null, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [null, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [null, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [null, 5]}
+{"fn": "readSessionTodo", "args": [null, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [null, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [null, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [null, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [null, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [null, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [null, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [null, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [null, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [null, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [null, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [null, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [null, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [null, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [null, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [null, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [null, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": null}]}
+{"fn": "stripDevryanMetadata", "args": [null]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": ["x", "ses_1"]}
+{"fn": "readSessionTodo", "args": ["x", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": ["x", ""]}
+{"fn": "readSessionTodo", "args": ["x", ""]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": ["x", 5]}
+{"fn": "readSessionTodo", "args": ["x", 5]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": ["x", {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": ["x", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": ["x", {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": ["x", {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": ["x", {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": "x"}]}
+{"fn": "stripDevryanMetadata", "args": ["x"]}
+{"fn": "readOwnedDevryanEntry", "args": [[], "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [[], "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [[], 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [[], "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [[], "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [[], {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [[], "ses_1"]}
+{"fn": "readSessionTodo", "args": [[], "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [[], "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [[], "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [[], 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [[], "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [[], "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [[], {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [[], ""]}
+{"fn": "readSessionTodo", "args": [[], ""]}
+{"fn": "readOwnedDevryanEntry", "args": [[], "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [[], "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [[], 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [[], "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [[], "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [[], {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [[], 5]}
+{"fn": "readSessionTodo", "args": [[], 5]}
+{"fn": "readOwnedDevryanEntry", "args": [[], "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [[], "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [[], 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [[], "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [[], "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [[], {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [[], {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [[], {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [[], "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [[], "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [[], 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [[], "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [[], "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [[], {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [[], {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [[], {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": []}]}
+{"fn": "stripDevryanMetadata", "args": [[]]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [{}, "ses_1"]}
+{"fn": "readSessionTodo", "args": [{}, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [{}, ""]}
+{"fn": "readSessionTodo", "args": [{}, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [{}, 5]}
+{"fn": "readSessionTodo", "args": [{}, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [{}, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [{}, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{}, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [{}, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [{}, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": {}}]}
+{"fn": "stripDevryanMetadata", "args": [{}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [{"$map": []}, "ses_1"]}
+{"fn": "readSessionTodo", "args": [{"$map": []}, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [{"$map": []}, ""]}
+{"fn": "readSessionTodo", "args": [{"$map": []}, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [{"$map": []}, 5]}
+{"fn": "readSessionTodo", "args": [{"$map": []}, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [{"$map": []}, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [{"$map": []}, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"$map": []}, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [{"$map": []}, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [{"$map": []}, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": {"$map": []}}]}
+{"fn": "stripDevryanMetadata", "args": [{"$map": []}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [{"devryan": null}, "ses_1"]}
+{"fn": "readSessionTodo", "args": [{"devryan": null}, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [{"devryan": null}, ""]}
+{"fn": "readSessionTodo", "args": [{"devryan": null}, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [{"devryan": null}, 5]}
+{"fn": "readSessionTodo", "args": [{"devryan": null}, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": null}, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [{"devryan": null}, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": null}, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": null}, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [{"devryan": null}, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": {"devryan": null}}]}
+{"fn": "stripDevryanMetadata", "args": [{"devryan": null}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [{"devryan": []}, "ses_1"]}
+{"fn": "readSessionTodo", "args": [{"devryan": []}, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [{"devryan": []}, ""]}
+{"fn": "readSessionTodo", "args": [{"devryan": []}, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [{"devryan": []}, 5]}
+{"fn": "readSessionTodo", "args": [{"devryan": []}, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": []}, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [{"devryan": []}, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": []}, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": []}, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [{"devryan": []}, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": {"devryan": []}}]}
+{"fn": "stripDevryanMetadata", "args": [{"devryan": []}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {}}, "ses_1"]}
+{"fn": "readSessionTodo", "args": [{"devryan": {}}, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {}}, ""]}
+{"fn": "readSessionTodo", "args": [{"devryan": {}}, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {}}, 5]}
+{"fn": "readSessionTodo", "args": [{"devryan": {}}, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {}}, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {}}, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {}}, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {}}, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {}}, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": {"devryan": {}}}]}
+{"fn": "stripDevryanMetadata", "args": [{"devryan": {}}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "ses_1"]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, ""]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, 5]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}}]}
+{"fn": "stripDevryanMetadata", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "ses_1"]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, ""]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, 5]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": {"devryan": {"archive": {"sessionID": "other", "at": 5}}}}]}
+{"fn": "stripDevryanMetadata", "args": [{"devryan": {"archive": {"sessionID": "other", "at": 5}}}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "ses_1"]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, ""]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, 5]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}}]}
+{"fn": "stripDevryanMetadata", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "ses_1"]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, ""]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, 5]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}}]}
+{"fn": "stripDevryanMetadata", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "ses_1"]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, ""]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, 5]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}}]}
+{"fn": "stripDevryanMetadata", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": "5"}}}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "ses_1"]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, ""]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, 5]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}}]}
+{"fn": "stripDevryanMetadata", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": {"$num": "Infinity"}}}}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "ses_1"]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, ""]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, 5]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}}]}
+{"fn": "stripDevryanMetadata", "args": [{"devryan": {"archive": {"sessionID": "ses_1", "at": -3}}}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "ses_1"]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, ""]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, 5]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": {"devryan": {"archive": {"sessionID": "ses_1"}}}}]}
+{"fn": "stripDevryanMetadata", "args": [{"devryan": {"archive": {"sessionID": "ses_1"}}}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": ["ses_1"]}}, "ses_1"]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": ["ses_1"]}}, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": ["ses_1"]}}, ""]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": ["ses_1"]}}, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": ["ses_1"]}}, 5]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": ["ses_1"]}}, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": ["ses_1"]}}, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": ["ses_1"]}}, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"archive": ["ses_1"]}}, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"archive": ["ses_1"]}}, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"archive": ["ses_1"]}}, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": {"devryan": {"archive": ["ses_1"]}}}]}
+{"fn": "stripDevryanMetadata", "args": [{"devryan": {"archive": ["ses_1"]}}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "ses_1"]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, ""]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, 5]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": {"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}}]}
+{"fn": "stripDevryanMetadata", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [{"content": "a", "status": "pending"}, {"content": 5, "status": "x"}, null, {"content": "b", "status": "done", "id": "1"}, {"$map": []}], "rev": 3}}}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "ses_1"]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, ""]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, 5]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": {"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}}]}
+{"fn": "stripDevryanMetadata", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": "x"}}}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "ses_1"]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, ""]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, 5]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": {"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}}]}
+{"fn": "stripDevryanMetadata", "args": [{"devryan": {"todo": {"sessionID": "ses_1", "items": [], "rev": {"$num": "NaN"}}}}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "ses_1"]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, ""]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, 5]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": {"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}}]}
+{"fn": "stripDevryanMetadata", "args": [{"devryan": {"todo": {"sessionID": "p", "items": [{"content": "a", "status": "s"}]}}}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "ses_1"]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, ""]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, 5]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": {"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}}]}
+{"fn": "stripDevryanMetadata", "args": [{"devryan": {"5": {"sessionID": "ses_1"}}, "z": 1}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "archive", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "todo", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, 5, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "constructor", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "__proto__", "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, {"$undefined": true}, "ses_1"]}
+{"fn": "readArchiveOverride", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "ses_1"]}
+{"fn": "readSessionTodo", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "ses_1"]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "archive", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "todo", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, 5, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "constructor", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "__proto__", ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, {"$undefined": true}, ""]}
+{"fn": "readArchiveOverride", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, ""]}
+{"fn": "readSessionTodo", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, ""]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "archive", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "todo", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, 5, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "constructor", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "__proto__", 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, {"$undefined": true}, 5]}
+{"fn": "readArchiveOverride", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, 5]}
+{"fn": "readSessionTodo", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, 5]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "archive", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "todo", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, 5, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "constructor", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "__proto__", {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, {"$undefined": true}, {"$undefined": true}]}
+{"fn": "readArchiveOverride", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, {"$undefined": true}]}
+{"fn": "readSessionTodo", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, {"$undefined": true}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "archive", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "todo", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, 5, {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "constructor", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, "__proto__", {"$utf16": [55296]}]}
+{"fn": "readOwnedDevryanEntry", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, {"$undefined": true}, {"$utf16": [55296]}]}
+{"fn": "readArchiveOverride", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, {"$utf16": [55296]}]}
+{"fn": "readSessionTodo", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}, {"$utf16": [55296]}]}
+{"fn": "toV1SessionTodos", "args": [{"id": "ses_1", "metadata": {"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}}]}
+{"fn": "stripDevryanMetadata", "args": [{"other": 1, "devryan": {"archive": {"sessionID": "ses_1", "at": 2}}}]}
+{"fn": "isArchiveOverrideArchived", "args": [{"$undefined": true}]}
+{"fn": "isArchiveOverrideArchived", "args": [null]}
+{"fn": "isArchiveOverrideArchived", "args": ["x"]}
+{"fn": "isArchiveOverrideArchived", "args": [{}]}
+{"fn": "isArchiveOverrideArchived", "args": [{"at": 1}]}
+{"fn": "isArchiveOverrideArchived", "args": [{"at": 0}]}
+{"fn": "isArchiveOverrideArchived", "args": [{"at": -1}]}
+{"fn": "isArchiveOverrideArchived", "args": [{"at": null}]}
+{"fn": "isArchiveOverrideArchived", "args": [{"at": {"$num": "NaN"}}]}
+{"fn": "isArchiveOverrideArchived", "args": [{"at": "3"}]}
+{"fn": "stripDevryanMetadata", "args": [{"$bytes": [1]}]}
+{"fn": "stripDevryanMetadata", "args": [{"$date": "2020-01-01T00:00:00.000Z"}]}
+{"fn": "stripDevryanMetadata", "args": [{"$set": [1]}]}
+{"fn": "stripDevryanMetadata", "args": [{"devryan": 1}]}
+{"fn": "stripDevryanMetadata", "args": [{"2": 0, "devryan": {}, "a": 1}]}
+{"fn": "stripDevryanMetadata", "args": [{"devryan": {"$undefined": true}}]}
+{"fn": "toV1PermissionRuleset", "args": [{"$undefined": true}]}
+{"fn": "toV1PermissionRuleset", "args": [null]}
+{"fn": "toV1PermissionRuleset", "args": ["x"]}
+{"fn": "toV1PermissionRuleset", "args": [{}]}
+{"fn": "toV1PermissionRuleset", "args": [[]]}
+{"fn": "toV1PermissionRuleset", "args": [[{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}]]}
+{"fn": "toV1Revert", "args": [{"$undefined": true}]}
+{"fn": "toV1Revert", "args": [null]}
+{"fn": "toV1Revert", "args": [{}]}
+{"fn": "toV1Revert", "args": [{"messageID": ""}]}
+{"fn": "toV1Revert", "args": [{"messageID": "m"}]}
+{"fn": "toV1Revert", "args": [{"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}]}
+{"fn": "toV1Revert", "args": [{"messageID": "m", "partID": "", "snapshot": 5, "files": "x"}]}
+{"fn": "toV1Revert", "args": [{"messageID": 5}]}
+{"fn": "toV1Fork", "args": [{"$undefined": true}]}
+{"fn": "toV1Fork", "args": [null]}
+{"fn": "toV1Fork", "args": [{}]}
+{"fn": "toV1Fork", "args": [{"sessionID": "s"}]}
+{"fn": "toV1Fork", "args": [{"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}]}
+{"fn": "toV1Fork", "args": [{"sessionID": "s", "boundary": {"type": "through", "messageID": "m", "x": 1}}]}
+{"fn": "toV1Fork", "args": [{"sessionID": "s", "boundary": {"type": "after", "messageID": "m"}}]}
+{"fn": "toV1Fork", "args": [{"sessionID": "s", "boundary": {"type": "before", "messageID": ""}}]}
+{"fn": "toV1Fork", "args": [{"sessionID": "", "boundary": {"type": "before", "messageID": "m"}}]}
+{"fn": "toV1Fork", "args": [{"sessionID": "s", "boundary": {"$map": []}}]}
+{"fn": "sessionDirectory", "args": [{"$undefined": true}]}
+{"fn": "sessionDirectory", "args": [null]}
+{"fn": "sessionDirectory", "args": [{}]}
+{"fn": "sessionDirectory", "args": [{"location": null}]}
+{"fn": "sessionDirectory", "args": [{"location": {"directory": "/a"}}]}
+{"fn": "sessionDirectory", "args": [{"location": {"directory": ""}}]}
+{"fn": "sessionDirectory", "args": [{"location": {"directory": 5}}]}
+{"fn": "sessionDirectory", "args": [{"location": "x"}]}
+{"fn": "toV1Session", "args": [{"$undefined": true}, {"$undefined": true}]}
+{"fn": "toV1Session", "args": [{"$undefined": true}, {}]}
+{"fn": "toV1Session", "args": [{"$undefined": true}, {"slug": "sl"}]}
+{"fn": "toV1Session", "args": [{"$undefined": true}, {"slug": ""}]}
+{"fn": "toV1Session", "args": [{"$undefined": true}, {"slug": 5}]}
+{"fn": "toV1Session", "args": [{"$undefined": true}, null]}
+{"fn": "toV1Session", "args": [{"$undefined": true}, "x"]}
+{"fn": "isV1SessionArchived", "args": [{"$undefined": true}]}
+{"fn": "sessionMessageContext", "args": [{"$undefined": true}]}
+{"fn": "toV1Session", "args": [null, {"$undefined": true}]}
+{"fn": "toV1Session", "args": [null, {}]}
+{"fn": "toV1Session", "args": [null, {"slug": "sl"}]}
+{"fn": "toV1Session", "args": [null, {"slug": ""}]}
+{"fn": "toV1Session", "args": [null, {"slug": 5}]}
+{"fn": "toV1Session", "args": [null, null]}
+{"fn": "toV1Session", "args": [null, "x"]}
+{"fn": "isV1SessionArchived", "args": [null]}
+{"fn": "sessionMessageContext", "args": [null]}
+{"fn": "toV1Session", "args": ["x", {"$undefined": true}]}
+{"fn": "toV1Session", "args": ["x", {}]}
+{"fn": "toV1Session", "args": ["x", {"slug": "sl"}]}
+{"fn": "toV1Session", "args": ["x", {"slug": ""}]}
+{"fn": "toV1Session", "args": ["x", {"slug": 5}]}
+{"fn": "toV1Session", "args": ["x", null]}
+{"fn": "toV1Session", "args": ["x", "x"]}
+{"fn": "isV1SessionArchived", "args": ["x"]}
+{"fn": "sessionMessageContext", "args": ["x"]}
+{"fn": "toV1Session", "args": [{}, {"$undefined": true}]}
+{"fn": "toV1Session", "args": [{}, {}]}
+{"fn": "toV1Session", "args": [{}, {"slug": "sl"}]}
+{"fn": "toV1Session", "args": [{}, {"slug": ""}]}
+{"fn": "toV1Session", "args": [{}, {"slug": 5}]}
+{"fn": "toV1Session", "args": [{}, null]}
+{"fn": "toV1Session", "args": [{}, "x"]}
+{"fn": "isV1SessionArchived", "args": [{}]}
+{"fn": "sessionMessageContext", "args": [{}]}
+{"fn": "toV1Session", "args": [{"id": ""}, {"$undefined": true}]}
+{"fn": "toV1Session", "args": [{"id": ""}, {}]}
+{"fn": "toV1Session", "args": [{"id": ""}, {"slug": "sl"}]}
+{"fn": "toV1Session", "args": [{"id": ""}, {"slug": ""}]}
+{"fn": "toV1Session", "args": [{"id": ""}, {"slug": 5}]}
+{"fn": "toV1Session", "args": [{"id": ""}, null]}
+{"fn": "toV1Session", "args": [{"id": ""}, "x"]}
+{"fn": "isV1SessionArchived", "args": [{"id": ""}]}
+{"fn": "sessionMessageContext", "args": [{"id": ""}]}
+{"fn": "toV1Session", "args": [{"id": 5}, {"$undefined": true}]}
+{"fn": "toV1Session", "args": [{"id": 5}, {}]}
+{"fn": "toV1Session", "args": [{"id": 5}, {"slug": "sl"}]}
+{"fn": "toV1Session", "args": [{"id": 5}, {"slug": ""}]}
+{"fn": "toV1Session", "args": [{"id": 5}, {"slug": 5}]}
+{"fn": "toV1Session", "args": [{"id": 5}, null]}
+{"fn": "toV1Session", "args": [{"id": 5}, "x"]}
+{"fn": "isV1SessionArchived", "args": [{"id": 5}]}
+{"fn": "sessionMessageContext", "args": [{"id": 5}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1"}, {"$undefined": true}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1"}, {}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1"}, {"slug": "sl"}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1"}, {"slug": ""}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1"}, {"slug": 5}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1"}, null]}
+{"fn": "toV1Session", "args": [{"id": "ses_1"}, "x"]}
+{"fn": "isV1SessionArchived", "args": [{"id": "ses_1"}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1"}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": 10, "updated": 20, "archived": 30, "busy": 1, "idle": -1, "viewed": {"$num": "Infinity"}}}, {"$undefined": true}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": 10, "updated": 20, "archived": 30, "busy": 1, "idle": -1, "viewed": {"$num": "Infinity"}}}, {}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": 10, "updated": 20, "archived": 30, "busy": 1, "idle": -1, "viewed": {"$num": "Infinity"}}}, {"slug": "sl"}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": 10, "updated": 20, "archived": 30, "busy": 1, "idle": -1, "viewed": {"$num": "Infinity"}}}, {"slug": ""}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": 10, "updated": 20, "archived": 30, "busy": 1, "idle": -1, "viewed": {"$num": "Infinity"}}}, {"slug": 5}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": 10, "updated": 20, "archived": 30, "busy": 1, "idle": -1, "viewed": {"$num": "Infinity"}}}, null]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": 10, "updated": 20, "archived": 30, "busy": 1, "idle": -1, "viewed": {"$num": "Infinity"}}}, "x"]}
+{"fn": "isV1SessionArchived", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": 10, "updated": 20, "archived": 30, "busy": 1, "idle": -1, "viewed": {"$num": "Infinity"}}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": 10, "updated": 20, "archived": 30, "busy": 1, "idle": -1, "viewed": {"$num": "Infinity"}}}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "weird", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m"}, "cost": "1", "tokens": 5, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": "1"}}, {"$undefined": true}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "weird", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m"}, "cost": "1", "tokens": 5, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": "1"}}, {}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "weird", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m"}, "cost": "1", "tokens": 5, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": "1"}}, {"slug": "sl"}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "weird", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m"}, "cost": "1", "tokens": 5, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": "1"}}, {"slug": ""}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "weird", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m"}, "cost": "1", "tokens": 5, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": "1"}}, {"slug": 5}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "weird", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m"}, "cost": "1", "tokens": 5, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": "1"}}, null]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "weird", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m"}, "cost": "1", "tokens": 5, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": "1"}}, "x"]}
+{"fn": "isV1SessionArchived", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "weird", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m"}, "cost": "1", "tokens": 5, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": "1"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "weird", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m"}, "cost": "1", "tokens": 5, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": "1"}}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": 10, "updated": 20, "archived": 30, "busy": 1, "idle": -1, "viewed": {"$num": "Infinity"}}}, {"$undefined": true}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": 10, "updated": 20, "archived": 30, "busy": 1, "idle": -1, "viewed": {"$num": "Infinity"}}}, {}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": 10, "updated": 20, "archived": 30, "busy": 1, "idle": -1, "viewed": {"$num": "Infinity"}}}, {"slug": "sl"}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": 10, "updated": 20, "archived": 30, "busy": 1, "idle": -1, "viewed": {"$num": "Infinity"}}}, {"slug": ""}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": 10, "updated": 20, "archived": 30, "busy": 1, "idle": -1, "viewed": {"$num": "Infinity"}}}, {"slug": 5}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": 10, "updated": 20, "archived": 30, "busy": 1, "idle": -1, "viewed": {"$num": "Infinity"}}}, null]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": 10, "updated": 20, "archived": 30, "busy": 1, "idle": -1, "viewed": {"$num": "Infinity"}}}, "x"]}
+{"fn": "isV1SessionArchived", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": 10, "updated": 20, "archived": 30, "busy": 1, "idle": -1, "viewed": {"$num": "Infinity"}}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": null}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"created": 10, "updated": 20, "archived": 30, "busy": 1, "idle": -1, "viewed": {"$num": "Infinity"}}}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"archived": 7}}, {"$undefined": true}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"archived": 7}}, {}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"archived": 7}}, {"slug": "sl"}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"archived": 7}}, {"slug": ""}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"archived": 7}}, {"slug": 5}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"archived": 7}}, null]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"archived": 7}}, "x"]}
+{"fn": "isV1SessionArchived", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"archived": 7}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "pkg/web", "outcome": "failed", "parentID": "par", "fork": {"sessionID": "s", "boundary": {"type": "before", "messageID": "m"}}, "agent": "build", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 0}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": {"archived": 7}}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "", "outcome": "failed", "parentID": "", "fork": null, "agent": "", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": null}, {"$undefined": true}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "", "outcome": "failed", "parentID": "", "fork": null, "agent": "", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": null}, {}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "", "outcome": "failed", "parentID": "", "fork": null, "agent": "", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": null}, {"slug": "sl"}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "", "outcome": "failed", "parentID": "", "fork": null, "agent": "", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": null}, {"slug": ""}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "", "outcome": "failed", "parentID": "", "fork": null, "agent": "", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": null}, {"slug": 5}]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "", "outcome": "failed", "parentID": "", "fork": null, "agent": "", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": null}, null]}
+{"fn": "toV1Session", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "", "outcome": "failed", "parentID": "", "fork": null, "agent": "", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": null}, "x"]}
+{"fn": "isV1SessionArchived", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "", "outcome": "failed", "parentID": "", "fork": null, "agent": "", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": null}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "projectID": "p", "title": "T", "subpath": "", "outcome": "failed", "parentID": "", "fork": null, "agent": "", "model": {"id": "m", "providerID": "p", "variant": "high"}, "cost": 0.5, "tokens": {"input": 1, "output": 2, "reasoning": {"$num": "NaN"}, "cache": {"read": 3}}, "metadata": {"devryan": {"archive": {"sessionID": "ses_1", "at": 5}}}, "permissions": [{"action": "shell", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "a", "effect": "deny", "extra": 1}, {"action": 5, "resource": "r", "effect": "e"}, null, "x", {"action": "patch", "resource": "r"}, {"$map": []}, {"action": "subagent", "resource": {"$utf16": [55296]}, "effect": "ask"}], "revert": {"messageID": "m", "partID": "p", "snapshot": "s", "files": [{"file": "a", "patch": "P", "additions": 1}, null, {"patch": "x"}, {"$map": []}, {"$bytes": [3]}, [1]]}, "location": {"directory": "/repo/pkg/web"}, "time": null}]}
+{"fn": "toV1Session", "args": [{"$map": []}, {"$undefined": true}]}
+{"fn": "toV1Session", "args": [{"$map": []}, {}]}
+{"fn": "toV1Session", "args": [{"$map": []}, {"slug": "sl"}]}
+{"fn": "toV1Session", "args": [{"$map": []}, {"slug": ""}]}
+{"fn": "toV1Session", "args": [{"$map": []}, {"slug": 5}]}
+{"fn": "toV1Session", "args": [{"$map": []}, null]}
+{"fn": "toV1Session", "args": [{"$map": []}, "x"]}
+{"fn": "isV1SessionArchived", "args": [{"$map": []}]}
+{"fn": "sessionMessageContext", "args": [{"$map": []}]}
+{"fn": "toV1SessionFromCreated", "args": [{"$undefined": true}, {"$undefined": true}]}
+{"fn": "toV1SessionFromCreated", "args": [{"$undefined": true}, 5]}
+{"fn": "toV1SessionFromCreated", "args": [{"$undefined": true}, {"$num": "NaN"}]}
+{"fn": "toV1SessionFromCreated", "args": [{"$undefined": true}, "7"]}
+{"fn": "toV1SessionFromCreated", "args": [{"$undefined": true}, null]}
+{"fn": "toV1SessionFromCreated", "args": [null, {"$undefined": true}]}
+{"fn": "toV1SessionFromCreated", "args": [null, 5]}
+{"fn": "toV1SessionFromCreated", "args": [null, {"$num": "NaN"}]}
+{"fn": "toV1SessionFromCreated", "args": [null, "7"]}
+{"fn": "toV1SessionFromCreated", "args": [null, null]}
+{"fn": "toV1SessionFromCreated", "args": [{}, {"$undefined": true}]}
+{"fn": "toV1SessionFromCreated", "args": [{}, 5]}
+{"fn": "toV1SessionFromCreated", "args": [{}, {"$num": "NaN"}]}
+{"fn": "toV1SessionFromCreated", "args": [{}, "7"]}
+{"fn": "toV1SessionFromCreated", "args": [{}, null]}
+{"fn": "toV1SessionFromCreated", "args": [{"sessionID": ""}, {"$undefined": true}]}
+{"fn": "toV1SessionFromCreated", "args": [{"sessionID": ""}, 5]}
+{"fn": "toV1SessionFromCreated", "args": [{"sessionID": ""}, {"$num": "NaN"}]}
+{"fn": "toV1SessionFromCreated", "args": [{"sessionID": ""}, "7"]}
+{"fn": "toV1SessionFromCreated", "args": [{"sessionID": ""}, null]}
+{"fn": "toV1SessionFromCreated", "args": [{"sessionID": "s", "slug": "sl", "version": "9", "title": "t", "id": "old", "time": {"created": 1}, "location": {"directory": "/d"}}, {"$undefined": true}]}
+{"fn": "toV1SessionFromCreated", "args": [{"sessionID": "s", "slug": "sl", "version": "9", "title": "t", "id": "old", "time": {"created": 1}, "location": {"directory": "/d"}}, 5]}
+{"fn": "toV1SessionFromCreated", "args": [{"sessionID": "s", "slug": "sl", "version": "9", "title": "t", "id": "old", "time": {"created": 1}, "location": {"directory": "/d"}}, {"$num": "NaN"}]}
+{"fn": "toV1SessionFromCreated", "args": [{"sessionID": "s", "slug": "sl", "version": "9", "title": "t", "id": "old", "time": {"created": 1}, "location": {"directory": "/d"}}, "7"]}
+{"fn": "toV1SessionFromCreated", "args": [{"sessionID": "s", "slug": "sl", "version": "9", "title": "t", "id": "old", "time": {"created": 1}, "location": {"directory": "/d"}}, null]}
+{"fn": "toV1SessionFromCreated", "args": [{"sessionID": "s", "slug": 5}, {"$undefined": true}]}
+{"fn": "toV1SessionFromCreated", "args": [{"sessionID": "s", "slug": 5}, 5]}
+{"fn": "toV1SessionFromCreated", "args": [{"sessionID": "s", "slug": 5}, {"$num": "NaN"}]}
+{"fn": "toV1SessionFromCreated", "args": [{"sessionID": "s", "slug": 5}, "7"]}
+{"fn": "toV1SessionFromCreated", "args": [{"sessionID": "s", "slug": 5}, null]}
+{"fn": "toV1SessionFromCreated", "args": [{"sessionID": "s", "2": "x"}, {"$undefined": true}]}
+{"fn": "toV1SessionFromCreated", "args": [{"sessionID": "s", "2": "x"}, 5]}
+{"fn": "toV1SessionFromCreated", "args": [{"sessionID": "s", "2": "x"}, {"$num": "NaN"}]}
+{"fn": "toV1SessionFromCreated", "args": [{"sessionID": "s", "2": "x"}, "7"]}
+{"fn": "toV1SessionFromCreated", "args": [{"sessionID": "s", "2": "x"}, null]}
+{"fn": "isV1SessionArchived", "args": [{"$undefined": true}]}
+{"fn": "isV1SessionArchived", "args": [null]}
+{"fn": "isV1SessionArchived", "args": [{}]}
+{"fn": "isV1SessionArchived", "args": [{"time": null}]}
+{"fn": "isV1SessionArchived", "args": [{"time": {"archived": 1}}]}
+{"fn": "isV1SessionArchived", "args": [{"time": {"archived": "1"}}]}
+{"fn": "isV1SessionArchived", "args": [{"time": {"archived": {"$num": "NaN"}}}]}
+{"fn": "isV1SessionArchived", "args": [{"time": {}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": "/repo/pkg/web"}, "subpath": "pkg/web", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": "/repo/pkg/web"}, "subpath": "./pkg//web/", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": "/repo/pkg/web"}, "subpath": "pkg/../web", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": "/repo/pkg/web"}, "subpath": "/abs", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": "/repo/pkg/web"}, "subpath": "other/web", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": "/repo/pkg/web/"}, "subpath": "pkg/web", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": "/repo/pkg/web"}, "subpath": "", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": ""}, "subpath": "pkg", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": "/a"}, "subpath": "a", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": "/a"}, "subpath": "x/a", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": "/a"}, "subpath": "x/y/a", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": "a/b"}, "subpath": "b", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": "a/b"}, "subpath": "a/b", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": "//a"}, "subpath": "a", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": "/a/b"}, "subpath": ".", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": "/a/b"}, "subpath": "./b", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": "/a/./b"}, "subpath": "b", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": "/a/b/.."}, "subpath": "b", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": "relative/x"}, "subpath": "x", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": "/a/b"}, "subpath": "b/", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": {"$utf16": [47, 55296, 47, 98]}}, "subpath": "b", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": "/repo/web"}, "subpath": "web/.", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "sessionMessageContext", "args": [{"id": "ses_1", "location": {"directory": 5}, "subpath": "x", "agent": "a", "model": {"id": "m", "providerID": "p"}}]}
+{"fn": "readOwnedDevryanEntry", "args": []}
+{"fn": "readArchiveOverride", "args": []}
+{"fn": "isArchiveOverrideArchived", "args": []}
+{"fn": "readSessionTodo", "args": []}
+{"fn": "toV1SessionTodos", "args": []}
+{"fn": "stripDevryanMetadata", "args": []}
+{"fn": "toV1PermissionRuleset", "args": []}
+{"fn": "toV1Revert", "args": []}
+{"fn": "toV1Fork", "args": []}
+{"fn": "sessionDirectory", "args": []}
+{"fn": "toV1Session", "args": []}
+{"fn": "toV1SessionFromCreated", "args": []}
+{"fn": "isV1SessionArchived", "args": []}
+{"fn": "sessionMessageContext", "args": []}
+{"fn":"toV1Session","args":[{"id":"ses_fffffffffff3normalized0000","projectID":"global","cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"outcome":"succeeded","time":{"created":1767225635000,"updated":1767225648000,"idle":1767225646000},"title":"Renamed by user","metadata":{"a":1,"devryan":{"archive":{"sessionID":"ses_fffffffffff3normalized0000","at":1767225601000}}},"location":{"directory":"<home>/workspace"}}]}
+{"fn":"isV1SessionArchived","args":[{"id":"ses_fffffffffff3normalized0000","slug":"ses_fffffffffff3normalized0000","projectID":"global","directory":"<home>/workspace","title":"Renamed by user","version":"2","time":{"created":1767225635000,"updated":1767225648000,"archived":1767225601000,"idle":1767225646000},"outcome":"succeeded","cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"metadata":{"a":1}}]}
+{"fn":"toV1Session","args":[{"id":"ses_fffffffffff3normalized0000","projectID":"global","cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"outcome":"succeeded","time":{"created":1767225635000,"updated":1767225649000,"idle":1767225646000},"title":"Renamed by user","metadata":{"b":2,"devryan":{"todo":{"sessionID":"ses_fffffffffff3normalized0000","items":[{"content":"x","status":"pending"}],"rev":1}}},"location":{"directory":"<home>/workspace"}},{"slug":"brave-otter"}]}
+{"fn":"isV1SessionArchived","args":[{"id":"ses_fffffffffff3normalized0000","slug":"brave-otter","projectID":"global","directory":"<home>/workspace","title":"Renamed by user","version":"2","time":{"created":1767225635000,"updated":1767225649000,"idle":1767225646000},"outcome":"succeeded","cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"metadata":{"b":2}}]}
+{"fn":"readSessionTodo","args":[{"b":2,"devryan":{"todo":{"sessionID":"ses_fffffffffff3normalized0000","items":[{"content":"x","status":"pending"}],"rev":1}}},"ses_fffffffffff3normalized0000"]}
+{"fn":"toV1SessionTodos","args":[{"id":"ses_fffffffffff3normalized0000","projectID":"global","cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"outcome":"succeeded","time":{"created":1767225635000,"updated":1767225649000,"idle":1767225646000},"title":"Renamed by user","metadata":{"b":2,"devryan":{"todo":{"sessionID":"ses_fffffffffff3normalized0000","items":[{"content":"x","status":"pending"}],"rev":1}}},"location":{"directory":"<home>/workspace"}}]}
+{"fn":"toV1Session","args":[{"id":"ses_fffffffffff2normalized0000","fork":{"sessionID":"ses_fffffffffff3normalized0000","boundary":{"type":"before","messageID":"msg_000000000004normalized0000"}},"projectID":"global","cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"time":{"created":1767225668000,"updated":1767225668000},"title":"Renamed by user (fork #1)","metadata":{"a":null},"permissions":[{"action":"edit","resource":"*","effect":"ask"}],"location":{"directory":"<home>/workspace"}}]}
+{"fn":"readSessionTodo","args":[{"inherit":"yes","devryan":{"todo":{"sessionID":"owner-check","items":[],"rev":1}}},"ses_fffffffffffdnormalized0000"]}
+{"fn":"toV1SessionTodos","args":[{"id":"ses_fffffffffffdnormalized0000","parentID":"ses_fffffffffffenormalized0000","projectID":"global","agent":"general","cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"outcome":"succeeded","time":{"created":1767225611000,"updated":1767225613000,"idle":1767225621000},"title":"probe child","metadata":{"inherit":"yes","devryan":{"todo":{"sessionID":"owner-check","items":[],"rev":1}}},"location":{"directory":"<home>/workspace"}}]}
+{"fn":"toV1Session","args":[{"id":"ses_fffffffffffdnormalized0000","parentID":"ses_fffffffffffenormalized0000","projectID":"global","agent":"general","cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"outcome":"succeeded","time":{"created":1767225611000,"updated":1767225613000,"idle":1767225621000},"title":"probe child","metadata":{"inherit":"yes","devryan":{"todo":{"sessionID":"owner-check","items":[],"rev":1}}},"location":{"directory":"<home>/workspace"}}]}
+{"fn":"toV1Session","args":[{"id":"ses_fffffffffffenormalized0000","projectID":"global","cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"outcome":"succeeded","time":{"created":1767225601000,"updated":1767225622000,"idle":1767225621000},"title":"Revert","revert":{"messageID":"msg_000000000004normalized0000","files":[]},"location":{"directory":"<home>/workspace"}}]}
+{"fn":"toV1Revert","args":[{"messageID":"msg_1","partID":"prt_1","snapshot":"snap","files":[{"file":"a","patch":"BIG","additions":1,"deletions":2,"status":"modified"}]}]}
+{"fn":"toV1Revert","args":[{"files":[]}]}
+{"fn":"toV1SessionFromCreated","args":[{"sessionID":"ses_fffffffffffenormalized0000","slug":"slug-1","version":"0.0.0-spike","projectID":"global","location":{"directory":"<home>/workspace"},"subpath":"","title":"Parent","metadata":{"inherit":"yes","devryan":{"todo":{"sessionID":"owner-check","items":[],"rev":1}}}},1767225601000]}
+{"fn":"toV1SessionFromCreated","args":[{"sessionID":"ses_fffffffffffdnormalized0000","slug":"slug-2","version":"0.0.0-spike","projectID":"global","parentID":"ses_fffffffffffenormalized0000","location":{"directory":"<home>/workspace"},"subpath":"","title":"probe child","agent":"general","metadata":{"inherit":"yes","devryan":{"todo":{"sessionID":"owner-check","items":[],"rev":1}}}},1767225611000]}
+{"fn":"toV1SessionFromCreated","args":[{"slug":"x"},1]}

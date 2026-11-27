@@ -1,0 +1,246 @@
+{"fn": "buildUserIndex", "args": [[{"id": "msg_000000000001normalized0000", "time": {"created": 1767225605000}, "text": "Run the probe tool", "type": "user"}]]}
+{"fn": "buildUserIndex", "args": [[{"id": "msg_000000000001normalized0000", "time": {"created": 1767225605000}, "text": "Run the probe tool", "type": "user"}]]}
+{"fn": "buildUserIndex", "args": [[{"id": "msg_b", "type": "user", "time": {"created": 200}}, {"id": "msg_a", "type": "user", "time": {"created": 100}}, {"id": "msg_c", "type": "synthetic", "time": {"created": 200}}, {"id": "msg_x", "type": "assistant", "time": {"created": 150}}]]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": 100, "userID": "msg_a"}, {"deliveredAt": 200, "userID": "msg_b"}, {"deliveredAt": 200, "userID": "msg_c"}], 99]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": 100, "userID": "msg_a"}, {"deliveredAt": 200, "userID": "msg_b"}, {"deliveredAt": 200, "userID": "msg_c"}], 100]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": 100, "userID": "msg_a"}, {"deliveredAt": 200, "userID": "msg_b"}, {"deliveredAt": 200, "userID": "msg_c"}], 199]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": 100, "userID": "msg_a"}, {"deliveredAt": 200, "userID": "msg_b"}, {"deliveredAt": 200, "userID": "msg_c"}], 200]}
+{"fn": "findIndexedParentID", "args": [{"$undefined": true}, 200]}
+{"fn": "buildUserIndex", "args": [[{"id": "msg_a", "type": "user", "time": {"created": 100}}]]}
+{"fn": "addUserIndexEntry", "args": [[{"deliveredAt": 100, "userID": "msg_a"}], {"deliveredAt": 300, "userID": "msg_b"}]}
+{"fn": "addUserIndexEntry", "args": [[{"deliveredAt": 100, "userID": "msg_a"}, {"deliveredAt": 300, "userID": "msg_b"}], {"deliveredAt": 50, "userID": "msg_a"}]}
+{"fn": "addUserIndexEntry", "args": [[{"deliveredAt": 100, "userID": "msg_a"}, {"deliveredAt": 300, "userID": "msg_b"}], {"deliveredAt": 200, "userID": "msg_c"}]}
+{"fn": "readDevryanPromptSelection", "args": [{"devryan": {"v": 2, "agent": "x"}}]}
+{"fn": "readDevryanPromptSelection", "args": [{"devryan": {"kind": "probe"}}]}
+{"fn": "readDevryanPromptSelection", "args": [{"$undefined": true}]}
+{"fn": "toV1UserMetadata", "args": [{"devryan": {"kind": "probe"}}]}
+{"fn": "toV1UserMetadata", "args": [{"$undefined": true}]}
+{"fn": "toV1UserMetadata", "args": [{"openchamberPlanMode": true, "other": "kept"}]}
+{"fn": "isDroppedMessageType", "args": [{"id": "msg_1", "type": "system", "text": "legacy notice", "time": {"created": 1}}, 0, [{"id": "msg_1", "type": "system", "text": "legacy notice", "time": {"created": 1}}, {"id": "msg_2", "type": "location-switched", "location": {"directory": "/other/pkg"}, "subpath": "pkg", "time": {"created": 2}}, {"id": "msg_3", "type": "model-switched", "model": {"id": "m2", "providerID": "p"}, "time": {"created": 3}}, {"id": "msg_4", "type": "agent-switched", "agent": "fixer", "time": {"created": 4}}, {"id": "msg_5", "type": "user", "text": "go", "time": {"created": 5}}, {"id": "msg_6", "type": "assistant", "agent": "fixer", "model": {"id": "m2", "providerID": "p"}, "content": [], "time": {"created": 6}}, {"id": "msg_7", "type": "idle", "outcome": "succeeded", "time": {"created": 7}}, {"id": "msg_8", "type": "brand-new-type", "time": {"created": 8}}]]}
+{"fn": "isDroppedMessageType", "args": [{"id": "msg_2", "type": "location-switched", "location": {"directory": "/other/pkg"}, "subpath": "pkg", "time": {"created": 2}}, 1, [{"id": "msg_1", "type": "system", "text": "legacy notice", "time": {"created": 1}}, {"id": "msg_2", "type": "location-switched", "location": {"directory": "/other/pkg"}, "subpath": "pkg", "time": {"created": 2}}, {"id": "msg_3", "type": "model-switched", "model": {"id": "m2", "providerID": "p"}, "time": {"created": 3}}, {"id": "msg_4", "type": "agent-switched", "agent": "fixer", "time": {"created": 4}}, {"id": "msg_5", "type": "user", "text": "go", "time": {"created": 5}}, {"id": "msg_6", "type": "assistant", "agent": "fixer", "model": {"id": "m2", "providerID": "p"}, "content": [], "time": {"created": 6}}, {"id": "msg_7", "type": "idle", "outcome": "succeeded", "time": {"created": 7}}, {"id": "msg_8", "type": "brand-new-type", "time": {"created": 8}}]]}
+{"fn": "isDroppedMessageType", "args": [{"id": "msg_3", "type": "model-switched", "model": {"id": "m2", "providerID": "p"}, "time": {"created": 3}}, 2, [{"id": "msg_1", "type": "system", "text": "legacy notice", "time": {"created": 1}}, {"id": "msg_2", "type": "location-switched", "location": {"directory": "/other/pkg"}, "subpath": "pkg", "time": {"created": 2}}, {"id": "msg_3", "type": "model-switched", "model": {"id": "m2", "providerID": "p"}, "time": {"created": 3}}, {"id": "msg_4", "type": "agent-switched", "agent": "fixer", "time": {"created": 4}}, {"id": "msg_5", "type": "user", "text": "go", "time": {"created": 5}}, {"id": "msg_6", "type": "assistant", "agent": "fixer", "model": {"id": "m2", "providerID": "p"}, "content": [], "time": {"created": 6}}, {"id": "msg_7", "type": "idle", "outcome": "succeeded", "time": {"created": 7}}, {"id": "msg_8", "type": "brand-new-type", "time": {"created": 8}}]]}
+{"fn": "isDroppedMessageType", "args": [{"id": "msg_4", "type": "agent-switched", "agent": "fixer", "time": {"created": 4}}, 3, [{"id": "msg_1", "type": "system", "text": "legacy notice", "time": {"created": 1}}, {"id": "msg_2", "type": "location-switched", "location": {"directory": "/other/pkg"}, "subpath": "pkg", "time": {"created": 2}}, {"id": "msg_3", "type": "model-switched", "model": {"id": "m2", "providerID": "p"}, "time": {"created": 3}}, {"id": "msg_4", "type": "agent-switched", "agent": "fixer", "time": {"created": 4}}, {"id": "msg_5", "type": "user", "text": "go", "time": {"created": 5}}, {"id": "msg_6", "type": "assistant", "agent": "fixer", "model": {"id": "m2", "providerID": "p"}, "content": [], "time": {"created": 6}}, {"id": "msg_7", "type": "idle", "outcome": "succeeded", "time": {"created": 7}}, {"id": "msg_8", "type": "brand-new-type", "time": {"created": 8}}]]}
+{"fn": "isDroppedMessageType", "args": [{"id": "msg_5", "type": "user", "text": "go", "time": {"created": 5}}, 4, [{"id": "msg_1", "type": "system", "text": "legacy notice", "time": {"created": 1}}, {"id": "msg_2", "type": "location-switched", "location": {"directory": "/other/pkg"}, "subpath": "pkg", "time": {"created": 2}}, {"id": "msg_3", "type": "model-switched", "model": {"id": "m2", "providerID": "p"}, "time": {"created": 3}}, {"id": "msg_4", "type": "agent-switched", "agent": "fixer", "time": {"created": 4}}, {"id": "msg_5", "type": "user", "text": "go", "time": {"created": 5}}, {"id": "msg_6", "type": "assistant", "agent": "fixer", "model": {"id": "m2", "providerID": "p"}, "content": [], "time": {"created": 6}}, {"id": "msg_7", "type": "idle", "outcome": "succeeded", "time": {"created": 7}}, {"id": "msg_8", "type": "brand-new-type", "time": {"created": 8}}]]}
+{"fn": "isDroppedMessageType", "args": [{"id": "msg_6", "type": "assistant", "agent": "fixer", "model": {"id": "m2", "providerID": "p"}, "content": [], "time": {"created": 6}}, 5, [{"id": "msg_1", "type": "system", "text": "legacy notice", "time": {"created": 1}}, {"id": "msg_2", "type": "location-switched", "location": {"directory": "/other/pkg"}, "subpath": "pkg", "time": {"created": 2}}, {"id": "msg_3", "type": "model-switched", "model": {"id": "m2", "providerID": "p"}, "time": {"created": 3}}, {"id": "msg_4", "type": "agent-switched", "agent": "fixer", "time": {"created": 4}}, {"id": "msg_5", "type": "user", "text": "go", "time": {"created": 5}}, {"id": "msg_6", "type": "assistant", "agent": "fixer", "model": {"id": "m2", "providerID": "p"}, "content": [], "time": {"created": 6}}, {"id": "msg_7", "type": "idle", "outcome": "succeeded", "time": {"created": 7}}, {"id": "msg_8", "type": "brand-new-type", "time": {"created": 8}}]]}
+{"fn": "isDroppedMessageType", "args": [{"id": "msg_7", "type": "idle", "outcome": "succeeded", "time": {"created": 7}}, 6, [{"id": "msg_1", "type": "system", "text": "legacy notice", "time": {"created": 1}}, {"id": "msg_2", "type": "location-switched", "location": {"directory": "/other/pkg"}, "subpath": "pkg", "time": {"created": 2}}, {"id": "msg_3", "type": "model-switched", "model": {"id": "m2", "providerID": "p"}, "time": {"created": 3}}, {"id": "msg_4", "type": "agent-switched", "agent": "fixer", "time": {"created": 4}}, {"id": "msg_5", "type": "user", "text": "go", "time": {"created": 5}}, {"id": "msg_6", "type": "assistant", "agent": "fixer", "model": {"id": "m2", "providerID": "p"}, "content": [], "time": {"created": 6}}, {"id": "msg_7", "type": "idle", "outcome": "succeeded", "time": {"created": 7}}, {"id": "msg_8", "type": "brand-new-type", "time": {"created": 8}}]]}
+{"fn": "isDroppedMessageType", "args": [{"id": "msg_8", "type": "brand-new-type", "time": {"created": 8}}, 7, [{"id": "msg_1", "type": "system", "text": "legacy notice", "time": {"created": 1}}, {"id": "msg_2", "type": "location-switched", "location": {"directory": "/other/pkg"}, "subpath": "pkg", "time": {"created": 2}}, {"id": "msg_3", "type": "model-switched", "model": {"id": "m2", "providerID": "p"}, "time": {"created": 3}}, {"id": "msg_4", "type": "agent-switched", "agent": "fixer", "time": {"created": 4}}, {"id": "msg_5", "type": "user", "text": "go", "time": {"created": 5}}, {"id": "msg_6", "type": "assistant", "agent": "fixer", "model": {"id": "m2", "providerID": "p"}, "content": [], "time": {"created": 6}}, {"id": "msg_7", "type": "idle", "outcome": "succeeded", "time": {"created": 7}}, {"id": "msg_8", "type": "brand-new-type", "time": {"created": 8}}]]}
+{"fn": "compactionPartId", "args": ["msg_000000000004normalized0000"]}
+{"fn": "compactionSummaryTextPartId", "args": ["msg_000000000004normalized0000"]}
+{"fn": "compactionSummaryTextPartId", "args": ["msg_000000000004normalized0000"]}
+{"fn": "toV1Tokens", "args": [{"input": 1, "output": 2, "reasoning": 3, "cache": {"read": 4, "write": 5}}]}
+{"fn": "toV1Tokens", "args": [{"$undefined": true}]}
+{"fn": "toV1PathInfo", "args": ["/repo/pkg/a", "pkg/a"]}
+{"fn": "toV1PathInfo", "args": ["/repo", ""]}
+{"fn": "toV1PathInfo", "args": [{"$undefined": true}]}
+{"fn": "toV1PathInfo", "args": ["/repo/pkg/a", "pkg/other"]}
+{"fn": "toV1PathInfo", "args": ["/repo/pkg/a", "../a"]}
+{"fn": "toV1PathInfo", "args": ["/repo/pkg/a", "/repo/pkg/a"]}
+{"fn": "encodeMessageCursor", "args": ["eyJabc"]}
+{"fn": "encodeMessageCursor", "args": [{"$undefined": true}]}
+{"fn": "decodeMessageCursor", "args": ["v2:eyJabc"]}
+{"fn": "decodeMessageCursor", "args": [{"$undefined": true}]}
+{"fn": "decodeMessageCursor", "args": [""]}
+{"fn": "decodeMessageCursor", "args": ["msg_123"]}
+{"fn": "decodeMessageCursor", "args": ["v2:"]}
+{"fn": "decodeMessageCursor", "args": [42]}
+{"fn": "buildUserIndex", "args": [[{"id": "msg_user", "type": "user", "metadata": {"devryan": {"v": 1, "origin": "interview", "statusOnly": true}}, "text": "actual request", "time": {"created": 1}}, {"id": "msg_notice", "type": "synthetic", "metadata": {"devryan": {"v": 1, "origin": "interview", "statusOnly": true}}, "text": "UI ready", "time": {"created": 2}}]]}
+{"fn": "compactionPartId", "args": ["m1"]}
+{"fn": "compactionSummaryTextPartId", "args": ["m1"]}
+{"fn": "compactionPartId", "args": [""]}
+{"fn": "compactionSummaryTextPartId", "args": [""]}
+{"fn": "compactionPartId", "args": [5]}
+{"fn": "compactionSummaryTextPartId", "args": [5]}
+{"fn": "compactionPartId", "args": [null]}
+{"fn": "compactionSummaryTextPartId", "args": [null]}
+{"fn": "compactionPartId", "args": [{"$undefined": true}]}
+{"fn": "compactionSummaryTextPartId", "args": [{"$undefined": true}]}
+{"fn": "compactionPartId", "args": [["a", "b"]]}
+{"fn": "compactionSummaryTextPartId", "args": [["a", "b"]]}
+{"fn": "compactionPartId", "args": [{"a": 1}]}
+{"fn": "compactionSummaryTextPartId", "args": [{"a": 1}]}
+{"fn": "compactionPartId", "args": [{"$map": []}]}
+{"fn": "compactionSummaryTextPartId", "args": [{"$map": []}]}
+{"fn": "compactionPartId", "args": [{"$utf16": [55296]}]}
+{"fn": "compactionSummaryTextPartId", "args": [{"$utf16": [55296]}]}
+{"fn": "compactionPartId", "args": [true]}
+{"fn": "compactionSummaryTextPartId", "args": [true]}
+{"fn": "compactionPartId", "args": [{"$num": "NaN"}]}
+{"fn": "compactionSummaryTextPartId", "args": [{"$num": "NaN"}]}
+{"fn": "toV1Tokens", "args": [{"$undefined": true}]}
+{"fn": "toV1Tokens", "args": [null]}
+{"fn": "toV1Tokens", "args": ["x"]}
+{"fn": "toV1Tokens", "args": [{}]}
+{"fn": "toV1Tokens", "args": [{"input": 1, "output": 2, "reasoning": 3, "cache": {"read": 4, "write": 5}}]}
+{"fn": "toV1Tokens", "args": [{"input": {"$num": "NaN"}, "output": "2", "cache": "c"}]}
+{"fn": "toV1Tokens", "args": [{"input": 0.1, "output": 0.2}]}
+{"fn": "toV1Tokens", "args": [{"input": 1e+308, "output": 1e+308}]}
+{"fn": "toV1Tokens", "args": [{"input": {"$num": "-0"}}]}
+{"fn": "toV1Tokens", "args": [{"$map": []}]}
+{"fn": "toV1PathInfo", "args": ["/repo/pkg/web", "pkg/web"]}
+{"fn": "toV1PathInfo", "args": ["/repo/pkg/web", "x"]}
+{"fn": "toV1PathInfo", "args": ["/a", "a"]}
+{"fn": "toV1PathInfo", "args": ["", "a"]}
+{"fn": "toV1PathInfo", "args": [5, "a"]}
+{"fn": "toV1PathInfo", "args": ["/a/b", {"$undefined": true}]}
+{"fn": "toV1PathInfo", "args": ["/a/b", 5]}
+{"fn": "toV1PathInfo", "args": ["/a/b", "/b"]}
+{"fn": "toV1PathInfo", "args": ["/a/b", "b/../b"]}
+{"fn": "toV1PathInfo", "args": ["a/b", "b"]}
+{"fn": "toV1PathInfo", "args": ["/a/b/", "b"]}
+{"fn": "toV1PathInfo", "args": [{"$utf16": [47, 55296, 47, 98]}, "b"]}
+{"fn": "toV1PathInfo", "args": []}
+{"fn": "toV1PathInfo", "args": ["/x"]}
+{"fn": "readDevryanPromptSelection", "args": [{"$undefined": true}]}
+{"fn": "toV1UserMetadata", "args": [{"$undefined": true}]}
+{"fn": "readDevryanPromptSelection", "args": [null]}
+{"fn": "toV1UserMetadata", "args": [null]}
+{"fn": "readDevryanPromptSelection", "args": ["x"]}
+{"fn": "toV1UserMetadata", "args": ["x"]}
+{"fn": "readDevryanPromptSelection", "args": [{}]}
+{"fn": "toV1UserMetadata", "args": [{}]}
+{"fn": "readDevryanPromptSelection", "args": [{"devryan": null}]}
+{"fn": "toV1UserMetadata", "args": [{"devryan": null}]}
+{"fn": "readDevryanPromptSelection", "args": [{"devryan": {"v": 2}}]}
+{"fn": "toV1UserMetadata", "args": [{"devryan": {"v": 2}}]}
+{"fn": "readDevryanPromptSelection", "args": [{"devryan": {"v": "1"}}]}
+{"fn": "toV1UserMetadata", "args": [{"devryan": {"v": "1"}}]}
+{"fn": "readDevryanPromptSelection", "args": [{"devryan": {"v": 1}}]}
+{"fn": "toV1UserMetadata", "args": [{"devryan": {"v": 1}}]}
+{"fn": "readDevryanPromptSelection", "args": [{"devryan": {"v": 1, "agent": "plan", "providerID": "p", "modelID": "m", "variant": null, "planMode": true}}]}
+{"fn": "toV1UserMetadata", "args": [{"devryan": {"v": 1, "agent": "plan", "providerID": "p", "modelID": "m", "variant": null, "planMode": true}}]}
+{"fn": "readDevryanPromptSelection", "args": [{"devryan": {"v": 1, "agent": "", "variant": "hi", "planMode": "yes"}}]}
+{"fn": "toV1UserMetadata", "args": [{"devryan": {"v": 1, "agent": "", "variant": "hi", "planMode": "yes"}}]}
+{"fn": "readDevryanPromptSelection", "args": [{"devryan": {"v": 1, "variant": 5, "providerID": 5}}]}
+{"fn": "toV1UserMetadata", "args": [{"devryan": {"v": 1, "variant": 5, "providerID": 5}}]}
+{"fn": "readDevryanPromptSelection", "args": [{"other": 1, "devryan": {"v": 1, "planMode": true}, "z": 2}]}
+{"fn": "toV1UserMetadata", "args": [{"other": 1, "devryan": {"v": 1, "planMode": true}, "z": 2}]}
+{"fn": "readDevryanPromptSelection", "args": [{"2": "x", "devryan": {"v": 1}}]}
+{"fn": "toV1UserMetadata", "args": [{"2": "x", "devryan": {"v": 1}}]}
+{"fn": "readDevryanPromptSelection", "args": [{"$map": []}]}
+{"fn": "toV1UserMetadata", "args": [{"$map": []}]}
+{"fn": "readDevryanPromptSelection", "args": [{"$bytes": [1, 2]}]}
+{"fn": "toV1UserMetadata", "args": [{"$bytes": [1, 2]}]}
+{"fn": "toV1UserParts", "args": [{"id": "u1", "text": "hello"}, "s1"]}
+{"fn": "toV1UserParts", "args": [{"id": "u1", "text": "hello"}, 5]}
+{"fn": "toV1UserParts", "args": [{"id": "u1", "text": "hello"}, {"$undefined": true}]}
+{"fn": "toV1UserParts", "args": [{"id": "u1", "text": "", "files": [{"data": "QQ==", "mime": "text/plain", "name": "a.txt"}, {"data": 5}, null, {"data": "x", "name": ""}, {"data": "y", "mime": 5}], "agents": [{"name": "plan", "mention": {"text": "@plan", "start": 0, "end": 5}}, {"name": 5}, {"name": "b", "mention": {"text": "x", "start": "0", "end": 1}}, null, {"name": "c", "mention": {"text": "t", "start": {"$num": "-0"}, "end": 2.5}}]}, "s1"]}
+{"fn": "toV1UserParts", "args": [{"id": "u1", "text": "", "files": [{"data": "QQ==", "mime": "text/plain", "name": "a.txt"}, {"data": 5}, null, {"data": "x", "name": ""}, {"data": "y", "mime": 5}], "agents": [{"name": "plan", "mention": {"text": "@plan", "start": 0, "end": 5}}, {"name": 5}, {"name": "b", "mention": {"text": "x", "start": "0", "end": 1}}, null, {"name": "c", "mention": {"text": "t", "start": {"$num": "-0"}, "end": 2.5}}]}, 5]}
+{"fn": "toV1UserParts", "args": [{"id": "u1", "text": "", "files": [{"data": "QQ==", "mime": "text/plain", "name": "a.txt"}, {"data": 5}, null, {"data": "x", "name": ""}, {"data": "y", "mime": 5}], "agents": [{"name": "plan", "mention": {"text": "@plan", "start": 0, "end": 5}}, {"name": 5}, {"name": "b", "mention": {"text": "x", "start": "0", "end": 1}}, null, {"name": "c", "mention": {"text": "t", "start": {"$num": "-0"}, "end": 2.5}}]}, {"$undefined": true}]}
+{"fn": "toV1UserParts", "args": [{"id": "u2", "text": "abcdef", "metadata": {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2}, {"kind": "attachment", "length": 3, "id": "p1"}, {"kind": "synthetic", "length": 1}]}}}, "s1"]}
+{"fn": "toV1UserParts", "args": [{"id": "u2", "text": "abcdef", "metadata": {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2}, {"kind": "attachment", "length": 3, "id": "p1"}, {"kind": "synthetic", "length": 1}]}}}, 5]}
+{"fn": "toV1UserParts", "args": [{"id": "u2", "text": "abcdef", "metadata": {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 2}, {"kind": "attachment", "length": 3, "id": "p1"}, {"kind": "synthetic", "length": 1}]}}}, {"$undefined": true}]}
+{"fn": "toV1UserParts", "args": [{"id": "u3", "text": "abc", "metadata": {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 5}]}}}, "s1"]}
+{"fn": "toV1UserParts", "args": [{"id": "u3", "text": "abc", "metadata": {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 5}]}}}, 5]}
+{"fn": "toV1UserParts", "args": [{"id": "u3", "text": "abc", "metadata": {"devryan": {"v": 1, "parts": [{"kind": "text", "length": 5}]}}}, {"$undefined": true}]}
+{"fn": "toV1UserParts", "args": [{"id": 5, "text": 5}, "s1"]}
+{"fn": "toV1UserParts", "args": [{"id": 5, "text": 5}, 5]}
+{"fn": "toV1UserParts", "args": [{"id": 5, "text": 5}, {"$undefined": true}]}
+{"fn": "toV1UserParts", "args": [{"text": "t"}, "s1"]}
+{"fn": "toV1UserParts", "args": [{"text": "t"}, 5]}
+{"fn": "toV1UserParts", "args": [{"text": "t"}, {"$undefined": true}]}
+{"fn": "toV1UserParts", "args": ["x", "s1"]}
+{"fn": "toV1UserParts", "args": ["x", 5]}
+{"fn": "toV1UserParts", "args": ["x", {"$undefined": true}]}
+{"fn": "toV1UserParts", "args": [{"id": {"$utf16": [55296]}, "text": "t"}, "s1"]}
+{"fn": "toV1UserParts", "args": [{"id": {"$utf16": [55296]}, "text": "t"}, 5]}
+{"fn": "toV1UserParts", "args": [{"id": {"$utf16": [55296]}, "text": "t"}, {"$undefined": true}]}
+{"fn": "toV1UserParts", "args": [null, "s"]}
+{"fn": "toV1UserParts", "args": []}
+{"fn": "buildUserIndex", "args": [[{"type": "user", "id": "a", "time": {"created": 5}}, {"type": "synthetic", "id": "b", "time": {"created": 3}}, {"type": "user", "id": "a", "time": {"created": 1}}, {"type": "assistant", "id": "c", "time": {"created": 2}}, {"type": "user", "id": "d", "time": {"created": "4"}}, {"type": "user", "id": "", "time": {"created": 4}}, {"type": "synthetic", "id": "e", "time": {"created": 3}, "metadata": {"devryan": {"v": 1, "origin": "interview", "statusOnly": true}}}, {"type": "synthetic", "id": "f", "time": {"created": 3}, "metadata": {"devryan": {"v": 1, "origin": "interview"}}}, {"type": "user", "id": "g", "time": {"created": {"$num": "-0"}}}, {"type": "user", "id": "h", "time": {"created": 0}}, {"type": "user", "id": "i"}, null, "x"]]}
+{"fn": "buildUserIndex", "args": [["x", null, {"type": "user", "id": "i"}, {"type": "user", "id": "h", "time": {"created": 0}}, {"type": "user", "id": "g", "time": {"created": {"$num": "-0"}}}, {"type": "synthetic", "id": "f", "time": {"created": 3}, "metadata": {"devryan": {"v": 1, "origin": "interview"}}}, {"type": "synthetic", "id": "e", "time": {"created": 3}, "metadata": {"devryan": {"v": 1, "origin": "interview", "statusOnly": true}}}, {"type": "user", "id": "", "time": {"created": 4}}, {"type": "user", "id": "d", "time": {"created": "4"}}, {"type": "assistant", "id": "c", "time": {"created": 2}}, {"type": "user", "id": "a", "time": {"created": 1}}, {"type": "synthetic", "id": "b", "time": {"created": 3}}, {"type": "user", "id": "a", "time": {"created": 5}}]]}
+{"fn": "buildUserIndex", "args": ["x"]}
+{"fn": "buildUserIndex", "args": [null]}
+{"fn": "buildUserIndex", "args": []}
+{"fn": "addUserIndexEntry", "args": [[{"deliveredAt": 1, "userID": "a"}, {"deliveredAt": 3, "userID": "b"}, {"deliveredAt": 3, "userID": "c"}, {"deliveredAt": 7, "userID": "d"}], {"deliveredAt": 3, "userID": "n"}]}
+{"fn": "addUserIndexEntry", "args": [null, {"deliveredAt": 3, "userID": "n"}]}
+{"fn": "addUserIndexEntry", "args": [[{"deliveredAt": "5", "userID": "x"}, {"deliveredAt": null, "userID": "y"}], {"deliveredAt": 3, "userID": "n"}]}
+{"fn": "addUserIndexEntry", "args": [[{"deliveredAt": 1, "userID": "a"}, {"deliveredAt": 3, "userID": "b"}, {"deliveredAt": 3, "userID": "c"}, {"deliveredAt": 7, "userID": "d"}], {"deliveredAt": 0, "userID": "n"}]}
+{"fn": "addUserIndexEntry", "args": [null, {"deliveredAt": 0, "userID": "n"}]}
+{"fn": "addUserIndexEntry", "args": [[{"deliveredAt": "5", "userID": "x"}, {"deliveredAt": null, "userID": "y"}], {"deliveredAt": 0, "userID": "n"}]}
+{"fn": "addUserIndexEntry", "args": [[{"deliveredAt": 1, "userID": "a"}, {"deliveredAt": 3, "userID": "b"}, {"deliveredAt": 3, "userID": "c"}, {"deliveredAt": 7, "userID": "d"}], {"deliveredAt": 9, "userID": "n"}]}
+{"fn": "addUserIndexEntry", "args": [null, {"deliveredAt": 9, "userID": "n"}]}
+{"fn": "addUserIndexEntry", "args": [[{"deliveredAt": "5", "userID": "x"}, {"deliveredAt": null, "userID": "y"}], {"deliveredAt": 9, "userID": "n"}]}
+{"fn": "addUserIndexEntry", "args": [[{"deliveredAt": 1, "userID": "a"}, {"deliveredAt": 3, "userID": "b"}, {"deliveredAt": 3, "userID": "c"}, {"deliveredAt": 7, "userID": "d"}], {"deliveredAt": 3, "userID": "b"}]}
+{"fn": "addUserIndexEntry", "args": [null, {"deliveredAt": 3, "userID": "b"}]}
+{"fn": "addUserIndexEntry", "args": [[{"deliveredAt": "5", "userID": "x"}, {"deliveredAt": null, "userID": "y"}], {"deliveredAt": 3, "userID": "b"}]}
+{"fn": "addUserIndexEntry", "args": [[{"deliveredAt": 1, "userID": "a"}, {"deliveredAt": 3, "userID": "b"}, {"deliveredAt": 3, "userID": "c"}, {"deliveredAt": 7, "userID": "d"}], {"deliveredAt": "3", "userID": "n"}]}
+{"fn": "addUserIndexEntry", "args": [null, {"deliveredAt": "3", "userID": "n"}]}
+{"fn": "addUserIndexEntry", "args": [[{"deliveredAt": "5", "userID": "x"}, {"deliveredAt": null, "userID": "y"}], {"deliveredAt": "3", "userID": "n"}]}
+{"fn": "addUserIndexEntry", "args": [[{"deliveredAt": 1, "userID": "a"}, {"deliveredAt": 3, "userID": "b"}, {"deliveredAt": 3, "userID": "c"}, {"deliveredAt": 7, "userID": "d"}], {"deliveredAt": 3, "userID": ""}]}
+{"fn": "addUserIndexEntry", "args": [null, {"deliveredAt": 3, "userID": ""}]}
+{"fn": "addUserIndexEntry", "args": [[{"deliveredAt": "5", "userID": "x"}, {"deliveredAt": null, "userID": "y"}], {"deliveredAt": 3, "userID": ""}]}
+{"fn": "addUserIndexEntry", "args": [[{"deliveredAt": 1, "userID": "a"}, {"deliveredAt": 3, "userID": "b"}, {"deliveredAt": 3, "userID": "c"}, {"deliveredAt": 7, "userID": "d"}], null]}
+{"fn": "addUserIndexEntry", "args": [null, null]}
+{"fn": "addUserIndexEntry", "args": [[{"deliveredAt": "5", "userID": "x"}, {"deliveredAt": null, "userID": "y"}], null]}
+{"fn": "addUserIndexEntry", "args": [[{"deliveredAt": 1, "userID": "a"}, {"deliveredAt": 3, "userID": "b"}, {"deliveredAt": 3, "userID": "c"}, {"deliveredAt": 7, "userID": "d"}], {"$undefined": true}]}
+{"fn": "addUserIndexEntry", "args": [null, {"$undefined": true}]}
+{"fn": "addUserIndexEntry", "args": [[{"deliveredAt": "5", "userID": "x"}, {"deliveredAt": null, "userID": "y"}], {"$undefined": true}]}
+{"fn": "addUserIndexEntry", "args": [[{"deliveredAt": 1, "userID": "a"}, {"deliveredAt": 3, "userID": "b"}, {"deliveredAt": 3, "userID": "c"}, {"deliveredAt": 7, "userID": "d"}], {"deliveredAt": {"$num": "Infinity"}, "userID": "n"}]}
+{"fn": "addUserIndexEntry", "args": [null, {"deliveredAt": {"$num": "Infinity"}, "userID": "n"}]}
+{"fn": "addUserIndexEntry", "args": [[{"deliveredAt": "5", "userID": "x"}, {"deliveredAt": null, "userID": "y"}], {"deliveredAt": {"$num": "Infinity"}, "userID": "n"}]}
+{"fn": "addUserIndexEntry", "args": [[null], {"deliveredAt": 1, "userID": "n"}]}
+{"fn": "addUserIndexEntry", "args": [[{"userID": "q"}, 5], {"deliveredAt": 1, "userID": "n"}]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": 1, "userID": "a"}, {"deliveredAt": 3, "userID": "b"}, {"deliveredAt": 3, "userID": "c"}, {"deliveredAt": 7, "userID": "d"}], 0]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": "2", "userID": "s"}, {"deliveredAt": [3], "userID": "t"}, {"deliveredAt": null, "userID": "u"}], 0]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": 1, "userID": "a"}, {"deliveredAt": 3, "userID": "b"}, {"deliveredAt": 3, "userID": "c"}, {"deliveredAt": 7, "userID": "d"}], 1]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": "2", "userID": "s"}, {"deliveredAt": [3], "userID": "t"}, {"deliveredAt": null, "userID": "u"}], 1]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": 1, "userID": "a"}, {"deliveredAt": 3, "userID": "b"}, {"deliveredAt": 3, "userID": "c"}, {"deliveredAt": 7, "userID": "d"}], 2]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": "2", "userID": "s"}, {"deliveredAt": [3], "userID": "t"}, {"deliveredAt": null, "userID": "u"}], 2]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": 1, "userID": "a"}, {"deliveredAt": 3, "userID": "b"}, {"deliveredAt": 3, "userID": "c"}, {"deliveredAt": 7, "userID": "d"}], 3]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": "2", "userID": "s"}, {"deliveredAt": [3], "userID": "t"}, {"deliveredAt": null, "userID": "u"}], 3]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": 1, "userID": "a"}, {"deliveredAt": 3, "userID": "b"}, {"deliveredAt": 3, "userID": "c"}, {"deliveredAt": 7, "userID": "d"}], 5]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": "2", "userID": "s"}, {"deliveredAt": [3], "userID": "t"}, {"deliveredAt": null, "userID": "u"}], 5]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": 1, "userID": "a"}, {"deliveredAt": 3, "userID": "b"}, {"deliveredAt": 3, "userID": "c"}, {"deliveredAt": 7, "userID": "d"}], 7]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": "2", "userID": "s"}, {"deliveredAt": [3], "userID": "t"}, {"deliveredAt": null, "userID": "u"}], 7]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": 1, "userID": "a"}, {"deliveredAt": 3, "userID": "b"}, {"deliveredAt": 3, "userID": "c"}, {"deliveredAt": 7, "userID": "d"}], 8]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": "2", "userID": "s"}, {"deliveredAt": [3], "userID": "t"}, {"deliveredAt": null, "userID": "u"}], 8]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": 1, "userID": "a"}, {"deliveredAt": 3, "userID": "b"}, {"deliveredAt": 3, "userID": "c"}, {"deliveredAt": 7, "userID": "d"}], {"$num": "NaN"}]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": "2", "userID": "s"}, {"deliveredAt": [3], "userID": "t"}, {"deliveredAt": null, "userID": "u"}], {"$num": "NaN"}]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": 1, "userID": "a"}, {"deliveredAt": 3, "userID": "b"}, {"deliveredAt": 3, "userID": "c"}, {"deliveredAt": 7, "userID": "d"}], "3"]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": "2", "userID": "s"}, {"deliveredAt": [3], "userID": "t"}, {"deliveredAt": null, "userID": "u"}], "3"]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": 1, "userID": "a"}, {"deliveredAt": 3, "userID": "b"}, {"deliveredAt": 3, "userID": "c"}, {"deliveredAt": 7, "userID": "d"}], {"$undefined": true}]}
+{"fn": "findIndexedParentID", "args": [[{"deliveredAt": "2", "userID": "s"}, {"deliveredAt": [3], "userID": "t"}, {"deliveredAt": null, "userID": "u"}], {"$undefined": true}]}
+{"fn": "findIndexedParentID", "args": [null, 1]}
+{"fn": "findIndexedParentID", "args": [[], 1]}
+{"fn": "findIndexedParentID", "args": [[null], 1]}
+{"fn": "findIndexedParentID", "args": [[5, 6], 1]}
+{"fn": "encodeMessageCursor", "args": ["abc"]}
+{"fn": "encodeMessageCursor", "args": [""]}
+{"fn": "encodeMessageCursor", "args": [5]}
+{"fn": "encodeMessageCursor", "args": [null]}
+{"fn": "encodeMessageCursor", "args": [{"$undefined": true}]}
+{"fn": "encodeMessageCursor", "args": [{"$utf16": [55296]}]}
+{"fn": "decodeMessageCursor", "args": [{"$undefined": true}]}
+{"fn": "decodeMessageCursor", "args": [null]}
+{"fn": "decodeMessageCursor", "args": [""]}
+{"fn": "decodeMessageCursor", "args": ["v2:"]}
+{"fn": "decodeMessageCursor", "args": ["v2:abc"]}
+{"fn": "decodeMessageCursor", "args": ["v1:abc"]}
+{"fn": "decodeMessageCursor", "args": ["abc"]}
+{"fn": "decodeMessageCursor", "args": [5]}
+{"fn": "decodeMessageCursor", "args": ["V2:x"]}
+{"fn": "decodeMessageCursor", "args": ["v2"]}
+{"fn": "decodeMessageCursor", "args": [{"$utf16": [118, 50, 58, 55296]}]}
+{"fn": "isDroppedMessageType", "args": [{"$undefined": true}]}
+{"fn": "isDroppedMessageType", "args": [null]}
+{"fn": "isDroppedMessageType", "args": ["system"]}
+{"fn": "isDroppedMessageType", "args": [{}]}
+{"fn": "isDroppedMessageType", "args": [{"type": "system"}]}
+{"fn": "isDroppedMessageType", "args": [{"type": "idle"}]}
+{"fn": "isDroppedMessageType", "args": [{"type": "agent-switched"}]}
+{"fn": "isDroppedMessageType", "args": [{"type": "model-switched"}]}
+{"fn": "isDroppedMessageType", "args": [{"type": "location-switched"}]}
+{"fn": "isDroppedMessageType", "args": [{"type": "user"}]}
+{"fn": "isDroppedMessageType", "args": [{"type": 5}]}
+{"fn": "isDroppedMessageType", "args": [{"$map": []}]}
+{"fn": "compactionPartId", "args": []}
+{"fn": "compactionSummaryTextPartId", "args": []}
+{"fn": "toV1Tokens", "args": []}
+{"fn": "readDevryanPromptSelection", "args": []}
+{"fn": "toV1UserMetadata", "args": []}
+{"fn": "buildUserIndex", "args": []}
+{"fn": "addUserIndexEntry", "args": []}
+{"fn": "findIndexedParentID", "args": []}
+{"fn": "encodeMessageCursor", "args": []}
+{"fn": "decodeMessageCursor", "args": []}
+{"fn": "isDroppedMessageType", "args": []}

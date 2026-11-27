@@ -1,0 +1,426 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode/v2/projection",
+  "unit": "catalog.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "catalog-rs",
+  "exports": [
+    {
+      "name": "redactCredentials",
+      "file": "catalog.js",
+      "line": 51,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1ProviderPackage",
+      "file": "catalog.js",
+      "line": 113,
+      "params": [
+        {
+          "name": "pkg",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1PermissionRuleset",
+      "file": "catalog.js",
+      "line": 132,
+      "params": [
+        {
+          "name": "rules",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1Agent",
+      "file": "catalog.js",
+      "line": 168,
+      "params": [
+        {
+          "name": "agent",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1Agents",
+      "file": "catalog.js",
+      "line": 198,
+      "params": [
+        {
+          "name": "agents",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1Model",
+      "file": "catalog.js",
+      "line": 265,
+      "params": [
+        {
+          "name": "model",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "provider",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1Provider",
+      "file": "catalog.js",
+      "line": 336,
+      "params": [
+        {
+          "name": "provider",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "models",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "options",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1ConfigProviders",
+      "file": "catalog.js",
+      "line": 391,
+      "params": [
+        {
+          "name": "arg0",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1ProviderList",
+      "file": "catalog.js",
+      "line": 411,
+      "params": [
+        {
+          "name": "arg0",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1Commands",
+      "file": "catalog.js",
+      "line": 433,
+      "params": [
+        {
+          "name": "commands",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "options",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1Skills",
+      "file": "catalog.js",
+      "line": 463,
+      "params": [
+        {
+          "name": "skills",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1McpStatus",
+      "file": "catalog.js",
+      "line": 487,
+      "params": [
+        {
+          "name": "servers",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "mergeV2ConfigEntries",
+      "file": "catalog.js",
+      "line": 537,
+      "params": [
+        {
+          "name": "entries",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "configDirectories",
+      "file": "catalog.js",
+      "line": 551,
+      "params": [
+        {
+          "name": "entries",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1ModelSelection",
+      "file": "catalog.js",
+      "line": 561,
+      "params": [
+        {
+          "name": "selection",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1Config",
+      "file": "catalog.js",
+      "line": 713,
+      "params": [
+        {
+          "name": "entries",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1Path",
+      "file": "catalog.js",
+      "line": 765,
+      "params": [
+        {
+          "name": "location",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "paths",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1Project",
+      "file": "catalog.js",
+      "line": 783,
+      "params": [
+        {
+          "name": "project",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1Projects",
+      "file": "catalog.js",
+      "line": 806,
+      "params": [
+        {
+          "name": "projects",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1CurrentProject",
+      "file": "catalog.js",
+      "line": 815,
+      "params": [
+        {
+          "name": "location",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "projects",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1VcsInfo",
+      "file": "catalog.js",
+      "line": 828,
+      "params": [
+        {
+          "name": "vcs",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

@@ -1,0 +1,325 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode/v2/projection",
+  "unit": "messages.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "messages-rs",
+  "exports": [
+    {
+      "name": "compactionPartId",
+      "file": "messages.js",
+      "line": 146,
+      "params": [
+        {
+          "name": "messageID",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "compactionSummaryTextPartId",
+      "file": "messages.js",
+      "line": 154,
+      "params": [
+        {
+          "name": "messageID",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1Tokens",
+      "file": "messages.js",
+      "line": 162,
+      "params": [
+        {
+          "name": "tokens",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1PathInfo",
+      "file": "messages.js",
+      "line": 191,
+      "params": [
+        {
+          "name": "directory",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "subpath",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "readDevryanPromptSelection",
+      "file": "messages.js",
+      "line": 211,
+      "params": [
+        {
+          "name": "metadata",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1UserMetadata",
+      "file": "messages.js",
+      "line": 231,
+      "params": [
+        {
+          "name": "metadata",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "toV1UserParts",
+      "file": "messages.js",
+      "line": 273,
+      "params": [
+        {
+          "name": "message",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "sessionID",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "buildUserIndex",
+      "file": "messages.js",
+      "line": 644,
+      "params": [
+        {
+          "name": "messages",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "addUserIndexEntry",
+      "file": "messages.js",
+      "line": 666,
+      "params": [
+        {
+          "name": "index",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "entry",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "findIndexedParentID",
+      "file": "messages.js",
+      "line": 684,
+      "params": [
+        {
+          "name": "index",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "createdAt",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "encodeMessageCursor",
+      "file": "messages.js",
+      "line": 956,
+      "params": [
+        {
+          "name": "cursor",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "decodeMessageCursor",
+      "file": "messages.js",
+      "line": 967,
+      "params": [
+        {
+          "name": "before",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isDroppedMessageType",
+      "file": "messages.js",
+      "line": 1103,
+      "params": [
+        {
+          "name": "message",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "InvalidMessageCursorError",
+      "file": "messages.js",
+      "line": 977,
+      "reason": "class: extends another class"
+    },
+    {
+      "name": "InvalidMessagePageError",
+      "file": "messages.js",
+      "line": 987,
+      "reason": "class: extends another class"
+    },
+    {
+      "name": "toV1AssistantInfo",
+      "file": "messages.js",
+      "line": 391,
+      "reason": "kept on request"
+    },
+    {
+      "name": "toV1AssistantParts",
+      "file": "messages.js",
+      "line": 425,
+      "reason": "kept on request"
+    },
+    {
+      "name": "toV1CompactionRecords",
+      "file": "messages.js",
+      "line": 515,
+      "reason": "kept on request"
+    },
+    {
+      "name": "projectMessagePage",
+      "file": "messages.js",
+      "line": 760,
+      "reason": "kept on request"
+    },
+    {
+      "name": "fillMessagePage",
+      "file": "messages.js",
+      "line": 1034,
+      "reason": "kept on request"
+    },
+    {
+      "name": "projectSingleMessage",
+      "file": "messages.js",
+      "line": 1095,
+      "reason": "kept on request"
+    },
+    {
+      "name": "turnSummaryDiffs",
+      "file": "messages.js",
+      "line": 716,
+      "reason": "returns a Map, which the binary wire cannot carry"
+    }
+  ]
+}

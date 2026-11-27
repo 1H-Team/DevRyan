@@ -1,0 +1,48 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode/runtime-host",
+  "unit": "native-helper-contract.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "native-helper-contract-rs",
+  "exports": [
+    {
+      "name": "nativeHelperInput",
+      "file": "native-helper-contract.js",
+      "line": 6,
+      "params": [
+        {
+          "name": "input",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "nativeHelperTitleInput",
+      "file": "native-helper-contract.js",
+      "line": 23,
+      "params": [
+        {
+          "name": "input",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

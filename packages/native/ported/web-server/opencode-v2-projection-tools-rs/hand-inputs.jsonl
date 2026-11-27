@@ -1,0 +1,1253 @@
+{"fn":"toV1ToolName","args":["shell"]}
+{"fn":"toV2ToolName","args":["bash"]}
+{"fn":"toV1ToolName","args":["subagent"]}
+{"fn":"toV2ToolName","args":["task"]}
+{"fn":"toV1ToolName","args":["patch"]}
+{"fn":"toV2ToolName","args":["apply_patch"]}
+{"fn":"toV1ToolName","args":["read"]}
+{"fn":"toV2ToolName","args":["read"]}
+{"fn":"toV1ToolName","args":["edit"]}
+{"fn":"toV2ToolName","args":["edit"]}
+{"fn":"toV1ToolName","args":["write"]}
+{"fn":"toV2ToolName","args":["write"]}
+{"fn":"toV1ToolName","args":["glob"]}
+{"fn":"toV2ToolName","args":["glob"]}
+{"fn":"toV1ToolName","args":["grep"]}
+{"fn":"toV2ToolName","args":["grep"]}
+{"fn":"toV1ToolName","args":["skill"]}
+{"fn":"toV2ToolName","args":["skill"]}
+{"fn":"toV1ToolName","args":["todowrite"]}
+{"fn":"toV2ToolName","args":["todowrite"]}
+{"fn":"toV1ToolName","args":["mcp_x"]}
+{"fn":"toV2ToolName","args":["mcp_x"]}
+{"fn":"toV1ToolName","args":["bash"]}
+{"fn":"toV2ToolName","args":["shell"]}
+{"fn":"toV1ToolName","args":["constructor"]}
+{"fn":"toV1ToolInput","args":["read",{"path":"a.ts","offset":1}]}
+{"fn":"toV1ToolInput","args":["edit",{"path":"a.ts","oldString":"x","newString":"y"}]}
+{"fn":"toV1ToolInput","args":["write",{"path":"a.ts","content":""}]}
+{"fn":"toV1ToolInput","args":["subagent",{"agent":"fixer","description":"d","prompt":"p"}]}
+{"fn":"toV1ToolInput","args":["skill",{"id":"pdf"}]}
+{"fn":"toV1ToolInput","args":["grep",{"pattern":"x","path":"src"}]}
+{"fn":"toV1ToolInput","args":["read",{"filePath":"old.ts"}]}
+{"fn":"toV1ToolInput","args":["read",{"path":"new.ts","filePath":"old.ts"}]}
+{"fn":"toV1ToolInput","args":["read","raw"]}
+{"fn":"toV1ToolInput","args":["read",{"path":"a.ts","limit":5}]}
+{"fn":"toV2ToolInput","args":["read",{"path":"a.ts","limit":5,"filePath":"a.ts"}]}
+{"fn":"toV1ToolInput","args":["task",{"agent":"fixer","prompt":"p"}]}
+{"fn":"toV2ToolInput","args":["task",{"agent":"fixer","prompt":"p","subagent_type":"fixer"}]}
+{"fn":"toV1ToolInput","args":["skill",{"id":"pdf"}]}
+{"fn":"toV2ToolInput","args":["skill",{"id":"pdf","name":"pdf"}]}
+{"fn":"toV2ToolInput","args":["read",{"filePath":"a.ts"}]}
+{"fn":"toV2ToolInput","args":["task",{"subagent_type":"fixer","prompt":"p"}]}
+{"fn":"toV2ToolInput","args":["skill",{"name":"pdf"}]}
+{"fn":"toV2ToolInput","args":["edit",{"path":"b.ts","filePath":"a.ts"}]}
+{"fn":"toV2ToolInput","args":["bash",{"command":"ls"}]}
+{"fn":"toV1ToolMetadata","args":["subagent",{"sessionID":"ses_c","status":"running"}]}
+{"fn":"toV1ToolMetadata","args":["task",{}]}
+{"fn":"toV1ToolMetadata","args":["edit",{"files":[{"file":"src/a.ts","patch":"@@ -1 +1 @@\n-a\n+b","additions":1,"deletions":1,"status":"modified"},{"file":"src/b.ts","patch":"@@ -1 +1 @@\n-a\n+b","additions":1,"deletions":1,"status":"modified"}],"replacements":1}]}
+{"fn":"toV1ToolMetadata","args":["write",{"files":[{"file":"src/a.ts","patch":"@@ -1 +1 @@\n-a\n+b","additions":1,"deletions":1,"status":"modified"}]}]}
+{"fn":"toV1ToolMetadata","args":["patch",{"files":[{"file":"src/a.ts","patch":"@@ -1 +1 @@\n-a\n+b","additions":1,"deletions":1,"status":"modified"}]}]}
+{"fn":"toV1ToolMetadata","args":["edit",{"files":[]}]}
+{"fn":"toV1ToolMetadata","args":["edit",{"files":[{"file":"src/a.ts","patch":"@@ -1 +1 @@\n-a\n+b","additions":1,"deletions":1,"status":"modified"}],"diff":"kept","filediff":{"file":"kept"}}]}
+{"fn":"toV1ToolMetadata","args":["subagent",{"sessionID":"ses_c","status":"completed"}]}
+{"fn":"toV2ToolMetadata","args":["task",{"sessionID":"ses_c","status":"completed","sessionId":"ses_c"}]}
+{"fn":"toV1ToolMetadata","args":["edit",{"files":[{"file":"src/a.ts","patch":"@@ -1 +1 @@\n-a\n+b","additions":1,"deletions":1,"status":"modified"}],"replacements":1}]}
+{"fn":"toV2ToolMetadata","args":["edit",{"files":[{"file":"src/a.ts","patch":"@@ -1 +1 @@\n-a\n+b","additions":1,"deletions":1,"status":"modified"}],"replacements":1,"diff":"@@ -1 +1 @@\n-a\n+b","filediff":{"file":"src/a.ts","additions":1,"deletions":1}}]}
+{"fn":"toV2ToolMetadata","args":["edit",{"diff":"x","filediff":{"file":"a"}}]}
+{"fn":"toV2ToolMetadata","args":["task",{"sessionID":"a","sessionId":"b"}]}
+{"fn":"synthesizeToolTitle","args":[{"description":"List files","command":"ls"}]}
+{"fn":"synthesizeToolTitle","args":[{"command":"ls -la"}]}
+{"fn":"synthesizeToolTitle","args":[{"path":"a.ts","filePath":"a.ts"}]}
+{"fn":"synthesizeToolTitle","args":[{"path":"src"}]}
+{"fn":"synthesizeToolTitle","args":[{"pattern":"*.ts"}]}
+{"fn":"synthesizeToolTitle","args":[{"$undefined":true}]}
+{"fn":"toV1ToolState","args":[{"id":"c1","name":"shell","time":{"created":1000},"state":{"status":"streaming","input":"{\"comm"}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolState","args":[{"id":"c1","name":"subagent","time":{"created":1000,"ran":1100},"state":{"status":"running","input":{"agent":"fixer","description":"Fix it","prompt":"p"},"metadata":{"sessionID":"ses_c"}}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolState","args":[{"id":"c1","name":"glob","time":{"created":1000},"state":{"status":"running","input":{"pattern":"*"},"metadata":{}}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolState","args":[{"id":"call_7","name":"read","time":{"created":1000,"ran":1100,"completed":1500},"state":{"status":"completed","input":{"path":"img.png"},"content":[{"type":"text","text":"line 1"},{"type":"file","uri":"data:image/png;base64,AAAA","mime":"image/png","name":"img.png"},{"type":"text","text":"line 2"},{"type":"file","uri":"file:///tmp/x.bin","mime":"application/octet-stream"}],"metadata":{"truncated":false}}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolState","args":[{"id":"c1","name":"edit","time":{"created":1000},"state":{"status":"completed","input":{"path":"src/a.ts","oldString":"a","newString":"b"},"content":[{"type":"text","text":"ok"}],"metadata":{"files":[{"file":"src/a.ts","patch":"@@ -1 +1 @@\n-a\n+b","additions":1,"deletions":1,"status":"modified"}],"replacements":1}}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolState","args":[{"id":"c2","name":"websearch","time":{"created":1000,"ran":1100,"completed":1500},"state":{"status":"completed","input":{},"content":[{"type":"text","text":"r"}]}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolState","args":[{"id":"c1","name":"shell","time":{"created":1000,"ran":1100,"completed":1500},"state":{"status":"error","input":{"command":"false"},"error":{"type":"tool.execution","message":"exit 1"},"metadata":{"shellID":"sh_1"}}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolState","args":[{"id":"c1","name":"shell","time":{"created":5},"state":{"status":"error","input":{},"error":{"type":"x"}}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolState","args":[{"id":"c1","name":"read","time":{"created":1000,"ran":1100,"completed":1500},"state":{"status":"paused"}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolState","args":[{"id":"c1","name":"read","time":{"created":1000,"ran":1100,"completed":1500}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolState","args":[null,{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolPart","args":[{"type":"tool","id":"call_1","name":"shell","providerState":{"itemId":"fc_1","encryptedContent":"opaque","devryan":{"cursor":{"partID":"p"}}},"state":{"status":"running","input":{"command":"ls"},"metadata":{}},"time":{"created":10,"ran":11}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolPart","args":[{"type":"tool","id":"call_2","name":"shell","providerState":{"itemId":"fc_2"},"state":{"status":"running","input":{"command":"ls"},"metadata":{}},"time":{"created":10,"ran":11}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolPart","args":[{"type":"tool","id":"call_1","name":"shell","native":{"itemId":"fc_1","encryptedContent":"opaque","devryan":{"cursor":{"partID":"p"}}},"state":{"status":"running","input":{"command":"ls"},"metadata":{}},"time":{"created":10,"ran":11}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolPart","args":[{"type":"tool","id":"call_2","name":"shell","native":{"itemId":"fc_2"},"state":{"status":"running","input":{"command":"ls"},"metadata":{}},"time":{"created":10,"ran":11}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolPart","args":[{"type":"tool","id":"c","name":"bash","state":{"status":"streaming","input":""},"time":{"created":1}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolPart","args":[{"type":"tool","id":"","name":"read","state":{"status":"streaming","input":""}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolPart","args":[{"type":"tool","id":"c","state":{"status":"streaming","input":""}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolPart","args":[{"type":"tool","id":"c","name":"read","state":{"status":"nope"}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolInput","args":["skill",{"id":"devryan-539ddc37a961e3aceadfc7bbb540b8e7"}]}
+{"fn":"toV1ToolInput","args":["skill",{"id":"pdf"}]}
+{"fn":"toV1ToolState","args":[{"id":"call_s","name":"skill","time":{"created":1,"ran":2,"completed":3},"state":{"status":"running","input":{"id":"devryan-539ddc37a961e3aceadfc7bbb540b8e7"}}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolState","args":[{"id":"call_s","name":"skill","time":{"created":1,"ran":2,"completed":3},"state":{"status":"running","input":{"id":"devryan-539ddc37a961e3aceadfc7bbb540b8e7"},"metadata":{"name":"Superpowers"}}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolState","args":[{"id":"call_s","name":"skill","time":{"created":1,"ran":2,"completed":3},"state":{"status":"completed","input":{"id":"devryan-539ddc37a961e3aceadfc7bbb540b8e7"},"content":[{"type":"text","text":"<skill_content name=\"Superpowers\">\n# Skill: Superpowers\n</skill_content>"}],"metadata":{"name":"Superpowers","directory":"/skills/superpowers"}}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolState","args":[{"id":"call_s","name":"skill","time":{"created":1,"ran":2,"completed":3},"state":{"status":"error","input":{"id":"devryan-539ddc37a961e3aceadfc7bbb540b8e7"},"error":{"message":"native_skill_unreviewed"}}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolState","args":[{"id":"call_s","name":"skill","time":{"created":1,"ran":2,"completed":3},"state":{"status":"completed","input":{"id":"pdf"},"content":[],"metadata":{"name":"pdf"}}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolState","args":[{"id":"call_s","name":"skill","time":{"created":1,"ran":2,"completed":3},"state":{"status":"completed","input":{"id":"pdf"},"content":[]}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolState","args":[{"id":"call_s","name":"skill","time":{"created":1,"ran":2,"completed":3},"state":{"status":"completed","input":{"name":"legacy"},"content":[],"metadata":{"name":"Legacy"}}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV1ToolState","args":[{"id":"call_s","name":"skill","time":{"created":1,"ran":2,"completed":3},"state":{"status":"completed","input":{"id":"devryan-539ddc37a961e3aceadfc7bbb540b8e7"},"content":[],"metadata":{"name":"Superpowers"}}},{"messageID":"msg_01","sessionID":"ses_01"}]}
+{"fn":"toV2ToolInput","args":["skill",{"id":"devryan-539ddc37a961e3aceadfc7bbb540b8e7","name":"Superpowers"}]}
+{"fn": "toV1ToolName", "args": ["shell"]}
+{"fn": "toV2ToolName", "args": ["shell"]}
+{"fn": "toV1ToolName", "args": ["subagent"]}
+{"fn": "toV2ToolName", "args": ["subagent"]}
+{"fn": "toV1ToolName", "args": ["patch"]}
+{"fn": "toV2ToolName", "args": ["patch"]}
+{"fn": "toV1ToolName", "args": ["bash"]}
+{"fn": "toV2ToolName", "args": ["bash"]}
+{"fn": "toV1ToolName", "args": ["task"]}
+{"fn": "toV2ToolName", "args": ["task"]}
+{"fn": "toV1ToolName", "args": ["apply_patch"]}
+{"fn": "toV2ToolName", "args": ["apply_patch"]}
+{"fn": "toV1ToolName", "args": ["read"]}
+{"fn": "toV2ToolName", "args": ["read"]}
+{"fn": "toV1ToolName", "args": ["edit"]}
+{"fn": "toV2ToolName", "args": ["edit"]}
+{"fn": "toV1ToolName", "args": ["write"]}
+{"fn": "toV2ToolName", "args": ["write"]}
+{"fn": "toV1ToolName", "args": ["skill"]}
+{"fn": "toV2ToolName", "args": ["skill"]}
+{"fn": "toV1ToolName", "args": ["grep"]}
+{"fn": "toV2ToolName", "args": ["grep"]}
+{"fn": "toV1ToolName", "args": ["constructor"]}
+{"fn": "toV2ToolName", "args": ["constructor"]}
+{"fn": "toV1ToolName", "args": ["__proto__x"]}
+{"fn": "toV2ToolName", "args": ["__proto__x"]}
+{"fn": "toV1ToolName", "args": [""]}
+{"fn": "toV2ToolName", "args": [""]}
+{"fn": "toV1ToolName", "args": [null]}
+{"fn": "toV2ToolName", "args": [null]}
+{"fn": "toV1ToolName", "args": [{"$undefined": true}]}
+{"fn": "toV2ToolName", "args": [{"$undefined": true}]}
+{"fn": "toV1ToolName", "args": [5]}
+{"fn": "toV2ToolName", "args": [5]}
+{"fn": "toV1ToolName", "args": [["shell"]]}
+{"fn": "toV2ToolName", "args": [["shell"]]}
+{"fn": "toV1ToolName", "args": [{"$utf16": [55296]}]}
+{"fn": "toV2ToolName", "args": [{"$utf16": [55296]}]}
+{"fn": "toV1ToolInput", "args": ["read", {"$undefined": true}]}
+{"fn": "toV2ToolInput", "args": ["read", {"$undefined": true}]}
+{"fn": "toV1ToolInput", "args": ["read", null]}
+{"fn": "toV2ToolInput", "args": ["read", null]}
+{"fn": "toV1ToolInput", "args": ["read", 5]}
+{"fn": "toV2ToolInput", "args": ["read", 5]}
+{"fn": "toV1ToolInput", "args": ["read", "s"]}
+{"fn": "toV2ToolInput", "args": ["read", "s"]}
+{"fn": "toV1ToolInput", "args": ["read", []]}
+{"fn": "toV2ToolInput", "args": ["read", []]}
+{"fn": "toV1ToolInput", "args": ["read", {}]}
+{"fn": "toV2ToolInput", "args": ["read", {}]}
+{"fn": "toV1ToolInput", "args": ["read", {"$map": [["path", "x"]]}]}
+{"fn": "toV2ToolInput", "args": ["read", {"$map": [["path", "x"]]}]}
+{"fn": "toV1ToolInput", "args": ["read", {"path": "a"}]}
+{"fn": "toV2ToolInput", "args": ["read", {"path": "a"}]}
+{"fn": "toV1ToolInput", "args": ["read", {"path": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": ["read", {"path": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": ["read", {"path": "a", "filePath": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": ["read", {"path": "a", "filePath": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": ["read", {"path": "a", "filePath": "b"}]}
+{"fn": "toV2ToolInput", "args": ["read", {"path": "a", "filePath": "b"}]}
+{"fn": "toV1ToolInput", "args": ["read", {"filePath": "b"}]}
+{"fn": "toV2ToolInput", "args": ["read", {"filePath": "b"}]}
+{"fn": "toV1ToolInput", "args": ["read", {"filePath": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": ["read", {"filePath": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": ["read", {"filePath": {"$undefined": true}, "path": "p"}]}
+{"fn": "toV2ToolInput", "args": ["read", {"filePath": {"$undefined": true}, "path": "p"}]}
+{"fn": "toV1ToolInput", "args": ["read", {"agent": "fixer"}]}
+{"fn": "toV2ToolInput", "args": ["read", {"agent": "fixer"}]}
+{"fn": "toV1ToolInput", "args": ["read", {"subagent_type": "x", "agent": "y"}]}
+{"fn": "toV2ToolInput", "args": ["read", {"subagent_type": "x", "agent": "y"}]}
+{"fn": "toV1ToolInput", "args": ["read", {"id": "pdf"}]}
+{"fn": "toV2ToolInput", "args": ["read", {"id": "pdf"}]}
+{"fn": "toV1ToolInput", "args": ["read", {"id": "devryan-0123456789abcdef0123456789abcdef"}]}
+{"fn": "toV2ToolInput", "args": ["read", {"id": "devryan-0123456789abcdef0123456789abcdef"}]}
+{"fn": "toV1ToolInput", "args": ["read", {"id": "devryan-0123456789ABCDEF0123456789abcdef"}]}
+{"fn": "toV2ToolInput", "args": ["read", {"id": "devryan-0123456789ABCDEF0123456789abcdef"}]}
+{"fn": "toV1ToolInput", "args": ["read", {"id": "devryan-0123456789abcdef0123456789abcde"}]}
+{"fn": "toV2ToolInput", "args": ["read", {"id": "devryan-0123456789abcdef0123456789abcde"}]}
+{"fn": "toV1ToolInput", "args": ["read", {"id": 5}]}
+{"fn": "toV2ToolInput", "args": ["read", {"id": 5}]}
+{"fn": "toV1ToolInput", "args": ["read", {"name": "n", "id": "x"}]}
+{"fn": "toV2ToolInput", "args": ["read", {"name": "n", "id": "x"}]}
+{"fn": "toV1ToolInput", "args": ["read", {"name": {"$undefined": true}, "id": "x"}]}
+{"fn": "toV2ToolInput", "args": ["read", {"name": {"$undefined": true}, "id": "x"}]}
+{"fn": "toV1ToolInput", "args": ["read", {"2": 1, "path": "z", "1": 0}]}
+{"fn": "toV2ToolInput", "args": ["read", {"2": 1, "path": "z", "1": 0}]}
+{"fn": "toV1ToolInput", "args": ["read", {"path": {"$num": "NaN"}}]}
+{"fn": "toV2ToolInput", "args": ["read", {"path": {"$num": "NaN"}}]}
+{"fn": "toV1ToolInput", "args": ["read", {"id": {"$utf16": [55296]}}]}
+{"fn": "toV2ToolInput", "args": ["read", {"id": {"$utf16": [55296]}}]}
+{"fn": "toV1ToolInput", "args": ["edit", {"$undefined": true}]}
+{"fn": "toV2ToolInput", "args": ["edit", {"$undefined": true}]}
+{"fn": "toV1ToolInput", "args": ["edit", null]}
+{"fn": "toV2ToolInput", "args": ["edit", null]}
+{"fn": "toV1ToolInput", "args": ["edit", 5]}
+{"fn": "toV2ToolInput", "args": ["edit", 5]}
+{"fn": "toV1ToolInput", "args": ["edit", "s"]}
+{"fn": "toV2ToolInput", "args": ["edit", "s"]}
+{"fn": "toV1ToolInput", "args": ["edit", []]}
+{"fn": "toV2ToolInput", "args": ["edit", []]}
+{"fn": "toV1ToolInput", "args": ["edit", {}]}
+{"fn": "toV2ToolInput", "args": ["edit", {}]}
+{"fn": "toV1ToolInput", "args": ["edit", {"$map": [["path", "x"]]}]}
+{"fn": "toV2ToolInput", "args": ["edit", {"$map": [["path", "x"]]}]}
+{"fn": "toV1ToolInput", "args": ["edit", {"path": "a"}]}
+{"fn": "toV2ToolInput", "args": ["edit", {"path": "a"}]}
+{"fn": "toV1ToolInput", "args": ["edit", {"path": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": ["edit", {"path": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": ["edit", {"path": "a", "filePath": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": ["edit", {"path": "a", "filePath": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": ["edit", {"path": "a", "filePath": "b"}]}
+{"fn": "toV2ToolInput", "args": ["edit", {"path": "a", "filePath": "b"}]}
+{"fn": "toV1ToolInput", "args": ["edit", {"filePath": "b"}]}
+{"fn": "toV2ToolInput", "args": ["edit", {"filePath": "b"}]}
+{"fn": "toV1ToolInput", "args": ["edit", {"filePath": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": ["edit", {"filePath": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": ["edit", {"filePath": {"$undefined": true}, "path": "p"}]}
+{"fn": "toV2ToolInput", "args": ["edit", {"filePath": {"$undefined": true}, "path": "p"}]}
+{"fn": "toV1ToolInput", "args": ["edit", {"agent": "fixer"}]}
+{"fn": "toV2ToolInput", "args": ["edit", {"agent": "fixer"}]}
+{"fn": "toV1ToolInput", "args": ["edit", {"subagent_type": "x", "agent": "y"}]}
+{"fn": "toV2ToolInput", "args": ["edit", {"subagent_type": "x", "agent": "y"}]}
+{"fn": "toV1ToolInput", "args": ["edit", {"id": "pdf"}]}
+{"fn": "toV2ToolInput", "args": ["edit", {"id": "pdf"}]}
+{"fn": "toV1ToolInput", "args": ["edit", {"id": "devryan-0123456789abcdef0123456789abcdef"}]}
+{"fn": "toV2ToolInput", "args": ["edit", {"id": "devryan-0123456789abcdef0123456789abcdef"}]}
+{"fn": "toV1ToolInput", "args": ["edit", {"id": "devryan-0123456789ABCDEF0123456789abcdef"}]}
+{"fn": "toV2ToolInput", "args": ["edit", {"id": "devryan-0123456789ABCDEF0123456789abcdef"}]}
+{"fn": "toV1ToolInput", "args": ["edit", {"id": "devryan-0123456789abcdef0123456789abcde"}]}
+{"fn": "toV2ToolInput", "args": ["edit", {"id": "devryan-0123456789abcdef0123456789abcde"}]}
+{"fn": "toV1ToolInput", "args": ["edit", {"id": 5}]}
+{"fn": "toV2ToolInput", "args": ["edit", {"id": 5}]}
+{"fn": "toV1ToolInput", "args": ["edit", {"name": "n", "id": "x"}]}
+{"fn": "toV2ToolInput", "args": ["edit", {"name": "n", "id": "x"}]}
+{"fn": "toV1ToolInput", "args": ["edit", {"name": {"$undefined": true}, "id": "x"}]}
+{"fn": "toV2ToolInput", "args": ["edit", {"name": {"$undefined": true}, "id": "x"}]}
+{"fn": "toV1ToolInput", "args": ["edit", {"2": 1, "path": "z", "1": 0}]}
+{"fn": "toV2ToolInput", "args": ["edit", {"2": 1, "path": "z", "1": 0}]}
+{"fn": "toV1ToolInput", "args": ["edit", {"path": {"$num": "NaN"}}]}
+{"fn": "toV2ToolInput", "args": ["edit", {"path": {"$num": "NaN"}}]}
+{"fn": "toV1ToolInput", "args": ["edit", {"id": {"$utf16": [55296]}}]}
+{"fn": "toV2ToolInput", "args": ["edit", {"id": {"$utf16": [55296]}}]}
+{"fn": "toV1ToolInput", "args": ["write", {"$undefined": true}]}
+{"fn": "toV2ToolInput", "args": ["write", {"$undefined": true}]}
+{"fn": "toV1ToolInput", "args": ["write", null]}
+{"fn": "toV2ToolInput", "args": ["write", null]}
+{"fn": "toV1ToolInput", "args": ["write", 5]}
+{"fn": "toV2ToolInput", "args": ["write", 5]}
+{"fn": "toV1ToolInput", "args": ["write", "s"]}
+{"fn": "toV2ToolInput", "args": ["write", "s"]}
+{"fn": "toV1ToolInput", "args": ["write", []]}
+{"fn": "toV2ToolInput", "args": ["write", []]}
+{"fn": "toV1ToolInput", "args": ["write", {}]}
+{"fn": "toV2ToolInput", "args": ["write", {}]}
+{"fn": "toV1ToolInput", "args": ["write", {"$map": [["path", "x"]]}]}
+{"fn": "toV2ToolInput", "args": ["write", {"$map": [["path", "x"]]}]}
+{"fn": "toV1ToolInput", "args": ["write", {"path": "a"}]}
+{"fn": "toV2ToolInput", "args": ["write", {"path": "a"}]}
+{"fn": "toV1ToolInput", "args": ["write", {"path": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": ["write", {"path": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": ["write", {"path": "a", "filePath": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": ["write", {"path": "a", "filePath": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": ["write", {"path": "a", "filePath": "b"}]}
+{"fn": "toV2ToolInput", "args": ["write", {"path": "a", "filePath": "b"}]}
+{"fn": "toV1ToolInput", "args": ["write", {"filePath": "b"}]}
+{"fn": "toV2ToolInput", "args": ["write", {"filePath": "b"}]}
+{"fn": "toV1ToolInput", "args": ["write", {"filePath": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": ["write", {"filePath": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": ["write", {"filePath": {"$undefined": true}, "path": "p"}]}
+{"fn": "toV2ToolInput", "args": ["write", {"filePath": {"$undefined": true}, "path": "p"}]}
+{"fn": "toV1ToolInput", "args": ["write", {"agent": "fixer"}]}
+{"fn": "toV2ToolInput", "args": ["write", {"agent": "fixer"}]}
+{"fn": "toV1ToolInput", "args": ["write", {"subagent_type": "x", "agent": "y"}]}
+{"fn": "toV2ToolInput", "args": ["write", {"subagent_type": "x", "agent": "y"}]}
+{"fn": "toV1ToolInput", "args": ["write", {"id": "pdf"}]}
+{"fn": "toV2ToolInput", "args": ["write", {"id": "pdf"}]}
+{"fn": "toV1ToolInput", "args": ["write", {"id": "devryan-0123456789abcdef0123456789abcdef"}]}
+{"fn": "toV2ToolInput", "args": ["write", {"id": "devryan-0123456789abcdef0123456789abcdef"}]}
+{"fn": "toV1ToolInput", "args": ["write", {"id": "devryan-0123456789ABCDEF0123456789abcdef"}]}
+{"fn": "toV2ToolInput", "args": ["write", {"id": "devryan-0123456789ABCDEF0123456789abcdef"}]}
+{"fn": "toV1ToolInput", "args": ["write", {"id": "devryan-0123456789abcdef0123456789abcde"}]}
+{"fn": "toV2ToolInput", "args": ["write", {"id": "devryan-0123456789abcdef0123456789abcde"}]}
+{"fn": "toV1ToolInput", "args": ["write", {"id": 5}]}
+{"fn": "toV2ToolInput", "args": ["write", {"id": 5}]}
+{"fn": "toV1ToolInput", "args": ["write", {"name": "n", "id": "x"}]}
+{"fn": "toV2ToolInput", "args": ["write", {"name": "n", "id": "x"}]}
+{"fn": "toV1ToolInput", "args": ["write", {"name": {"$undefined": true}, "id": "x"}]}
+{"fn": "toV2ToolInput", "args": ["write", {"name": {"$undefined": true}, "id": "x"}]}
+{"fn": "toV1ToolInput", "args": ["write", {"2": 1, "path": "z", "1": 0}]}
+{"fn": "toV2ToolInput", "args": ["write", {"2": 1, "path": "z", "1": 0}]}
+{"fn": "toV1ToolInput", "args": ["write", {"path": {"$num": "NaN"}}]}
+{"fn": "toV2ToolInput", "args": ["write", {"path": {"$num": "NaN"}}]}
+{"fn": "toV1ToolInput", "args": ["write", {"id": {"$utf16": [55296]}}]}
+{"fn": "toV2ToolInput", "args": ["write", {"id": {"$utf16": [55296]}}]}
+{"fn": "toV1ToolInput", "args": ["task", {"$undefined": true}]}
+{"fn": "toV2ToolInput", "args": ["task", {"$undefined": true}]}
+{"fn": "toV1ToolInput", "args": ["task", null]}
+{"fn": "toV2ToolInput", "args": ["task", null]}
+{"fn": "toV1ToolInput", "args": ["task", 5]}
+{"fn": "toV2ToolInput", "args": ["task", 5]}
+{"fn": "toV1ToolInput", "args": ["task", "s"]}
+{"fn": "toV2ToolInput", "args": ["task", "s"]}
+{"fn": "toV1ToolInput", "args": ["task", []]}
+{"fn": "toV2ToolInput", "args": ["task", []]}
+{"fn": "toV1ToolInput", "args": ["task", {}]}
+{"fn": "toV2ToolInput", "args": ["task", {}]}
+{"fn": "toV1ToolInput", "args": ["task", {"$map": [["path", "x"]]}]}
+{"fn": "toV2ToolInput", "args": ["task", {"$map": [["path", "x"]]}]}
+{"fn": "toV1ToolInput", "args": ["task", {"path": "a"}]}
+{"fn": "toV2ToolInput", "args": ["task", {"path": "a"}]}
+{"fn": "toV1ToolInput", "args": ["task", {"path": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": ["task", {"path": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": ["task", {"path": "a", "filePath": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": ["task", {"path": "a", "filePath": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": ["task", {"path": "a", "filePath": "b"}]}
+{"fn": "toV2ToolInput", "args": ["task", {"path": "a", "filePath": "b"}]}
+{"fn": "toV1ToolInput", "args": ["task", {"filePath": "b"}]}
+{"fn": "toV2ToolInput", "args": ["task", {"filePath": "b"}]}
+{"fn": "toV1ToolInput", "args": ["task", {"filePath": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": ["task", {"filePath": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": ["task", {"filePath": {"$undefined": true}, "path": "p"}]}
+{"fn": "toV2ToolInput", "args": ["task", {"filePath": {"$undefined": true}, "path": "p"}]}
+{"fn": "toV1ToolInput", "args": ["task", {"agent": "fixer"}]}
+{"fn": "toV2ToolInput", "args": ["task", {"agent": "fixer"}]}
+{"fn": "toV1ToolInput", "args": ["task", {"subagent_type": "x", "agent": "y"}]}
+{"fn": "toV2ToolInput", "args": ["task", {"subagent_type": "x", "agent": "y"}]}
+{"fn": "toV1ToolInput", "args": ["task", {"id": "pdf"}]}
+{"fn": "toV2ToolInput", "args": ["task", {"id": "pdf"}]}
+{"fn": "toV1ToolInput", "args": ["task", {"id": "devryan-0123456789abcdef0123456789abcdef"}]}
+{"fn": "toV2ToolInput", "args": ["task", {"id": "devryan-0123456789abcdef0123456789abcdef"}]}
+{"fn": "toV1ToolInput", "args": ["task", {"id": "devryan-0123456789ABCDEF0123456789abcdef"}]}
+{"fn": "toV2ToolInput", "args": ["task", {"id": "devryan-0123456789ABCDEF0123456789abcdef"}]}
+{"fn": "toV1ToolInput", "args": ["task", {"id": "devryan-0123456789abcdef0123456789abcde"}]}
+{"fn": "toV2ToolInput", "args": ["task", {"id": "devryan-0123456789abcdef0123456789abcde"}]}
+{"fn": "toV1ToolInput", "args": ["task", {"id": 5}]}
+{"fn": "toV2ToolInput", "args": ["task", {"id": 5}]}
+{"fn": "toV1ToolInput", "args": ["task", {"name": "n", "id": "x"}]}
+{"fn": "toV2ToolInput", "args": ["task", {"name": "n", "id": "x"}]}
+{"fn": "toV1ToolInput", "args": ["task", {"name": {"$undefined": true}, "id": "x"}]}
+{"fn": "toV2ToolInput", "args": ["task", {"name": {"$undefined": true}, "id": "x"}]}
+{"fn": "toV1ToolInput", "args": ["task", {"2": 1, "path": "z", "1": 0}]}
+{"fn": "toV2ToolInput", "args": ["task", {"2": 1, "path": "z", "1": 0}]}
+{"fn": "toV1ToolInput", "args": ["task", {"path": {"$num": "NaN"}}]}
+{"fn": "toV2ToolInput", "args": ["task", {"path": {"$num": "NaN"}}]}
+{"fn": "toV1ToolInput", "args": ["task", {"id": {"$utf16": [55296]}}]}
+{"fn": "toV2ToolInput", "args": ["task", {"id": {"$utf16": [55296]}}]}
+{"fn": "toV1ToolInput", "args": ["subagent", {"$undefined": true}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {"$undefined": true}]}
+{"fn": "toV1ToolInput", "args": ["subagent", null]}
+{"fn": "toV2ToolInput", "args": ["subagent", null]}
+{"fn": "toV1ToolInput", "args": ["subagent", 5]}
+{"fn": "toV2ToolInput", "args": ["subagent", 5]}
+{"fn": "toV1ToolInput", "args": ["subagent", "s"]}
+{"fn": "toV2ToolInput", "args": ["subagent", "s"]}
+{"fn": "toV1ToolInput", "args": ["subagent", []]}
+{"fn": "toV2ToolInput", "args": ["subagent", []]}
+{"fn": "toV1ToolInput", "args": ["subagent", {}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {}]}
+{"fn": "toV1ToolInput", "args": ["subagent", {"$map": [["path", "x"]]}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {"$map": [["path", "x"]]}]}
+{"fn": "toV1ToolInput", "args": ["subagent", {"path": "a"}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {"path": "a"}]}
+{"fn": "toV1ToolInput", "args": ["subagent", {"path": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {"path": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": ["subagent", {"path": "a", "filePath": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {"path": "a", "filePath": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": ["subagent", {"path": "a", "filePath": "b"}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {"path": "a", "filePath": "b"}]}
+{"fn": "toV1ToolInput", "args": ["subagent", {"filePath": "b"}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {"filePath": "b"}]}
+{"fn": "toV1ToolInput", "args": ["subagent", {"filePath": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {"filePath": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": ["subagent", {"filePath": {"$undefined": true}, "path": "p"}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {"filePath": {"$undefined": true}, "path": "p"}]}
+{"fn": "toV1ToolInput", "args": ["subagent", {"agent": "fixer"}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {"agent": "fixer"}]}
+{"fn": "toV1ToolInput", "args": ["subagent", {"subagent_type": "x", "agent": "y"}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {"subagent_type": "x", "agent": "y"}]}
+{"fn": "toV1ToolInput", "args": ["subagent", {"id": "pdf"}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {"id": "pdf"}]}
+{"fn": "toV1ToolInput", "args": ["subagent", {"id": "devryan-0123456789abcdef0123456789abcdef"}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {"id": "devryan-0123456789abcdef0123456789abcdef"}]}
+{"fn": "toV1ToolInput", "args": ["subagent", {"id": "devryan-0123456789ABCDEF0123456789abcdef"}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {"id": "devryan-0123456789ABCDEF0123456789abcdef"}]}
+{"fn": "toV1ToolInput", "args": ["subagent", {"id": "devryan-0123456789abcdef0123456789abcde"}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {"id": "devryan-0123456789abcdef0123456789abcde"}]}
+{"fn": "toV1ToolInput", "args": ["subagent", {"id": 5}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {"id": 5}]}
+{"fn": "toV1ToolInput", "args": ["subagent", {"name": "n", "id": "x"}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {"name": "n", "id": "x"}]}
+{"fn": "toV1ToolInput", "args": ["subagent", {"name": {"$undefined": true}, "id": "x"}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {"name": {"$undefined": true}, "id": "x"}]}
+{"fn": "toV1ToolInput", "args": ["subagent", {"2": 1, "path": "z", "1": 0}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {"2": 1, "path": "z", "1": 0}]}
+{"fn": "toV1ToolInput", "args": ["subagent", {"path": {"$num": "NaN"}}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {"path": {"$num": "NaN"}}]}
+{"fn": "toV1ToolInput", "args": ["subagent", {"id": {"$utf16": [55296]}}]}
+{"fn": "toV2ToolInput", "args": ["subagent", {"id": {"$utf16": [55296]}}]}
+{"fn": "toV1ToolInput", "args": ["skill", {"$undefined": true}]}
+{"fn": "toV2ToolInput", "args": ["skill", {"$undefined": true}]}
+{"fn": "toV1ToolInput", "args": ["skill", null]}
+{"fn": "toV2ToolInput", "args": ["skill", null]}
+{"fn": "toV1ToolInput", "args": ["skill", 5]}
+{"fn": "toV2ToolInput", "args": ["skill", 5]}
+{"fn": "toV1ToolInput", "args": ["skill", "s"]}
+{"fn": "toV2ToolInput", "args": ["skill", "s"]}
+{"fn": "toV1ToolInput", "args": ["skill", []]}
+{"fn": "toV2ToolInput", "args": ["skill", []]}
+{"fn": "toV1ToolInput", "args": ["skill", {}]}
+{"fn": "toV2ToolInput", "args": ["skill", {}]}
+{"fn": "toV1ToolInput", "args": ["skill", {"$map": [["path", "x"]]}]}
+{"fn": "toV2ToolInput", "args": ["skill", {"$map": [["path", "x"]]}]}
+{"fn": "toV1ToolInput", "args": ["skill", {"path": "a"}]}
+{"fn": "toV2ToolInput", "args": ["skill", {"path": "a"}]}
+{"fn": "toV1ToolInput", "args": ["skill", {"path": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": ["skill", {"path": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": ["skill", {"path": "a", "filePath": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": ["skill", {"path": "a", "filePath": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": ["skill", {"path": "a", "filePath": "b"}]}
+{"fn": "toV2ToolInput", "args": ["skill", {"path": "a", "filePath": "b"}]}
+{"fn": "toV1ToolInput", "args": ["skill", {"filePath": "b"}]}
+{"fn": "toV2ToolInput", "args": ["skill", {"filePath": "b"}]}
+{"fn": "toV1ToolInput", "args": ["skill", {"filePath": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": ["skill", {"filePath": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": ["skill", {"filePath": {"$undefined": true}, "path": "p"}]}
+{"fn": "toV2ToolInput", "args": ["skill", {"filePath": {"$undefined": true}, "path": "p"}]}
+{"fn": "toV1ToolInput", "args": ["skill", {"agent": "fixer"}]}
+{"fn": "toV2ToolInput", "args": ["skill", {"agent": "fixer"}]}
+{"fn": "toV1ToolInput", "args": ["skill", {"subagent_type": "x", "agent": "y"}]}
+{"fn": "toV2ToolInput", "args": ["skill", {"subagent_type": "x", "agent": "y"}]}
+{"fn": "toV1ToolInput", "args": ["skill", {"id": "pdf"}]}
+{"fn": "toV2ToolInput", "args": ["skill", {"id": "pdf"}]}
+{"fn": "toV1ToolInput", "args": ["skill", {"id": "devryan-0123456789abcdef0123456789abcdef"}]}
+{"fn": "toV2ToolInput", "args": ["skill", {"id": "devryan-0123456789abcdef0123456789abcdef"}]}
+{"fn": "toV1ToolInput", "args": ["skill", {"id": "devryan-0123456789ABCDEF0123456789abcdef"}]}
+{"fn": "toV2ToolInput", "args": ["skill", {"id": "devryan-0123456789ABCDEF0123456789abcdef"}]}
+{"fn": "toV1ToolInput", "args": ["skill", {"id": "devryan-0123456789abcdef0123456789abcde"}]}
+{"fn": "toV2ToolInput", "args": ["skill", {"id": "devryan-0123456789abcdef0123456789abcde"}]}
+{"fn": "toV1ToolInput", "args": ["skill", {"id": 5}]}
+{"fn": "toV2ToolInput", "args": ["skill", {"id": 5}]}
+{"fn": "toV1ToolInput", "args": ["skill", {"name": "n", "id": "x"}]}
+{"fn": "toV2ToolInput", "args": ["skill", {"name": "n", "id": "x"}]}
+{"fn": "toV1ToolInput", "args": ["skill", {"name": {"$undefined": true}, "id": "x"}]}
+{"fn": "toV2ToolInput", "args": ["skill", {"name": {"$undefined": true}, "id": "x"}]}
+{"fn": "toV1ToolInput", "args": ["skill", {"2": 1, "path": "z", "1": 0}]}
+{"fn": "toV2ToolInput", "args": ["skill", {"2": 1, "path": "z", "1": 0}]}
+{"fn": "toV1ToolInput", "args": ["skill", {"path": {"$num": "NaN"}}]}
+{"fn": "toV2ToolInput", "args": ["skill", {"path": {"$num": "NaN"}}]}
+{"fn": "toV1ToolInput", "args": ["skill", {"id": {"$utf16": [55296]}}]}
+{"fn": "toV2ToolInput", "args": ["skill", {"id": {"$utf16": [55296]}}]}
+{"fn": "toV1ToolInput", "args": ["grep", {"$undefined": true}]}
+{"fn": "toV2ToolInput", "args": ["grep", {"$undefined": true}]}
+{"fn": "toV1ToolInput", "args": ["grep", null]}
+{"fn": "toV2ToolInput", "args": ["grep", null]}
+{"fn": "toV1ToolInput", "args": ["grep", 5]}
+{"fn": "toV2ToolInput", "args": ["grep", 5]}
+{"fn": "toV1ToolInput", "args": ["grep", "s"]}
+{"fn": "toV2ToolInput", "args": ["grep", "s"]}
+{"fn": "toV1ToolInput", "args": ["grep", []]}
+{"fn": "toV2ToolInput", "args": ["grep", []]}
+{"fn": "toV1ToolInput", "args": ["grep", {}]}
+{"fn": "toV2ToolInput", "args": ["grep", {}]}
+{"fn": "toV1ToolInput", "args": ["grep", {"$map": [["path", "x"]]}]}
+{"fn": "toV2ToolInput", "args": ["grep", {"$map": [["path", "x"]]}]}
+{"fn": "toV1ToolInput", "args": ["grep", {"path": "a"}]}
+{"fn": "toV2ToolInput", "args": ["grep", {"path": "a"}]}
+{"fn": "toV1ToolInput", "args": ["grep", {"path": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": ["grep", {"path": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": ["grep", {"path": "a", "filePath": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": ["grep", {"path": "a", "filePath": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": ["grep", {"path": "a", "filePath": "b"}]}
+{"fn": "toV2ToolInput", "args": ["grep", {"path": "a", "filePath": "b"}]}
+{"fn": "toV1ToolInput", "args": ["grep", {"filePath": "b"}]}
+{"fn": "toV2ToolInput", "args": ["grep", {"filePath": "b"}]}
+{"fn": "toV1ToolInput", "args": ["grep", {"filePath": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": ["grep", {"filePath": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": ["grep", {"filePath": {"$undefined": true}, "path": "p"}]}
+{"fn": "toV2ToolInput", "args": ["grep", {"filePath": {"$undefined": true}, "path": "p"}]}
+{"fn": "toV1ToolInput", "args": ["grep", {"agent": "fixer"}]}
+{"fn": "toV2ToolInput", "args": ["grep", {"agent": "fixer"}]}
+{"fn": "toV1ToolInput", "args": ["grep", {"subagent_type": "x", "agent": "y"}]}
+{"fn": "toV2ToolInput", "args": ["grep", {"subagent_type": "x", "agent": "y"}]}
+{"fn": "toV1ToolInput", "args": ["grep", {"id": "pdf"}]}
+{"fn": "toV2ToolInput", "args": ["grep", {"id": "pdf"}]}
+{"fn": "toV1ToolInput", "args": ["grep", {"id": "devryan-0123456789abcdef0123456789abcdef"}]}
+{"fn": "toV2ToolInput", "args": ["grep", {"id": "devryan-0123456789abcdef0123456789abcdef"}]}
+{"fn": "toV1ToolInput", "args": ["grep", {"id": "devryan-0123456789ABCDEF0123456789abcdef"}]}
+{"fn": "toV2ToolInput", "args": ["grep", {"id": "devryan-0123456789ABCDEF0123456789abcdef"}]}
+{"fn": "toV1ToolInput", "args": ["grep", {"id": "devryan-0123456789abcdef0123456789abcde"}]}
+{"fn": "toV2ToolInput", "args": ["grep", {"id": "devryan-0123456789abcdef0123456789abcde"}]}
+{"fn": "toV1ToolInput", "args": ["grep", {"id": 5}]}
+{"fn": "toV2ToolInput", "args": ["grep", {"id": 5}]}
+{"fn": "toV1ToolInput", "args": ["grep", {"name": "n", "id": "x"}]}
+{"fn": "toV2ToolInput", "args": ["grep", {"name": "n", "id": "x"}]}
+{"fn": "toV1ToolInput", "args": ["grep", {"name": {"$undefined": true}, "id": "x"}]}
+{"fn": "toV2ToolInput", "args": ["grep", {"name": {"$undefined": true}, "id": "x"}]}
+{"fn": "toV1ToolInput", "args": ["grep", {"2": 1, "path": "z", "1": 0}]}
+{"fn": "toV2ToolInput", "args": ["grep", {"2": 1, "path": "z", "1": 0}]}
+{"fn": "toV1ToolInput", "args": ["grep", {"path": {"$num": "NaN"}}]}
+{"fn": "toV2ToolInput", "args": ["grep", {"path": {"$num": "NaN"}}]}
+{"fn": "toV1ToolInput", "args": ["grep", {"id": {"$utf16": [55296]}}]}
+{"fn": "toV2ToolInput", "args": ["grep", {"id": {"$utf16": [55296]}}]}
+{"fn": "toV1ToolInput", "args": [null, {"$undefined": true}]}
+{"fn": "toV2ToolInput", "args": [null, {"$undefined": true}]}
+{"fn": "toV1ToolInput", "args": [null, null]}
+{"fn": "toV2ToolInput", "args": [null, null]}
+{"fn": "toV1ToolInput", "args": [null, 5]}
+{"fn": "toV2ToolInput", "args": [null, 5]}
+{"fn": "toV1ToolInput", "args": [null, "s"]}
+{"fn": "toV2ToolInput", "args": [null, "s"]}
+{"fn": "toV1ToolInput", "args": [null, []]}
+{"fn": "toV2ToolInput", "args": [null, []]}
+{"fn": "toV1ToolInput", "args": [null, {}]}
+{"fn": "toV2ToolInput", "args": [null, {}]}
+{"fn": "toV1ToolInput", "args": [null, {"$map": [["path", "x"]]}]}
+{"fn": "toV2ToolInput", "args": [null, {"$map": [["path", "x"]]}]}
+{"fn": "toV1ToolInput", "args": [null, {"path": "a"}]}
+{"fn": "toV2ToolInput", "args": [null, {"path": "a"}]}
+{"fn": "toV1ToolInput", "args": [null, {"path": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": [null, {"path": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": [null, {"path": "a", "filePath": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": [null, {"path": "a", "filePath": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": [null, {"path": "a", "filePath": "b"}]}
+{"fn": "toV2ToolInput", "args": [null, {"path": "a", "filePath": "b"}]}
+{"fn": "toV1ToolInput", "args": [null, {"filePath": "b"}]}
+{"fn": "toV2ToolInput", "args": [null, {"filePath": "b"}]}
+{"fn": "toV1ToolInput", "args": [null, {"filePath": {"$undefined": true}}]}
+{"fn": "toV2ToolInput", "args": [null, {"filePath": {"$undefined": true}}]}
+{"fn": "toV1ToolInput", "args": [null, {"filePath": {"$undefined": true}, "path": "p"}]}
+{"fn": "toV2ToolInput", "args": [null, {"filePath": {"$undefined": true}, "path": "p"}]}
+{"fn": "toV1ToolInput", "args": [null, {"agent": "fixer"}]}
+{"fn": "toV2ToolInput", "args": [null, {"agent": "fixer"}]}
+{"fn": "toV1ToolInput", "args": [null, {"subagent_type": "x", "agent": "y"}]}
+{"fn": "toV2ToolInput", "args": [null, {"subagent_type": "x", "agent": "y"}]}
+{"fn": "toV1ToolInput", "args": [null, {"id": "pdf"}]}
+{"fn": "toV2ToolInput", "args": [null, {"id": "pdf"}]}
+{"fn": "toV1ToolInput", "args": [null, {"id": "devryan-0123456789abcdef0123456789abcdef"}]}
+{"fn": "toV2ToolInput", "args": [null, {"id": "devryan-0123456789abcdef0123456789abcdef"}]}
+{"fn": "toV1ToolInput", "args": [null, {"id": "devryan-0123456789ABCDEF0123456789abcdef"}]}
+{"fn": "toV2ToolInput", "args": [null, {"id": "devryan-0123456789ABCDEF0123456789abcdef"}]}
+{"fn": "toV1ToolInput", "args": [null, {"id": "devryan-0123456789abcdef0123456789abcde"}]}
+{"fn": "toV2ToolInput", "args": [null, {"id": "devryan-0123456789abcdef0123456789abcde"}]}
+{"fn": "toV1ToolInput", "args": [null, {"id": 5}]}
+{"fn": "toV2ToolInput", "args": [null, {"id": 5}]}
+{"fn": "toV1ToolInput", "args": [null, {"name": "n", "id": "x"}]}
+{"fn": "toV2ToolInput", "args": [null, {"name": "n", "id": "x"}]}
+{"fn": "toV1ToolInput", "args": [null, {"name": {"$undefined": true}, "id": "x"}]}
+{"fn": "toV2ToolInput", "args": [null, {"name": {"$undefined": true}, "id": "x"}]}
+{"fn": "toV1ToolInput", "args": [null, {"2": 1, "path": "z", "1": 0}]}
+{"fn": "toV2ToolInput", "args": [null, {"2": 1, "path": "z", "1": 0}]}
+{"fn": "toV1ToolInput", "args": [null, {"path": {"$num": "NaN"}}]}
+{"fn": "toV2ToolInput", "args": [null, {"path": {"$num": "NaN"}}]}
+{"fn": "toV1ToolInput", "args": [null, {"id": {"$utf16": [55296]}}]}
+{"fn": "toV2ToolInput", "args": [null, {"id": {"$utf16": [55296]}}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"$undefined": true}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"$undefined": true}]}
+{"fn": "toV1ToolMetadata", "args": ["task", null]}
+{"fn": "toV2ToolMetadata", "args": ["task", null]}
+{"fn": "toV1ToolMetadata", "args": ["task", "s"]}
+{"fn": "toV2ToolMetadata", "args": ["task", "s"]}
+{"fn": "toV1ToolMetadata", "args": ["task", []]}
+{"fn": "toV2ToolMetadata", "args": ["task", []]}
+{"fn": "toV1ToolMetadata", "args": ["task", {}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"$map": []}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"$map": []}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"sessionID": "s1"}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"sessionID": "s1"}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"sessionID": ""}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"sessionID": ""}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"sessionID": 5}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"sessionID": 5}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"sessionID": "s1", "sessionId": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"sessionID": "s1", "sessionId": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"sessionID": "s1", "sessionId": "x"}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"sessionID": "s1", "sessionId": "x"}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"sessionId": "s1", "sessionID": "s1"}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"sessionId": "s1", "sessionID": "s1"}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"sessionId": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"sessionId": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"sessionId": {"$undefined": true}, "sessionID": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"sessionId": {"$undefined": true}, "sessionID": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"sessionId": null, "sessionID": null}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"sessionId": null, "sessionID": null}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"sessionId": 1, "sessionID": 1}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"sessionId": 1, "sessionID": 1}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"sessionId": {"$num": "NaN"}, "sessionID": {"$num": "NaN"}}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"sessionId": {"$num": "NaN"}, "sessionID": {"$num": "NaN"}}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"sessionId": {}, "sessionID": {}}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"sessionId": {}, "sessionID": {}}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"sessionId": 0, "sessionID": {"$num": "-0"}}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"sessionId": 0, "sessionID": {"$num": "-0"}}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"files": []}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"files": []}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"files": [null, {"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"files": [null, {"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"files": "x"}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"files": "x"}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"files": [{"$map": []}]}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"files": [{"$map": []}]}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"files": [{"patch": 5}]}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"files": [{"patch": 5}]}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d"}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d"}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "filediff": null}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "filediff": null}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d", "filediff": {}}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d", "filediff": {}}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"files": [{}], "filediff": {"$undefined": true}, "z": 1}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"files": [{}], "filediff": {"$undefined": true}, "z": 1}]}
+{"fn": "toV1ToolMetadata", "args": ["task", {"diff": "d", "filediff": 1}]}
+{"fn": "toV2ToolMetadata", "args": ["task", {"diff": "d", "filediff": 1}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"$undefined": true}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"$undefined": true}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", null]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", null]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", "s"]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", "s"]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", []]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", []]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"$map": []}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"$map": []}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"sessionID": "s1"}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"sessionID": "s1"}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"sessionID": ""}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"sessionID": ""}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"sessionID": 5}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"sessionID": 5}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"sessionID": "s1", "sessionId": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"sessionID": "s1", "sessionId": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"sessionID": "s1", "sessionId": "x"}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"sessionID": "s1", "sessionId": "x"}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"sessionId": "s1", "sessionID": "s1"}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"sessionId": "s1", "sessionID": "s1"}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"sessionId": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"sessionId": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"sessionId": {"$undefined": true}, "sessionID": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"sessionId": {"$undefined": true}, "sessionID": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"sessionId": null, "sessionID": null}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"sessionId": null, "sessionID": null}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"sessionId": 1, "sessionID": 1}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"sessionId": 1, "sessionID": 1}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"sessionId": {"$num": "NaN"}, "sessionID": {"$num": "NaN"}}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"sessionId": {"$num": "NaN"}, "sessionID": {"$num": "NaN"}}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"sessionId": {}, "sessionID": {}}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"sessionId": {}, "sessionID": {}}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"sessionId": 0, "sessionID": {"$num": "-0"}}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"sessionId": 0, "sessionID": {"$num": "-0"}}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"files": []}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"files": []}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"files": [null, {"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"files": [null, {"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"files": "x"}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"files": "x"}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"files": [{"$map": []}]}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"files": [{"$map": []}]}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"files": [{"patch": 5}]}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"files": [{"patch": 5}]}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d"}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d"}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "filediff": null}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "filediff": null}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d", "filediff": {}}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d", "filediff": {}}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"files": [{}], "filediff": {"$undefined": true}, "z": 1}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"files": [{}], "filediff": {"$undefined": true}, "z": 1}]}
+{"fn": "toV1ToolMetadata", "args": ["subagent", {"diff": "d", "filediff": 1}]}
+{"fn": "toV2ToolMetadata", "args": ["subagent", {"diff": "d", "filediff": 1}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"$undefined": true}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"$undefined": true}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", null]}
+{"fn": "toV2ToolMetadata", "args": ["edit", null]}
+{"fn": "toV1ToolMetadata", "args": ["edit", "s"]}
+{"fn": "toV2ToolMetadata", "args": ["edit", "s"]}
+{"fn": "toV1ToolMetadata", "args": ["edit", []]}
+{"fn": "toV2ToolMetadata", "args": ["edit", []]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"$map": []}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"$map": []}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"sessionID": "s1"}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"sessionID": "s1"}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"sessionID": ""}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"sessionID": ""}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"sessionID": 5}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"sessionID": 5}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"sessionID": "s1", "sessionId": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"sessionID": "s1", "sessionId": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"sessionID": "s1", "sessionId": "x"}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"sessionID": "s1", "sessionId": "x"}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"sessionId": "s1", "sessionID": "s1"}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"sessionId": "s1", "sessionID": "s1"}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"sessionId": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"sessionId": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"sessionId": {"$undefined": true}, "sessionID": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"sessionId": {"$undefined": true}, "sessionID": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"sessionId": null, "sessionID": null}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"sessionId": null, "sessionID": null}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"sessionId": 1, "sessionID": 1}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"sessionId": 1, "sessionID": 1}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"sessionId": {"$num": "NaN"}, "sessionID": {"$num": "NaN"}}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"sessionId": {"$num": "NaN"}, "sessionID": {"$num": "NaN"}}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"sessionId": {}, "sessionID": {}}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"sessionId": {}, "sessionID": {}}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"sessionId": 0, "sessionID": {"$num": "-0"}}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"sessionId": 0, "sessionID": {"$num": "-0"}}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"files": []}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"files": []}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"files": [null, {"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"files": [null, {"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"files": "x"}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"files": "x"}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"files": [{"$map": []}]}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"files": [{"$map": []}]}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"files": [{"patch": 5}]}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"files": [{"patch": 5}]}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d"}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d"}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "filediff": null}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "filediff": null}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d", "filediff": {}}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d", "filediff": {}}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"files": [{}], "filediff": {"$undefined": true}, "z": 1}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"files": [{}], "filediff": {"$undefined": true}, "z": 1}]}
+{"fn": "toV1ToolMetadata", "args": ["edit", {"diff": "d", "filediff": 1}]}
+{"fn": "toV2ToolMetadata", "args": ["edit", {"diff": "d", "filediff": 1}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"$undefined": true}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"$undefined": true}]}
+{"fn": "toV1ToolMetadata", "args": ["write", null]}
+{"fn": "toV2ToolMetadata", "args": ["write", null]}
+{"fn": "toV1ToolMetadata", "args": ["write", "s"]}
+{"fn": "toV2ToolMetadata", "args": ["write", "s"]}
+{"fn": "toV1ToolMetadata", "args": ["write", []]}
+{"fn": "toV2ToolMetadata", "args": ["write", []]}
+{"fn": "toV1ToolMetadata", "args": ["write", {}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"$map": []}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"$map": []}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"sessionID": "s1"}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"sessionID": "s1"}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"sessionID": ""}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"sessionID": ""}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"sessionID": 5}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"sessionID": 5}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"sessionID": "s1", "sessionId": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"sessionID": "s1", "sessionId": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"sessionID": "s1", "sessionId": "x"}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"sessionID": "s1", "sessionId": "x"}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"sessionId": "s1", "sessionID": "s1"}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"sessionId": "s1", "sessionID": "s1"}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"sessionId": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"sessionId": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"sessionId": {"$undefined": true}, "sessionID": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"sessionId": {"$undefined": true}, "sessionID": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"sessionId": null, "sessionID": null}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"sessionId": null, "sessionID": null}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"sessionId": 1, "sessionID": 1}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"sessionId": 1, "sessionID": 1}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"sessionId": {"$num": "NaN"}, "sessionID": {"$num": "NaN"}}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"sessionId": {"$num": "NaN"}, "sessionID": {"$num": "NaN"}}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"sessionId": {}, "sessionID": {}}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"sessionId": {}, "sessionID": {}}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"sessionId": 0, "sessionID": {"$num": "-0"}}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"sessionId": 0, "sessionID": {"$num": "-0"}}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"files": []}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"files": []}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"files": [null, {"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"files": [null, {"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"files": "x"}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"files": "x"}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"files": [{"$map": []}]}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"files": [{"$map": []}]}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"files": [{"patch": 5}]}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"files": [{"patch": 5}]}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d"}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d"}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "filediff": null}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "filediff": null}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d", "filediff": {}}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d", "filediff": {}}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"files": [{}], "filediff": {"$undefined": true}, "z": 1}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"files": [{}], "filediff": {"$undefined": true}, "z": 1}]}
+{"fn": "toV1ToolMetadata", "args": ["write", {"diff": "d", "filediff": 1}]}
+{"fn": "toV2ToolMetadata", "args": ["write", {"diff": "d", "filediff": 1}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"$undefined": true}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"$undefined": true}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", null]}
+{"fn": "toV2ToolMetadata", "args": ["patch", null]}
+{"fn": "toV1ToolMetadata", "args": ["patch", "s"]}
+{"fn": "toV2ToolMetadata", "args": ["patch", "s"]}
+{"fn": "toV1ToolMetadata", "args": ["patch", []]}
+{"fn": "toV2ToolMetadata", "args": ["patch", []]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"$map": []}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"$map": []}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"sessionID": "s1"}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"sessionID": "s1"}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"sessionID": ""}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"sessionID": ""}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"sessionID": 5}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"sessionID": 5}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"sessionID": "s1", "sessionId": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"sessionID": "s1", "sessionId": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"sessionID": "s1", "sessionId": "x"}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"sessionID": "s1", "sessionId": "x"}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"sessionId": "s1", "sessionID": "s1"}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"sessionId": "s1", "sessionID": "s1"}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"sessionId": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"sessionId": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"sessionId": {"$undefined": true}, "sessionID": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"sessionId": {"$undefined": true}, "sessionID": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"sessionId": null, "sessionID": null}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"sessionId": null, "sessionID": null}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"sessionId": 1, "sessionID": 1}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"sessionId": 1, "sessionID": 1}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"sessionId": {"$num": "NaN"}, "sessionID": {"$num": "NaN"}}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"sessionId": {"$num": "NaN"}, "sessionID": {"$num": "NaN"}}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"sessionId": {}, "sessionID": {}}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"sessionId": {}, "sessionID": {}}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"sessionId": 0, "sessionID": {"$num": "-0"}}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"sessionId": 0, "sessionID": {"$num": "-0"}}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"files": []}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"files": []}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"files": [null, {"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"files": [null, {"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"files": "x"}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"files": "x"}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"files": [{"$map": []}]}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"files": [{"$map": []}]}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"files": [{"patch": 5}]}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"files": [{"patch": 5}]}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d"}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d"}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "filediff": null}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "filediff": null}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d", "filediff": {}}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d", "filediff": {}}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"files": [{}], "filediff": {"$undefined": true}, "z": 1}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"files": [{}], "filediff": {"$undefined": true}, "z": 1}]}
+{"fn": "toV1ToolMetadata", "args": ["patch", {"diff": "d", "filediff": 1}]}
+{"fn": "toV2ToolMetadata", "args": ["patch", {"diff": "d", "filediff": 1}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"$undefined": true}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"$undefined": true}]}
+{"fn": "toV1ToolMetadata", "args": ["read", null]}
+{"fn": "toV2ToolMetadata", "args": ["read", null]}
+{"fn": "toV1ToolMetadata", "args": ["read", "s"]}
+{"fn": "toV2ToolMetadata", "args": ["read", "s"]}
+{"fn": "toV1ToolMetadata", "args": ["read", []]}
+{"fn": "toV2ToolMetadata", "args": ["read", []]}
+{"fn": "toV1ToolMetadata", "args": ["read", {}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"$map": []}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"$map": []}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"sessionID": "s1"}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"sessionID": "s1"}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"sessionID": ""}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"sessionID": ""}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"sessionID": 5}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"sessionID": 5}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"sessionID": "s1", "sessionId": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"sessionID": "s1", "sessionId": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"sessionID": "s1", "sessionId": "x"}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"sessionID": "s1", "sessionId": "x"}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"sessionId": "s1", "sessionID": "s1"}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"sessionId": "s1", "sessionID": "s1"}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"sessionId": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"sessionId": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"sessionId": {"$undefined": true}, "sessionID": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"sessionId": {"$undefined": true}, "sessionID": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"sessionId": null, "sessionID": null}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"sessionId": null, "sessionID": null}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"sessionId": 1, "sessionID": 1}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"sessionId": 1, "sessionID": 1}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"sessionId": {"$num": "NaN"}, "sessionID": {"$num": "NaN"}}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"sessionId": {"$num": "NaN"}, "sessionID": {"$num": "NaN"}}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"sessionId": {}, "sessionID": {}}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"sessionId": {}, "sessionID": {}}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"sessionId": 0, "sessionID": {"$num": "-0"}}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"sessionId": 0, "sessionID": {"$num": "-0"}}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"files": []}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"files": []}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"files": [null, {"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"files": [null, {"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"files": "x"}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"files": "x"}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"files": [{"$map": []}]}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"files": [{"$map": []}]}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"files": [{"patch": 5}]}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"files": [{"patch": 5}]}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d"}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d"}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "filediff": null}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "filediff": null}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d", "filediff": {}}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d", "filediff": {}}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"files": [{}], "filediff": {"$undefined": true}, "z": 1}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"files": [{}], "filediff": {"$undefined": true}, "z": 1}]}
+{"fn": "toV1ToolMetadata", "args": ["read", {"diff": "d", "filediff": 1}]}
+{"fn": "toV2ToolMetadata", "args": ["read", {"diff": "d", "filediff": 1}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"$undefined": true}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"$undefined": true}]}
+{"fn": "toV1ToolMetadata", "args": [5, null]}
+{"fn": "toV2ToolMetadata", "args": [5, null]}
+{"fn": "toV1ToolMetadata", "args": [5, "s"]}
+{"fn": "toV2ToolMetadata", "args": [5, "s"]}
+{"fn": "toV1ToolMetadata", "args": [5, []]}
+{"fn": "toV2ToolMetadata", "args": [5, []]}
+{"fn": "toV1ToolMetadata", "args": [5, {}]}
+{"fn": "toV2ToolMetadata", "args": [5, {}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"$map": []}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"$map": []}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"sessionID": "s1"}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"sessionID": "s1"}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"sessionID": ""}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"sessionID": ""}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"sessionID": 5}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"sessionID": 5}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"sessionID": "s1", "sessionId": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"sessionID": "s1", "sessionId": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"sessionID": "s1", "sessionId": "x"}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"sessionID": "s1", "sessionId": "x"}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"sessionId": "s1", "sessionID": "s1"}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"sessionId": "s1", "sessionID": "s1"}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"sessionId": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"sessionId": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"sessionId": {"$undefined": true}, "sessionID": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"sessionId": {"$undefined": true}, "sessionID": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"sessionId": null, "sessionID": null}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"sessionId": null, "sessionID": null}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"sessionId": 1, "sessionID": 1}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"sessionId": 1, "sessionID": 1}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"sessionId": {"$num": "NaN"}, "sessionID": {"$num": "NaN"}}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"sessionId": {"$num": "NaN"}, "sessionID": {"$num": "NaN"}}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"sessionId": {}, "sessionID": {}}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"sessionId": {}, "sessionID": {}}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"sessionId": 0, "sessionID": {"$num": "-0"}}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"sessionId": 0, "sessionID": {"$num": "-0"}}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"files": []}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"files": []}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"files": [null, {"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"files": [null, {"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"files": "x"}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"files": "x"}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"files": [{"$map": []}]}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"files": [{"$map": []}]}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"files": [{"patch": 5}]}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"files": [{"patch": 5}]}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": {"$undefined": true}}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": {"$undefined": true}}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d"}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d"}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "filediff": null}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "filediff": null}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d", "filediff": {}}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}], "diff": "d", "filediff": {}}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"files": [{}], "filediff": {"$undefined": true}, "z": 1}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"files": [{}], "filediff": {"$undefined": true}, "z": 1}]}
+{"fn": "toV1ToolMetadata", "args": [5, {"diff": "d", "filediff": 1}]}
+{"fn": "toV2ToolMetadata", "args": [5, {"diff": "d", "filediff": 1}]}
+{"fn": "synthesizeToolTitle", "args": [{"$undefined": true}]}
+{"fn": "synthesizeToolTitle", "args": [null]}
+{"fn": "synthesizeToolTitle", "args": [5]}
+{"fn": "synthesizeToolTitle", "args": ["s"]}
+{"fn": "synthesizeToolTitle", "args": [[]]}
+{"fn": "synthesizeToolTitle", "args": [{}]}
+{"fn": "synthesizeToolTitle", "args": [{"$map": [["path", "x"]]}]}
+{"fn": "synthesizeToolTitle", "args": [{"path": "a"}]}
+{"fn": "synthesizeToolTitle", "args": [{"path": {"$undefined": true}}]}
+{"fn": "synthesizeToolTitle", "args": [{"path": "a", "filePath": {"$undefined": true}}]}
+{"fn": "synthesizeToolTitle", "args": [{"path": "a", "filePath": "b"}]}
+{"fn": "synthesizeToolTitle", "args": [{"filePath": "b"}]}
+{"fn": "synthesizeToolTitle", "args": [{"filePath": {"$undefined": true}}]}
+{"fn": "synthesizeToolTitle", "args": [{"filePath": {"$undefined": true}, "path": "p"}]}
+{"fn": "synthesizeToolTitle", "args": [{"agent": "fixer"}]}
+{"fn": "synthesizeToolTitle", "args": [{"subagent_type": "x", "agent": "y"}]}
+{"fn": "synthesizeToolTitle", "args": [{"id": "pdf"}]}
+{"fn": "synthesizeToolTitle", "args": [{"id": "devryan-0123456789abcdef0123456789abcdef"}]}
+{"fn": "synthesizeToolTitle", "args": [{"id": "devryan-0123456789ABCDEF0123456789abcdef"}]}
+{"fn": "synthesizeToolTitle", "args": [{"id": "devryan-0123456789abcdef0123456789abcde"}]}
+{"fn": "synthesizeToolTitle", "args": [{"id": 5}]}
+{"fn": "synthesizeToolTitle", "args": [{"name": "n", "id": "x"}]}
+{"fn": "synthesizeToolTitle", "args": [{"name": {"$undefined": true}, "id": "x"}]}
+{"fn": "synthesizeToolTitle", "args": [{"2": 1, "path": "z", "1": 0}]}
+{"fn": "synthesizeToolTitle", "args": [{"path": {"$num": "NaN"}}]}
+{"fn": "synthesizeToolTitle", "args": [{"id": {"$utf16": [55296]}}]}
+{"fn": "synthesizeToolTitle", "args": [{"description": "d", "command": "c"}]}
+{"fn": "synthesizeToolTitle", "args": [{"description": "", "command": "c"}]}
+{"fn": "synthesizeToolTitle", "args": [{"command": 5, "filePath": "f", "path": "p"}]}
+{"fn": "synthesizeToolTitle", "args": [{"path": "p"}]}
+{"fn": "synthesizeToolTitle", "args": [{"description": {"$utf16": [55296]}}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "bash", "state": null, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "edit", "state": null, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "task", "state": null, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "skill", "state": null, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": 5, "state": null, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "bash", "state": "s", "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "edit", "state": "s", "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "task", "state": "s", "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "skill", "state": "s", "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": 5, "state": "s", "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "bash", "state": {}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "edit", "state": {}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "task", "state": {}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "skill", "state": {}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": 5, "state": {}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "bash", "state": {"status": "streaming"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "edit", "state": {"status": "streaming"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "task", "state": {"status": "streaming"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "skill", "state": {"status": "streaming"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": 5, "state": {"status": "streaming"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "bash", "state": {"status": "streaming", "input": "{\"a\""}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "edit", "state": {"status": "streaming", "input": "{\"a\""}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "task", "state": {"status": "streaming", "input": "{\"a\""}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "skill", "state": {"status": "streaming", "input": "{\"a\""}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": 5, "state": {"status": "streaming", "input": "{\"a\""}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "bash", "state": {"status": "streaming", "input": {}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "edit", "state": {"status": "streaming", "input": {}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "task", "state": {"status": "streaming", "input": {}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "skill", "state": {"status": "streaming", "input": {}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": 5, "state": {"status": "streaming", "input": {}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "bash", "state": {"status": "running"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "edit", "state": {"status": "running"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "task", "state": {"status": "running"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "skill", "state": {"status": "running"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": 5, "state": {"status": "running"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "bash", "state": {"status": "running", "input": {"path": "a.ts"}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "edit", "state": {"status": "running", "input": {"path": "a.ts"}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "task", "state": {"status": "running", "input": {"path": "a.ts"}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "skill", "state": {"status": "running", "input": {"path": "a.ts"}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": 5, "state": {"status": "running", "input": {"path": "a.ts"}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "bash", "state": {"status": "running", "input": {"description": "d"}, "metadata": {"x": 1}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "edit", "state": {"status": "running", "input": {"description": "d"}, "metadata": {"x": 1}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "task", "state": {"status": "running", "input": {"description": "d"}, "metadata": {"x": 1}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "skill", "state": {"status": "running", "input": {"description": "d"}, "metadata": {"x": 1}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": 5, "state": {"status": "running", "input": {"description": "d"}, "metadata": {"x": 1}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "bash", "state": {"status": "running", "input": "x", "metadata": "y"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "edit", "state": {"status": "running", "input": "x", "metadata": "y"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "task", "state": {"status": "running", "input": "x", "metadata": "y"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "skill", "state": {"status": "running", "input": "x", "metadata": "y"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": 5, "state": {"status": "running", "input": "x", "metadata": "y"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "bash", "state": {"status": "completed"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "edit", "state": {"status": "completed"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "task", "state": {"status": "completed"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "skill", "state": {"status": "completed"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": 5, "state": {"status": "completed"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "bash", "state": {"status": "completed", "input": {"command": "ls"}, "content": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}, {"type": "text", "text": 5}, {"type": "file", "uri": "file:///a", "mime": "text/plain", "name": "a.txt"}, {"type": "file", "uri": "u2"}, {"type": "file", "uri": 5}, {"type": "file", "uri": "u3", "name": ""}, null, "x"]}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "edit", "state": {"status": "completed", "input": {"command": "ls"}, "content": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}, {"type": "text", "text": 5}, {"type": "file", "uri": "file:///a", "mime": "text/plain", "name": "a.txt"}, {"type": "file", "uri": "u2"}, {"type": "file", "uri": 5}, {"type": "file", "uri": "u3", "name": ""}, null, "x"]}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "task", "state": {"status": "completed", "input": {"command": "ls"}, "content": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}, {"type": "text", "text": 5}, {"type": "file", "uri": "file:///a", "mime": "text/plain", "name": "a.txt"}, {"type": "file", "uri": "u2"}, {"type": "file", "uri": 5}, {"type": "file", "uri": "u3", "name": ""}, null, "x"]}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "skill", "state": {"status": "completed", "input": {"command": "ls"}, "content": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}, {"type": "text", "text": 5}, {"type": "file", "uri": "file:///a", "mime": "text/plain", "name": "a.txt"}, {"type": "file", "uri": "u2"}, {"type": "file", "uri": 5}, {"type": "file", "uri": "u3", "name": ""}, null, "x"]}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": 5, "state": {"status": "completed", "input": {"command": "ls"}, "content": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}, {"type": "text", "text": 5}, {"type": "file", "uri": "file:///a", "mime": "text/plain", "name": "a.txt"}, {"type": "file", "uri": "u2"}, {"type": "file", "uri": 5}, {"type": "file", "uri": "u3", "name": ""}, null, "x"]}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "bash", "state": {"status": "completed", "content": "x", "metadata": {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "edit", "state": {"status": "completed", "content": "x", "metadata": {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "task", "state": {"status": "completed", "content": "x", "metadata": {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "skill", "state": {"status": "completed", "content": "x", "metadata": {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": 5, "state": {"status": "completed", "content": "x", "metadata": {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "bash", "state": {"status": "error"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "edit", "state": {"status": "error"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "task", "state": {"status": "error"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "skill", "state": {"status": "error"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": 5, "state": {"status": "error"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "bash", "state": {"status": "error", "error": {"message": "boom"}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "edit", "state": {"status": "error", "error": {"message": "boom"}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "task", "state": {"status": "error", "error": {"message": "boom"}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "skill", "state": {"status": "error", "error": {"message": "boom"}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": 5, "state": {"status": "error", "error": {"message": "boom"}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "bash", "state": {"status": "error", "error": "bad"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "edit", "state": {"status": "error", "error": "bad"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "task", "state": {"status": "error", "error": "bad"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "skill", "state": {"status": "error", "error": "bad"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": 5, "state": {"status": "error", "error": "bad"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "bash", "state": {"status": "error", "error": {"message": 5}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "edit", "state": {"status": "error", "error": {"message": 5}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "task", "state": {"status": "error", "error": {"message": 5}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "skill", "state": {"status": "error", "error": {"message": 5}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": 5, "state": {"status": "error", "error": {"message": 5}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "bash", "state": {"status": "error", "error": 5, "metadata": {}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "edit", "state": {"status": "error", "error": 5, "metadata": {}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "task", "state": {"status": "error", "error": 5, "metadata": {}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "skill", "state": {"status": "error", "error": 5, "metadata": {}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": 5, "state": {"status": "error", "error": 5, "metadata": {}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "bash", "state": {"status": "weird"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "edit", "state": {"status": "weird"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "task", "state": {"status": "weird"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "skill", "state": {"status": "weird"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": 5, "state": {"status": "weird"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "bash", "state": {"status": 5}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "edit", "state": {"status": 5}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "task", "state": {"status": 5}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": "skill", "state": {"status": 5}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "call_1", "name": 5, "state": {"status": 5}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running"}, "time": {"$undefined": true}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": {"path": "a.ts"}}, "time": {"$undefined": true}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": {"description": "d"}, "metadata": {"x": 1}}, "time": {"$undefined": true}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": "x", "metadata": "y"}, "time": {"$undefined": true}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed"}, "time": {"$undefined": true}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed", "input": {"command": "ls"}, "content": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}, {"type": "text", "text": 5}, {"type": "file", "uri": "file:///a", "mime": "text/plain", "name": "a.txt"}, {"type": "file", "uri": "u2"}, {"type": "file", "uri": 5}, {"type": "file", "uri": "u3", "name": ""}, null, "x"]}, "time": {"$undefined": true}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed", "content": "x", "metadata": {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}}, "time": {"$undefined": true}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running"}, "time": null}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": {"path": "a.ts"}}, "time": null}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": {"description": "d"}, "metadata": {"x": 1}}, "time": null}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": "x", "metadata": "y"}, "time": null}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed"}, "time": null}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed", "input": {"command": "ls"}, "content": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}, {"type": "text", "text": 5}, {"type": "file", "uri": "file:///a", "mime": "text/plain", "name": "a.txt"}, {"type": "file", "uri": "u2"}, {"type": "file", "uri": 5}, {"type": "file", "uri": "u3", "name": ""}, null, "x"]}, "time": null}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed", "content": "x", "metadata": {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}}, "time": null}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running"}, "time": {}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": {"path": "a.ts"}}, "time": {}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": {"description": "d"}, "metadata": {"x": 1}}, "time": {}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": "x", "metadata": "y"}, "time": {}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed"}, "time": {}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed", "input": {"command": "ls"}, "content": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}, {"type": "text", "text": 5}, {"type": "file", "uri": "file:///a", "mime": "text/plain", "name": "a.txt"}, {"type": "file", "uri": "u2"}, {"type": "file", "uri": 5}, {"type": "file", "uri": "u3", "name": ""}, null, "x"]}, "time": {}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed", "content": "x", "metadata": {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}}, "time": {}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": {"path": "a.ts"}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": {"description": "d"}, "metadata": {"x": 1}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": "x", "metadata": "y"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed"}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed", "input": {"command": "ls"}, "content": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}, {"type": "text", "text": 5}, {"type": "file", "uri": "file:///a", "mime": "text/plain", "name": "a.txt"}, {"type": "file", "uri": "u2"}, {"type": "file", "uri": 5}, {"type": "file", "uri": "u3", "name": ""}, null, "x"]}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed", "content": "x", "metadata": {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}}, "time": {"ran": 1, "created": 0, "completed": 5}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running"}, "time": {"created": 2}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": {"path": "a.ts"}}, "time": {"created": 2}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": {"description": "d"}, "metadata": {"x": 1}}, "time": {"created": 2}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": "x", "metadata": "y"}, "time": {"created": 2}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed"}, "time": {"created": 2}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed", "input": {"command": "ls"}, "content": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}, {"type": "text", "text": 5}, {"type": "file", "uri": "file:///a", "mime": "text/plain", "name": "a.txt"}, {"type": "file", "uri": "u2"}, {"type": "file", "uri": 5}, {"type": "file", "uri": "u3", "name": ""}, null, "x"]}, "time": {"created": 2}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed", "content": "x", "metadata": {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}}, "time": {"created": 2}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running"}, "time": {"ran": {"$num": "NaN"}, "created": 3}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": {"path": "a.ts"}}, "time": {"ran": {"$num": "NaN"}, "created": 3}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": {"description": "d"}, "metadata": {"x": 1}}, "time": {"ran": {"$num": "NaN"}, "created": 3}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": "x", "metadata": "y"}, "time": {"ran": {"$num": "NaN"}, "created": 3}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed"}, "time": {"ran": {"$num": "NaN"}, "created": 3}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed", "input": {"command": "ls"}, "content": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}, {"type": "text", "text": 5}, {"type": "file", "uri": "file:///a", "mime": "text/plain", "name": "a.txt"}, {"type": "file", "uri": "u2"}, {"type": "file", "uri": 5}, {"type": "file", "uri": "u3", "name": ""}, null, "x"]}, "time": {"ran": {"$num": "NaN"}, "created": 3}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed", "content": "x", "metadata": {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}}, "time": {"ran": {"$num": "NaN"}, "created": 3}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running"}, "time": {"ran": "1", "created": "2", "completed": "3"}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": {"path": "a.ts"}}, "time": {"ran": "1", "created": "2", "completed": "3"}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": {"description": "d"}, "metadata": {"x": 1}}, "time": {"ran": "1", "created": "2", "completed": "3"}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": "x", "metadata": "y"}, "time": {"ran": "1", "created": "2", "completed": "3"}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed"}, "time": {"ran": "1", "created": "2", "completed": "3"}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed", "input": {"command": "ls"}, "content": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}, {"type": "text", "text": 5}, {"type": "file", "uri": "file:///a", "mime": "text/plain", "name": "a.txt"}, {"type": "file", "uri": "u2"}, {"type": "file", "uri": 5}, {"type": "file", "uri": "u3", "name": ""}, null, "x"]}, "time": {"ran": "1", "created": "2", "completed": "3"}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed", "content": "x", "metadata": {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}}, "time": {"ran": "1", "created": "2", "completed": "3"}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running"}, "time": {"ran": {"$num": "Infinity"}, "completed": {"$num": "-0"}}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": {"path": "a.ts"}}, "time": {"ran": {"$num": "Infinity"}, "completed": {"$num": "-0"}}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": {"description": "d"}, "metadata": {"x": 1}}, "time": {"ran": {"$num": "Infinity"}, "completed": {"$num": "-0"}}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": "x", "metadata": "y"}, "time": {"ran": {"$num": "Infinity"}, "completed": {"$num": "-0"}}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed"}, "time": {"ran": {"$num": "Infinity"}, "completed": {"$num": "-0"}}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed", "input": {"command": "ls"}, "content": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}, {"type": "text", "text": 5}, {"type": "file", "uri": "file:///a", "mime": "text/plain", "name": "a.txt"}, {"type": "file", "uri": "u2"}, {"type": "file", "uri": 5}, {"type": "file", "uri": "u3", "name": ""}, null, "x"]}, "time": {"ran": {"$num": "Infinity"}, "completed": {"$num": "-0"}}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed", "content": "x", "metadata": {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}}, "time": {"ran": {"$num": "Infinity"}, "completed": {"$num": "-0"}}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running"}, "time": {"$map": []}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": {"path": "a.ts"}}, "time": {"$map": []}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": {"description": "d"}, "metadata": {"x": 1}}, "time": {"$map": []}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "running", "input": "x", "metadata": "y"}, "time": {"$map": []}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed"}, "time": {"$map": []}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed", "input": {"command": "ls"}, "content": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}, {"type": "text", "text": 5}, {"type": "file", "uri": "file:///a", "mime": "text/plain", "name": "a.txt"}, {"type": "file", "uri": "u2"}, {"type": "file", "uri": 5}, {"type": "file", "uri": "u3", "name": ""}, null, "x"]}, "time": {"$map": []}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "read", "state": {"status": "completed", "content": "x", "metadata": {"files": [{"file": "src/a.ts", "patch": "p", "additions": 1, "deletions": 2}]}}, "time": {"$map": []}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "skill", "state": {"status": "running", "input": {"id": "devryan-0123456789abcdef0123456789abcdef"}, "metadata": {"name": "PDF"}}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "skill", "state": {"status": "completed", "input": {"id": "pdf", "name": "own"}, "metadata": {"name": "PDF"}}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "skill", "state": {"status": "completed", "input": {"id": "pdf"}, "metadata": {"name": ""}}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "skill", "state": {"status": "error", "input": {"id": "pdf"}, "metadata": {"name": "N"}}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "skill", "state": {"status": "running", "metadata": {"name": "N"}}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "skill", "state": {"status": "running", "input": {"name": {"$undefined": true}}, "metadata": {"name": "N"}}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "x", "state": {"status": "completed", "content": [{"type": "file", "uri": "u"}]}}, null]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "x", "state": {"status": "running"}}, null]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "x", "state": {"status": "running"}}, null]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "x", "state": {"status": "completed", "content": [{"type": "file", "uri": "u"}]}}, null]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "x", "state": {"status": "completed", "content": [{"type": "file", "uri": "u"}]}}, {"$undefined": true}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "x", "state": {"status": "running"}}, {"$undefined": true}]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "x", "state": {"status": "running"}}, {"$undefined": true}]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "x", "state": {"status": "completed", "content": [{"type": "file", "uri": "u"}]}}, {"$undefined": true}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "x", "state": {"status": "completed", "content": [{"type": "file", "uri": "u"}]}}, "s"]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "x", "state": {"status": "running"}}, "s"]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "x", "state": {"status": "running"}}, "s"]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "x", "state": {"status": "completed", "content": [{"type": "file", "uri": "u"}]}}, "s"]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "x", "state": {"status": "completed", "content": [{"type": "file", "uri": "u"}]}}, {}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "x", "state": {"status": "running"}}, {}]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "x", "state": {"status": "running"}}, {}]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "x", "state": {"status": "completed", "content": [{"type": "file", "uri": "u"}]}}, {}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "x", "state": {"status": "completed", "content": [{"type": "file", "uri": "u"}]}}, {"messageID": 5, "sessionID": null}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "x", "state": {"status": "running"}}, {"messageID": 5, "sessionID": null}]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "x", "state": {"status": "running"}}, {"messageID": 5, "sessionID": null}]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "x", "state": {"status": "completed", "content": [{"type": "file", "uri": "u"}]}}, {"messageID": 5, "sessionID": null}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "x", "state": {"status": "completed", "content": [{"type": "file", "uri": "u"}]}}, {"messageID": {"a": 1}}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "x", "state": {"status": "running"}}, {"messageID": {"a": 1}}]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "x", "state": {"status": "running"}}, {"messageID": {"a": 1}}]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "x", "state": {"status": "completed", "content": [{"type": "file", "uri": "u"}]}}, {"messageID": {"a": 1}}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "x", "state": {"status": "completed", "content": [{"type": "file", "uri": "u"}]}}, {"messageID": ["a", "b", null]}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "x", "state": {"status": "running"}}, {"messageID": ["a", "b", null]}]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "x", "state": {"status": "running"}}, {"messageID": ["a", "b", null]}]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "x", "state": {"status": "completed", "content": [{"type": "file", "uri": "u"}]}}, {"messageID": ["a", "b", null]}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "x", "state": {"status": "completed", "content": [{"type": "file", "uri": "u"}]}}, {"messageID": {"$utf16": [55296]}}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "x", "state": {"status": "running"}}, {"messageID": {"$utf16": [55296]}}]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "x", "state": {"status": "running"}}, {"messageID": {"$utf16": [55296]}}]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "x", "state": {"status": "completed", "content": [{"type": "file", "uri": "u"}]}}, {"messageID": {"$utf16": [55296]}}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "x", "state": {"status": "completed", "content": [{"type": "file", "uri": "u"}]}}, {"messageID": {"$num": "NaN"}}]}
+{"fn": "toV1ToolState", "args": [{"id": "c", "name": "x", "state": {"status": "running"}}, {"messageID": {"$num": "NaN"}}]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "x", "state": {"status": "running"}}, {"messageID": {"$num": "NaN"}}]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "x", "state": {"status": "completed", "content": [{"type": "file", "uri": "u"}]}}, {"messageID": {"$num": "NaN"}}]}
+{"fn": "toV1ToolPart", "args": [{"$undefined": true}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolPart", "args": [null, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolPart", "args": ["s", {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolPart", "args": [[], {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolPart", "args": [{}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolPart", "args": [{"state": {}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "state": {"status": "running"}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolPart", "args": [{"id": "", "name": "x", "state": {"status": "running"}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolPart", "args": [{"id": 5, "name": "x", "state": {"status": "running"}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": 5, "state": {"status": "running"}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "shell", "state": {"status": "running"}, "native": {"devryan": {"cursor": 1}, "enc": "x"}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "shell", "state": {"status": "running"}, "native": null, "providerState": {"devryan": {}}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "shell", "state": {"status": "running"}, "native": {"devryan": "x"}, "providerState": {"devryan": {}}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "shell", "state": {"status": "running"}, "native": {"$undefined": true}, "providerState": {"devryan": []}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "toV1ToolPart", "args": [{"id": "c", "name": "x", "state": {"status": "nope"}}, {"messageID": "m1", "sessionID": "s1"}]}
+{"fn": "projectProviderState", "args": [{"$undefined": true}]}
+{"fn": "projectProviderState", "args": [null]}
+{"fn": "projectProviderState", "args": ["s"]}
+{"fn": "projectProviderState", "args": [{}]}
+{"fn": "projectProviderState", "args": [{"devryan": null}]}
+{"fn": "projectProviderState", "args": [{"devryan": {}}]}
+{"fn": "projectProviderState", "args": [{"devryan": []}]}
+{"fn": "projectProviderState", "args": [{"devryan": {"$map": []}}]}
+{"fn": "projectProviderState", "args": [{"devryan": {"a": 1}, "other": 2}]}
+{"fn": "projectProviderState", "args": [{"$map": []}]}
+{"fn": "toV1ToolName", "args": []}
+{"fn": "toV2ToolName", "args": []}
+{"fn": "toV1ToolInput", "args": []}
+{"fn": "toV2ToolInput", "args": []}
+{"fn": "toV1ToolMetadata", "args": []}
+{"fn": "toV2ToolMetadata", "args": []}
+{"fn": "synthesizeToolTitle", "args": []}
+{"fn": "toV1ToolState", "args": []}
+{"fn": "toV1ToolPart", "args": []}
+{"fn": "projectProviderState", "args": []}

@@ -1,0 +1,17 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/native-observation-contract.js:8",
+      "text": "const fail=()=>{throw Object.assign(Error('native_presentation_invalid'),{code:'native_presentation_invalid',statusCode:403});};"
+    }
+  ],
+  "product": [],
+  "engine": [
+    {
+      "site": "packages/web/server/lib/opencode/runtime-host/native-observation-contract.js:8",
+      "class": "Error",
+      "sample": "native_presentation_invalid"
+    }
+  ]
+}

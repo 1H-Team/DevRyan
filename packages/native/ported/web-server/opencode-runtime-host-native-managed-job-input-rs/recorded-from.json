@@ -1,0 +1,19 @@
+{
+  "unit": "native-managed-job-input.js",
+  "files": 1,
+  "fingerprint": "285f7617d22008ca",
+  "cases": 173,
+  "cases_hash": "494c1698b52f3503",
+  "coverage": {
+    "lines": 30,
+    "reached": 30,
+    "files": [
+      {
+        "file": "native-managed-job-input.js",
+        "lines": 30,
+        "reached": 30,
+        "missed": ""
+      }
+    ]
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/skills-catalog",
+  "unit": "source.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "source-rs",
+  "exports": [
+    {
+      "name": "parseSkillRepoSource",
+      "file": "source.js",
+      "line": 12,
+      "params": [
+        {
+          "name": "input",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "options",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}
