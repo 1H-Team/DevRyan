@@ -1,0 +1,200 @@
+{"fn":"requestSignature","args":[[{"id":"HELLO"},{"id":"hello"},{"id":"a:b:c"}]],"ok":"HELLO|a:b:c|hello"}
+{"fn":"requestSignature","args":[{"$undefined":true}],"ok":""}
+{"fn":"requestSignature","args":[[{"id":""}]],"ok":""}
+{"fn":"requestSignature","args":["x"],"error":"items.map is not a function"}
+{"fn":"requestSignature","args":[],"ok":""}
+{"fn":"requestSignature","args":[[{"id":"src/a/b.ts"},{"id":"emoji 👍🏽 mix"},{"id":"{name} has {count} items"}]],"ok":"emoji 👍🏽 mix|src/a/b.ts|{name} has {count} items"}
+{"fn":"requestSignature","args":[[{"id":"İstanbulHELLO"},{"id":"{name} has {count} itemsemoji 👍🏽 mix"}]],"ok":"{name} has {count} itemsemoji 👍🏽 mix|İstanbulHELLO"}
+{"fn":"requestSignature","args":[[{"id":"ΣΊΣΥΦΟΣ"},{"id":"{name} has {count} items"},{"id":"日本語のテキスト"}]],"ok":"{name} has {count} items|ΣΊΣΥΦΟΣ|日本語のテキスト"}
+{"fn":"requestSignature","args":[[]],"ok":""}
+{"fn":"requestSignature","args":[[{"id":"straße"},{"id":"abc"},{"id":"hello world"}]],"ok":"abc|hello world|straße"}
+{"fn":"requestSignature","args":[[{"id":"a:b:ca..b"}]],"ok":"a:b:ca..b"}
+{"fn":"requestSignature","args":[[{"id":"日本語のテキストhello"},{"id":"a:b:c"}]],"ok":"a:b:c|日本語のテキストhello"}
+{"fn":"requestSignature","args":[[{"id":"a:b:c"},{"id":"ünïcödé"},{"id":"hello"}]],"ok":"a:b:c|hello|ünïcödé"}
+{"fn":"requestSignature","args":[["a",1]],"ok":"|"}
+{"fn":"requestSignature","args":[[{"id":"src/a/b.ts"},{"id":"a..babc"}]],"ok":"a..babc|src/a/b.ts"}
+{"fn":"requestSignature","args":[[{"id":"src/a/b.ts﻿bom"},{"id":"﻿bomstraße"},{"id":"  padded  "}]],"ok":"  padded  |src/a/b.ts﻿bom|﻿bomstraße"}
+{"fn":"requestSignature","args":[[{"id":"Hello World"}]],"ok":"Hello World"}
+{"fn":"requestSignature","args":[[{"id":"a😀b😀c:"},{"id":"a"}]],"ok":"a|a😀b😀c:"}
+{"fn":"requestSignature","args":[[{"id":"Hello World"},{"id":"﻿bomtrailing."}]],"ok":"Hello World|﻿bomtrailing."}
+{"fn":"requestSignature","args":[true],"error":"items.map is not a function"}
+{"fn":"requestSignature","args":[{}],"error":"items.map is not a function"}
+{"fn":"requestSignature","args":[[{"id":"hello world"},{"id":"./x/**/*.json"},{"id":"hello"}]],"ok":"./x/**/*.json|hello|hello world"}
+{"fn":"requestSignature","args":[[{"id":"hello"},{"id":"hellohello"},{"id":"ünïcödé"}]],"ok":"hello|hellohello|ünïcödé"}
+{"fn":"requestSignature","args":[{"a":"b"}],"error":"items.map is not a function"}
+{"fn":"requestSignature","args":[[{"id":"ns:key.pathhello world"},{"id":"﻿bom"}]],"ok":"ns:key.pathhello world|﻿bom"}
+{"fn":"requestSignature","args":[[{"id":"key_name-1"},{"id":"a.b.c"}]],"ok":"a.b.c|key_name-1"}
+{"fn":"requestSignature","args":[[{"id":"tab\tseparateda😀b😀c"},{"id":"trailing."}]],"ok":"tab\tseparateda😀b😀c|trailing."}
+{"fn":"requestSignature","args":[[{"id":"a:b:c"}]],"ok":"a:b:c"}
+{"fn":"requestSignature","args":[[{"id":"ns:key.path"}]],"ok":"ns:key.path"}
+{"fn":"requestSignature","args":[[{"id":""},{"id":"﻿bom"},{"id":"Hello WorldHello World"}]],"ok":"|Hello WorldHello World|﻿bom"}
+{"fn":"requestSignature","args":[[{"id":"İstanbul"},{"id":"﻿bomemoji 👍🏽 mix"}]],"ok":"İstanbul|﻿bomemoji 👍🏽 mix"}
+{"fn":"requestSignature","args":[[{"id":"ΣΊΣΥΦΟΣ"}]],"ok":"ΣΊΣΥΦΟΣ"}
+{"fn":"requestSignature","args":[[{"id":"{name} has {count} items"},{"id":"ΣΊΣΥΦΟΣ"}]],"ok":"{name} has {count} items|ΣΊΣΥΦΟΣ"}
+{"fn":"requestSignature","args":[[{"id":"HELLO"},{"id":"hello"}]],"ok":"HELLO|hello"}
+{"fn":"requestSignature","args":[null],"ok":""}
+{"fn":"requestSignature","args":[[{"id":"﻿bom"},{"id":"./x/**/*.json"}]],"ok":"./x/**/*.json|﻿bom"}
+{"fn":"requestSignature","args":[[{"id":"{name} has {count} items"}]],"ok":"{name} has {count} items"}
+{"fn":"requestSignature","args":[{"a":{"b":"c"}}],"error":"items.map is not a function"}
+{"fn":"requestSignature","args":[[{"id":"ab"},{"id":"  padded  "}]],"ok":"  padded  |ab"}
+{"fn":"requestSignature","args":[[{"id":"HELLOsrc/a/b.ts"}]],"ok":"HELLOsrc/a/b.ts"}
+{"fn":"requestSignature","args":[[{"id":"﻿bom"},{"id":"Hello World"}]],"ok":"Hello World|﻿bom"}
+{"fn":"requestSignature","args":[[{"id":"é"},{"id":"key_name-1{name} has {count} items"},{"id":"HELLO"}]],"ok":"HELLO|é|key_name-1{name} has {count} items"}
+{"fn":"requestSignature","args":[[{"id":"a:b:cns:key.path"},{"id":"İstanbulstraße"},{"id":"é"}]],"ok":"a:b:cns:key.path|é|İstanbulstraße"}
+{"fn":"requestSignature","args":[[{"id":"İstanbultab\tseparated"},{"id":"trailing."},{"id":"key_name-1"}]],"ok":"key_name-1|trailing.|İstanbultab\tseparated"}
+{"fn":"requestSignature","args":[[{"id":"{name} has {count} items./x/**/*.json"},{"id":"straße"},{"id":"İstanbul"}]],"ok":"straße|{name} has {count} items./x/**/*.json|İstanbul"}
+{"fn":"requestSignature","args":[[{"id":"src/a/b.tsΣΊΣΥΦΟΣ"},{"id":"é"},{"id":"a"}]],"ok":"a|é|src/a/b.tsΣΊΣΥΦΟΣ"}
+{"fn":"requestSignature","args":[[{"id":"ab"}]],"ok":"ab"}
+{"fn":"requestSignature","args":[0],"ok":""}
+{"fn":"requestSignature","args":[[{"id":"src/a/b.ts"}]],"ok":"src/a/b.ts"}
+{"fn":"requestSignature","args":[[{"id":"line1\nline2"},{"id":"./x/**/*.json"},{"id":"日本語のテキスト"}]],"ok":"./x/**/*.json|line1\nline2|日本語のテキスト"}
+{"fn":"requestSignature","args":[[{"id":":"},{"id":"Hello World"}]],"ok":":|Hello World"}
+{"fn":"requestSignature","args":[[{"id":"line1\nline2"},{"id":"./x/**/*.json"},{"id":"abc"}]],"ok":"./x/**/*.json|abc|line1\nline2"}
+{"fn":"requestSignature","args":[[{"id":"Hello Worldemoji 👍🏽 mix"},{"id":"straße"},{"id":"ab"}]],"ok":"Hello Worldemoji 👍🏽 mix|ab|straße"}
+{"fn":"requestSignature","args":[[{"id":"line1\nline2trailing."},{"id":"ünïcödé"}]],"ok":"line1\nline2trailing.|ünïcödé"}
+{"fn":"requestSignature","args":[[{"id":"😀"},{"id":"line1\nline2"},{"id":"hello"}]],"ok":"hello|line1\nline2|😀"}
+{"fn":"requestSignature","args":[[{"id":"src/a/b.ts"},{"id":"日本語のテキスト"},{"id":"😀"}]],"ok":"src/a/b.ts|日本語のテキスト|😀"}
+{"fn":"requestSignature","args":[[{"id":"Hello World"},{"id":"key_name-1İstanbul"}]],"ok":"Hello World|key_name-1İstanbul"}
+{"fn":"requestSignature","args":[[{"id":"straßens:key.path"}]],"ok":"straßens:key.path"}
+{"fn":"requestSignature","args":[[{"id":"abc"}]],"ok":"abc"}
+{"fn":"requestSignature","args":[[{"id":"emoji 👍🏽 mix日本語のテキスト"}]],"ok":"emoji 👍🏽 mix日本語のテキスト"}
+{"fn":"requestSignature","args":[[{"id":"key_name-1"},{"id":"a"},{"id":"Hello World"}]],"ok":"Hello World|a|key_name-1"}
+{"fn":"requestSignature","args":[[{"id":":"},{"id":":"},{"id":"hello"}]],"ok":":|:|hello"}
+{"fn":"requestSignature","args":[[{"id":"src/a/b.ts"},{"id":"a"},{"id":""}]],"ok":"|a|src/a/b.ts"}
+{"fn":"requestSignature","args":[[{"id":":"},{"id":"a..b"},{"id":"日本語のテキストHELLO"}]],"ok":":|a..b|日本語のテキストHELLO"}
+{"fn":"requestSignature","args":[[{"id":"emoji 👍🏽 mix"}]],"ok":"emoji 👍🏽 mix"}
+{"fn":"requestSignature","args":[[{"id":"﻿bom"},{"id":"straße"}]],"ok":"straße|﻿bom"}
+{"fn":"requestSignature","args":[[{"id":"key_name-1"},{"id":"a:b:c"},{"id":"  padded  "}]],"ok":"  padded  |a:b:c|key_name-1"}
+{"fn":"requestSignature","args":[[{"id":"./x/**/*.json"},{"id":"a..b"}]],"ok":"./x/**/*.json|a..b"}
+{"fn":"requestSignature","args":[[{"id":"日本語のテキスト"},{"id":"line1\nline2"},{"id":"😀"}]],"ok":"line1\nline2|日本語のテキスト|😀"}
+{"fn":"requestSignature","args":[[{"id":".leading"}]],"ok":".leading"}
+{"fn":"requestSignature","args":[[{"id":"ab"},{"id":"src/a/b.ts"}]],"ok":"ab|src/a/b.ts"}
+{"fn":"requestSignature","args":[[{"id":"./x/**/*.json"},{"id":"line1\nline2"}]],"ok":"./x/**/*.json|line1\nline2"}
+{"fn":"requestSignature","args":[[{"id":"./x/**/*.jsonünïcödé"},{"id":"Hello World"}]],"ok":"./x/**/*.jsonünïcödé|Hello World"}
+{"fn":"requestSignature","args":[[{"id":"ünïcödéns:key.path"},{"id":"straße"}]],"ok":"straße|ünïcödéns:key.path"}
+{"fn":"requestSignature","args":[[{"id":"ns:key.path"},{"id":"ab"},{"id":"a.b.c"}]],"ok":"a.b.c|ab|ns:key.path"}
+{"fn":"requestSignature","args":[[{"id":".leading"},{"id":"  padded  "},{"id":"İstanbula..b"}]],"ok":"  padded  |.leading|İstanbula..b"}
+{"fn":"requestSignature","args":[[{"id":":"}]],"ok":":"}
+{"fn":"requestSignature","args":[[{"id":"a😀b😀c"},{"id":"key_name-1:"},{"id":"straße"}]],"ok":"a😀b😀c|key_name-1:|straße"}
+{"fn":"requestSignature","args":[[{"id":"hello"},{"id":"hellohello world"},{"id":"﻿bomhello"}]],"ok":"hello|hellohello world|﻿bomhello"}
+{"fn":"requestSignature","args":[[{"id":"é"},{"id":"hello"}]],"ok":"é|hello"}
+{"fn":"requestSignature","args":[[{"id":"trailing."}]],"ok":"trailing."}
+{"fn":"requestSignature","args":[[{"id":"straße"},{"id":"a😀b😀c"},{"id":"  padded  src/a/b.ts"}]],"ok":"  padded  src/a/b.ts|a😀b😀c|straße"}
+{"fn":"requestSignature","args":[[{"id":"ünïcödé"},{"id":"İstanbul"}]],"ok":"ünïcödé|İstanbul"}
+{"fn":"requestSignature","args":[[{"id":"straße"},{"id":""},{"id":"line1\nline2a:b:c"}]],"ok":"|line1\nline2a:b:c|straße"}
+{"fn":"requestSignature","args":[[{"id":"ns:key.path日本語のテキスト"},{"id":"ab"}]],"ok":"ab|ns:key.path日本語のテキスト"}
+{"fn":"requestSignature","args":[[{"id":"ns:key.path"},{"id":"ünïcödé"},{"id":"{name} has {count} items"}]],"ok":"ns:key.path|{name} has {count} items|ünïcödé"}
+{"fn":"requestSignature","args":[[{"id":"emoji 👍🏽 mixab"}]],"ok":"emoji 👍🏽 mixab"}
+{"fn":"requestSignature","args":[[{"id":"key_name-1ns:key.path"},{"id":"hello"}]],"ok":"hello|key_name-1ns:key.path"}
+{"fn":"requestSignature","args":[[{"id":"HELLO"},{"id":"é./x/**/*.json"}]],"ok":"HELLO|é./x/**/*.json"}
+{"fn":"requestSignature","args":[[{"id":"ns:key.pathHELLO"},{"id":"ΣΊΣΥΦΟΣ"}]],"ok":"ns:key.pathHELLO|ΣΊΣΥΦΟΣ"}
+{"fn":"requestSignature","args":[[{"id":"😀"},{"id":"a..b"}]],"ok":"a..b|😀"}
+{"fn":"requestSignature","args":[[{"id":"a"},{"id":"a:b:c"}]],"ok":"a|a:b:c"}
+{"fn":"requestSignature","args":[[{"id":"a.b.c"},{"id":"a..b"}]],"ok":"a..b|a.b.c"}
+{"fn":"requestSignature","args":[[{"id":"é"}]],"ok":"é"}
+{"fn":"requestSignature","args":[[{"id":"a"},{"id":"emoji 👍🏽 mixHELLO"}]],"ok":"a|emoji 👍🏽 mixHELLO"}
+{"fn":"requestSignature","args":[[{"id":"./x/**/*.jsona..b"},{"id":".leading"}]],"ok":"./x/**/*.jsona..b|.leading"}
+{"fn":"requestSignature","args":[[{"id":"src/a/b.ts"},{"id":"hello"}]],"ok":"hello|src/a/b.ts"}
+{"fn":"requestSignature","args":[[{"id":"abc"},{"id":"emoji 👍🏽 mix"},{"id":"a"}]],"ok":"a|abc|emoji 👍🏽 mix"}
+{"fn":"requestSignature","args":[[{"id":"hello"}]],"ok":"hello"}
+{"fn":"requestSignature","args":[[{"id":"İstanbul"},{"id":"  padded    padded  "}]],"ok":"  padded    padded  |İstanbul"}
+{"fn":"requestSignature","args":[[{"id":"line1\nline2é"},{"id":"emoji 👍🏽 mix"},{"id":"  padded  "}]],"ok":"  padded  |emoji 👍🏽 mix|line1\nline2é"}
+{"fn":"requestSignature","args":[[{"id":"src/a/b.ts"},{"id":"hello world"},{"id":"ΣΊΣΥΦΟΣ"}]],"ok":"hello world|src/a/b.ts|ΣΊΣΥΦΟΣ"}
+{"fn":"requestSignature","args":[[{"id":"src/a/b.tsİstanbul"},{"id":"ns:key.path"},{"id":".leading"}]],"ok":".leading|ns:key.path|src/a/b.tsİstanbul"}
+{"fn":"requestSignature","args":[[{"id":"./x/**/*.jsona.b.c"},{"id":"日本語のテキスト:"}]],"ok":"./x/**/*.jsona.b.c|日本語のテキスト:"}
+{"fn":"requestSignature","args":[[{"id":"line1\nline2"},{"id":"emoji 👍🏽 mixab"}]],"ok":"emoji 👍🏽 mixab|line1\nline2"}
+{"fn":"requestSignature","args":[[{"id":"trailing."},{"id":"  padded  "},{"id":"abc"}]],"ok":"  padded  |abc|trailing."}
+{"fn":"requestSignature","args":[[{"id":"HELLO"}]],"ok":"HELLO"}
+{"fn":"requestSignature","args":[[{"id":"éa..b"}]],"ok":"éa..b"}
+{"fn":"requestSignature","args":[[{"id":"ans:key.path"},{"id":"HELLO"}]],"ok":"HELLO|ans:key.path"}
+{"fn":"requestSignature","args":[[{"id":"emoji 👍🏽 mix"},{"id":"abc"},{"id":"tab\tseparatedİstanbul"}]],"ok":"abc|emoji 👍🏽 mix|tab\tseparatedİstanbul"}
+{"fn":"requestSignature","args":[[{"id":"a..b"},{"id":"ΣΊΣΥΦΟΣ"}]],"ok":"a..b|ΣΊΣΥΦΟΣ"}
+{"fn":"requestSignature","args":[[{"id":"a:b:c"},{"id":"trailing."}]],"ok":"a:b:c|trailing."}
+{"fn":"requestSignature","args":[[{"id":"  padded  "}]],"ok":"  padded  "}
+{"fn":"requestSignature","args":[[{"id":"trailing."},{"id":"ΣΊΣΥΦΟΣ"},{"id":"emoji 👍🏽 mix"}]],"ok":"emoji 👍🏽 mix|trailing.|ΣΊΣΥΦΟΣ"}
+{"fn":"requestSignature","args":[[{"id":"tab\tseparated"}]],"ok":"tab\tseparated"}
+{"fn":"requestSignature","args":[[{"id":"a"},{"id":"a.b.c"},{"id":"line1\nline2"}]],"ok":"a|a.b.c|line1\nline2"}
+{"fn":"requestSignature","args":[[{"id":"HELLO"},{"id":"hello"},{"id":"😀{name} has {count} items"}]],"ok":"HELLO|hello|😀{name} has {count} items"}
+{"fn":"requestSignature","args":[[{"id":"ünïcödé"}]],"ok":"ünïcödé"}
+{"fn":"requestSignature","args":[[{"id":"hello world"},{"id":"hello"},{"id":"﻿bom"}]],"ok":"hello|hello world|﻿bom"}
+{"fn":"requestSignature","args":[[{"id":"emoji 👍🏽 mix"},{"id":"a:b:c"},{"id":".leading"}]],"ok":".leading|a:b:c|emoji 👍🏽 mix"}
+{"fn":"requestSignature","args":[[{"id":"éa"},{"id":"﻿bom"},{"id":"tab\tseparateda.b.c"}]],"ok":"éa|tab\tseparateda.b.c|﻿bom"}
+{"fn":"requestSignature","args":[[{"id":"key_name-1"},{"id":"tab\tseparatedline1\nline2"},{"id":"ünïcödé"}]],"ok":"key_name-1|tab\tseparatedline1\nline2|ünïcödé"}
+{"fn":"requestSignature","args":[[{"id":"a"},{"id":"a..ba😀b😀c"}]],"ok":"a|a..ba😀b😀c"}
+{"fn":"requestSignature","args":[[{"id":"hello worldline1\nline2"},{"id":"{name} has {count} items"}]],"ok":"hello worldline1\nline2|{name} has {count} items"}
+{"fn":"requestSignature","args":[[{"id":"key_name-1"},{"id":"ab"},{"id":"ns:key.path"}]],"ok":"ab|key_name-1|ns:key.path"}
+{"fn":"requestSignature","args":[[{"id":"hello worlda.b.c"},{"id":"{name} has {count} items"}]],"ok":"hello worlda.b.c|{name} has {count} items"}
+{"fn":"requestSignature","args":[[{"id":"HELLOa"},{"id":"key_name-1"},{"id":"a😀b😀c"}]],"ok":"HELLOa|a😀b😀c|key_name-1"}
+{"fn":"requestSignature","args":[[{"id":"é"},{"id":"key_name-1a😀b😀c"}]],"ok":"é|key_name-1a😀b😀c"}
+{"fn":"requestSignature","args":[[{"id":"abctab\tseparated"},{"id":"ΣΊΣΥΦΟΣ{name} has {count} items"},{"id":"é"}]],"ok":"abctab\tseparated|é|ΣΊΣΥΦΟΣ{name} has {count} items"}
+{"fn":"requestSignature","args":[[{"id":"ünïcödéa..b"},{"id":"straße"},{"id":"line1\nline2"}]],"ok":"line1\nline2|straße|ünïcödéa..b"}
+{"fn":"requestSignature","args":[[{"id":":"},{"id":"HELLO"},{"id":"hello world"}]],"ok":":|HELLO|hello world"}
+{"fn":"requestSignature","args":[[{"id":"a.leading"},{"id":"a😀b😀cΣΊΣΥΦΟΣ"}]],"ok":"a.leading|a😀b😀cΣΊΣΥΦΟΣ"}
+{"fn":"requestSignature","args":[[{"id":"a"}]],"ok":"a"}
+{"fn":"requestSignature","args":[[{"id":"hello"},{"id":"ünïcödé"},{"id":"a.b.c"}]],"ok":"a.b.c|hello|ünïcödé"}
+{"fn":"requestSignature","args":[[{"id":"é"},{"id":"ns:key.patha"},{"id":"key_name-1"}]],"ok":"é|key_name-1|ns:key.patha"}
+{"fn":"requestSignature","args":[[{"id":"./x/**/*.json"},{"id":"Hello World./x/**/*.json"}]],"ok":"./x/**/*.json|Hello World./x/**/*.json"}
+{"fn":"requestSignature","args":[[{"id":"a😀b😀c"},{"id":".leading"}]],"ok":".leading|a😀b😀c"}
+{"fn":"requestSignature","args":[[{"id":"./x/**/*.json"}]],"ok":"./x/**/*.json"}
+{"fn":"requestSignature","args":[[{"id":"hello world"},{"id":"key_name-1"}]],"ok":"hello world|key_name-1"}
+{"fn":"requestSignature","args":[[{"id":"ns:key.path"},{"id":"  padded  "},{"id":"line1\nline2"}]],"ok":"  padded  |line1\nline2|ns:key.path"}
+{"fn":"requestSignature","args":[[{"id":"a😀b😀c"}]],"ok":"a😀b😀c"}
+{"fn":"requestSignature","args":[[{"id":"atrailing."},{"id":"abc"}]],"ok":"abc|atrailing."}
+{"fn":"requestSignature","args":[[{"id":"日本語のテキスト"},{"id":":"}]],"ok":":|日本語のテキスト"}
+{"fn":"requestSignature","args":[[{"id":"a:b:c"},{"id":"emoji 👍🏽 mix"}]],"ok":"a:b:c|emoji 👍🏽 mix"}
+{"fn":"requestSignature","args":[[{"id":"Hello World"},{"id":"😀﻿bom"},{"id":"line1\nline2"}]],"ok":"Hello World|line1\nline2|😀﻿bom"}
+{"fn":"requestSignature","args":[[{"id":"emoji 👍🏽 mix"},{"id":"😀"}]],"ok":"emoji 👍🏽 mix|😀"}
+{"fn":"requestSignature","args":[[{"id":"helloabc"},{"id":"﻿bom  padded  "},{"id":"﻿bom"}]],"ok":"helloabc|﻿bom|﻿bom  padded  "}
+{"fn":"requestSignature","args":[[{"id":"  padded  "},{"id":".leading"}]],"ok":"  padded  |.leading"}
+{"fn":"requestSignature","args":[[{"id":":"},{"id":"  padded  "}]],"ok":"  padded  |:"}
+{"fn":"requestSignature","args":[[{"id":"  padded  "},{"id":"  padded  "}]],"ok":"  padded  |  padded  "}
+{"fn":"requestSignature","args":[[{"id":"İstanbul"},{"id":"ab"},{"id":"a😀b😀c"}]],"ok":"ab|a😀b😀c|İstanbul"}
+{"fn":"requestSignature","args":[[{"id":":"},{"id":"ab"},{"id":"HELLO"}]],"ok":":|HELLO|ab"}
+{"fn":"requestSignature","args":[[{"id":"HELLOa.b.c"},{"id":"é"},{"id":"hello world"}]],"ok":"HELLOa.b.c|é|hello world"}
+{"fn":"requestSignature","args":[[{"id":"😀  padded  "},{"id":"hello world"},{"id":"a😀b😀c"}]],"ok":"a😀b😀c|hello world|😀  padded  "}
+{"fn":"requestSignature","args":[[{"id":"ΣΊΣΥΦΟΣ"},{"id":"a./x/**/*.json"},{"id":"trailing."}]],"ok":"a./x/**/*.json|trailing.|ΣΊΣΥΦΟΣ"}
+{"fn":"requestSignature","args":[[{"id":".leading"},{"id":"Hello Worlda.b.c"},{"id":"😀"}]],"ok":".leading|Hello Worlda.b.c|😀"}
+{"fn":"requestSignature","args":[[{"id":"ΣΊΣΥΦΟΣ"},{"id":"ns:key.path"}]],"ok":"ns:key.path|ΣΊΣΥΦΟΣ"}
+{"fn":"requestSignature","args":[[{"id":""},{"id":""}]],"ok":"|"}
+{"fn":"requestSignature","args":[[{"id":"tab\tseparated"},{"id":".leading"}]],"ok":".leading|tab\tseparated"}
+{"fn":"requestSignature","args":[[{"id":"a"},{"id":"atrailing."},{"id":"a:b:c"}]],"ok":"a|a:b:c|atrailing."}
+{"fn":"requestSignature","args":[[{"id":"{name} has {count} items  padded  "},{"id":"İstanbul"},{"id":"{name} has {count} items"}]],"ok":"{name} has {count} items|{name} has {count} items  padded  |İstanbul"}
+{"fn":"requestSignature","args":[[{"id":"é"},{"id":"ns:key.pathtab\tseparated"},{"id":"﻿bom"}]],"ok":"é|ns:key.pathtab\tseparated|﻿bom"}
+{"fn":"requestSignature","args":[[{"id":"ab"},{"id":":src/a/b.ts"},{"id":"straßehello"}]],"ok":":src/a/b.ts|ab|straßehello"}
+{"fn":"requestSignature","args":[[{"id":"😀a"}]],"ok":"😀a"}
+{"fn":"requestSignature","args":[[{"id":"a:b:c"},{"id":"a.b.csrc/a/b.ts"}]],"ok":"a.b.csrc/a/b.ts|a:b:c"}
+{"fn":"requestSignature","args":[[{"id":"a😀b😀c"},{"id":"hello world😀"}]],"ok":"a😀b😀c|hello world😀"}
+{"fn":"requestSignature","args":[[{"id":":HELLO"},{"id":"trailing."},{"id":"Hello World"}]],"ok":":HELLO|Hello World|trailing."}
+{"fn":"requestSignature","args":[[{"id":"trailing."},{"id":"Hello Worlda.b.c"},{"id":"é"}]],"ok":"Hello Worlda.b.c|é|trailing."}
+{"fn":"requestSignature","args":[[{"id":"İstanbul"}]],"ok":"İstanbul"}
+{"fn":"requestSignature","args":[[{"id":"ab"},{"id":"trailing."},{"id":"line1\nline2"}]],"ok":"ab|line1\nline2|trailing."}
+{"fn":"requestSignature","args":[[{"id":"  padded  "},{"id":"hello world"},{"id":"﻿bom"}]],"ok":"  padded  |hello world|﻿bom"}
+{"fn":"requestSignature","args":[[{"id":"a..b"}]],"ok":"a..b"}
+{"fn":"requestSignature","args":[[{"id":"﻿bom"}]],"ok":"﻿bom"}
+{"fn":"requestSignature","args":[[{"id":"./x/**/*.json"},{"id":"tab\tseparated"},{"id":"hello worldΣΊΣΥΦΟΣ"}]],"ok":"./x/**/*.json|hello worldΣΊΣΥΦΟΣ|tab\tseparated"}
+{"fn":"requestSignature","args":[[{"id":"a:b:c"},{"id":"a😀b😀c"}]],"ok":"a:b:c|a😀b😀c"}
+{"fn":"requestSignature","args":[[{"id":"abc"},{"id":"  padded  "}]],"ok":"  padded  |abc"}
+{"fn":"requestSignature","args":[[{"id":"abc"},{"id":"a.b.chello world"}]],"ok":"a.b.chello world|abc"}
+{"fn":"requestSignature","args":[[{"id":".leadinga😀b😀c"}]],"ok":".leadinga😀b😀c"}
+{"fn":"requestSignature","args":[[{"id":"﻿bomHELLO"}]],"ok":"﻿bomHELLO"}
+{"fn":"requestSignature","args":[[{"id":"  padded  "},{"id":":"},{"id":"Hello World"}]],"ok":"  padded  |:|Hello World"}
+{"fn":"requestSignature","args":[[{"id":""},{"id":"src/a/b.ts"},{"id":"emoji 👍🏽 mix./x/**/*.json"}]],"ok":"|emoji 👍🏽 mix./x/**/*.json|src/a/b.ts"}
+{"fn":"requestSignature","args":[[{"id":".leading"},{"id":"{name} has {count} items"},{"id":"a"}]],"ok":".leading|a|{name} has {count} items"}
+{"fn":"requestSignature","args":[[{"id":"ΣΊΣΥΦΟΣ"},{"id":"日本語のテキストemoji 👍🏽 mix"}]],"ok":"ΣΊΣΥΦΟΣ|日本語のテキストemoji 👍🏽 mix"}
+{"fn":"requestSignature","args":[[{"id":"é"},{"id":"a"}]],"ok":"a|é"}
+{"fn":"requestSignature","args":[[{"id":"hello world"},{"id":"ΣΊΣΥΦΟΣa"},{"id":"HELLO"}]],"ok":"HELLO|hello world|ΣΊΣΥΦΟΣa"}
+{"fn":"requestSignature","args":[[{"id":"{name} has {count} items.leading"},{"id":"emoji 👍🏽 mix"},{"id":"./x/**/*.json﻿bom"}]],"ok":"./x/**/*.json﻿bom|emoji 👍🏽 mix|{name} has {count} items.leading"}
+{"fn":"requestSignature","args":[[{"id":"ΣΊΣΥΦΟΣ"},{"id":"{name} has {count} items"}]],"ok":"{name} has {count} items|ΣΊΣΥΦΟΣ"}
+{"fn":"requestSignature","args":[[{"id":"ns:key.path"},{"id":"line1\nline2"},{"id":"ΣΊΣΥΦΟΣ"}]],"ok":"line1\nline2|ns:key.path|ΣΊΣΥΦΟΣ"}
+{"fn":"requestSignature","args":[[{"id":"a"},{"id":"ünïcödé"}]],"ok":"a|ünïcödé"}
+{"fn":"requestSignature","args":[[{"id":"Hello World"},{"id":"Hello World"},{"id":"ΣΊΣΥΦΟΣ"}]],"ok":"Hello World|Hello World|ΣΊΣΥΦΟΣ"}
+{"fn":"requestSignature","args":[[{"id":"HELLO"},{"id":"Hello World"},{"id":"src/a/b.ts"}]],"ok":"HELLO|Hello World|src/a/b.ts"}
+{"fn":"requestSignature","args":[[{"id":"src/a/b.ts"},{"id":"src/a/b.ts"},{"id":"tab\tseparateda:b:c"}]],"ok":"src/a/b.ts|src/a/b.ts|tab\tseparateda:b:c"}
+{"fn":"requestSignature","args":[[{"id":"ns:key.path./x/**/*.json"},{"id":"é"},{"id":"src/a/b.ts"}]],"ok":"é|ns:key.path./x/**/*.json|src/a/b.ts"}
+{"fn":"requestSignature","args":[[{"id":"İstanbulΣΊΣΥΦΟΣ"},{"id":"tab\tseparated"}]],"ok":"tab\tseparated|İstanbulΣΊΣΥΦΟΣ"}
+{"fn":"requestSignature","args":[[{"id":"ΣΊΣΥΦΟΣ"},{"id":"İstanbul日本語のテキスト"},{"id":".leading"}]],"ok":".leading|İstanbul日本語のテキスト|ΣΊΣΥΦΟΣ"}
+{"fn":"requestSignature","args":[[{"id":"hello"},{"id":"a😀b😀c"}]],"ok":"a😀b😀c|hello"}
+{"fn":"requestSignature","args":[[{"id":"  padded  ./x/**/*.json"},{"id":"tab\tseparated"},{"id":"  padded  "}]],"ok":"  padded  |  padded  ./x/**/*.json|tab\tseparated"}
+{"fn":"requestSignature","args":[[{"id":".leading"},{"id":"é:"},{"id":"src/a/b.ts"}]],"ok":".leading|é:|src/a/b.ts"}
+{"fn":"requestSignature","args":[[{"id":""},{"id":"ünïcödéhello world"},{"id":"emoji 👍🏽 mix日本語のテキスト"}]],"ok":"|emoji 👍🏽 mix日本語のテキスト|ünïcödéhello world"}
+{"fn":"requestSignature","args":[[{"id":"ab"},{"id":"﻿bom"},{"id":"hello world"}]],"ok":"ab|hello world|﻿bom"}

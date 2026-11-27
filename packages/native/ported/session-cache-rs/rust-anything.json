@@ -1,0 +1,43 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "session-cache.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "session-cache-rs",
+  "exports": [
+    {
+      "name": "getProtectedSessionCacheIds",
+      "file": "session-cache.ts",
+      "line": 21,
+      "params": [
+        {
+          "name": "store",
+          "ts_type": "({\n  session_status: Record<string, SessionStatus | undefined>\n  session_diff: Record<string, {\n  file?: string\n  status?: string\n  additions?: number\n  deletions?: number\n  patch?: string\n  [key: string]: unknown\n}[] | undefined>\n  todo: Record<string, Todo[] | undefined>\n  message: Record<string, Message[] | undefined>\n  part: Record<string, Part[] | undefined>\n  permission: Record<string, PermissionRequest[] | undefined>\n  question: Record<string, QuestionRequest[] | undefined>\n})",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "Set<string>",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "dropSessionCaches",
+      "file": "session-cache.ts",
+      "line": 55,
+      "reason": "mutates its argument in place; record keeps only return values and a Rust port receives a copy, so the mutation can be neither reproduced nor proven"
+    },
+    {
+      "name": "pickSessionCacheEvictions",
+      "file": "session-cache.ts",
+      "line": 87,
+      "reason": "mutates its argument in place; record keeps only return values and a Rust port receives a copy, so the mutation can be neither reproduced nor proven (input.seen)"
+    }
+  ]
+}

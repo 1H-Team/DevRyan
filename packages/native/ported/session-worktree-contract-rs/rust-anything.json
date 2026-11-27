@@ -1,0 +1,180 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "session-worktree-contract.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "session-worktree-contract-rs",
+  "exports": [
+    {
+      "name": "isWithinWorktreeRoot",
+      "file": "session-worktree-contract.ts",
+      "line": 35,
+      "params": [
+        {
+          "name": "candidate",
+          "ts_type": "string | null",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "worktreeRoot",
+          "ts_type": "string | null",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getAttachedSessionDirectory",
+      "file": "session-worktree-contract.ts",
+      "line": 42,
+      "params": [
+        {
+          "name": "attachment",
+          "ts_type": "SessionWorktreeAttachment | null | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "fallbackDirectory",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "string | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "buildAttachmentFromCanonicalization",
+      "file": "session-worktree-contract.ts",
+      "line": 65,
+      "params": [
+        {
+          "name": "canonical",
+          "ts_type": "({\n  worktreeRoot: string | null;\n  cwd: string | null;\n  branch: string | null;\n  headState: 'branch' | 'detached' | 'unborn';\n  worktreeStatus: 'ready' | 'missing' | 'invalid' | 'not-a-repo';\n  legacy: boolean;\n  degraded: boolean;\n  attentionReason?: 'merge' | 'rebase' | 'cherry-pick' | 'revert' | 'bisect' | null;\n})",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "options",
+          "ts_type": "({\n  existingAttachment?: SessionWorktreeAttachment | null;\n  fallbackDirectory?: string | null;\n  worktreeSource?: SessionWorktreeAttachment['worktreeSource'];\n})",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "SessionWorktreeAttachment",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "resolveSessionWorktreeState",
+      "file": "session-worktree-contract.ts",
+      "line": 88,
+      "params": [
+        {
+          "name": "input",
+          "ts_type": "({\n  sessionDirectory: string | null;\n  metadata: WorktreeMetadata | null;\n  cwdExists?: boolean;\n  runtimeResolution?: SessionWorktreeAttachment | null;\n})",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "SessionWorktreeAttachment",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "formatSessionWorktreeBadge",
+      "file": "session-worktree-contract.ts",
+      "line": 139,
+      "params": [
+        {
+          "name": "attachment",
+          "ts_type": "SessionWorktreeAttachment",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getSessionWorktreeRepairActions",
+      "file": "session-worktree-contract.ts",
+      "line": 153,
+      "params": [
+        {
+          "name": "attachment",
+          "ts_type": "SessionWorktreeAttachment",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "('locate' | 'open-without-worktree-features')[]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getMutationBlockingReasons",
+      "file": "session-worktree-contract.ts",
+      "line": 168,
+      "params": [
+        {
+          "name": "attachment",
+          "ts_type": "SessionWorktreeAttachment | null | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "gitStatus",
+          "ts_type": "{ isClean?: boolean; files?: Array<{ path: string }> }",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "(| { reason: 'attention'; attentionReason: NonNullable<SessionWorktreeAttachment['attentionReason']> }\n  | { reason: 'missing' }\n  | { reason: 'invalid' }\n  | { reason: 'dirty'; dirtyFiles?: number })[]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "buildSessionTargetOptions",
+      "file": "session-worktree-contract.ts",
+      "line": 197,
+      "params": [
+        {
+          "name": "input",
+          "ts_type": "{\n  projectRoot: string;\n  rootBranch: string;\n  worktrees: Array<{ path: string; branch: string; label: string; projectDirectory: string }>;\n  pendingBootstrapDirectory?: string | null;\n  includeRoot?: boolean;\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "({\n  value: string;\n  label: string;\n  kind: 'root' | 'worktree';\n  pending?: boolean;\n})[]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

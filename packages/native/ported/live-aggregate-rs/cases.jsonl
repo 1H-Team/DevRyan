@@ -1,0 +1,868 @@
+{"fn":"areSessionListsEquivalent","args":[[{"a":{"b":"c"}},"x"],[0,{}]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[],[true]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":"b"}],[{}]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[{"a":"b"},0],true],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[[]],["x",null,true]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[],[[]]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[true],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[["x"],[true,true,true]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[["a",1]],["a",1]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{}],[0,{}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[null,{}],["x"]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[{"a":{"b":"c"}},{"a":"b"}],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[null,null],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[],[]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[{}],["x"]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[{"a":"b"},[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[],true],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[["a",1],{}],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[["x",[],"x"],{"a":{"b":"c"}}],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":"b"},null,0],{"a":{"b":"c"}}],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[["a",1],["a",1]],[{},{"a":"b"}]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[{},null],[{"a":"b"},null,["a",1]]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[0,[],true],[[]]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{}],[0]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[{}],[{"a":{"b":"c"}}]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[["a",1],0],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[],[{"a":"b"}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[null,[]],0],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[true,{"a":"b"},0],["x",null]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[{},[null]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[["x"],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[[],{"a":"b"},"x"],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[{"a":{"b":"c"}},[{"a":{"b":"c"}},true,null]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[0,true,{"a":"b"}],["x",{"a":"b"}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[0,{"a":{"b":"c"}}],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[["x",null,["a",1]],[null]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[["a",1]],["x"]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[{},{"a":"b"}],[true,{"a":"b"}]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[true,["a",1]],[true,true]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[0,null,{"a":{"b":"c"}}],["x"]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{},[],0],[["a",1],"x"]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":"b"},{},0],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":"b"},{},{"a":{"b":"c"}}],["x",true,null]],"error":"Cannot read properties of null (reading 'directory')"}
+{"fn":"areSessionListsEquivalent","args":[0,["x"]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[[],0],[["a",1],{},0]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{}],[[],0,{"a":{"b":"c"}}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":{"b":"c"}},{"a":"b"},0],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[0],[{},null]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[[]],["x"]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[["a",1]],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[],{"a":{"b":"c"}}],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[],{"a":"b"}],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":{"b":"c"}},["a",1],"x"],[true]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[0,{"a":{"b":"c"}},null],[{"a":"b"},"x",true]],"error":"Cannot read properties of null (reading 'directory')"}
+{"fn":"areSessionListsEquivalent","args":[[null],[null,true]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[0,null],[[]]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[null,null,[]],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[true,[true,null,[]]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[["a",1]],[[]]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[[]],[[],["a",1],null]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[{"a":"b"},{}],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[["a",1],{"a":"b"}],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[[]],["a",1]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[null,true],[{"a":{"b":"c"}},{"a":{"b":"c"}}]],"error":"Cannot read properties of null (reading 'directory')"}
+{"fn":"areSessionListsEquivalent","args":[["a",1],[{}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[[],[]],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[[],[]],[0,{},["a",1]]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":"b"},0],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{},[],null],[{"a":"b"},["a",1]]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[],[null,{"a":"b"},null]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[["x"],[{"a":{"b":"c"}},{},["a",1]]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[0,[],true],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[0],[[],null,true]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[],0],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[true],[{}]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[null,true,{"a":{"b":"c"}}],[["a",1],["a",1]]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[["a",1],0],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":{"b":"c"}}],["x",["a",1]]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[["a",1],0],["x",["a",1]]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[],[{"a":{"b":"c"}}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[true,[{"a":{"b":"c"}}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[null,0,{}],[{"a":"b"},{},null]],"error":"Cannot read properties of null (reading 'directory')"}
+{"fn":"areSessionListsEquivalent","args":[[[],["a",1]],[0]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[["a",1],{"a":{"b":"c"}},0],[{"a":{"b":"c"}},[],0]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[],[{},{"a":"b"},"x"]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[null,"x"],[true]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[null,null],[{},0,[]]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[0,{"a":{"b":"c"}}],[true,{},0]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":"b"},["a",1]],{}],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[],["x"]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[],[{}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[0,[{},{}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[],[null,{}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[],[true,[],null]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[true,[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[["a",1],{"a":{"b":"c"}}],["a",1]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[null,[]],[{"a":"b"},{"a":{"b":"c"}},[]]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":"b"}],[{"a":"b"},true,"x"]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":{"b":"c"}}],[{"a":"b"},"x",{"a":{"b":"c"}}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[[],"x"],[null,null]],"error":"Cannot read properties of null (reading 'directory')"}
+{"fn":"areSessionListsEquivalent","args":[{},[{},true,{"a":"b"}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[],[null]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":["x",[["a",1],0]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":"b"}],["x","x",{"a":{"b":"c"}}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[],[[],0,null]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":["x",[["a",1],0,{"a":{"b":"c"}}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[true,["a",1],[]],[["a",1],{"a":"b"},"x"]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[["x",{"a":{"b":"c"}}],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":{"b":"c"}}],[null,[]]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[null],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[0,{"a":"b"}],[null,null]],"error":"Cannot read properties of null (reading 'directory')"}
+{"fn":"areSessionListsEquivalent","args":[[],[{"a":"b"},{"a":"b"},{}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":"b"},"x",0],[[],[]]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[0],null],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"areSessionListsEquivalent","args":[{"a":"b"},["x",{"a":{"b":"c"}},"x"]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":{"b":"c"}}],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[{"a":{"b":"c"}},[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[0,0,{"a":{"b":"c"}}],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[null],null],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"areSessionListsEquivalent","args":[[[]],[null,{"a":{"b":"c"}}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[["x","x",["a",1]],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{}],[{}]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":["x",[[],{"a":{"b":"c"}}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[["a",1]],"x"],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[0],[true]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[],[{"a":{"b":"c"}},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[null,["a",1],null],[{"a":{"b":"c"}},{},{"a":{"b":"c"}}]],"error":"Cannot read properties of null (reading 'directory')"}
+{"fn":"areSessionListsEquivalent","args":[[{},{"a":{"b":"c"}}],[0,{},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{},[],"x"],[[]]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[],["x",{"a":"b"},0]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":["x",[null]],"error":"Cannot read properties of null (reading 'directory')"}
+{"fn":"areSessionListsEquivalent","args":[[{"a":"b"},true],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{},{"a":"b"},0],[["a",1]]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":"b"},{"a":"b"}],[true]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[null,{"a":"b"},{"a":"b"}],{"a":"b"}],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[["x",[],0],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":{"b":"c"}},{"a":"b"}],[{"a":{"b":"c"}}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[[],{"a":{"b":"c"}},{}],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":{"b":"c"}}],[null,true]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[],[["a",1],true,{"a":{"b":"c"}}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[true,true,{"a":"b"}],[true,{"a":{"b":"c"}}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{},true,true],[{},{"a":"b"}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[["x","x"],["x",true]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[],{}],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":{"b":"c"}},{},{"a":{"b":"c"}}],[{"a":{"b":"c"}},["a",1],"x"]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[["x","x"],[["a",1],null,0]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[],["x",{}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[["x",{},[]],["a",1]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[null,[]],["x"]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[[]],null],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"areSessionListsEquivalent","args":[[{"a":{"b":"c"}},["a",1]],[{"a":"b"},0]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[0,{"a":"b"}],[null,{"a":{"b":"c"}},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[["a",1]],[0]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[true,{"a":"b"}],[{"a":"b"},{"a":"b"},null]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[true,0,["a",1]],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":{"b":"c"}},{}],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[["a",1],true,"x"],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":"b"},["a",1],0],[true]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[true,[["a",1]]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[null],[{"a":{"b":"c"}},[],{"a":"b"}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[[],true,"x"],[null,{"a":"b"},[]]],"error":"Cannot read properties of null (reading 'directory')"}
+{"fn":"areSessionListsEquivalent","args":[[{"a":{"b":"c"}},{},0],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[0],[{"a":{"b":"c"}}]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[[],{"a":"b"}],0],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[0],true],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[["a",1],true],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":{"b":"c"}},{"a":"b"},[]],[["a",1],0,["a",1]]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":["x",[{"a":{"b":"c"}}]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[["a",1]],[{"a":{"b":"c"}},{},{"a":"b"}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{},0],[[]]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[{"a":{"b":"c"}},[{},["a",1]]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":"b"}],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":{"b":"c"}},0,"x"],[null,{"a":{"b":"c"}}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[],"x"],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":"b"},{"a":"b"}],"x"],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[["a",1]],true],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[{},[["a",1],[],{}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[],[true,[],true]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[[],["a",1]],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[{"a":{"b":"c"}},[{"a":{"b":"c"}},0]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[null,{},{"a":{"b":"c"}}],[{},{"a":"b"}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[0],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[null],[0,{"a":"b"},"x"]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":"b"},[],{"a":{"b":"c"}}],[{"a":"b"}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[["x",{"a":{"b":"c"}},{"a":{"b":"c"}}],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"a":{"b":"c"}},["a",1]],[0,["a",1],{"a":{"b":"c"}}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[0,{}],[[],{},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[["x",{},["a",1]],[{"a":{"b":"c"}},null]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[null,true],["x"]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[{"a":"b"},[{"a":"b"},null,null]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{}],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[["a",1],true],[{}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[],[0]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[["x"],[{"a":{"b":"c"}},true]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[["x",{"a":"b"}],["a",1]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[{},[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[],[{"a":"b"},[],{}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[[]],[]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[["x",["a",1],{}],[{"a":"b"},0]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[0,0],[true]],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":["a",1]},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},{}],"ok":true}
+{"fn":"areStatusMapsEquivalent","args":[{},{"2":0,"ünï":true,"a.b":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a":{"b":"c"}},{"a":"b"}],"ok":true}
+{"fn":"areStatusMapsEquivalent","args":[{"nav":0},{"b":[],"title":{"a":"b"}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[0,{"a.b":"x"}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":{"a":"b"}},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[null,{"a":{"b":"c"}}],"error":"Cannot convert undefined or null to object"}
+{"fn":"areStatusMapsEquivalent","args":[{"home":0},{"10":{"a":"b"}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[[],{}],"ok":true}
+{"fn":"areStatusMapsEquivalent","args":[{"ünï":{},"b":0},{"a.b":null}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"10":["a",1]},{"a.b":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":["a",1],"10":true,"b":{"a":{"b":"c"}}},{"10":{"a":{"b":"c"}},"a.b":[],"a":{"a":{"b":"c"}}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[null,{"title":[]}],"error":"Cannot convert undefined or null to object"}
+{"fn":"areStatusMapsEquivalent","args":[{},{"nav":{},"home":"x"}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"title":{},"😀":0},{"10":0,"😀":[]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[0,{"10":{"a":"b"},"😀":{"a":{"b":"c"}}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"😀":null},["a",1]],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"nav":[],"a":["a",1]},[]],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[null,{"10":["a",1],"a.b":[],"title":null}],"error":"Cannot convert undefined or null to object"}
+{"fn":"areStatusMapsEquivalent","args":["x",{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"b":0,"a":{}},{"2":[],"a":null,"b":["a",1]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a":["a",1]},{"a":"x"}],"ok":true}
+{"fn":"areStatusMapsEquivalent","args":[{"2":{"a":{"b":"c"}},"nav":["a",1]},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a.b":["a",1]},{"2":"x","nav":"x"}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":null,"10":{"a":{"b":"c"}}},{"nav":{"a":"b"},"a.b":{}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a.b":{"a":{"b":"c"}},"title":0},{"2":true,"a":"x","ünï":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"10":{"a":{"b":"c"}},"a.b":["a",1]},{"nav":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":{"a":{"b":"c"}},"nav":["a",1]},{"home":[],"b":{"a":{"b":"c"}}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a.b":"x","nav":true,"😀":"x"},{"nav":[]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"😀":true},{"home":true,"title":["a",1]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":true},{"a":"x","a.b":null}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":["x",{"😀":{"a":"b"},"b":[]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a":{"b":"c"}},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":{"a":{"b":"c"}}},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},{"home":true,"a.b":0}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"10":["a",1],"ünï":{"a":"b"},"a.b":["a",1]},{"nav":[]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"10":[],"title":["a",1],"home":{"a":"b"}},{"10":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"b":null,"nav":["a",1]},{"home":true,"a":0}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"home":0,"b":0},{"a.b":{"a":"b"},"home":[]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a.b":{"a":{"b":"c"}}},{"10":[],"b":0,"title":{"a":"b"}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[null,{"nav":null}],"error":"Cannot convert undefined or null to object"}
+{"fn":"areStatusMapsEquivalent","args":[{},{"a":"b"}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"😀":{"a":"b"},"ünï":{"a":"b"}},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":{"a":{"b":"c"}},"title":{"a":"b"},"a":{}},{"a":{"a":{"b":"c"}},"😀":true,"a.b":{}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"😀":"x"},{"10":{"a":{"b":"c"}}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"b":{},"a.b":true,"😀":"x"},{"2":[],"a.b":true,"title":{"a":{"b":"c"}}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"😀":[],"title":{"a":"b"}},{"b":"x","a":{"a":{"b":"c"}}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"ünï":["a",1],"a":"x","title":{"a":{"b":"c"}}},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a":{"a":"b"},"title":{"a":"b"}},{"home":[],"title":{},"nav":"x"}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[true,null],"error":"Cannot convert undefined or null to object"}
+{"fn":"areStatusMapsEquivalent","args":[{"10":null,"home":null},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"10":0,"b":{"a":"b"},"home":"x"},[]],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":{"a":"b"}},{"😀":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a.b":0},{"10":null,"title":null,"😀":{"a":{"b":"c"}}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a.b":{"a":{"b":"c"}},"nav":{"a":{"b":"c"}},"home":"x"},{"nav":{"a":{"b":"c"}},"b":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},{"a.b":[],"😀":[],"ünï":["a",1]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":{"a":"b"},"10":[],"ünï":{"a":"b"}},{"ünï":{"a":{"b":"c"}},"home":true,"a.b":["a",1]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"nav":0,"title":null,"home":true},["a",1]],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[true,{}],"ok":true}
+{"fn":"areStatusMapsEquivalent","args":[{"10":0},{"ünï":{"a":"b"},"b":{"a":{"b":"c"}}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a":[],"b":{}},{"title":["a",1],"ünï":0,"home":"x"}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},{"home":null}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":{},"10":"x","a.b":[]},{"a":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"10":[],"a":["a",1]},null],"error":"Cannot convert undefined or null to object"}
+{"fn":"areStatusMapsEquivalent","args":[{"a.b":{"a":{"b":"c"}},"nav":["a",1]},{"😀":null}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a":"x","a.b":{}},{"2":{},"ünï":null}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"😀":[]},{"a.b":null}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":null,"10":[]},null],"error":"Cannot convert undefined or null to object"}
+{"fn":"areStatusMapsEquivalent","args":[{},{"b":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"ünï":{"a":{"b":"c"}},"nav":0},{"😀":[],"b":{"a":{"b":"c"}},"a.b":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a.b":[]},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},{"a.b":"x"}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"10":{}},{"2":{},"a.b":["a",1]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[null,{"2":[],"b":{"a":{"b":"c"}},"😀":null}],"error":"Cannot convert undefined or null to object"}
+{"fn":"areStatusMapsEquivalent","args":[{"a.b":{"a":"b"},"ünï":[]},{"b":{}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},{"10":null,"a.b":{}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":["x",{"home":{"a":{"b":"c"}},"a":{"a":"b"}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":null,"home":{"a":{"b":"c"}},"nav":{"a":"b"}},{"title":"x","a":0}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"nav":[]},{"ünï":{"a":{"b":"c"}}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a":"b"},{"10":[]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"home":"x"},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},"x"],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"ünï":{"a":"b"},"title":["a",1]},{"10":0,"ünï":0,"nav":{"a":"b"}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},{"b":{}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"home":"x","ünï":{"a":{"b":"c"}}},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"home":["a",1]},{"10":{}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"😀":{}},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"10":0},{"ünï":true,"title":{"a":{"b":"c"}}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"ünï":{"a":{"b":"c"}}},{"nav":{"a":{"b":"c"}},"a":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},{"2":null,"title":0}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"😀":["a",1]},{"10":{"a":"b"}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"10":null,"home":"x","a":["a",1]},{"a.b":{"a":{"b":"c"}},"😀":["a",1]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a":{"a":"b"},"nav":null},{"a.b":"x","😀":[],"b":["a",1]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[0,{"2":0,"10":[],"ünï":{"a":{"b":"c"}}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"b":"x"},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"title":{"a":{"b":"c"}},"ünï":{},"home":0},{"2":[],"b":["a",1],"title":[]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},[]],"ok":true}
+{"fn":"areStatusMapsEquivalent","args":[{},{"😀":{},"title":true,"b":"x"}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[["a",1],{"10":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"10":{"a":"b"},"b":["a",1],"home":{"a":{"b":"c"}}},{"b":null,"ünï":[],"😀":{"a":{"b":"c"}}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[true,{"nav":{"a":"b"}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"10":{},"ünï":"x","title":{}},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"home":null,"title":{}},{"2":"x","b":[]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"10":null,"title":0,"😀":{"a":{"b":"c"}}},{"a":{"b":"c"}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":[],"nav":"x"},{"a.b":["a",1]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"home":"x"},{"a":{},"b":"x"}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":true},["a",1]],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a":{},"nav":null},[]],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"ünï":["a",1],"title":0},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},{"2":true,"ünï":{"a":{"b":"c"}},"b":["a",1]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":{},"a":true},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"home":null},{"2":{"a":{"b":"c"}},"😀":{"a":"b"},"a":"x"}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},{"😀":0}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},0],"ok":true}
+{"fn":"areStatusMapsEquivalent","args":[{"a.b":null},{"2":true,"b":{"a":{"b":"c"}},"nav":null}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},{"10":["a",1],"b":true,"a":{}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":[],"a.b":[]},{"b":0,"a.b":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"home":0},{"title":["a",1]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a":{"a":"b"},"nav":0},{"title":0,"home":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[0,{"10":0}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},{"2":[],"a":{}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[["a",1],{"😀":null,"ünï":true,"title":0}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[null,{}],"error":"Cannot convert undefined or null to object"}
+{"fn":"areStatusMapsEquivalent","args":[{"a":0,"nav":{"a":"b"}},{"title":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a":true},{"b":[]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[[],{"b":0}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":"x","b":[]},{"title":null,"b":0,"ünï":{}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},{"10":[],"😀":{"a":{"b":"c"}},"b":["a",1]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"10":"x","a.b":{}},true],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a.b":[]},{"10":0,"a":0}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a":{"b":"c"}},{"a":{"a":{"b":"c"}},"nav":0,"home":{}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a.b":null,"b":true},"x"],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},{"a":"x"}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"10":["a",1]},{"b":["a",1]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},{"10":null,"title":{"a":{"b":"c"}},"nav":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a.b":["a",1],"nav":{"a":"b"},"home":{}},{"ünï":true,"a.b":{"a":{"b":"c"}}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[["a",1],{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":null,"10":{"a":{"b":"c"}},"home":["a",1]},{"b":{"a":{"b":"c"}},"a":[]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"10":["a",1],"nav":{"a":{"b":"c"}}},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"nav":null,"title":{},"b":0},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[["a",1],{"a.b":["a",1],"home":null}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"10":{"a":"b"},"nav":"x"},{"2":{"a":{"b":"c"}},"10":{"a":"b"},"nav":{}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a.b":[]},{"😀":{"a":"b"}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":["x",{"10":true,"a":"x","a.b":{}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[["a",1],{"2":true,"b":{"a":"b"},"nav":{"a":{"b":"c"}}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"😀":["a",1]},{"b":[],"nav":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":true,"a.b":true,"nav":[]},{"a.b":["a",1],"b":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":"x","a":[]},{"😀":["a",1],"ünï":["a",1],"a":{"a":"b"}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":null,"😀":["a",1],"nav":{}},{"2":{},"10":["a",1],"a":null}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"b":{"a":"b"}},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a.b":{"a":"b"},"home":0},{"b":{"a":{"b":"c"}}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"😀":null,"nav":null},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a":{"a":"b"},"😀":[]},{"a":{"b":"c"}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"ünï":0,"😀":true},{"nav":0}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"ünï":null},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},{"title":{}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"home":{}},{"2":0,"a.b":"x","title":{}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":["a",1],"a":[]},{"10":[],"nav":"x","a":null}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a":{},"😀":"x"},{"home":{"a":"b"},"😀":null}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":["a",1],"b":0},{"ünï":true,"nav":true,"😀":"x"}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},{"2":{"a":{"b":"c"}},"b":[]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"10":["a",1],"😀":{}},{"😀":"x"}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"b":{}},{"2":true,"nav":{"a":"b"}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a.b":"x"},{"2":true,"😀":true,"b":["a",1]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"b":{"a":"b"}},{"2":true,"😀":["a",1]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"b":"x"},{"10":0,"a.b":null}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":0,"home":null,"title":null},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"ünï":"x","😀":{},"title":{"a":"b"}},{"b":0,"title":{"a":"b"},"ünï":[]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},{"10":[]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[[],{"title":[]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a":"b"},{"nav":0,"b":null,"title":null}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"b":{"a":{"b":"c"}},"😀":null},{"nav":{},"😀":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"ünï":{"a":{"b":"c"}},"nav":null},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"😀":[],"home":"x","ünï":{}},{"b":{"a":"b"}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"😀":"x","ünï":0},{"10":"x","title":null,"nav":{}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"😀":{"a":{"b":"c"}}},{"a.b":["a",1],"😀":"x"}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"😀":{"a":{"b":"c"}},"a.b":["a",1]},[]],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":true,"a.b":{}},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[0,{"10":["a",1],"😀":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"title":null},{"10":[],"a.b":{"a":{"b":"c"}},"b":{"a":"b"}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[0,{"b":{"a":"b"},"a.b":[],"😀":{}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"10":{"a":"b"}},{"10":{"a":"b"},"😀":"x"}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"10":0,"ünï":true,"b":[]},{"2":[]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"nav":"x","a":true},"x"],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"b":{"a":"b"},"a":null},{"a.b":["a",1]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[0,{}],"ok":true}
+{"fn":"areStatusMapsEquivalent","args":[{"title":null},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a":0},{}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a.b":0},{"😀":{},"nav":[]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":["x",["a",1]],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},{"😀":null,"nav":{"a":"b"},"b":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},{"home":{"a":{"b":"c"}},"a":{"a":"b"},"😀":["a",1]}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":{"a":{"b":"c"}},"10":{"a":"b"},"😀":{"a":{"b":"c"}}},["a",1]],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"title":[]},{"title":0,"ünï":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"2":0,"a.b":0},{"ünï":0,"😀":"x"}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[[],{"2":null,"ünï":{"a":{"b":"c"}}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[null,{"10":"x","nav":{}}],"error":"Cannot convert undefined or null to object"}
+{"fn":"areStatusMapsEquivalent","args":[{"a":"b"},{"title":true}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{},{"nav":{"a":{"b":"c"}},"😀":"x"}],"ok":false}
+{"fn":"aggregateLiveSessions","args":[["a",1]],"error":"state.session is not iterable"}
+{"fn":"aggregateLiveSessions","args":[{"a":"b"}],"error":"states is not iterable"}
+{"fn":"aggregateLiveSessions","args":["x"],"error":"state.session is not iterable"}
+{"fn":"aggregateLiveSessions","args":[0],"error":"states is not iterable"}
+{"fn":"aggregateLiveSessions","args":[{}],"error":"states is not iterable"}
+{"fn":"aggregateLiveSessions","args":[null],"error":"states is not iterable"}
+{"fn":"aggregateLiveSessions","args":[{"a":{"b":"c"}}],"error":"states is not iterable"}
+{"fn":"aggregateLiveSessions","args":[true],"error":"states is not iterable"}
+{"fn":"aggregateLiveSessions","args":[[]],"ok":[]}
+{"fn":"aggregateLiveSessionStatuses","args":[{"a":"b"}],"error":"states is not iterable"}
+{"fn":"aggregateLiveSessionStatuses","args":[true],"error":"states is not iterable"}
+{"fn":"aggregateLiveSessionStatuses","args":[null],"error":"states is not iterable"}
+{"fn":"aggregateLiveSessionStatuses","args":[[]],"ok":{}}
+{"fn":"aggregateLiveSessionStatuses","args":["x"],"ok":{}}
+{"fn":"aggregateLiveSessionStatuses","args":[{"a":{"b":"c"}}],"error":"states is not iterable"}
+{"fn":"aggregateLiveSessionStatuses","args":[0],"error":"states is not iterable"}
+{"fn":"aggregateLiveSessionStatuses","args":[["a",1]],"ok":{}}
+{"fn":"aggregateLiveSessionStatuses","args":[{}],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,"hello world"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":"b"},"trailing.abc"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,"absrc/a/b.ts"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[["a",1],"trailing."],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[{},"helloa"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[["a",1]],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[{"a":"b"},"key_name-1ns:key.path"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[[],"hello"],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[0,"日本語のテキスト"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,"./x/**/*.json"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}},"helloa.b.c"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}},"😀a.b.c"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[true,"key_name-1"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":"b"},"ns:key.path"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[null,"hello"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[["a",1],"Hello Worlda.b.c"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[0,"a😀b😀c"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[["a",1],":"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[null,"HELLO"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,":"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{},"ünïcödé"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[null,"abc"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":["x",{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[true,"é  padded  "],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,"line1\nline2"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":["x"],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[[],"a.b.c"],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":["x","X"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[true,"ns:key.path"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":"b"},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[true,"Hello World"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[true,"tab\tseparated"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[[],"a..b😀"],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[true,"{name} has {count} items"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[null,"Hello World"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{},"ns:key.path"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}},"key_name-1"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":"b"},"line1\nline2"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,"ab"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[true,"日本語のテキスト"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[null,"tab\tseparatedünïcödé"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[true,"HELLO"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[["a",1],".leading"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[{"a":"b"},"a😀b😀c"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[["a",1],"key_name-1"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[null,"ns:key.pathé"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":"b"},"line1\nline2a:b:c"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":"b"},"{name} has {count} items"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[[],".leading"],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[null,"a:b:c"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":"b"},"tab\tseparated"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[null,"İstanbul"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[["a",1],"a:b:c"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[{},"tab\tseparated"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":"b"},"aHELLO"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[["a",1],"ΣΊΣΥΦΟΣkey_name-1"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[[],"Hello World"],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[{},"key_name-1"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":"b"},"ab"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[true,"hello"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":["x","İstanbul{name} has {count} items"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[null,"  padded  "],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[[],"HELLO"],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}},"a.b.c"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[["a",1],"﻿bom﻿bom"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[{},"trailing."],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}},"emoji 👍🏽 mix"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":"b"},"é"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[true,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[0,"😀"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[["a",1],"﻿bom"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":["x","İstanbul"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[true,"a"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[["a",1],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[[],"src/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[{},"emoji 👍🏽 mix"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[null,"﻿bom"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":["x","x"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[0,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[null,"abc😀"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{}],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[0,"ünïcödé"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":["x","  padded  hello"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[{"a":"b"},"İstanbul"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[["a",1],"hello"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":["x","a😀b😀cHello World"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[0,"a.b.c{name} has {count} items"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[true,"a:b:c"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}},"a.b.ctrailing."],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[true,"trailing."],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[[],"  padded  "],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[true,"line1\nline2trailing."],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}},"src/a/b.ts"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[null,"src/a/b.ts"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}},"Hello World"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[null,"İstanbulHello World"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}},":"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{},"trailing.abc"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}},"ΣΊΣΥΦΟΣİstanbul"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[null,"ΣΊΣΥΦΟΣ"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,"key_name-1"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[null,".leading"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[null,"line1\nline2Hello World"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[null,"日本語のテキスト"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{},"﻿bom"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{},"İstanbul"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[[]],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[0,"HELLOtrailing."],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[[],"İstanbul"],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}},"hello"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{},"tab\tseparateda😀b😀c"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{},"abca.b.c"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[null,"trailing."],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":"b"},"ΣΊΣΥΦΟΣ"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[true],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[{},".leading"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[["a",1],"İstanbul"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[0,"trailing."],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[[],"emoji 👍🏽 mix"],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[[],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[null,"a..b"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{},"straßeab"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{},"ΣΊΣΥΦΟΣ"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[null],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":["x","Hello World"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}},"hello world{name} has {count} items"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":["é","ünïcödé"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[null,"line1\nline2"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":["x","tab\tseparated"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}},"﻿bom"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":["x","😀"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[null,"a.b.cHELLO"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":"b"},"a..b"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}},"日本語のテキストabc"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":["x","a😀b😀c"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":["x","line1\nline2key_name-1"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[null,"﻿bom😀"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[[],"ΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[{"a":"b"},"straße"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":"b"},"trailing."],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[[],":"],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[{},"{name} has {count} items"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[true,"ab﻿bom"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[true,"./x/**/*.json"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":["﻿bo","﻿bom"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":["ΣΥΦΟ","İstanbulΣΊΣΥΦΟΣ"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[0,"😀emoji 👍🏽 mix"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":["x","helloİstanbul"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[["a",1],""],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":["x","a.b.c"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[true,"é"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[null,"{name} has {count} itemsa.b.c"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":"b"},"trailing.é"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,"﻿bom"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[null,"./x/**/*.json"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,"a.b.c"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{},"ab"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":["x",".leading"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[[],"  padded  ünïcödé"],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":["x","Hello Worldstraße"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":["d","Hello World"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[["a",1],"ΣΊΣΥΦΟΣ"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}},"  padded  :"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[["a",1],"é"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[[],"a😀b😀c"],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[true,"﻿bom"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":"b"},"HELLO"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}},"trailing."],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[null,"a😀b😀c  padded  "],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":"b"},"﻿bom"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[[],"é"],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}},"日本語のテキスト"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[["a",1],"./x/**/*.json"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[["a",1],"  padded  "],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[{},"a😀b😀c"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}},"a..b"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[["a",1],"aemoji 👍🏽 mix"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[["a",1],"日本語のテキスト"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[{"a":"b"},"Hello World"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[["a",1],"ns:key.path"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[0,"a"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":["x",""],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[{},"./x/**/*.json"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[true,"a..ba:b:c"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":["x","./x/**/*.jsonhello"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[null,":"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":["x","é"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}},"  padded  "],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[[],"ünïcödé"],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[{"a":{"b":"c"}},"😀src/a/b.ts"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":["x","hello"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":["x","  padded  "],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[{"a":"b"},"./x/**/*.json"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[["a",1],"src/a/b.ts"],"error":"Cannot read properties of undefined (reading 'find')"}
+{"fn":"findLiveSession","args":[[],"ΣΊΣΥΦΟΣemoji 👍🏽 mix"],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[0,"héllo wörld"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,"👍🏽 thumbs"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,"日本語"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,""],"ok":{"$undefined":true}}
+{"fn":"findLiveSession","args":[0,"é"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,"İstanbul"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,"straße"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,"ılık ırmak"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,"👨‍👩‍👧 family"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,"a b"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,"ΣΊΣΥΦΟΣ"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,"a😀b"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,"a²b x½ y①"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,"aⅠb Ⅻ"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,"a𐐀b 𝐀bc"],"error":"states is not iterable"}
+{"fn":"findLiveSession","args":[0,"कि ٣٤"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"line1\nline2"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{}],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[true,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[true,":"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[["a",1],"﻿bom"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[[],"ünïcödé"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[true,"ns:key.path"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[null,"Hello Worldsrc/a/b.ts"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[["a",1],"abc"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[null,"日本語のテキスト"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"./x/**/*.json  padded  "],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},"a"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[["a",1],"日本語のテキスト"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":["x"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[true,"hello world"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},"ünïcödé"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[true,"trailing."],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":{"b":"c"}},"a:b:c"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[true,"  padded  ab"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":["x","é"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[true,"straße"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{},"a..b"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[0,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[["a",1],"a😀b😀c"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[0,"ünïcödé"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},":"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":["x","src/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[["a",1],".leading"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[["a",1],"hello world"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},"HELLO"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[[],"key_name-1"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[0,"  padded  "],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[true,"line1\nline2:"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},"src/a/b.ts"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":["x","日本語のテキスト"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":["x",{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[null,"HELLOns:key.path"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[{},"tab\tseparated"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[true,"﻿bomhello"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{},"a﻿bom"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[["a",1],"hello"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[0,"ab"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":["x","ns:key.pathhello world"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[{"a":{"b":"c"}},"a😀b😀c"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":["x","😀"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[["a",1],"tab\tseparated"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[null,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[[],"a😀b😀c"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[["a",1],"ünïcödé"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[[],"line1\nline2"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[{"a":{"b":"c"}},"src/a/b.ts"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"é"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":{"b":"c"}},"İstanbul"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[null,"./x/**/*.json"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},"ns:key.path"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},"./x/**/*.json"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[["a",1],"Hello World"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[[],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[0,"HELLO"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[["a",1],"HELLO"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},"日本語のテキストab"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[null,"a"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"trailing."],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},"é"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[[],"hello"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[0,"straße"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[true,"  padded  "],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[true,"😀"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"﻿boma.b.c"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{},"hello world"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},"{name} has {count} items"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[["a",1],"a..b"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[null],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[[],"straße"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[[],"{name} has {count} itemsünïcödé"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[[]],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[[],"日本語のテキスト"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[["a",1]],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[true,"ab"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":["x","x"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[0,"abc"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,".leading"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"ΣΊΣΥΦΟΣ"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"日本語のテキスト"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[[],"Hello World"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[true,"﻿bom日本語のテキスト"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":{"b":"c"}},"hello"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[["a",1],"tab\tseparateda..b"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[{},"ünïcödéa"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[null,"a😀b😀c"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[null,"é"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[["a",1],"😀"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[[],"HELLOtrailing."],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[{"a":{"b":"c"}},"key_name-1"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{},"ünïcödé"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[null,"hello"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{},"./x/**/*.json"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":["x","X"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[{},""],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},"日本語のテキスト"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{},".leading"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[["a",1],"ΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[true,"./x/**/*.json"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[true,"a:b:cab"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[true,"a:b:c"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},"Hello World"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[true,"tab\tseparated"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[[],"a.b.c"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},"a..b./x/**/*.json"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[null,"src/a/b.ts"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{},":"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[null,"Hello World"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[null,"line1\nline2ab"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{},"hello"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},"a:"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":{"b":"c"}},"line1\nline2"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[true,"a😀b😀c"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[["a",1],"emoji 👍🏽 mix"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[null,"./x/**/*.jsonΣΊΣΥΦΟΣ"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[["a",1],"{name} has {count} items"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[true,"{name} has {count} items"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":["x","😀a.b.c"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[[],"ab"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[[],"ΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[{"a":{"b":"c"}},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},"hello"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[["a",1],"./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[{"a":{"b":"c"}},"abca😀b😀c"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"emoji 👍🏽 mix"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":["x","ünïcödé"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[[],"Hello Worldns:key.path"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[0,"a😀b😀ca"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[[],"emoji 👍🏽 mix"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[null,"ΣΊΣΥΦΟΣ"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":["x","line1\nline2"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[{"a":{"b":"c"}},"a日本語のテキスト"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[["a",1],"ΣΊΣΥΦΟΣtrailing."],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},"ab"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":{"b":"c"}},"./x/**/*.jsonünïcödé"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[["a",1],"ab"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[["a",1],"a"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":["x","ΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},"😀"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"line1\nline2trailing."],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[null,"tab\tseparated"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[[],"  padded  "],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[true,"HELLO"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"key_name-1"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[true,"é"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[null,".leading"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[":",":"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[null,"ünïcödé"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"hello world:"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[[],"a:b:c"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[null,"a.b.c"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":["RLDKEY_N","Hello Worldkey_name-1"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[true],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[[],"ns:key.path"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[["a",1],"Hello Worlda..b"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},"hello world"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[null,"key_name-1"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":["x","ns:key.path"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[0,"a😀b😀c"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[["a",1],"HELLO:"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[[],"hello world"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[true,"abc"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"emoji 👍🏽 mixa😀b😀c"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":{"b":"c"}},"a..bstraße"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{},"a.b.c"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[true,"hello"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":{"b":"c"}},"absrc/a/b.ts"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[null,"emoji 👍🏽 mix"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"ns:key.path日本語のテキスト"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[[],"{name} has {count} items"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[{},"a😀b😀c"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{},"a.b.c.leading"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[[],"src/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},"key_name-1"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},"a:b:ca..b"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,":"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[".","a..b"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[true,"ΣΊΣΥΦΟΣ"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[true,".leading"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[[],"hello{name} has {count} items"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[[],"abc"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":["x",""],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[true,"日本語のテキスト"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":{"b":"c"}},"a:b:cline1\nline2"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"ns:key.path"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":["a😀b","a😀b😀c"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[0,"a..b"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[[],"﻿bom"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[["a",1],"key_name-1"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[{"a":{"b":"c"}},"Hello World"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[{"a":"b"},"日本語のテキストhello world"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"héllo wörld"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"👍🏽 thumbs"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"日本語"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,""],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[0,"İstanbul"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"ılık ırmak"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"👨‍👩‍👧 family"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"a b"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"a😀b"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"﻿bom"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"a²b x½ y①"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"aⅠb Ⅻ"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"a𐐀b 𝐀bc"],"error":"states is not iterable"}
+{"fn":"findLiveSessionStatus","args":[0,"कि ٣٤"],"error":"states is not iterable"}
+{"fn":"aggregateLiveSessions","args":[[{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":5}},{"id":"b","title":"Tb","time":{"created":1,"updated":3},"directory":"/d","parentID":"a","summary":{"additions":"4","deletions":2}},{"id":"c","title":"Tc","time":{"created":9}}],"session_status":{"2":{"type":"busy"},"10":{"type":"idle"},"a":{"type":"busy"},"c":{"type":"retry","attempt":2,"message":"m","next":10}}},{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":7},"summary":{"diffs":[{"additions":1,"deletions":"x"},{"additions":-3,"deletions":" 5 "}]}},{"id":"b","title":"Tb","time":{"created":1,"updated":3}},{"id":""},null],"session_status":{"2":{"type":"retry"},"a":{"type":"idle"},"b":{"type":"retry"},"zz":{"type":"busy"}}}]],"ok":[{"id":"c","title":"Tc","time":{"created":9}},{"id":"a","title":"Ta","time":{"created":1,"updated":7},"summary":{"diffs":[{"additions":1,"deletions":"x"},{"additions":-3,"deletions":" 5 "}]}},{"id":"b","title":"Tb","time":{"created":1,"updated":3}}]}
+{"fn":"aggregateLiveSessions","args":[[{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":7},"summary":{"diffs":[{"additions":1,"deletions":"x"},{"additions":-3,"deletions":" 5 "}]}},{"id":"b","title":"Tb","time":{"created":1,"updated":3}},{"id":""},null],"session_status":{"2":{"type":"retry"},"a":{"type":"idle"},"b":{"type":"retry"},"zz":{"type":"busy"}}},{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":5}},{"id":"b","title":"Tb","time":{"created":1,"updated":3},"directory":"/d","parentID":"a","summary":{"additions":"4","deletions":2}},{"id":"c","title":"Tc","time":{"created":9}}],"session_status":{"2":{"type":"busy"},"10":{"type":"idle"},"a":{"type":"busy"},"c":{"type":"retry","attempt":2,"message":"m","next":10}}},{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":7},"share":{"url":"u"}}],"session_status":{"a":{"type":"retry"}}}]],"ok":[{"id":"c","title":"Tc","time":{"created":9}},{"id":"a","title":"Ta","time":{"created":1,"updated":7},"share":{"url":"u"}},{"id":"b","title":"Tb","time":{"created":1,"updated":3},"directory":"/d","parentID":"a","summary":{"additions":"4","deletions":2}}]}
+{"fn":"aggregateLiveSessions","args":[{"$set":[{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":5}},{"id":"b","title":"Tb","time":{"created":1,"updated":3},"directory":"/d","parentID":"a","summary":{"additions":"4","deletions":2}},{"id":"c","title":"Tc","time":{"created":9}}],"session_status":{"2":{"type":"busy"},"10":{"type":"idle"},"a":{"type":"busy"},"c":{"type":"retry","attempt":2,"message":"m","next":10}}}]}],"ok":[{"id":"c","title":"Tc","time":{"created":9}},{"id":"a","title":"Ta","time":{"created":1,"updated":5}},{"id":"b","title":"Tb","time":{"created":1,"updated":3},"directory":"/d","parentID":"a","summary":{"additions":"4","deletions":2}}]}
+{"fn":"aggregateLiveSessionStatuses","args":[[{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":5}},{"id":"b","title":"Tb","time":{"created":1,"updated":3},"directory":"/d","parentID":"a","summary":{"additions":"4","deletions":2}},{"id":"c","title":"Tc","time":{"created":9}}],"session_status":{"2":{"type":"busy"},"10":{"type":"idle"},"a":{"type":"busy"},"c":{"type":"retry","attempt":2,"message":"m","next":10}}},{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":7},"summary":{"diffs":[{"additions":1,"deletions":"x"},{"additions":-3,"deletions":" 5 "}]}},{"id":"b","title":"Tb","time":{"created":1,"updated":3}},{"id":""},null],"session_status":{"2":{"type":"retry"},"a":{"type":"idle"},"b":{"type":"retry"},"zz":{"type":"busy"}}}]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"aggregateLiveSessionStatuses","args":[[{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":5}},{"id":"b","title":"Tb","time":{"created":1,"updated":3},"directory":"/d","parentID":"a","summary":{"additions":"4","deletions":2}},{"id":"c","title":"Tc","time":{"created":9}}],"session_status":{"2":{"type":"busy"},"10":{"type":"idle"},"a":{"type":"busy"},"c":{"type":"retry","attempt":2,"message":"m","next":10}}},{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":7},"summary":{"diffs":[{"additions":1,"deletions":"x"},{"additions":-3,"deletions":" 5 "}]}},{"id":"b","title":"Tb","time":{"created":1,"updated":3}},{"id":""},null],"session_status":{"2":{"type":"retry"},"a":{"type":"idle"},"b":{"type":"retry"},"zz":{"type":"busy"}}},{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":7},"share":{"url":"u"}}],"session_status":{"a":{"type":"retry"}}}]],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"aggregateLiveSessionStatuses","args":[[{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":7},"share":{"url":"u"}}],"session_status":{"a":{"type":"retry"}}},{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":5}},{"id":"b","title":"Tb","time":{"created":1,"updated":3},"directory":"/d","parentID":"a","summary":{"additions":"4","deletions":2}},{"id":"c","title":"Tc","time":{"created":9}}],"session_status":{"2":{"type":"busy"},"10":{"type":"idle"},"a":{"type":"busy"},"c":{"type":"retry","attempt":2,"message":"m","next":10}}}]],"ok":{"2":{"type":"busy"},"10":{"type":"idle"},"a":{"type":"retry"},"c":{"type":"retry","attempt":2,"message":"m","next":10}}}
+{"fn":"findLiveSession","args":[[{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":5}},{"id":"b","title":"Tb","time":{"created":1,"updated":3},"directory":"/d","parentID":"a","summary":{"additions":"4","deletions":2}},{"id":"c","title":"Tc","time":{"created":9}}],"session_status":{"2":{"type":"busy"},"10":{"type":"idle"},"a":{"type":"busy"},"c":{"type":"retry","attempt":2,"message":"m","next":10}}},{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":7},"summary":{"diffs":[{"additions":1,"deletions":"x"},{"additions":-3,"deletions":" 5 "}]}},{"id":"b","title":"Tb","time":{"created":1,"updated":3}},{"id":""},null],"session_status":{"2":{"type":"retry"},"a":{"type":"idle"},"b":{"type":"retry"},"zz":{"type":"busy"}}},{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":7},"share":{"url":"u"}}],"session_status":{"a":{"type":"retry"}}}],"a"],"ok":{"id":"a","title":"Ta","time":{"created":1,"updated":7},"share":{"url":"u"}}}
+{"fn":"findLiveSession","args":[[{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":5}},{"id":"b","title":"Tb","time":{"created":1,"updated":3},"directory":"/d","parentID":"a","summary":{"additions":"4","deletions":2}},{"id":"c","title":"Tc","time":{"created":9}}],"session_status":{"2":{"type":"busy"},"10":{"type":"idle"},"a":{"type":"busy"},"c":{"type":"retry","attempt":2,"message":"m","next":10}}},{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":7},"summary":{"diffs":[{"additions":1,"deletions":"x"},{"additions":-3,"deletions":" 5 "}]}},{"id":"b","title":"Tb","time":{"created":1,"updated":3}},{"id":""},null],"session_status":{"2":{"type":"retry"},"a":{"type":"idle"},"b":{"type":"retry"},"zz":{"type":"busy"}}}],"b"],"ok":{"id":"b","title":"Tb","time":{"created":1,"updated":3}}}
+{"fn":"findLiveSession","args":[[{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":5}},{"id":"b","title":"Tb","time":{"created":1,"updated":3},"directory":"/d","parentID":"a","summary":{"additions":"4","deletions":2}},{"id":"c","title":"Tc","time":{"created":9}}],"session_status":{"2":{"type":"busy"},"10":{"type":"idle"},"a":{"type":"busy"},"c":{"type":"retry","attempt":2,"message":"m","next":10}}}],"q"],"ok":{"$undefined":true}}
+{"fn":"findLiveSessionStatus","args":[[{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":5}},{"id":"b","title":"Tb","time":{"created":1,"updated":3},"directory":"/d","parentID":"a","summary":{"additions":"4","deletions":2}},{"id":"c","title":"Tc","time":{"created":9}}],"session_status":{"2":{"type":"busy"},"10":{"type":"idle"},"a":{"type":"busy"},"c":{"type":"retry","attempt":2,"message":"m","next":10}}},{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":7},"summary":{"diffs":[{"additions":1,"deletions":"x"},{"additions":-3,"deletions":" 5 "}]}},{"id":"b","title":"Tb","time":{"created":1,"updated":3}},{"id":""},null],"session_status":{"2":{"type":"retry"},"a":{"type":"idle"},"b":{"type":"retry"},"zz":{"type":"busy"}}},{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":7},"share":{"url":"u"}}],"session_status":{"a":{"type":"retry"}}}],"a"],"ok":{"type":"retry"}}
+{"fn":"findLiveSessionStatus","args":[[{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":5}},{"id":"b","title":"Tb","time":{"created":1,"updated":3},"directory":"/d","parentID":"a","summary":{"additions":"4","deletions":2}},{"id":"c","title":"Tc","time":{"created":9}}],"session_status":{"2":{"type":"busy"},"10":{"type":"idle"},"a":{"type":"busy"},"c":{"type":"retry","attempt":2,"message":"m","next":10}}},{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":7},"summary":{"diffs":[{"additions":1,"deletions":"x"},{"additions":-3,"deletions":" 5 "}]}},{"id":"b","title":"Tb","time":{"created":1,"updated":3}},{"id":""},null],"session_status":{"2":{"type":"retry"},"a":{"type":"idle"},"b":{"type":"retry"},"zz":{"type":"busy"}}}],"c"],"ok":{"type":"retry","attempt":2,"message":"m","next":10}}
+{"fn":"findLiveSessionStatus","args":[[{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":7},"summary":{"diffs":[{"additions":1,"deletions":"x"},{"additions":-3,"deletions":" 5 "}]}},{"id":"b","title":"Tb","time":{"created":1,"updated":3}},{"id":""},null],"session_status":{"2":{"type":"retry"},"a":{"type":"idle"},"b":{"type":"retry"},"zz":{"type":"busy"}}},{"session":[{"id":"a","title":"Ta","time":{"created":1,"updated":5}},{"id":"b","title":"Tb","time":{"created":1,"updated":3},"directory":"/d","parentID":"a","summary":{"additions":"4","deletions":2}},{"id":"c","title":"Tc","time":{"created":9}}],"session_status":{"2":{"type":"busy"},"10":{"type":"idle"},"a":{"type":"busy"},"c":{"type":"retry","attempt":2,"message":"m","next":10}}}],"2"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"areSessionListsEquivalent","args":[[{"id":"a","title":"Ta","time":{"created":1,"updated":5}},{"id":"b","title":"Tb","time":{"created":1,"updated":3},"directory":"/d","parentID":"a","summary":{"additions":"4","deletions":2}},{"id":"c","title":"Tc","time":{"created":9}}],[{"id":"a","title":"Ta","time":{"created":1,"updated":5}},{"id":"b","title":"Tb","time":{"created":1,"updated":3},"directory":"/d","parentID":"a","summary":{"additions":"4","deletions":2}},{"id":"c","title":"Tc","time":{"created":9}}]],"ok":true}
+{"fn":"areSessionListsEquivalent","args":[[{"id":"a","title":"Ta","time":{"created":1,"updated":5}},{"id":"b","title":"Tb","time":{"created":1,"updated":3},"directory":"/d","parentID":"a","summary":{"additions":"4","deletions":2}},{"id":"c","title":"Tc","time":{"created":9}}],[{"id":"a","title":"Ta","time":{"created":1,"updated":7},"summary":{"diffs":[{"additions":1,"deletions":"x"},{"additions":-3,"deletions":" 5 "}]}},{"id":"b","title":"Tb","time":{"created":1,"updated":3}},{"id":""}]],"ok":false}
+{"fn":"areSessionListsEquivalent","args":[[{"id":"a","title":"Ta","time":{"created":1,"updated":5},"summary":{"additions":1}}],[{"id":"a","title":"Ta","time":{"created":1,"updated":5},"summary":{"diffs":[{"additions":1,"deletions":0}]}}]],"ok":true}
+{"fn":"areStatusMapsEquivalent","args":[{"2":{"type":"busy"},"10":{"type":"idle"},"a":{"type":"busy"},"c":{"type":"retry","attempt":2,"message":"m","next":10}},{"2":{"type":"busy"},"10":{"type":"idle"},"a":{"type":"busy"},"c":{"type":"retry","attempt":2,"message":"m","next":10}}],"ok":true}
+{"fn":"areStatusMapsEquivalent","args":[{"2":{"type":"busy"},"10":{"type":"idle"},"a":{"type":"busy"},"c":{"type":"retry","attempt":2,"message":"m","next":10}},{"2":{"type":"retry"},"a":{"type":"idle"},"b":{"type":"retry"},"zz":{"type":"busy"}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a":{"type":"retry","attempt":{"$num":"NaN"}}},{"a":{"type":"retry","attempt":{"$num":"NaN"}}}],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a":{"type":"busy"}},"ab"],"ok":false}
+{"fn":"areStatusMapsEquivalent","args":[{"a":{"type":"busy"}},{"b":{"type":"busy"}}],"ok":false}

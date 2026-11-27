@@ -1,0 +1,48 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "sanitize.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "sanitize-rs",
+  "exports": [
+    {
+      "name": "stripSessionDiffSnapshots",
+      "file": "sanitize.ts",
+      "line": 68,
+      "params": [
+        {
+          "name": "session",
+          "ts_type": "Session",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "Session",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "stripMessageDiffSnapshots",
+      "file": "sanitize.ts",
+      "line": 73,
+      "params": [
+        {
+          "name": "message",
+          "ts_type": "Message",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "Message",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

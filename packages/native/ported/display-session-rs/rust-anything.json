@@ -1,0 +1,186 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "display-session.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "display-session-rs",
+  "exports": [
+    {
+      "name": "isSessionLifecycleTimestamp",
+      "file": "display-session.ts",
+      "line": 24,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "value is number",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isSessionOutcome",
+      "file": "display-session.ts",
+      "line": 28,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "value is (\"succeeded\" | \"failed\" | \"interrupted\")",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isSessionFork",
+      "file": "display-session.ts",
+      "line": 32,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "value is ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "readSessionLifecycle",
+      "file": "display-session.ts",
+      "line": 50,
+      "params": [
+        {
+          "name": "session",
+          "ts_type": "Session & {\n  time: {\n    busy?: number\n    idle?: number\n    viewed?: number\n  }\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "{\n  busy?: number\n  idle?: number\n  viewed?: number\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n}",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "sameSessionLifecycle",
+      "file": "display-session.ts",
+      "line": 84,
+      "params": [
+        {
+          "name": "left",
+          "ts_type": "{\n  busy?: number\n  idle?: number\n  viewed?: number\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n}",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "right",
+          "ts_type": "{\n  busy?: number\n  idle?: number\n  viewed?: number\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "withSessionLifecycle",
+      "file": "display-session.ts",
+      "line": 96,
+      "params": [
+        {
+          "name": "session",
+          "ts_type": "Session & {\n  time: {\n    busy?: number\n    idle?: number\n    viewed?: number\n  }\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n}",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "lifecycle",
+          "ts_type": "{\n  busy?: number\n  idle?: number\n  viewed?: number\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "Session & {\n  time: {\n    busy?: number\n    idle?: number\n    viewed?: number\n  }\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n}",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "decodeDisplaySession",
+      "file": "display-session.ts",
+      "line": 121,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "Session & {\n  time: {\n    busy?: number\n    idle?: number\n    viewed?: number\n  }\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n} | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "decodeSessionEventInfo",
+      "file": "display-session.ts",
+      "line": 129,
+      "params": [
+        {
+          "name": "properties",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "Session & {\n  time: {\n    busy?: number\n    idle?: number\n    viewed?: number\n  }\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n} | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "decodeDisplaySessionList",
+      "file": "display-session.ts",
+      "line": 134,
+      "params": [
+        {
+          "name": "values",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "Session & {\n  time: {\n    busy?: number\n    idle?: number\n    viewed?: number\n  }\n  outcome?: (\"succeeded\" | \"failed\" | \"interrupted\")\n  fork?: ({\n  sessionID: string\n  boundary: {\n    type: \"before\" | \"through\"\n    messageID: string\n  }\n})\n}[]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

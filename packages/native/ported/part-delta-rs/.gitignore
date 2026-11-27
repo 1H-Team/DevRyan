@@ -1,0 +1,11 @@
+target/
+*.node
+pkg/
+.rust-anything/
+*.so
+*.pyd
+__pycache__/
+
+# Recordings of this unit are about 200 MB (long strings captured from the tests): made again by `record`, not tracked.
+cases.jsonl
+test-inputs.jsonl

@@ -1,0 +1,19 @@
+{
+  "unit": "request-signature.ts",
+  "files": 1,
+  "fingerprint": "b33067869ee69d39",
+  "cases": 200,
+  "cases_hash": "e3567c88b159d506",
+  "coverage": {
+    "lines": 8,
+    "reached": 8,
+    "files": [
+      {
+        "file": "request-signature.ts",
+        "lines": 8,
+        "reached": 8,
+        "missed": ""
+      }
+    ]
+  }
+}

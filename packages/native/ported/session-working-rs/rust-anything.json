@@ -1,0 +1,204 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "session-working.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "session-working-rs",
+  "exports": [
+    {
+      "name": "hasTerminalAssistantFinish",
+      "file": "session-working.ts",
+      "line": 4,
+      "params": [
+        {
+          "name": "message",
+          "ts_type": "Message | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "hasToolCallAssistantFinish",
+      "file": "session-working.ts",
+      "line": 12,
+      "params": [
+        {
+          "name": "message",
+          "ts_type": "Message | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isTerminalAssistantMessage",
+      "file": "session-working.ts",
+      "line": 18,
+      "params": [
+        {
+          "name": "message",
+          "ts_type": "Message | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isAssistantTurnComplete",
+      "file": "session-working.ts",
+      "line": 27,
+      "params": [
+        {
+          "name": "message",
+          "ts_type": "Message | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isIncompleteAssistantMessage",
+      "file": "session-working.ts",
+      "line": 42,
+      "params": [
+        {
+          "name": "message",
+          "ts_type": "Message | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "hasInFlightToolParts",
+      "file": "session-working.ts",
+      "line": 50,
+      "params": [
+        {
+          "name": "parts",
+          "ts_type": "readonly Part[] | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "hasVisibleAssistantSummary",
+      "file": "session-working.ts",
+      "line": 62,
+      "params": [
+        {
+          "name": "parts",
+          "ts_type": "readonly Part[] | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isFinalAssistantSummaryMessage",
+      "file": "session-working.ts",
+      "line": 76,
+      "params": [
+        {
+          "name": "message",
+          "ts_type": "Message | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "parts",
+          "ts_type": "readonly Part[]",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isLiveAssistantMessage",
+      "file": "session-working.ts",
+      "line": 86,
+      "params": [
+        {
+          "name": "message",
+          "ts_type": "Message | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "parts",
+          "ts_type": "readonly Part[]",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isSessionWorkingFromState",
+      "file": "session-working.ts",
+      "line": 95,
+      "params": [
+        {
+          "name": "arg0",
+          "ts_type": "{\n  status: SessionStatus | undefined\n  permissions: readonly unknown[]\n  messages: readonly Message[]\n  liveStreamingMessageId?: string | null\n  liveParts?: readonly Part[]\n}",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

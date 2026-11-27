@@ -1,0 +1,647 @@
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},null,true],".leading"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[["x",0,null],"Hello World"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[{"a":{"b":"c"}},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},0,{"a":{"b":"c"}}],"  padded  "],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[null,{"a":{"b":"c"}},["a",1]],"{name} has {count} items"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}}],"trailing."],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"hello"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[true],"hello world"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[{},"a:b:c"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionById","args":[[],"straße"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"Hello World"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"./x/**/*.jsonünïcödé"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"a.b.c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[["a",1],0,0]],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[true,"a:b:c"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionById","args":[["x"],"hello world"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[true,[],["a",1]],"﻿bom"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[[],null,"x"],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[0,["a",1]]],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[["a",1]],"é"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"a..b"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[[],0],".leading"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"hello worldİstanbul"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[0,{},0],"trailing."],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[]],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[null,{}]],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"tab\tseparated"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[[]],"a:b:c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[{},"src/a/b.ts"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionById","args":[[["a",1]],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[["x",{"a":"b"},true],"hello worldé"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[["x","x"],"hello world"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},0],":"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}}],"﻿bom"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[true,"{name} has {count} itemsHELLO"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionById","args":[["x",["a",1],"x"],"a:b:cHello World"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[true,{"a":"b"},{"a":{"b":"c"}}],"a.b.c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"abHELLO"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{},[],null],"emoji 👍🏽 mix"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[{"a":"b"},{},true],"a:b:c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"日本語のテキスト"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"{name} has {count} items"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":"b"}],"a:b:c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{},true],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[["x"],"a.b.cHELLO"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}}],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[["a",1],true,{"a":{"b":"c"}}],"a.b.c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[[]],"  padded  "],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[["a",1],"Hello World"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[null,[]],"./x/**/*.json"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},"x"],":日本語のテキスト"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[["x",{},["a",1]],"ab"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[[],{"a":{"b":"c"}}],"straße"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},{},true],"  padded  "],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{}],"é"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[0,{"a":{"b":"c"}},"x"],"hello world"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[null],"trailing."],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[{},true],"key_name-1"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{},{"a":{"b":"c"}},"x"],"İstanbul"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{}],"./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},"x"],"﻿bom"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[["x"],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[[]],"key_name-1key_name-1"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[true,0],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[null,"Hello World"],"error":"Cannot read properties of null (reading 'find')"}
+{"fn":"selectSessionById","args":[["x"],"  padded  ünïcödé"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[["a",1],true,{"a":"b"}],"日本語のテキスト"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{},0],"日本語のテキスト"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{},["a",1]],"./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"ΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],":"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[true],"  padded  "],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[["a",1],"{name} has {count} itemsHello World"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"İstanbul"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[[],true],"İstanbul"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"ab"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[["x",null]],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":"b"},{"a":"b"}],"a..bhello world"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"a😀b😀c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[["a",1]],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":"b"},{"a":"b"},{"a":"b"}],"é"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":"b"},[],{}],"ab"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{},{"a":"b"}],"a😀b😀c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],".leading"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[0,{"a":{"b":"c"}}],"﻿bom"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"trailing."],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[[],{"a":"b"}],"abc"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":"b"},[]],"﻿bom"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[["x",true,["a",1]],"ünïcödé"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[{"a":{"b":"c"}},"ab  padded  "],"error":"sessions.find is not a function"}
+{"fn":"selectSessionById","args":[[{"a":"b"},{"a":{"b":"c"}},null],":ΣΊΣΥΦΟΣ"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[true],"Hello World"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"line1\nline2"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[null,[]],"tab\tseparated"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[],"emoji 👍🏽 mix"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[true,{},["a",1]],"HELLO"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[null,["a",1],{"a":{"b":"c"}}]],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{},{}],"Hello World"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[["a",1],{},null],"﻿bom"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[{},"😀"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionById","args":[[{},{}],"trailing.abc"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":"b"}],"key_name-1"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[0,{"a":{"b":"c"}}],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[null,"İstanbul"],"error":"Cannot read properties of null (reading 'find')"}
+{"fn":"selectSessionById","args":[null,"hello world"],"error":"Cannot read properties of null (reading 'find')"}
+{"fn":"selectSessionById","args":[[],""],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[null],".leading:"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[[],null],"{name} has {count} items"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[true]],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[0],"src/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},{"a":{"b":"c"}}],"ns:key.path"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[null,true,{"a":"b"}],"helloa..b"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[0,{"a":"b"},{"a":{"b":"c"}}],":"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":"b"},true],"ΣΊΣΥΦΟΣtrailing."],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[["a",1]],"a"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[true,"  padded  "],"error":"sessions.find is not a function"}
+{"fn":"selectSessionById","args":[[0,{"a":{"b":"c"}}],"ünïcödéa😀b😀c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{},{}],"﻿bom"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},0,{"a":{"b":"c"}}],"key_name-1"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{}],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{},null],"src/a/b.ts"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[0,{}],"abc"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[true,{"a":"b"},null],"HELLOns:key.path"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":["x","a"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionById","args":[[true,true],"İstanbul"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[{},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[[]],":"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[[]]],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[null,{"a":{"b":"c"}},"x"],"key_name-1"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[],"aemoji 👍🏽 mix"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[[]],"./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[null,true,null],":"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[null],"ünïcödé"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},true],"İstanbul"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{},{"a":{"b":"c"}}],"é"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[true],"key_name-1"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[true,"a😀b😀c"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionById","args":[{"a":{"b":"c"}},"{name} has {count} items"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionById","args":[[{"a":"b"},true],".leading"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[["a",1]]],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[[],0,{}],"tab\tseparated"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[[],["a",1]],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[[],{"a":"b"}],"key_name-1"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":"b"},"x",{"a":{"b":"c"}}],"ab"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[null,"x"],"emoji 👍🏽 mix😀"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[[]],"é"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[0,{"a":"b"}],"a.b.c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[{"a":{"b":"c"}},"a.b.c"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionById","args":[[],"emoji 👍🏽 mix.leading"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[["x",true],"a..b"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[[],"x",0],"ünïcödé"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[true,["a",1],"x"]],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[null,{"a":{"b":"c"}}],"😀"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[{}],"Hello World"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[null,{"a":{"b":"c"}},0],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},[]],"src/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[["x",{}],"  padded  "],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":"b"}],"straße"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[null,{}],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":["x","trailing."],"error":"sessions.find is not a function"}
+{"fn":"selectSessionById","args":[[],"key_name-1"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[true,"x"],"ns:key.path"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[{},"a..b"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionById","args":[{},"﻿bom"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionById","args":[{"a":"b"},"a.b.c"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionById","args":[["x"],"a"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":"b"},0,true],"Hello World"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[{"a":{"b":"c"}},"ns:key.path"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionById","args":[["x"],"abc"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[0,0],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"straßeline1\nline2"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[["a",1],["a",1],{"a":"b"}],"key_name-1"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":"b"},[],{}],"HELLO"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[true,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[true,0,{"a":{"b":"c"}}],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{},{"a":"b"},null],"abc.leading"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[0,{"a":{"b":"c"}}],"{name} has {count} items"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},{"a":"b"},true],"😀"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{},0],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"a:b:c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[["x"],"tab\tseparated"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"﻿bom﻿bom"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[[]],"hello world"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[["a",1]],"a..b"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[{},"ns:key.path"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionById","args":[["x",["a",1]],"a.b.c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"abc"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[0,true,["a",1]],"😀"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":["x","tab\tseparated"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},{"a":"b"}],"straßeİstanbul"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},{"a":"b"}],"a"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[["x",{"a":{"b":"c"}},[]],"a..b"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[null],"HELLO"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[null],"abc"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[[]],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},true],"trailing.İstanbul"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[],"hello worlda.b.c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},null,true],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},null,true],"héllo wörld"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},null,true],"👍🏽 thumbs"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},null,true],"日本語"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},null,true],""],"ok":{"$undefined":true}}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},null,true],"é"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},null,true],"İstanbul"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},null,true],"straße"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},null,true],"ılık ırmak"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},null,true],"👨‍👩‍👧 family"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},null,true],"a b"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},null,true],"ΣΊΣΥΦΟΣ"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},null,true],"a😀b"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},null,true],"﻿bom"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},null,true],"a²b x½ y①"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},null,true],"aⅠb Ⅻ"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},null,true],"a𐐀b 𝐀bc"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionById","args":[[{"a":{"b":"c"}},null,true],"कि ٣٤"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},[]],"HELLO"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[0],"straße"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[true,{"a":"b"}],"😀  padded  "],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[]],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},[],{}],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{},[],0],"a..b"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{},"x"],"src/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":{"b":"c"}},[]],"Hello World"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[],".leading"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[],"a"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[["a",1],["a",1]],"日本語のテキストHELLO"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[["x"],"  padded  straße"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[true],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[["a",1]],"straße"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},0],"tab\tseparated"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[["x",[],null],"straßea"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[[null],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[null,"😀"],"error":"Cannot read properties of null (reading 'find')"}
+{"fn":"selectSessionDirectoryById","args":[null],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[],"a.b.c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":{"b":"c"}}],"hello"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[["a",1]],"trailing.hello"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},["a",1],"x"],"﻿bom"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[true,{"a":"b"}],"ünïcödéHello World"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[null,0,{"a":"b"}],"ΣΊΣΥΦΟΣ"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[[null],"emoji 👍🏽 mix"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[[],"hello worldns:key.path"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{},[],null]],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{}],"İstanbula😀b😀c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[0],"hello world😀"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[[],[]],"hello"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[{},"a:b:cΣΊΣΥΦΟΣ"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionDirectoryById","args":[[0]],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[],"é"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[{"a":{"b":"c"}},"a..b"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionDirectoryById","args":[[{},"x",true]],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[null,"a😀b😀c"],"error":"Cannot read properties of null (reading 'find')"}
+{"fn":"selectSessionDirectoryById","args":[[true,0,0],"trailing."],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[["x",true,0],"hello"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":{"b":"c"}},{}],"﻿bomline1\nline2"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[["x","x"],"abc"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":["x","İstanbulab"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionDirectoryById","args":[{},"hello world"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionDirectoryById","args":[[],"abc"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[["a",1],"emoji 👍🏽 mix"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[["x",[]],"é"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[["a",1]],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[],"ünïcödé"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[null,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[null,[]],"a:b:c"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[[["a",1]],"İstanbul"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},true,{}],"ab"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[["x"],".leading"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":{"b":"c"}},true],"é"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[["a",1]],"HELLO./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[],"ünïcödéΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[null,0],"{name} has {count} items:"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[[],"a..b"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":{"b":"c"}},{},null],"ab"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},{}],".leading"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},0],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{},true,true]],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[],"{name} has {count} items"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[["a",1],"x"],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[0,{},"x"],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[true,{}],"line1\nline2"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[[],{"a":{"b":"c"}}],"a:b:c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[],"ns:key.path"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[{"a":{"b":"c"}},"İstanbul"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},null,null],"abc"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[{}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[null,["a",1],{}],"a😀b😀c"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[[[],0,{"a":{"b":"c"}}],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[null,{"a":{"b":"c"}}],""],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[["x",0],"key_name-1"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":{"b":"c"}}],"HELLO"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":{"b":"c"}}]],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[0,{"a":"b"},{}],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[],"abcHello World"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[{"a":"b"},":"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionDirectoryById","args":[[],"key_name-1"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[true,"hello"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionDirectoryById","args":[true,""],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[[],{"a":"b"}],"./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{},null]],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[true,0,"x"],"hello"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[],"hello"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[["x",["a",1]],"a..b"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[{"a":{"b":"c"}},"Hello World"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionDirectoryById","args":[[["a",1],true],"😀"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[["a",1],true],".leading"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[{},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[],"😀"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[0],"line1\nline2"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[],"line1\nline2"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[{"a":{"b":"c"}},"a:b:c"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionDirectoryById","args":[[],"hello world"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[["a",1]],"a:b:c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":{"b":"c"}},["a",1],0],"src/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[[]],""],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[true,["a",1]],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":{"b":"c"}},[]],"straße"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[["a",1],{"a":{"b":"c"}},true],"hello"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[[],{}],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[["a",1],"tab\tseparated"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[["a",1],null,null],"a"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[null,"trailing.hello"],"error":"Cannot read properties of null (reading 'find')"}
+{"fn":"selectSessionDirectoryById","args":[[["a",1],["a",1]]],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[0,"x",{"a":"b"}],"a:b:c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[null,0,{"a":{"b":"c"}}],"./x/**/*.json"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[[{},0],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[],"trailing."],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[["a",1],{},[]],"line1\nline2"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[["x"],"éé"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[null,{},["a",1]]],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[["x",0]],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":["a","a"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionDirectoryById","args":[[{}],"./x/**/*.jsonhello world"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[null],"a..b"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[[null,["a",1],{"a":{"b":"c"}}],"  padded  "],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[[{},0,0]],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":["x","trailing.{name} has {count} items"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionDirectoryById","args":[[0],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[0,{}],"a..b"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},0],""],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[true,{"a":"b"},0],"ns:key.path"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[true,null],"  padded  "],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[[{},["a",1]]],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{},"x",{"a":"b"}],"emoji 👍🏽 mix"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":{"b":"c"}},[]],"ünïcödésrc/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[],"éabc"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[null],"a"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},0,null]],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[[],{"a":{"b":"c"}},{"a":{"b":"c"}}]],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{},{"a":{"b":"c"}}],""],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[["x"],"hello"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[],"src/a/b.ts"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[["x","x"]],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[null,{"a":{"b":"c"}}],"😀"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[[null,{}],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[["x",{},null],"a😀b😀c"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[[{"a":{"b":"c"}}],"trailing.a:b:c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[["x",[],true],"hello"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":{"b":"c"}},["a",1],{"a":"b"}]],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[null,0],"ns:key.pathünïcödé"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[[0,null]],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[0,["a",1],["a",1]],"straße"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[0,{"a":{"b":"c"}}],"a.b.c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[0,{"a":"b"},"x"],"hello world"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[],"./x/**/*.json"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[0,{}],"éline1\nline2"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":["x","ΣΊΣΥΦΟΣ"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionDirectoryById","args":[[[],{"a":"b"}]],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[null],"  padded  "],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[[],"tab\tseparated"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[["x",{},"x"],".leading"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[null,{"a":"b"},[]],"HELLO😀"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"}],"key_name-1{name} has {count} items"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[[]],"İstanbul"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[["x"],"ns:key.patha.b.c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[],"emoji 👍🏽 mix"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{}],"line1\nline2"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[{},"a:b:c"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},true,true],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[],"a😀b😀c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[null,["a",1],{"a":"b"}],":"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[[["a",1],0,["a",1]],"emoji 👍🏽 mix"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[[],[]],"a.b.c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[0,"x"],""],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[{"a":{"b":"c"}},""],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[[],{},true],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[true,[]],"ΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":{"b":"c"}},["a",1]],"straße"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[true],"a..b"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[],"HELLO"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[{"a":{"b":"c"}},"tab\tseparated"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionDirectoryById","args":[[null,{"a":"b"},true],"HELLO"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[["x",{"a":"b"}],"straße"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{}],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[true,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[["x",0,true],"a..b"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},[],true],"{name} has {count} items"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":{"b":"c"}},true,[]],"a..b"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"}],"a😀b😀c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":{"b":"c"}},{"a":{"b":"c"}},true],"ΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[0,["a",1],[]],".leading"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[0,true,null],"key_name-1"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[["x",["a",1]],"a.b.c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[{"a":{"b":"c"}},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[["a",1],"ΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[0,"a:b:c"],"error":"sessions.find is not a function"}
+{"fn":"selectSessionDirectoryById","args":[[true,{"a":{"b":"c"}},{}],"tab\tseparateda😀b😀c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{},true,{"a":"b"}],"line1\nline2"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[["a",1],null,{"a":"b"}],"ΣΊΣΥΦΟΣ"],"error":"Cannot read properties of null (reading 'id')"}
+{"fn":"selectSessionDirectoryById","args":[["x",0],"a😀b😀c"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[["a",1]],"Hello World﻿bom"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[["a",1],"日本語のテキスト"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},[]],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},[]],"héllo wörld"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},[]],"👍🏽 thumbs"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},[]],"日本語"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},[]],""],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},[]],"é"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},[]],"İstanbul"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},[]],"straße"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},[]],"ılık ırmak"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},[]],"👨‍👩‍👧 family"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},[]],"a b"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},[]],"ΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},[]],"a😀b"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},[]],"﻿bom"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},[]],"a²b x½ y①"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},[]],"aⅠb Ⅻ"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},[]],"a𐐀b 𝐀bc"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"a":"b"},[]],"कि ٣٤"],"ok":{"$undefined":true}}
+{"fn":"selectSessionChildren","args":[[],"trailing."],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{},{"a":"b"},true],"İstanbul",[0,[],true]],"ok":[]}
+{"fn":"selectSessionChildren","args":[["x",{}],"./x/**/*.json",[[]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{"a":"b"},0],"./x/**/*.json",[0,{"a":"b"},["a",1]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"a:b:c",[true]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{}],"HELLO",[{},{},["a",1]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{},["a",1]],"key_name-1日本語のテキスト",{"$undefined":true}],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"./x/**/*.json",[{},null]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"﻿bom",[true]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{},null],"{name} has {count} itemsline1\nline2",[{},0]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[["a",1],{},["a",1]],"emoji 👍🏽 mix",[null]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{"a":"b"}],"a.b.c",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],{"$undefined":true},[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"﻿boma.b.c",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[{"a":"b"}],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"a",[[],"x",true]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[0,{},null],"ab",[]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[[],["a",1],{"a":{"b":"c"}}],"./x/**/*.json",[[],{"a":"b"},null]],"ok":[]}
+{"fn":"selectSessionChildren","args":[0,"ns:key.path",[]],"error":"sessions is not iterable"}
+{"fn":"selectSessionChildren","args":[[],"Hello World"],"ok":[]}
+{"fn":"selectSessionChildren","args":[["x"],".leading",[0]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[null,[],null],"ab",{"a":{"b":"c"}}],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[true],"ns:key.path😀",[0]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{"a":"b"},null],"é",{"$undefined":true}],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[null],"日本語のテキスト",{"a":{"b":"c"}}],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[{}],{"$undefined":true},[["a",1],null]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[true],"İstanbul日本語のテキスト",[[],"x"]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[["a",1],{"a":{"b":"c"}}],"tab\tseparated",null],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"İstanbul",{}],"ok":[]}
+{"fn":"selectSessionChildren","args":[[["a",1]],{"$undefined":true},true],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{"a":{"b":"c"}}],{"$undefined":true},[{"a":"b"}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[["a",1],0,["a",1]],{"$undefined":true},["x"]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{"a":{"b":"c"}},{"a":{"b":"c"}}],"ns:key.path",{}],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{"a":{"b":"c"}},{"a":"b"},true],"ΣΊΣΥΦΟΣ",[null]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[["a",1],null],"tab\tseparated",[true,null,{"a":{"b":"c"}}]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[[],[]],"ns:key.path",[["a",1],["a",1]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[null,[]],"emoji 👍🏽 mix",[]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[],"﻿bom",true],"ok":[]}
+{"fn":"selectSessionChildren","args":[[["a",1]],"line1\nline2",null],"ok":[]}
+{"fn":"selectSessionChildren","args":[[0,true,null],"😀﻿bom",[["a",1]]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[{"a":"b"},null,{}],"src/a/b.ts",[{"a":"b"},0,{"a":{"b":"c"}}]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[null,{"a":{"b":"c"}}],"aba",[null,[]]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[null],"HELLO",["x"]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[["x",[],[]],"a.b.cab",[0,{"a":{"b":"c"}}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[{"a":"b"},"😀",[null,true,["a",1]]],"error":"sessions is not iterable"}
+{"fn":"selectSessionChildren","args":[true,{"$undefined":true},[[],null,{}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{},["a",1]],{"$undefined":true},[[]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[{},".leading",[["a",1]]],"error":"sessions is not iterable"}
+{"fn":"selectSessionChildren","args":[{},"",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[0],"Hello World"],"ok":[]}
+{"fn":"selectSessionChildren","args":[[0],"{name} has {count} items"],"ok":[]}
+{"fn":"selectSessionChildren","args":[true,"ab",{"$undefined":true}],"error":"sessions is not iterable"}
+{"fn":"selectSessionChildren","args":[[{"a":"b"},0],"a..b",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{}],{"$undefined":true},[0,["a",1],{"a":{"b":"c"}}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"İstanbul",{"$undefined":true}],"ok":[]}
+{"fn":"selectSessionChildren","args":[{},"ΣΊΣΥΦΟΣ"],"error":"sessions is not iterable"}
+{"fn":"selectSessionChildren","args":[{"a":{"b":"c"}},{"$undefined":true},[["a",1]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[["x",true,{"a":{"b":"c"}}],"a.b.c",[null]],"ok":[]}
+{"fn":"selectSessionChildren","args":["x","a",[{"a":"b"}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[null],"日本語のテキスト",[]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[["a",1],0],"a😀b😀c",["x",[]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[[],{"a":"b"}],"tab\tseparated",["x",null]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"a.b.cline1\nline2",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[true,0],"日本語のテキスト",{"$undefined":true}],"ok":[]}
+{"fn":"selectSessionChildren","args":[{"a":{"b":"c"}},"a..b",{"$undefined":true}],"error":"sessions is not iterable"}
+{"fn":"selectSessionChildren","args":[["x",0],"trailing.",[[],"x",{"a":{"b":"c"}}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[0,null,0],"a:b:c.leading",{"$undefined":true}],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[{"a":"b"},{"a":{"b":"c"}}],"emoji 👍🏽 mix",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{"a":"b"}],{"$undefined":true},{"$undefined":true}],"ok":[]}
+{"fn":"selectSessionChildren","args":[["x"],"Hello World",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[null],{"$undefined":true},[{"a":"b"},[]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[["a",1],"key_name-1","AME"],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"ns:key.path"],"ok":[]}
+{"fn":"selectSessionChildren","args":[[0,{},{"a":"b"}],{"$undefined":true},[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{"a":"b"},["a",1],{"a":"b"}],"trailing.",[{"a":{"b":"c"}}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"a.b.csrc/a/b.ts",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"é",[["a",1],["a",1]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],".leading",[["a",1],0]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[[],0,[]],{"$undefined":true},{"$undefined":true}],"ok":[]}
+{"fn":"selectSessionChildren","args":[[0,{"a":"b"},{}],"ns:key.path",[["a",1],{}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"trailing.",[null,[],true]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[null],"Hello World",[{}]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[[],{"a":{"b":"c"}},[]],"é",[{"a":{"b":"c"}}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{}],"a:b:c",[{},null]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[[],{"a":"b"},0],"hello world",null],"ok":[]}
+{"fn":"selectSessionChildren","args":[[["a",1]],{"$undefined":true},[[],0,0]],"ok":[]}
+{"fn":"selectSessionChildren","args":[true,"ünïcödé",[{},null,true]],"error":"sessions is not iterable"}
+{"fn":"selectSessionChildren","args":[[["a",1],{"a":{"b":"c"}},[]],"a..b",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{"a":"b"},"x",0],{"$undefined":true},[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"ünïcödé"],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{},{"a":{"b":"c"}},"x"],"abhello world"],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{"a":"b"}],"straße",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{}],"ünïcödé",[0,null,{"a":"b"}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"  padded  ",[["a",1]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[null,0,[]],"trailing.a😀b😀c",[{"a":{"b":"c"}},null]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[],".leading",{}],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{},true,0],"key_name-1",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{"a":"b"}],"hello",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[true,["a",1],{"a":{"b":"c"}}],"İstanbul",[[],0]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{"a":{"b":"c"}},null],"İstanbul",["x",{"a":{"b":"c"}},{"a":"b"}]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[{"a":"b"},[]],"Hello World",[null,["a",1]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{"a":{"b":"c"}},true,null],"é",{"$undefined":true}],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[],"trailing.",[null,"x",["a",1]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[null],"helloünïcödé",null],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[],"line1\nline2",{"$undefined":true}],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"line1\nline2",[["a",1],{"a":"b"}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{},{},{"a":"b"}],"straße",[[]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[["a",1]],"é",[[],[]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],{"$undefined":true},[{"a":{"b":"c"}}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{},{"a":{"b":"c"}}],"line1\nline2"],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"straße",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{},{"a":"b"}],"hello",[0]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"😀",[[]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{},true],"emoji 👍🏽 mix",{"$undefined":true}],"ok":[]}
+{"fn":"selectSessionChildren","args":[[[]],"ns:key.path",[[],{"a":{"b":"c"}}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[null],"  padded  ",[]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[["a",1],null],{"$undefined":true},[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],{"$undefined":true},[0,null]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[["a",1],{},0],{"$undefined":true},[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[[]],"key_name-1é",[{},[],0]],"ok":[]}
+{"fn":"selectSessionChildren","args":[["x",{"a":{"b":"c"}}],"HELLO",[["a",1],["a",1]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[null,"x"],"abc",[null]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[["x",{},"x"],"",["a",1]],"ok":[]}
+{"fn":"selectSessionChildren","args":[true,"HELLO",[]],"error":"sessions is not iterable"}
+{"fn":"selectSessionChildren","args":[[[]],"line1\nline2",{}],"ok":[]}
+{"fn":"selectSessionChildren","args":[[null,[]],"{name} has {count} items",[0]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[{"a":{"b":"c"}},[]],"﻿bomHELLO",["x",true]],"ok":[]}
+{"fn":"selectSessionChildren","args":[0,".leading",[{},"x"]],"error":"sessions is not iterable"}
+{"fn":"selectSessionChildren","args":[[{"a":"b"},true,[]],"a:b:c",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[[],null,{}],"Hello World",[["a",1],null,null]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[null,"x",0],"hello world",[null]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[],"ns:key.path",[{"a":{"b":"c"}}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{"a":"b"},null,{"a":{"b":"c"}}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"ünïcödé",[0,["a",1]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"  padded  ",0],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"abc",[null,[],{"a":"b"}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[{"a":{"b":"c"}}],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],{"$undefined":true},0],"ok":[]}
+{"fn":"selectSessionChildren","args":[[["a",1],0,[]],"abc",[{},{"a":"b"}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[["x",{"a":"b"}],"HELLO",{"$undefined":true}],"ok":[]}
+{"fn":"selectSessionChildren","args":[null,"key_name-1",[{}]],"error":"sessions is not iterable"}
+{"fn":"selectSessionChildren","args":[[0,{"a":{"b":"c"}}],{"$undefined":true},"x"],"ok":[]}
+{"fn":"selectSessionChildren","args":[[null,{"a":{"b":"c"}}],"a😀b😀c",{"$undefined":true}],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[["a",1],null],"é",["x",["a",1]]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":["x","é",[0,[]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[["x",[],null],"ünïcödéline1\nline2",[[],["a",1],true]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":["x",{"$undefined":true},{"$undefined":true}],"ok":[]}
+{"fn":"selectSessionChildren","args":[[null,["a",1],0],{"$undefined":true},[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[{},"a",[]],"error":"sessions is not iterable"}
+{"fn":"selectSessionChildren","args":[[true,"x",0],"straße",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"Hello World",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[true,"x"],"a:b:ca..b",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[["a",1],{"a":{"b":"c"}}],":a.b.c",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[true],":",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[["a",1]],"ΣΊΣΥΦΟΣ",{"$undefined":true}],"ok":[]}
+{"fn":"selectSessionChildren","args":[0,{"$undefined":true},[{},{"a":"b"}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[["x"],{"$undefined":true},["x"]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{}],"HELLO",{"a":"b"}],"ok":[]}
+{"fn":"selectSessionChildren","args":[[0,[],"x"],{"$undefined":true},["x"]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[null],"line1\nline2",[]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[null,{},true],"./x/**/*.json",{}],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[null,{"a":{"b":"c"}},{}],"./x/**/*.json",[null,{"a":"b"},true]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[{"a":{"b":"c"}},".leading",[{"a":{"b":"c"}}]],"error":"sessions is not iterable"}
+{"fn":"selectSessionChildren","args":[[{"a":{"b":"c"}},true,0],"hello world",{"$undefined":true}],"ok":[]}
+{"fn":"selectSessionChildren","args":[[[]],"  padded  ",[{"a":"b"},[]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[0,{"a":{"b":"c"}}],"emoji 👍🏽 mixline1\nline2",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"{name} has {count} items﻿bom",[{}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"ΣΊΣΥΦΟΣ",[{"a":{"b":"c"}},{"a":{"b":"c"}},null]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"hello world",[[]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[null,"x"],"a:b:ctrailing."],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[{},0,true],"Hello World",[0,{"a":"b"},{"a":{"b":"c"}}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{},{"a":{"b":"c"}},true],"ΣΊΣΥΦΟΣ",[{},true]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{"a":"b"}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[["x"],"abc",[null,["a",1]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[{"a":"b"},"ΣΊΣΥΦΟΣhello",true],"error":"sessions is not iterable"}
+{"fn":"selectSessionChildren","args":[true,"日本語のテキストab"],"error":"sessions is not iterable"}
+{"fn":"selectSessionChildren","args":[[true,{"a":"b"}],{"$undefined":true}],"ok":[]}
+{"fn":"selectSessionChildren","args":[true,"a..b"],"error":"sessions is not iterable"}
+{"fn":"selectSessionChildren","args":[[null,0],"hello",[]],"error":"Cannot read properties of null (reading 'parentID')"}
+{"fn":"selectSessionChildren","args":[[],"İstanbul",[0,"x"]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"  padded  ",{"a":{"b":"c"}}],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{"a":{"b":"c"}}],"ab"],"ok":[]}
+{"fn":"selectSessionChildren","args":[[[]],"key_name-1",["a",1]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[["a",1],"x"],"a:b:ctrailing.",[[]]],"ok":[]}
+{"fn":"selectSessionChildren","args":[["a",1],".leading",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"Hello World",["a",1]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{"a":"b"},true],{"$undefined":true},"x"],"ok":[]}
+{"fn":"selectSessionChildren","args":[[null,{"a":{"b":"c"}},null],{"$undefined":true},0],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"src/a/b.tsa😀b😀c",[[],0,true]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],{"$undefined":true}],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"src/a/b.ts",[null]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{"a":{"b":"c"}}],"straße"],"ok":[]}
+{"fn":"selectSessionChildren","args":[[0,true],"ΣΊΣΥΦΟΣ日本語のテキスト",[]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[true,[]],{"$undefined":true},true],"ok":[]}
+{"fn":"selectSessionChildren","args":[[[],"x","x"],"hello",[{"a":"b"},"x"]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[[],"x"],"line1\nline2",{"$undefined":true}],"ok":[]}
+{"fn":"selectSessionChildren","args":[true,"abc",[]],"error":"sessions is not iterable"}
+{"fn":"selectSessionChildren","args":[[{},true],"İstanbul",["a",1]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[],"ünïcödé",[["a",1],{}]],"ok":[]}
+{"fn":"selectSessionChildren","args":[[{"id":"a"},{"id":"b","parentID":"a"},{"id":"c","parentID":"a"},{"id":"d","parentID":"b"}],"a"],"ok":[{"id":"b","parentID":"a"},{"id":"c","parentID":"a"}]}
+{"fn":"selectSessionChildren","args":[[{"id":"b","parentID":"a"}],"a",[{"id":"b","parentID":"a"}]],"ok":[{"id":"b","parentID":"a"}]}
+{"fn":"selectSessionChildren","args":[[{"id":"b","parentID":"a"}],"a",null],"error":"Cannot read properties of null (reading 'length')"}
+{"fn":"selectSessionChildren","args":[[{"id":"b","parentID":"a"}],"a",{"$undefined":true}],"ok":[{"id":"b","parentID":"a"}]}
+{"fn":"selectSessionChildren","args":[[{"id":"b","parentID":"a"}],"a",[]],"ok":[{"id":"b","parentID":"a"}]}
+{"fn":"selectSessionChildren","args":[[{"id":"b","parentID":"x"}],"a",null],"ok":[]}
+{"fn":"selectSessionChildren","args":["ab","a"],"ok":[]}
+{"fn":"selectSessionDirectoryById","args":[[{"id":"a","directory":"/x"}],"a"],"ok":"/x"}
+{"fn":"selectSessionDirectoryById","args":[[{"id":"a","directory":null}],"a"],"ok":{"$undefined":true}}
+{"fn":"selectSessionDirectoryById","args":[[{"id":"a","directory":3}],"a"],"ok":3}
+{"fn":"selectSessionById","args":[[{"id":"b"},{"id":"a","n":1},{"id":"a","n":2}],"a"],"ok":{"id":"a","n":1}}

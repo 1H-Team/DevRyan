@@ -1,0 +1,97 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "session-selectors.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "session-selectors-rs",
+  "exports": [
+    {
+      "name": "selectSessionById",
+      "file": "session-selectors.ts",
+      "line": 6,
+      "params": [
+        {
+          "name": "sessions",
+          "ts_type": "Session[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "sessionID",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "Session | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "selectSessionDirectoryById",
+      "file": "session-selectors.ts",
+      "line": 14,
+      "params": [
+        {
+          "name": "sessions",
+          "ts_type": "Session[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "sessionID",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "string | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "selectSessionChildren",
+      "file": "session-selectors.ts",
+      "line": 26,
+      "params": [
+        {
+          "name": "sessions",
+          "ts_type": "Session[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "parentID",
+          "ts_type": "string | null",
+          "optional": true,
+          "rest": false
+        },
+        {
+          "name": "previous",
+          "ts_type": "Session[]",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "Session[]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "subscribeToSessionBranch",
+      "file": "session-selectors.ts",
+      "line": 55,
+      "reason": "takes or returns a function"
+    }
+  ]
+}

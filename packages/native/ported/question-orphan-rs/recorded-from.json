@@ -1,0 +1,19 @@
+{
+  "unit": "question-orphan.ts",
+  "files": 1,
+  "fingerprint": "d7afa108216e3c83",
+  "cases": 880,
+  "cases_hash": "19349dbe085b75d8",
+  "coverage": {
+    "lines": 97,
+    "reached": 97,
+    "files": [
+      {
+        "file": "question-orphan.ts",
+        "lines": 97,
+        "reached": 97,
+        "missed": ""
+      }
+    ]
+  }
+}

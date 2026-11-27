@@ -1,0 +1,4 @@
+{"fn":"resolveEventPipelineConnectionUpdate","args":[{"isConnected":true,"hasEverConnected":true},{"type":"disconnected","reason":"sse_heartbeat_timeout"}]}
+{"fn":"resolveEventPipelineConnectionUpdate","args":[{"isConnected":false,"hasEverConnected":true,"connectionPhase":"reconnecting","lastDisconnectReason":"sse_heartbeat_timeout"},{"type":"transport-switched"}]}
+{"fn":"resolveEventPipelineConnectionUpdate","args":[{"isConnected":false,"hasEverConnected":true,"connectionPhase":"reconnecting","lastDisconnectReason":"sse_heartbeat_timeout"},{"type":"reconnected"}]}
+{"fn":"resolveEventPipelineConnectionUpdate","args":[{"isConnected":false,"hasEverConnected":false},{"type":"disconnected","reason":"ws_error:unavailable"}]}

@@ -1,0 +1,62 @@
+{"fn":"describeSessionFailure","args":[{"name":"APIError","data":{"message":"Claude OAuth token has expired and could not be refreshed automatically. Run 'claude login' in your terminal to re-authenticate."}}]}
+{"fn":"describeSessionFailure","args":[{"name":"APIError","data":{"message":"401 Unauthorized"}}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"message":"bot_opencode_provider_authentication: Reconnect the selected host OpenAI account in Providers and Bot Settings."}}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"message":"DevRyan refused credential.provider: native_credential_changed"}}]}
+{"fn":"describeSessionFailure","args":[{"code":"provider_credentials_changed"}]}
+{"fn":"describeSessionFailure","args":[{"code":"provider_token_expired"}]}
+{"fn":"describeSessionFailure","args":[{"code":"provider_auth_failed"}]}
+{"fn":"describeSessionFailure","args":[{"code":"provider_quota_exceeded"}]}
+{"fn":"describeSessionFailure","args":[{"code":"provider_free_limit"}]}
+{"fn":"describeSessionFailure","args":[{"code":"provider_request_unsupported"}]}
+{"fn":"describeSessionFailure","args":[{"code":"provider_rate_limited"}]}
+{"fn":"describeSessionFailure","args":[{"code":"provider_transport_failed"}]}
+{"fn":"describeSessionFailure","args":[{"code":"session_timeout"}]}
+{"fn":"describeSessionFailure","args":[{"code":"session_cancelled"}]}
+{"fn":"describeSessionFailure","args":[{"code":"execution_recovery_unavailable"}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"message":"DevRyan refused retry: native_slim_retry_primary_fenced\nprivate stack with 403","statusCode":403}}]}
+{"fn":"describeSessionFailure","args":[{"code":"native_slim_retry_primary_fenced"}]}
+{"fn":"describeSessionFailure","args":[{"message":"native_slim_retry_primary_fenced_extra"}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"v2Type":"provider.auth"}}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"statusCode":401}}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"providerCode":"chatpass_v2_scope_not_authorized"}}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"providerCode":"subscription_sharing_invalid_user"}}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"v2Type":"provider.free-limit"}}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"v2Type":"provider.free-limit","statusCode":429}}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"message":"Error from provider (Console): OpenCode's free tier can only be used from within OpenCode","statusCode":403}}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"v2Type":"provider.quota"}}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"providerCode":"subscription_sharing_usage_limit_exceeded"}}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"v2Type":"provider.unsupported-operation"}}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"providerCode":"subscription_sharing_unsupported_capability","providerParam":"tools"}}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"providerCode":"subscription_sharing_route_not_supported","statusCode":403,"v2Type":"provider.auth","message":"403 Forbidden"}}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"providerCode":"subscription_sharing_user_not_eligible","statusCode":403,"v2Type":"provider.auth"}}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"v2Type":"provider.transport"}}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"v2Type":"provider.timeout"}}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"v2Type":"provider.invalid-output","message":"Failed to read openai/openai-responses stream"}}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"message":"chatgpt_siwc_stream_incomplete"}}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"v2Type":"provider.rate-limit"}}]}
+{"fn":"describeSessionFailure","args":[{"data":{"providerCode":"unsupported_parameter","providerParam":"tools","message":"private prompt fixture"}}]}
+{"fn":"describeSessionFailure","args":[{"data":{"v2Type":"provider.invalid-output","message":"Invalid structured output"}}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"message":"TimeoutError: The operation timed out."}}]}
+{"fn":"describeSessionFailure","args":[{"name":"UnknownError","data":{"message":"Something else broke"}}]}
+{"fn":"describeSessionFailure","args":[{"name":"MessageOutputLengthError","data":{"message":"boom","v2Type":"output-limit"}}]}
+{"fn":"describeSessionFailure","args":[{"code":"output_limit"}]}
+{"fn":"sessionFailureRetryAt","args":[{"name":"APIError","data":{"v2Type":"provider.rate-limit","retryAfterMs":30000}},1000000]}
+{"fn":"describeSessionFailure","args":[{"name":"APIError","data":{"v2Type":"provider.rate-limit","retryAfterMs":30000}}]}
+{"fn":"sessionFailureRetryAt","args":[{"name":"APIError","data":{"v2Type":"provider.quota","retryAfterMs":0}},1000000]}
+{"fn":"describeSessionFailure","args":[{"name":"APIError","data":{"v2Type":"provider.quota","retryAfterMs":0}}]}
+{"fn":"sessionFailureRetryAt","args":[{"name":"APIError","data":{"v2Type":"provider.free-limit","retryAfterMs":60000}},1000000]}
+{"fn":"describeSessionFailure","args":[{"name":"APIError","data":{"v2Type":"provider.free-limit","retryAfterMs":60000}}]}
+{"fn":"sessionFailureRetryAt","args":[{"code":"provider_quota_exceeded","retryAt":5000000},1000000]}
+{"fn":"describeSessionFailure","args":[{"code":"provider_quota_exceeded","retryAt":5000000}]}
+{"fn":"sessionFailureRetryAt","args":[{"name":"APIError","data":{"v2Type":"provider.transport","retryAfterMs":30000}},1000000]}
+{"fn":"describeSessionFailure","args":[{"name":"APIError","data":{"v2Type":"provider.transport","retryAfterMs":30000}}]}
+{"fn":"sessionFailureRetryAt","args":[{"name":"APIError","data":{"v2Type":"provider.rate-limit"}},1000000]}
+{"fn":"describeSessionFailure","args":[{"name":"APIError","data":{"v2Type":"provider.rate-limit"}}]}
+{"fn":"sessionFailureRetryAt","args":[{"name":"APIError","data":{"v2Type":"provider.rate-limit","retryAfterMs":{"$num":"NaN"}}},1000000]}
+{"fn":"describeSessionFailure","args":[{"name":"APIError","data":{"v2Type":"provider.rate-limit","retryAfterMs":{"$num":"NaN"}}}]}
+{"fn":"sessionFailureRetryAt","args":[{"name":"APIError","data":{"v2Type":"provider.rate-limit","retryAfterMs":-1}},1000000]}
+{"fn":"describeSessionFailure","args":[{"name":"APIError","data":{"v2Type":"provider.rate-limit","retryAfterMs":-1}}]}
+{"fn":"sessionFailureRetryAt","args":[{"name":"APIError","data":{"v2Type":"provider.rate-limit","retryAfterMs":{"$num":"Infinity"}}},1000000]}
+{"fn":"describeSessionFailure","args":[{"name":"APIError","data":{"v2Type":"provider.rate-limit","retryAfterMs":{"$num":"Infinity"}}}]}
+{"fn":"sessionFailureRetryAt","args":[{"code":"provider_rate_limited","retryAt":-5},1000000]}
+{"fn":"describeSessionFailure","args":[{"code":"provider_rate_limited","retryAt":-5}]}

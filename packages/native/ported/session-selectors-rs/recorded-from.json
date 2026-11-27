@@ -1,0 +1,19 @@
+{
+  "unit": "session-selectors.ts",
+  "files": 1,
+  "fingerprint": "e19dff116125c176",
+  "cases": 647,
+  "cases_hash": "1132916b4306c723",
+  "coverage": {
+    "lines": 54,
+    "reached": 46,
+    "files": [
+      {
+        "file": "session-selectors.ts",
+        "lines": 54,
+        "reached": 46,
+        "missed": "45-46, 56-61"
+      }
+    ]
+  }
+}

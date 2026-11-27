@@ -1,0 +1,19 @@
+{
+  "unit": "plan-indicator.ts",
+  "files": 1,
+  "fingerprint": "3a0ee992b2f7f99b",
+  "cases": 697,
+  "cases_hash": "5cf68f31a7a81276",
+  "coverage": {
+    "lines": 72,
+    "reached": 72,
+    "files": [
+      {
+        "file": "plan-indicator.ts",
+        "lines": 72,
+        "reached": 72,
+        "missed": ""
+      }
+    ]
+  }
+}

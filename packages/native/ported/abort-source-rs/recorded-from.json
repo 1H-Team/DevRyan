@@ -1,0 +1,19 @@
+{
+  "unit": "abort-source.ts",
+  "files": 1,
+  "fingerprint": "c2a7c0ad08aae663",
+  "cases": 11,
+  "cases_hash": "111efd4b0439db9f",
+  "coverage": {
+    "lines": 11,
+    "reached": 11,
+    "files": [
+      {
+        "file": "abort-source.ts",
+        "lines": 11,
+        "reached": 11,
+        "missed": ""
+      }
+    ]
+  }
+}

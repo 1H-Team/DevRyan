@@ -1,0 +1,19 @@
+{
+  "unit": "tool-output.ts",
+  "files": 1,
+  "fingerprint": "5bb8e7a1c21a4d7c",
+  "cases": 350,
+  "cases_hash": "d2abcd3cb843e3d0",
+  "coverage": {
+    "lines": 57,
+    "reached": 57,
+    "files": [
+      {
+        "file": "tool-output.ts",
+        "lines": 57,
+        "reached": 57,
+        "missed": ""
+      }
+    ]
+  }
+}

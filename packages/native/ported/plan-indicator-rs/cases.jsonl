@@ -1,0 +1,697 @@
+{"fn":"getPlanIndicatorTone","args":["  padded  "],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["tab\tseparated"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["😀"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":[".leading日本語のテキスト"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["hello"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":[".leadingabc"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ΣΊΣΥΦΟΣ"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["é"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["日本語のテキスト"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["line1\nline2"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ünïcödé"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":[""],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ΣΊΣΥΦΟΣ{name} has {count} items"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["key_name-1"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ΣΊΣΥΦΟΣ:"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a😀b😀ctrailing."],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["emoji 👍🏽 mixemoji 👍🏽 mix"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ns:key.path"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["trailing."],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["tab\tseparated{name} has {count} items"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a.b.c"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":[".leadingtrailing."],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["﻿bom"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["Hello World"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["abc"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["src/a/b.tsline1\nline2"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["hello world"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["trailing.😀"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["./x/**/*.jsona😀b😀c"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["{name} has {count} items"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["src/a/b.ts"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a..b"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":[":"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ab"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a:b:csrc/a/b.ts"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["HELLOab"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a:b:cİstanbul"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["straßea"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["é日本語のテキスト"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["helloab"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["İstanbul"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["İstanbulabc"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["trailing.line1\nline2"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a.b.ckey_name-1"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["emoji 👍🏽 mix"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a:b:c./x/**/*.json"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["  padded  line1\nline2"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["日本語のテキスト:"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["  padded    padded  "],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":[".leading"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["{name} has {count} itemshello world"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["😀line1\nline2"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["./x/**/*.json"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["tab\tseparatedemoji 👍🏽 mix"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a:b:c"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["emoji 👍🏽 mix./x/**/*.json"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["HELLO"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["abc{name} has {count} items"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["key_name-1ünïcödé"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["straße./x/**/*.json"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":[":hello world"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["trailing.ΣΊΣΥΦΟΣ"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a..bΣΊΣΥΦΟΣ"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a😀b😀c"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["key_name-1HELLO"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["straße"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["﻿bomé"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["éab"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ΣΊΣΥΦΟΣHello World"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["﻿bomhello world"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ns:key.pathé"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["hello world{name} has {count} items"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["key_name-1{name} has {count} items"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["src/a/b.tsé"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["astraße"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["😀./x/**/*.json"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["tab\tseparatedHello World"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a.b.ctab\tseparated"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["tab\tseparatedab"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["abcab"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["{name} has {count} items{name} has {count} items"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["abtrailing."],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["HELLOabc"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a.b.cemoji 👍🏽 mix"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["hello{name} has {count} items"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["  padded  key_name-1"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["éHello World"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":[".leadingHELLO"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["日本語のテキストtrailing."],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["tab\tseparateda..b"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["😀trailing."],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["😀  padded  "],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a😀b😀chello world"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":[".leadingemoji 👍🏽 mix"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a.b.csrc/a/b.ts"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["trailing.Hello World"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["  padded  ﻿bom"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ΣΊΣΥΦΟΣ  padded  "],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["emoji 👍🏽 mixtab\tseparated"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["line1\nline2.leading"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a😀b😀c{name} has {count} items"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["HELLOΣΊΣΥΦΟΣ"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["straßeline1\nline2"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["{name} has {count} itemsa😀b😀c"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["straßea..b"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ns:key.path:"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["tab\tseparateda😀b😀c"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["key_name-1hello world"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["é.leading"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ns:key.pathtab\tseparated"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["İstanbultab\tseparated"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["tab\tseparated﻿bom"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ab:"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ünïcödékey_name-1"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["﻿bom﻿bom"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["line1\nline2a.b.c"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["hello worldemoji 👍🏽 mix"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a..bemoji 👍🏽 mix"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["Hello Worldhello world"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["line1\nline2line1\nline2"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["key_name-1a..b"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["hello worldline1\nline2"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a:b:c日本語のテキスト"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["hello worldtab\tseparated"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["Hello World{name} has {count} items"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["src/a/b.tsHello World"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ünïcödéstraße"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["trailing..leading"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a:b:c﻿bom"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ns:key.pathHELLO"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["日本語のテキストhello"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["helloa:b:c"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a:b:ca.b.c"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ΣΊΣΥΦΟΣstraße"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["hello.leading"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ünïcödéHello World"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["abΣΊΣΥΦΟΣ"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["emoji 👍🏽 mixhello world"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":[":straße"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["aba.b.c"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["straßetab\tseparated"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a..bHello World"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a😀b😀cstraße"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a.b.cİstanbul"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":[".leading  padded  "],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["  padded  ünïcödé"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a😀b😀cHello World"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["src/a/b.tshello"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ünïcödéemoji 👍🏽 mix"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["é{name} has {count} items"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["emoji 👍🏽 mixa"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["😀:"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["  padded  emoji 👍🏽 mix"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["abcé"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["日本語のテキストa.b.c"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ns:key.pathhello"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ΣΊΣΥΦΟΣa"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["emoji 👍🏽 mix  padded  "],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a:b:ctrailing."],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["emoji 👍🏽 mixhello"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a  padded  "],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a😀b😀csrc/a/b.ts"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a.b.c./x/**/*.json"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["éemoji 👍🏽 mix"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["  padded  Hello World"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["key_name-1﻿bom"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ns:key.path  padded  "],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["trailing.hello"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["line1\nline2﻿bom"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["helloa.b.c"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["emoji 👍🏽 mix日本語のテキスト"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["abcsrc/a/b.ts"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ΣΊΣΥΦΟΣhello"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["trailing.straße"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["日本語のテキスト日本語のテキスト"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["  padded  a.b.c"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["Hello Worldns:key.path"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ΣΊΣΥΦΟΣa😀b😀c"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a..bstraße"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["hello worldé"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":[".leadingsrc/a/b.ts"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["straße:"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["hello worldab"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["key_name-1trailing."],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a日本語のテキスト"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["./x/**/*.json😀"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":[".leadingns:key.path"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["hello worldΣΊΣΥΦΟΣ"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["éa..b"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["﻿bomünïcödé"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["😀ab"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":[".leadingünïcödé"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["hello worldhello world"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["hello world﻿bom"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a..babc"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ns:key.pathstraße"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["  padded  hello world"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["İstanbul日本語のテキスト"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ns:key.patha..b"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["héllo wörld"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["👍🏽 thumbs"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["日本語"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["ılık ırmak"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["👨‍👩‍👧 family"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a b"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a😀b"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a²b x½ y①"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["aⅠb Ⅻ"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["a𐐀b 𝐀bc"],"ok":"warning"}
+{"fn":"getPlanIndicatorTone","args":["कि ٣٤"],"ok":"warning"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLO","implementationMessageId":"trailing."},"ns:key.path"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"ΣΊΣΥΦΟΣ","implementationMessageId":"abc"},"ns:key.path"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","implementationMessageId":"tab\tseparated"},"HELLO"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":".leading","implementationMessageId":"straße"},"hello"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"日本語のテキスト"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[[],"a.b.c"],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"line1\nline2./x/**/*.json"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"a..b"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"😀"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"emoji 👍🏽 mix"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"ΣΊΣΥΦΟΣ","implementationMessageId":"😀"},":"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[null,"abc"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},":ab"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},":"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"key_name-1","implementationMessageId":"./x/**/*.json"}],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},{"$undefined":true}],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"İstanbul"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"emoji 👍🏽 mix"},"emoji 👍🏽 mix"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"line1\nline2","implementationMessageId":"﻿bom:"},"a:b:c"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLOemoji 👍🏽 mix"},"{name} has {count} itemsabc"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"abctrailing."],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":".leadinga"},"ünïcödé  padded  "],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"İstanbul","implementationMessageId":"ab"},"abc"],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},".leading./x/**/*.json"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"ns:key.path"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","implementationMessageId":"hello"},{"$undefined":true}],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"tab\tseparated"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","implementationMessageId":"ns:key.path"}],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"src/a/b.ts","implementationMessageId":"emoji 👍🏽 mix"},"key_name-1"],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[[],"ΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[null,"ΣΊΣΥΦΟΣ"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","implementationMessageId":"line1\nline2trailing."},{"$undefined":true}],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"./x/**/*.json﻿bom","implementationMessageId":"key_name-1"},"﻿bom"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[["a",1],"😀"],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"straße"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[null,"Hello Worlda..b"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"HELLO"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"hello","implementationMessageId":"  padded  "},":"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"{name} has {count} items"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"a:b:cHello World"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"src/a/b.ts","implementationMessageId":"key_name-1"},"ΣΊΣΥΦΟΣ"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"a.b.c","implementationMessageId":"key_name-1"},"a"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"a"},{"$undefined":true}],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"a😀b😀c"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},""],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"Hello World"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"","implementationMessageId":"key_name-1"},"ns:key.path"],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[true,"é"],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[[],"hello:"],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"./x/**/*.json😀","implementationMessageId":"  padded  İstanbul"},"a.b.c"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"İstanbul","implementationMessageId":"😀hello world"},"İstanbul"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"  padded  "],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"a":"b"},"  padded  "],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"ab","implementationMessageId":"emoji 👍🏽 mix"}],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[null,{"$undefined":true}],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"abc😀","implementationMessageId":"Hello World"},"{name} has {count} items"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true}],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","implementationMessageId":"ns:key.path"},"日本語のテキスト"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":["h","hellons:key.path"],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","implementationMessageId":"a:b:c"},"straße"],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"a😀b😀c","implementationMessageId":"ΣΊΣΥΦΟΣ"},{"$undefined":true}],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":["x"],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[true,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"helloemoji 👍🏽 mix"},"a.b.c"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","implementationMessageId":"helloab"},"😀"],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"src/a/b.ts","implementationMessageId":".leading"},"ünïcödé"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":":","implementationMessageId":"a.b.c"},"a😀b😀cHello World"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"{name} has {count} itemsline1\nline2"},".leading"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"./x/**/*.json","implementationMessageId":".leading😀"}],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"İstanbul"},"﻿bom"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"😀","implementationMessageId":"ab"},"{name} has {count} items"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"{name} has {count} items","implementationMessageId":"ΣΊΣΥΦΟΣ"},"İstanbul"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"﻿bom","implementationMessageId":"straßea..b"}],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[true,"éΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"😀./x/**/*.json","implementationMessageId":"日本語のテキスト"}],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"tab\tseparatedhello world","implementationMessageId":"trailing."},"hello world"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"a..b"},"İstanbul"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"a":{"b":"c"}},"a:b:cΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"./x/**/*.jsonünïcödé"},"ab"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"key_name-1"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"hello world","implementationMessageId":"😀"},{"$undefined":true}],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLOa..b","implementationMessageId":".leading"},{"$undefined":true}],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"é"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"ns:key.path"},"abc"],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"ab"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed"},"ns:key.path"],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"﻿bom  padded  "],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"hello"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"./x/**/*.json","implementationMessageId":"./x/**/*.json"},":"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"a":{"b":"c"}},"hello world"],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"hello world","implementationMessageId":"{name} has {count} items:"},{"$undefined":true}],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"﻿bom"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"line1\nline2"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"src/a/b.ts"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[[],"é"],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"tab\tseparated","implementationMessageId":"a😀b😀c"}],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":":","implementationMessageId":"tab\tseparated"},"a:b:c"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"  padded  ","implementationMessageId":"abca:b:c"},":"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"a","implementationMessageId":"é"},"ns:key.path"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"a.b.cΣΊΣΥΦΟΣ"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"abcé","implementationMessageId":"﻿bom"},"a.b.ctrailing."],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"hello world","implementationMessageId":"Hello World"},"a"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[null],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"tab\tseparatedΣΊΣΥΦΟΣ","implementationMessageId":"a..b"},"trailing."],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"hello world"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":".leading","implementationMessageId":"😀"},"abc"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"a.b.c","implementationMessageId":"é"},":"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[0,"日本語のテキスト"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"ns:key.pathé"},{"$undefined":true}],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"trailing."],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"a:b:c"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"src/a/b.ts"}],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"Hello World","implementationMessageId":".leading"},"a.b.c"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"a:b:c😀","implementationMessageId":"hello"},"ΣΊΣΥΦΟΣ.leading"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"Hello World","implementationMessageId":"Hello World"},"ΣΊΣΥΦΟΣabc"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"日本語のテキスト"},"hello"],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"tab\tseparated","implementationMessageId":"ünïcödé"},"ns:key.patha"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"İstanbul{name} has {count} items","implementationMessageId":"a😀b😀cns:key.path"},"HELLOa..b"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[["a",1],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","implementationMessageId":"ünïcödé"},"key_name-1"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"a"}],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"ΣΊΣΥΦΟΣ"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"ns:key.path","implementationMessageId":"ns:key.pathİstanbul"},"a..b"],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","implementationMessageId":"{name} has {count} itemsΣΊΣΥΦΟΣ"},"a:b:c"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"trailing.","implementationMessageId":"tab\tseparated"},"straße"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"emoji 👍🏽 mix","implementationMessageId":":"},"ΣΊΣΥΦΟΣ"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLOtab\tseparated","implementationMessageId":"a:b:c"},"  padded  "],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"key_name-1","implementationMessageId":"hello"},"line1\nline2"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","implementationMessageId":"é"},"a:b:c"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"a😀b😀c","implementationMessageId":"Hello World"},"  padded  "],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","implementationMessageId":"a..b"},"ΣΊΣΥΦΟΣ"],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"aünïcödé"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing"},"hello"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"a":{"b":"c"}},"  padded  "],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"a":{"b":"c"}},"a"],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"éa.b.c"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"a"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","implementationMessageId":"src/a/b.ts"},"helloa😀b😀c"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[true],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"  padded  ","implementationMessageId":"İstanbul"},"hello world"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[[],"key_name-1"],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"😀","implementationMessageId":"ns:key.path"},"  padded  ns:key.path"],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"abc"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"İstanbul","implementationMessageId":"emoji 👍🏽 mix"},"😀"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[[]],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","implementationMessageId":"é.leading"},"src/a/b.tsa:b:c"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"﻿bom","implementationMessageId":""},":Hello World"],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"Hello Worldtab\tseparated"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing"},"﻿bom"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":["x","﻿bom"],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[0,{"$undefined":true}],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"a","implementationMessageId":"key_name-1"},"a😀b😀c"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"a:b:c","implementationMessageId":"key_name-1"},"a:b:c"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"a😀b😀cab"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{},"tab\tseparated"],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{},"HELLO"],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"a":"b"},"a.b.c"],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"helloa","implementationMessageId":"ΣΊΣΥΦΟΣ"}],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"emoji 👍🏽 mix"},"abc"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"ünïcödé","implementationMessageId":"Hello Worlda:b:c"},"hello"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[["a",1],":a:b:c"],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","implementationMessageId":"tab\tseparatedstraße"},".leading"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"hello","implementationMessageId":"Hello World"},"  padded  "],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"trailing../x/**/*.json"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","implementationMessageId":"日本語のテキスト"},"a:b:c"],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"a:b:c","implementationMessageId":"😀"},"a..b"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[true,"trailing."],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"line1\nline2a😀b😀c"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"ünïcödé"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed"},"./x/**/*.json"],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","implementationMessageId":"abc"},"a..b"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"a😀b😀cline1\nline2","implementationMessageId":"src/a/b.ts"},"straße"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","implementationMessageId":"日本語のテキスト"},"﻿bom"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[true,".leading"],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed"},"trailing."],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","implementationMessageId":"{name} has {count} items"},"HELLO"],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed"},"ΣΊΣΥΦΟΣ"],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","implementationMessageId":"tab\tseparatedns:key.path"},"line1\nline2"],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"HELLO","implementationMessageId":"a..bemoji 👍🏽 mix"},"a:b:c"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"İstanbulemoji 👍🏽 mix","implementationMessageId":"straße.leading"},"src/a/b.ts"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"./x/**/*.json"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},".leading"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"","implementationMessageId":"a😀b😀c"},"abc"],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[null,"a..b"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"ΣΊΣΥΦΟΣ","implementationMessageId":"é"},"ünïcödé"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":":","implementationMessageId":"😀{name} has {count} items"},"src/a/b.ts"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"tab\tseparated","implementationMessageId":"é"},"Hello World"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","implementationMessageId":"ab"},{"$undefined":true}],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","implementationMessageId":"  padded  "},"é"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","sourceMessageId":"key_name-1"},{"$undefined":true}],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","implementationMessageId":"abc"},"a:b:c"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"a:b:c","implementationMessageId":"ns:key.path"},"ab"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"éemoji 👍🏽 mix","implementationMessageId":"ünïcödé"},"line1\nline2"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},".leadingline1\nline2"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"completed","implementationMessageId":"hello"},"ΣΊΣΥΦΟΣ"],"ok":"completed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"./x/**/*.json","implementationMessageId":"  padded  "},"a😀b😀c"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"$undefined":true},"a.b.c"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"a":"b"},"emoji 👍🏽 mix"],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"a":{"b":"c"}},"ΣΊΣΥΦΟΣ"],"ok":{"$undefined":true}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLO","implementationMessageId":"trailing."},{"$undefined":true}],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLO","implementationMessageId":"trailing."},"héllo wörld"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLO","implementationMessageId":"trailing."},"👍🏽 thumbs"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLO","implementationMessageId":"trailing."},"日本語"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLO","implementationMessageId":"trailing."},""],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLO","implementationMessageId":"trailing."},"é"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLO","implementationMessageId":"trailing."},"İstanbul"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLO","implementationMessageId":"trailing."},"straße"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLO","implementationMessageId":"trailing."},"ılık ırmak"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLO","implementationMessageId":"trailing."},"👨‍👩‍👧 family"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLO","implementationMessageId":"trailing."},"a b"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLO","implementationMessageId":"trailing."},"ΣΊΣΥΦΟΣ"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLO","implementationMessageId":"trailing."},"a😀b"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLO","implementationMessageId":"trailing."},"﻿bom"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLO","implementationMessageId":"trailing."},"a²b x½ y①"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLO","implementationMessageId":"trailing."},"aⅠb Ⅻ"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLO","implementationMessageId":"trailing."},"a𐐀b 𝐀bc"],"ok":"implementing"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"implementing","sourceMessageId":"HELLO","implementationMessageId":"trailing."},"कि ٣٤"],"ok":"implementing"}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","hello world","a😀b😀c"],"ok":{"state":"a","sourceMessageId":"hello world","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[0,"ünïcödé","ΣΊΣΥΦΟΣ","Φ"],"ok":{"state":"ünïcödé","sourceMessageId":"ΣΊΣΥΦΟΣ","implementationMessageId":"Φ"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"a..b","hello",{"$undefined":true}],"ok":{"state":"a..b","sourceMessageId":"hello"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","sourceMessageId":"tab\tseparated","implementationMessageId":"étrailing."},"hello","İstanbul","abünïcödé"],"ok":{"state":"hello","sourceMessageId":"İstanbul","implementationMessageId":"abünïcödé"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"キスト","日本語のテキストé"],"ok":{"state":"キスト","sourceMessageId":"日本語のテキストé"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"﻿bom","implementationMessageId":"﻿bom"},"key_name-1","a..b","a.b.c"],"ok":{"state":"proposed","sourceMessageId":"﻿bom","implementationMessageId":"﻿bom"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"./x/**/*.json",{"$undefined":true},"abc"],"ok":{"state":"./x/**/*.json","sourceMessageId":{"$undefined":true},"implementationMessageId":"abc"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","sourceMessageId":"emoji 👍🏽 mixtab\tseparated","implementationMessageId":"a"},".b","a..b",{"$undefined":true}],"ok":{"state":"completed","sourceMessageId":"emoji 👍🏽 mixtab\tseparated","implementationMessageId":"a"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"a..b","a:b:c"],"ok":{"state":"a..b","sourceMessageId":"a:b:c"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"line1\nline2",{"$undefined":true},"hello world😀"],"ok":{"state":"line1\nline2","sourceMessageId":{"$undefined":true},"implementationMessageId":"hello world😀"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"tab\tseparated","  padded  ","a😀b😀c"],"ok":{"state":"tab\tseparated","sourceMessageId":"  padded  ","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"ab","日本語のテキスト","AB"],"ok":{"state":"ab","sourceMessageId":"日本語のテキスト","implementationMessageId":"AB"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"ns:key.path﻿bom",""],"ok":{"state":"ns:key.path﻿bom","sourceMessageId":""}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","implementationMessageId":"{name} has {count} items"},"éHELLO","line1\nline2","l"],"ok":{"state":"éHELLO","sourceMessageId":"line1\nline2","implementationMessageId":"l"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing"},"hello worldns:key.path","trailing.","trailing."],"ok":{"state":"hello worldns:key.path","sourceMessageId":"trailing.","implementationMessageId":"trailing."}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","implementationMessageId":"a..b"},"  padded  ","aa..b",{"$undefined":true}],"ok":{"state":"  padded  ","sourceMessageId":"aa..b","implementationMessageId":"a..b"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","sourceMessageId":"src/a/b.tsHello World","implementationMessageId":"ünïcödé"},"ello","﻿bom","hello"],"ok":{"state":"ello","sourceMessageId":"﻿bom","implementationMessageId":"hello"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"日本語のテキスト","implementationMessageId":"key_name-1"},"hello world","abc","trailing."],"ok":{"state":"proposed","sourceMessageId":"日本語のテキスト","implementationMessageId":"key_name-1"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"a":"b"},"﻿boma😀b😀c",{"$undefined":true}],"ok":{"state":"﻿boma😀b😀c","sourceMessageId":{"$undefined":true}}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"İstanbul",{"$undefined":true}],"ok":{"state":"İstanbul","sourceMessageId":{"$undefined":true}}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"abc",{"$undefined":true},"abc"],"ok":{"state":"abc","sourceMessageId":{"$undefined":true},"implementationMessageId":"abc"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"日本語のテキスト","tab\tseparated","﻿bom"],"ok":{"state":"日本語のテキスト","sourceMessageId":"tab\tseparated","implementationMessageId":"﻿bom"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"hello  padded  ","ünïcödé",{"$undefined":true}],"ok":{"state":"hello  padded  ","sourceMessageId":"ünïcödé"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","sourceMessageId":"key_name-1","implementationMessageId":"straße日本語のテキスト"},"straße","  padded  ","line1\nline2"],"ok":{"state":"completed","sourceMessageId":"key_name-1","implementationMessageId":"straße日本語のテキスト"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"helloΣΊΣΥΦΟΣ","implementationMessageId":"a.b.c"},"hello",":",{"$undefined":true}],"ok":{"state":"proposed","sourceMessageId":"helloΣΊΣΥΦΟΣ","implementationMessageId":"a.b.c"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"para","./x/**/*.jsona..b","tab\tseparated"],"ok":{"state":"para","sourceMessageId":"./x/**/*.jsona..b","implementationMessageId":"tab\tseparated"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"abc",{"$undefined":true},"日本語のテキスト./x/**/*.json"],"ok":{"state":"abc","sourceMessageId":{"$undefined":true},"implementationMessageId":"日本語のテキスト./x/**/*.json"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","sourceMessageId":"line1\nline2"},"HELLOa😀b😀c","./x/**/*.json","Hello World"],"ok":{"state":"completed","sourceMessageId":"line1\nline2"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","implementationMessageId":"abc"},"trailing.","a.b.c","İstanbul"],"ok":{"state":"trailing.","sourceMessageId":"a.b.c","implementationMessageId":"İstanbul"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"hello","ΣΊΣΥΦΟΣ","😀"],"ok":{"state":"hello","sourceMessageId":"ΣΊΣΥΦΟΣ","implementationMessageId":"😀"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"a😀b😀c","{name} has {count} items","a😀b😀c"],"ok":{"state":"a😀b😀c","sourceMessageId":"{name} has {count} items","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"hello world","implementationMessageId":"hello:"},"llo",{"$undefined":true},"hello"],"ok":{"state":"llo","sourceMessageId":"hello world","implementationMessageId":"hello"}}
+{"fn":"nextPlanIndicatorEntry","args":[0,"😀",{"$undefined":true}],"ok":{"state":"😀","sourceMessageId":{"$undefined":true}}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"{name} has {count} items","İstanbul","日本語のテキスト"],"ok":{"state":"{name} has {count} items","sourceMessageId":"İstanbul","implementationMessageId":"日本語のテキスト"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"line1\nline2","ns:key.path:","é"],"ok":{"state":"line1\nline2","sourceMessageId":"ns:key.path:","implementationMessageId":"é"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"a😀b😀ca😀b😀c","","{name} has {count} items"],"ok":{"state":"a😀b😀ca😀b😀c","sourceMessageId":"","implementationMessageId":"{name} has {count} items"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"hello world:","implementationMessageId":"a😀b😀ca"},"😀","a",{"$undefined":true}],"ok":{"state":"proposed","sourceMessageId":"hello world:","implementationMessageId":"a😀b😀ca"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":".leading","implementationMessageId":"a.b.c"},"hello world","a","a.b.ca😀b😀c"],"ok":{"state":"hello world","sourceMessageId":"a","implementationMessageId":"a.b.ca😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"é","́"],"ok":{"state":"é","sourceMessageId":"́"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"raß","straße","abc"],"ok":{"state":"raß","sourceMessageId":"straße","implementationMessageId":"abc"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","sourceMessageId":"ΣΊΣΥΦΟΣ"},"ab","ab",{"$undefined":true}],"ok":{"state":"completed","sourceMessageId":"ΣΊΣΥΦΟΣ"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"ns:key.path","implementationMessageId":"ΣΊΣΥΦΟΣ:"},"HELLOtrailing.","hello world"],"ok":{"state":"implementing","sourceMessageId":"ns:key.path","implementationMessageId":"ΣΊΣΥΦΟΣ:"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"ΣΊΣΥΦΟΣ",{"$undefined":true},"ünïcödé"],"ok":{"state":"ΣΊΣΥΦΟΣ","sourceMessageId":{"$undefined":true},"implementationMessageId":"ünïcödé"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"abc","hello worlda.b.c","ΣΊΣΥΦΟΣ"],"ok":{"state":"abc","sourceMessageId":"hello worlda.b.c","implementationMessageId":"ΣΊΣΥΦΟΣ"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"./x/**/*.jsonabc","implementationMessageId":"line1\nline2"},".leading","a",":"],"ok":{"state":".leading","sourceMessageId":"a","implementationMessageId":":"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"ns:key.path","ΣΊΣΥΦΟΣ:","hello world"],"ok":{"state":"ns:key.path","sourceMessageId":"ΣΊΣΥΦΟΣ:","implementationMessageId":"hello world"}}
+{"fn":"nextPlanIndicatorEntry","args":[0,"straße","a😀b😀c","ünïcödé"],"ok":{"state":"straße","sourceMessageId":"a😀b😀c","implementationMessageId":"ünïcödé"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","implementationMessageId":"key_name-1"},"{name} has {count} itemsa..b","é"],"ok":{"state":"{name} has {count} itemsa..b","sourceMessageId":"é","implementationMessageId":"key_name-1"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","implementationMessageId":"a:b:c"},""],"ok":{"state":"","sourceMessageId":{"$undefined":true},"implementationMessageId":"a:b:c"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"ns:key.pathé","emoji 👍🏽 mix","a"],"ok":{"state":"ns:key.pathé","sourceMessageId":"emoji 👍🏽 mix","implementationMessageId":"a"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","sourceMessageId":"a.b.c","implementationMessageId":"HELLO"},"  padded  ","HELLO",{"$undefined":true}],"ok":{"state":"completed","sourceMessageId":"a.b.c","implementationMessageId":"HELLO"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"キスト","日本語のテキスト"],"ok":{"state":"キスト","sourceMessageId":"日本語のテキスト"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"./x/**/*.jsonΣΊΣΥΦΟΣ",{"$undefined":true},{"$undefined":true}],"ok":{"state":"./x/**/*.jsonΣΊΣΥΦΟΣ","sourceMessageId":{"$undefined":true}}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"straße",{"$undefined":true},{"$undefined":true}],"ok":{"state":"straße","sourceMessageId":{"$undefined":true}}}
+{"fn":"nextPlanIndicatorEntry","args":[true,"日本語のテキスト","key_name-1",{"$undefined":true}],"ok":{"state":"日本語のテキスト","sourceMessageId":"key_name-1"}}
+{"fn":"nextPlanIndicatorEntry","args":[{},"﻿bom",{"$undefined":true},"HELLO"],"ok":{"state":"﻿bom","sourceMessageId":{"$undefined":true},"implementationMessageId":"HELLO"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"line1","line1\nline2","ünïcödé"],"ok":{"state":"line1","sourceMessageId":"line1\nline2","implementationMessageId":"ünïcödé"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"hello","implementationMessageId":"ΣΊΣΥΦΟΣ"},"abtab\tseparated",{"$undefined":true},"ED"],"ok":{"state":"abtab\tseparated","sourceMessageId":"hello","implementationMessageId":"ED"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"./x/**/*.json","ab","b"],"ok":{"state":"./x/**/*.json","sourceMessageId":"ab","implementationMessageId":"b"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"a":"b"},"a.b.c","a..ba😀b😀c","hello"],"ok":{"state":"a.b.c","sourceMessageId":"a..ba😀b😀c","implementationMessageId":"hello"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"straße","implementationMessageId":"a..b"},"﻿bom","é","line1\nline2"],"ok":{"state":"proposed","sourceMessageId":"straße","implementationMessageId":"a..b"}}
+{"fn":"nextPlanIndicatorEntry","args":[0,"a.b.c",{"$undefined":true},"😀hello"],"ok":{"state":"a.b.c","sourceMessageId":{"$undefined":true},"implementationMessageId":"😀hello"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","sourceMessageId":"ns:key.path","implementationMessageId":"a"},"a.b.c","ΣΊΣΥΦΟΣ","trailing."],"ok":{"state":"a.b.c","sourceMessageId":"ΣΊΣΥΦΟΣ","implementationMessageId":"trailing."}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"emoji 👍🏽 mixab","a😀b😀c"],"ok":{"state":"emoji 👍🏽 mixab","sourceMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"emoji 👍🏽 mix","日本語のテキストstraße","ns:key.path"],"ok":{"state":"emoji 👍🏽 mix","sourceMessageId":"日本語のテキストstraße","implementationMessageId":"ns:key.path"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"a..b","﻿bom","key_name-1"],"ok":{"state":"a..b","sourceMessageId":"﻿bom","implementationMessageId":"key_name-1"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"é"},"  padded  .leading","tab\tseparated","ns:key.path﻿bom"],"ok":{"state":"  padded  .leading","sourceMessageId":"tab\tseparated","implementationMessageId":"ns:key.path﻿bom"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":".leadinghello","implementationMessageId":".leading"},"emoji 👍🏽 mix",{"$undefined":true},{"$undefined":true}],"ok":{"state":"emoji 👍🏽 mix","sourceMessageId":".leadinghello","implementationMessageId":".leading"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"a":"b"},"hello world","a","﻿bom"],"ok":{"state":"hello world","sourceMessageId":"a","implementationMessageId":"﻿bom"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","sourceMessageId":"ns:key.path","implementationMessageId":"ünïcödé"},"tab\tseparated","ab","Hello World"],"ok":{"state":"completed","sourceMessageId":"ns:key.path","implementationMessageId":"ünïcödé"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"a..b","﻿bomline1\nline2","n"],"ok":{"state":"a..b","sourceMessageId":"﻿bomline1\nline2","implementationMessageId":"n"}}
+{"fn":"nextPlanIndicatorEntry","args":[0,"b",{"$undefined":true},"a:b:c"],"ok":{"state":"b","sourceMessageId":{"$undefined":true},"implementationMessageId":"a:b:c"}}
+{"fn":"nextPlanIndicatorEntry","args":[["a",1]," 👍🏽 M","ünïcödéemoji 👍🏽 mix"],"ok":{"state":" 👍🏽 M","sourceMessageId":"ünïcödéemoji 👍🏽 mix"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing"},"EADING:","tab\tseparated",".leading:"],"ok":{"state":"EADING:","sourceMessageId":"tab\tseparated","implementationMessageId":".leading:"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","implementationMessageId":".leading"},"a:b:c",{"$undefined":true},"a..b"],"ok":{"state":"a:b:c","sourceMessageId":{"$undefined":true},"implementationMessageId":"a..b"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"a😀b😀ca:b:c","implementationMessageId":"line1\nline2abc"},"straße",".leadingİstanbul",":"],"ok":{"state":"implementing","sourceMessageId":"a😀b😀ca:b:c","implementationMessageId":"line1\nline2abc"}}
+{"fn":"nextPlanIndicatorEntry","args":[{},"am","key_name-1","😀"],"ok":{"state":"am","sourceMessageId":"key_name-1","implementationMessageId":"😀"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"trailing."},"  padded  ",{"$undefined":true},{"$undefined":true}],"ok":{"state":"  padded  ","sourceMessageId":"trailing."}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"é","implementationMessageId":"Hello World"},"hello world","İstanbul","{name} has {count} itemstrailing."],"ok":{"state":"hello world","sourceMessageId":"İstanbul","implementationMessageId":"{name} has {count} itemstrailing."}}
+{"fn":"nextPlanIndicatorEntry","args":[true,"ey_name-1straß","key_name-1straße","  padded  "],"ok":{"state":"ey_name-1straß","sourceMessageId":"key_name-1straße","implementationMessageId":"  padded  "}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"HELLO","a😀b😀c","src/a/b.ts"],"ok":{"state":"HELLO","sourceMessageId":"a😀b😀c","implementationMessageId":"src/a/b.ts"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"src/a/b.ts","implementationMessageId":"ns:key.path"},"key_name-1","İstanbul","ns:key.path"],"ok":{"state":"key_name-1","sourceMessageId":"İstanbul","implementationMessageId":"ns:key.path"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","implementationMessageId":"é"},":",{"$undefined":true},":"],"ok":{"state":":","sourceMessageId":{"$undefined":true},"implementationMessageId":":"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"HELLO","HELL",{"$undefined":true}],"ok":{"state":"HELLO","sourceMessageId":"HELL"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"a","a","emoji 👍🏽 mixline1\nline2"],"ok":{"state":"a","sourceMessageId":"a","implementationMessageId":"emoji 👍🏽 mixline1\nline2"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"hello world","./x/**/*.json","line1\nline2"],"ok":{"state":"hello world","sourceMessageId":"./x/**/*.json","implementationMessageId":"line1\nline2"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","sourceMessageId":":","implementationMessageId":"tab\tseparated"},"ünïcödé:","tab\tseparated  padded  ","trailing."],"ok":{"state":"ünïcödé:","sourceMessageId":"tab\tseparated  padded  ","implementationMessageId":"trailing."}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"src/a/b.ts","implementationMessageId":"Hello World"},"  padded  ","add","日本語のテキスト"],"ok":{"state":"implementing","sourceMessageId":"src/a/b.ts","implementationMessageId":"Hello World"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"a:b:c",{"$undefined":true},"hello"],"ok":{"state":"a:b:c","sourceMessageId":{"$undefined":true},"implementationMessageId":"hello"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"trailing.","é"],"ok":{"state":"trailing.","sourceMessageId":"é"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"","  padded  ","  padded  key_name-1"],"ok":{"state":"","sourceMessageId":"  padded  ","implementationMessageId":"  padded  key_name-1"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"ünïcödé","ÜNÏ"],"ok":{"state":"ünïcödé","sourceMessageId":"ÜNÏ"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","sourceMessageId":"日本語のテキスト","implementationMessageId":".leadingemoji 👍🏽 mix"},"abc","src/a/b.ts:","a/b."],"ok":{"state":"completed","sourceMessageId":"日本語のテキスト","implementationMessageId":".leadingemoji 👍🏽 mix"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"./x/**/*.json","hello world",{"$undefined":true}],"ok":{"state":"./x/**/*.json","sourceMessageId":"hello world"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"E","line1\nline2",{"$undefined":true}],"ok":{"state":"E","sourceMessageId":"line1\nline2"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"a😀b😀c","implementationMessageId":"abc"},"éabc","﻿bomstraße",""],"ok":{"state":"éabc","sourceMessageId":"﻿bomstraße"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"trailing.",{"$undefined":true},"."],"ok":{"state":"trailing.","sourceMessageId":{"$undefined":true},"implementationMessageId":"."}}
+{"fn":"nextPlanIndicatorEntry","args":[{"a":"b"},"a..bHello World","hello","ello World"],"ok":{"state":"a..bHello World","sourceMessageId":"hello","implementationMessageId":"ello World"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,".leading",":é"],"ok":{"state":".leading","sourceMessageId":":é"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"日本語のテキストns:key.path","emoji 👍🏽 mix","trailing."],"ok":{"state":"日本語のテキストns:key.path","sourceMessageId":"emoji 👍🏽 mix","implementationMessageId":"trailing."}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"İstanbulHello World"},"a😀b😀c","😀","a.b.c﻿bom"],"ok":{"state":"a😀b😀c","sourceMessageId":"😀","implementationMessageId":"a.b.c﻿bom"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","sourceMessageId":".leading"},"  padded  ",{"$undefined":true},"😀"],"ok":{"state":"  padded  ","sourceMessageId":".leading","implementationMessageId":"😀"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","sourceMessageId":"﻿bom日本語のテキスト","implementationMessageId":"  padded  "},"hello world:","o","hello"],"ok":{"state":"completed","sourceMessageId":"﻿bom日本語のテキスト","implementationMessageId":"  padded  "}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"a😀b😀c","b😀c"],"ok":{"state":"a😀b😀c","sourceMessageId":"b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"src/a/b.ts","tab\tseparated","hello"],"ok":{"state":"src/a/b.ts","sourceMessageId":"tab\tseparated","implementationMessageId":"hello"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"a","implementationMessageId":"a"},"{name} has {count} items","trailing.","a.b.c"],"ok":{"state":"{name} has {count} items","sourceMessageId":"trailing.","implementationMessageId":"a.b.c"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"﻿bom"},"trailing.","İstanbul",{"$undefined":true}],"ok":{"state":"proposed","sourceMessageId":"﻿bom"}}
+{"fn":"nextPlanIndicatorEntry","args":[["a",1],"aa.b.c","hello","el"],"ok":{"state":"aa.b.c","sourceMessageId":"hello","implementationMessageId":"el"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"emoji 👍🏽 mix","hello world"],"ok":{"state":"emoji 👍🏽 mix","sourceMessageId":"hello world"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"日本語のテキスト","😀","emoji 👍🏽 mix"],"ok":{"state":"日本語のテキスト","sourceMessageId":"😀","implementationMessageId":"emoji 👍🏽 mix"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"L",{"$undefined":true},"hello world"],"ok":{"state":"L","sourceMessageId":{"$undefined":true},"implementationMessageId":"hello world"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"{name} has {count} items","a:b:c","a"],"ok":{"state":"{name} has {count} items","sourceMessageId":"a:b:c","implementationMessageId":"a"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"","Hello World","ns:key.path"],"ok":{"state":"","sourceMessageId":"Hello World","implementationMessageId":"ns:key.path"}}
+{"fn":"nextPlanIndicatorEntry","args":["x","﻿bom",":",{"$undefined":true}],"ok":{"state":"﻿bom","sourceMessageId":":"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"hello","a.b.c","Hello World"],"ok":{"state":"hello","sourceMessageId":"a.b.c","implementationMessageId":"Hello World"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"src/a/b.tssrc/a/b.ts","implementationMessageId":"trailing."},"日本語のテキスト",{"$undefined":true},"trailing."],"ok":{"state":"日本語のテキスト","sourceMessageId":"src/a/b.tssrc/a/b.ts","implementationMessageId":"trailing."}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"HELLO"},"日本語のテキスト",".leading","ns:key.path"],"ok":{"state":"implementing","sourceMessageId":"HELLO"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"abc","ns:key.path"],"ok":{"state":"abc","sourceMessageId":"ns:key.path"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"ab",{"$undefined":true},"AB"],"ok":{"state":"ab","sourceMessageId":{"$undefined":true},"implementationMessageId":"AB"}}
+{"fn":"nextPlanIndicatorEntry","args":[[],"a.b.c","hello worldemoji 👍🏽 mix",".leading"],"ok":{"state":"a.b.c","sourceMessageId":"hello worldemoji 👍🏽 mix","implementationMessageId":".leading"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed"},"  padded  ","a","a.b.c"],"ok":{"state":"  padded  ","sourceMessageId":"a","implementationMessageId":"a.b.c"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","sourceMessageId":"İstanbul","implementationMessageId":"hello"},"emoji 👍🏽 mix","a:b:c"],"ok":{"state":"completed","sourceMessageId":"İstanbul","implementationMessageId":"hello"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"a":"b"},"́",{"$undefined":true},"é"],"ok":{"state":"́","sourceMessageId":{"$undefined":true},"implementationMessageId":"é"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"ΣΊΣΥΦΟΣ",{"$undefined":true}],"ok":{"state":"ΣΊΣΥΦΟΣ","sourceMessageId":{"$undefined":true}}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"😀","ΣΊΣΥΦΟΣ"],"ok":{"state":"😀","sourceMessageId":"ΣΊΣΥΦΟΣ"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"o","hello","hello"],"ok":{"state":"o","sourceMessageId":"hello","implementationMessageId":"hello"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":":"},"emoji 👍🏽 mix","key_name-1",{"$undefined":true}],"ok":{"state":"emoji 👍🏽 mix","sourceMessageId":"key_name-1"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"straße","implementationMessageId":"{name} has {count} items"},":","d","  padded  ünïcödé"],"ok":{"state":"proposed","sourceMessageId":"straße","implementationMessageId":"{name} has {count} items"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"  padded  ",{"$undefined":true},{"$undefined":true}],"ok":{"state":"  padded  ","sourceMessageId":{"$undefined":true}}}
+{"fn":"nextPlanIndicatorEntry","args":["x","a.b.c",{"$undefined":true},"emoji 👍🏽 mix"],"ok":{"state":"a.b.c","sourceMessageId":{"$undefined":true},"implementationMessageId":"emoji 👍🏽 mix"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"a..b","implementationMessageId":"helloa:b:c"},"src/a/b.ts","é","key_name-1"],"ok":{"state":"src/a/b.ts","sourceMessageId":"é","implementationMessageId":"key_name-1"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","implementationMessageId":"éab"},"abcHELLO","a"],"ok":{"state":"abcHELLO","sourceMessageId":"a","implementationMessageId":"éab"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"ünïcödéline1\nline2","a😀b😀cΣΊΣΥΦΟΣ","HELLO"],"ok":{"state":"ünïcödéline1\nline2","sourceMessageId":"a😀b😀cΣΊΣΥΦΟΣ","implementationMessageId":"HELLO"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"HELLO","HELLO",{"$undefined":true}],"ok":{"state":"HELLO","sourceMessageId":"HELLO"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"abc","implementationMessageId":"  padded  日本語のテキスト"},"éΣΊΣΥΦΟΣ",{"$undefined":true},"emoji 👍🏽 mix"],"ok":{"state":"éΣΊΣΥΦΟΣ","sourceMessageId":"abc","implementationMessageId":"emoji 👍🏽 mix"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":":","implementationMessageId":"emoji 👍🏽 mix"},"./x/**/*.jsonstraße",{"$undefined":true},":"],"ok":{"state":"./x/**/*.jsonstraße","sourceMessageId":":","implementationMessageId":":"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"ünïcödé","implementationMessageId":"straße"},"İstanbul","﻿bom",{"$undefined":true}],"ok":{"state":"İstanbul","sourceMessageId":"﻿bom"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"hello world",{"$undefined":true},"ld"],"ok":{"state":"hello world","sourceMessageId":{"$undefined":true},"implementationMessageId":"ld"}}
+{"fn":"nextPlanIndicatorEntry","args":[0,"ab","ünïcödéa..b","ünïcödé"],"ok":{"state":"ab","sourceMessageId":"ünïcödéa..b","implementationMessageId":"ünïcödé"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"{name} has {count} items","a..b"],"ok":{"state":"{name} has {count} items","sourceMessageId":"a..b"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"a:b:c","implementationMessageId":"ΣΊΣΥΦΟΣ"},"emoji 👍🏽 mix","i","a.b.c"],"ok":{"state":"emoji 👍🏽 mix","sourceMessageId":"i","implementationMessageId":"a.b.c"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"Hello World","d","😀hello world"],"ok":{"state":"Hello World","sourceMessageId":"d","implementationMessageId":"😀hello world"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"﻿bom"},"emoji 👍🏽 mix日本語のテキスト","a..b","ab"],"ok":{"state":"proposed","sourceMessageId":"﻿bom"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"./x/**/*.json",{"$undefined":true},"é"],"ok":{"state":"./x/**/*.json","sourceMessageId":{"$undefined":true},"implementationMessageId":"é"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","implementationMessageId":"😀"},"key_name-1","a.b.c"],"ok":{"state":"key_name-1","sourceMessageId":"a.b.c","implementationMessageId":"😀"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"ab","implementationMessageId":"  padded  "},"日本語のテキストΣΊΣΥΦΟΣ","emoji 👍🏽 mix","./x/**/*.json"],"ok":{"state":"日本語のテキストΣΊΣΥΦΟΣ","sourceMessageId":"emoji 👍🏽 mix","implementationMessageId":"./x/**/*.json"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"tab\tseparatedünïcödé","tab\tsepara","﻿bom"],"ok":{"state":"tab\tseparatedünïcödé","sourceMessageId":"tab\tsepara","implementationMessageId":"﻿bom"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},":","éa","HELLOa😀b😀c"],"ok":{"state":":","sourceMessageId":"éa","implementationMessageId":"HELLOa😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"a:b:c",{"$undefined":true},"src/a/b.ts"],"ok":{"state":"a:b:c","sourceMessageId":{"$undefined":true},"implementationMessageId":"src/a/b.ts"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","sourceMessageId":"ünïcödé","implementationMessageId":"{name} has {count} items"},"i","trailing.",{"$undefined":true}],"ok":{"state":"completed","sourceMessageId":"ünïcödé","implementationMessageId":"{name} has {count} items"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed"},"hello world","HELLO","./x/**/*.json"],"ok":{"state":"hello world","sourceMessageId":"HELLO","implementationMessageId":"./x/**/*.json"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"a..b","tab\tseparated","tab\tseparated"],"ok":{"state":"a..b","sourceMessageId":"tab\tseparated","implementationMessageId":"tab\tseparated"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"HELLO","hello"],"ok":{"state":"HELLO","sourceMessageId":"hello"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"abc","implementationMessageId":"😀"},"﻿bom",{"$undefined":true},"﻿bom"],"ok":{"state":"﻿bom","sourceMessageId":"abc","implementationMessageId":"﻿bom"}}
+{"fn":"nextPlanIndicatorEntry","args":[0,"ns:key.path","ünïcödé","😀"],"ok":{"state":"ns:key.path","sourceMessageId":"ünïcödé","implementationMessageId":"😀"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","sourceMessageId":"ΣΊΣΥΦΟΣ","implementationMessageId":"straße"},"ΣΊΣΥΦΟΣ","İstanbul","﻿bom"],"ok":{"state":"completed","sourceMessageId":"ΣΊΣΥΦΟΣ","implementationMessageId":"straße"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","sourceMessageId":".leadingé","implementationMessageId":"hello  padded  "},"emoji 👍🏽 mix","😀"],"ok":{"state":"emoji 👍🏽 mix","sourceMessageId":"😀"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"ns:key.path","﻿bom","{name} has {count} items"],"ok":{"state":"ns:key.path","sourceMessageId":"﻿bom","implementationMessageId":"{name} has {count} items"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"a":"b"},":","{name} has {count} items","é"],"ok":{"state":":","sourceMessageId":"{name} has {count} items","implementationMessageId":"é"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"a":"b"},"{name} has {count} items",".leading","😀"],"ok":{"state":"{name} has {count} items","sourceMessageId":".leading","implementationMessageId":"😀"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"trailing.tab\tseparated","trailing.","straße"],"ok":{"state":"trailing.tab\tseparated","sourceMessageId":"trailing.","implementationMessageId":"straße"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"HELLO","implementationMessageId":".leading"},"a:b:c",{"$undefined":true},{"$undefined":true}],"ok":{"state":"a:b:c","sourceMessageId":"HELLO","implementationMessageId":".leading"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"  padded  ","implementationMessageId":"a"},"LLO","ab","HELLO"],"ok":{"state":"LLO","sourceMessageId":"ab","implementationMessageId":"HELLO"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"{name} has {count} items","日本語のテキスト","hello"],"ok":{"state":"{name} has {count} items","sourceMessageId":"日本語のテキスト","implementationMessageId":"hello"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing"},"ns:key.path","ns:key.patha","a😀b😀c"],"ok":{"state":"ns:key.path","sourceMessageId":"ns:key.patha","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"ab","implementationMessageId":"line1\nline2"},"İstanbul","O","HELLO"],"ok":{"state":"proposed","sourceMessageId":"ab","implementationMessageId":"line1\nline2"}}
+{"fn":"nextPlanIndicatorEntry","args":[{},"﻿bom","trailing.","  padded  "],"ok":{"state":"﻿bom","sourceMessageId":"trailing.","implementationMessageId":"  padded  "}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},":","tab\tseparated","﻿bomHELLO"],"ok":{"state":":","sourceMessageId":"tab\tseparated","implementationMessageId":"﻿bomHELLO"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"ns:key.path","abİstanbul","ey"],"ok":{"state":"ns:key.path","sourceMessageId":"abİstanbul","implementationMessageId":"ey"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"ünïcödéa","implementationMessageId":"é日本語のテキスト"},"Hello World","ab","ünïcödé"],"ok":{"state":"implementing","sourceMessageId":"ünïcödéa","implementationMessageId":"é日本語のテキスト"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"a😀b😀c😀","AB","abc"],"ok":{"state":"a😀b😀c😀","sourceMessageId":"AB","implementationMessageId":"abc"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"Hello World",{"$undefined":true},"key_name-1﻿bom"],"ok":{"state":"Hello World","sourceMessageId":{"$undefined":true},"implementationMessageId":"key_name-1﻿bom"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"Hello World","implementationMessageId":"日本語のテキスト"},"ns:ke",":","ns:key.path"],"ok":{"state":"implementing","sourceMessageId":"Hello World","implementationMessageId":"日本語のテキスト"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"tab\tseparated","implementationMessageId":"ns:key.path"},"日本語のテキスト","İstanbul./x/**/*.json","tab\tseparated./x/**/*.json"],"ok":{"state":"日本語のテキスト","sourceMessageId":"İstanbul./x/**/*.json","implementationMessageId":"tab\tseparated./x/**/*.json"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","implementationMessageId":"ns:key.path"},"İstanbul",{"$undefined":true},"helloHello World"],"ok":{"state":"İstanbul","sourceMessageId":{"$undefined":true},"implementationMessageId":"helloHello World"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"tab\tseparatedtrailing."},"😀",{"$undefined":true},"HELLO"],"ok":{"state":"😀","sourceMessageId":"tab\tseparatedtrailing.","implementationMessageId":"HELLO"}}
+{"fn":"nextPlanIndicatorEntry","args":[["a",1],"a.b.c","日本語のテキスト"],"ok":{"state":"a.b.c","sourceMessageId":"日本語のテキスト"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"tab\tseparated","implementationMessageId":"Hello WorldHELLO"},"./x/**/*.json","a.b.cHello World","Hell"],"ok":{"state":"implementing","sourceMessageId":"tab\tseparated","implementationMessageId":"Hello WorldHELLO"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"hello","a😀b😀c","ns:key.path"],"ok":{"state":"hello","sourceMessageId":"a😀b😀c","implementationMessageId":"ns:key.path"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"abcHELLO",{"$undefined":true},"ab"],"ok":{"state":"abcHELLO","sourceMessageId":{"$undefined":true},"implementationMessageId":"ab"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"ns:key.path","implementationMessageId":"HELLO"},"a","line1\nline2a"],"ok":{"state":"proposed","sourceMessageId":"ns:key.path","implementationMessageId":"HELLO"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"key_name-1","implementationMessageId":"  padded  "},"abc","","ünïcödé"],"ok":{"state":"abc","sourceMessageId":"","implementationMessageId":"ünïcödé"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","sourceMessageId":"","implementationMessageId":"a:b:c"},".leading",{"$undefined":true},"ünïcödé"],"ok":{"state":".leading","sourceMessageId":"","implementationMessageId":"ünïcödé"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing"},"a.b.c","a😀b😀c","trailing."],"ok":{"state":"a.b.c","sourceMessageId":"a😀b😀c","implementationMessageId":"trailing."}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"{name} has {count} items",".leading","line1\nline2"],"ok":{"state":"{name} has {count} items","sourceMessageId":".leading","implementationMessageId":"line1\nline2"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"😀","a:b:c","é"],"ok":{"state":"😀","sourceMessageId":"a:b:c","implementationMessageId":"é"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"a:b:c",{"$undefined":true},"﻿bom"],"ok":{"state":"a:b:c","sourceMessageId":{"$undefined":true},"implementationMessageId":"﻿bom"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"abc","implementationMessageId":"a..b"},"src/a/b.ts  padded  ","b","a..ba..b"],"ok":{"state":"src/a/b.ts  padded  ","sourceMessageId":"b","implementationMessageId":"a..ba..b"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","sourceMessageId":"ns:key.path","implementationMessageId":"İstanbul"},"é","  padded  ","src/a/b.ts"],"ok":{"state":"completed","sourceMessageId":"ns:key.path","implementationMessageId":"İstanbul"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"./x/**/*.json","implementationMessageId":"ns:key.path"},".B.C","a.b.c",{"$undefined":true}],"ok":{"state":".B.C","sourceMessageId":"a.b.c"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed"},"a.b.c","./x/**/*.json","ab"],"ok":{"state":"a.b.c","sourceMessageId":"./x/**/*.json","implementationMessageId":"ab"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","implementationMessageId":"﻿bom"},"Hello World",".leading","d"],"ok":{"state":"Hello World","sourceMessageId":".leading","implementationMessageId":"d"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed"},"a.b.c","a..b","abc"],"ok":{"state":"a.b.c","sourceMessageId":"a..b","implementationMessageId":"abc"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"  padded  ","😀","😀"],"ok":{"state":"  padded  ","sourceMessageId":"😀","implementationMessageId":"😀"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a😀b😀c","Hello Worl","Hello World"],"ok":{"state":"a😀b😀c","sourceMessageId":"Hello Worl","implementationMessageId":"Hello World"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","implementationMessageId":"line1\nline2"},"HELLOtab\tseparated","a😀b😀c"],"ok":{"state":"HELLOtab\tseparated","sourceMessageId":"a😀b😀c","implementationMessageId":"line1\nline2"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"$undefined":true},"hello","hello"],"ok":{"state":"hello","sourceMessageId":"hello"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"hello{name} has {count} items"},"😀",{"$undefined":true},"./x/**/*.json"],"ok":{"state":"😀","sourceMessageId":"hello{name} has {count} items","implementationMessageId":"./x/**/*.json"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","sourceMessageId":"key_name-1","implementationMessageId":"日本語のテキスト"},"trailing.","é",{"$undefined":true}],"ok":{"state":"completed","sourceMessageId":"key_name-1","implementationMessageId":"日本語のテキスト"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"abc","implementationMessageId":":"},"ünïcödéemoji 👍🏽 mix","ns:key.path","moji 👍🏽 "],"ok":{"state":"ünïcödéemoji 👍🏽 mix","sourceMessageId":"ns:key.path","implementationMessageId":"moji 👍🏽 "}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"héllo wörld","hello world","a😀b😀c"],"ok":{"state":"héllo wörld","sourceMessageId":"hello world","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"👍🏽 thumbs","hello world","a😀b😀c"],"ok":{"state":"👍🏽 thumbs","sourceMessageId":"hello world","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"日本語","hello world","a😀b😀c"],"ok":{"state":"日本語","sourceMessageId":"hello world","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"","hello world","a😀b😀c"],"ok":{"state":"","sourceMessageId":"hello world","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"é","hello world","a😀b😀c"],"ok":{"state":"é","sourceMessageId":"hello world","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"İstanbul","hello world","a😀b😀c"],"ok":{"state":"İstanbul","sourceMessageId":"hello world","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"straße","hello world","a😀b😀c"],"ok":{"state":"straße","sourceMessageId":"hello world","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"ılık ırmak","hello world","a😀b😀c"],"ok":{"state":"ılık ırmak","sourceMessageId":"hello world","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"👨‍👩‍👧 family","hello world","a😀b😀c"],"ok":{"state":"👨‍👩‍👧 family","sourceMessageId":"hello world","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a b","hello world","a😀b😀c"],"ok":{"state":"a b","sourceMessageId":"hello world","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"ΣΊΣΥΦΟΣ","hello world","a😀b😀c"],"ok":{"state":"ΣΊΣΥΦΟΣ","sourceMessageId":"hello world","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a😀b","hello world","a😀b😀c"],"ok":{"state":"a😀b","sourceMessageId":"hello world","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"﻿bom","hello world","a😀b😀c"],"ok":{"state":"﻿bom","sourceMessageId":"hello world","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a²b x½ y①","hello world","a😀b😀c"],"ok":{"state":"a²b x½ y①","sourceMessageId":"hello world","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"aⅠb Ⅻ","hello world","a😀b😀c"],"ok":{"state":"aⅠb Ⅻ","sourceMessageId":"hello world","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a𐐀b 𝐀bc","hello world","a😀b😀c"],"ok":{"state":"a𐐀b 𝐀bc","sourceMessageId":"hello world","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"कि ٣٤","hello world","a😀b😀c"],"ok":{"state":"कि ٣٤","sourceMessageId":"hello world","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a",{"$undefined":true},"a😀b😀c"],"ok":{"state":"a","sourceMessageId":{"$undefined":true},"implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","héllo wörld","a😀b😀c"],"ok":{"state":"a","sourceMessageId":"héllo wörld","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","👍🏽 thumbs","a😀b😀c"],"ok":{"state":"a","sourceMessageId":"👍🏽 thumbs","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","日本語","a😀b😀c"],"ok":{"state":"a","sourceMessageId":"日本語","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","","a😀b😀c"],"ok":{"state":"a","sourceMessageId":"","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","é","a😀b😀c"],"ok":{"state":"a","sourceMessageId":"é","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","İstanbul","a😀b😀c"],"ok":{"state":"a","sourceMessageId":"İstanbul","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","straße","a😀b😀c"],"ok":{"state":"a","sourceMessageId":"straße","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","ılık ırmak","a😀b😀c"],"ok":{"state":"a","sourceMessageId":"ılık ırmak","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","👨‍👩‍👧 family","a😀b😀c"],"ok":{"state":"a","sourceMessageId":"👨‍👩‍👧 family","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","a b","a😀b😀c"],"ok":{"state":"a","sourceMessageId":"a b","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","ΣΊΣΥΦΟΣ","a😀b😀c"],"ok":{"state":"a","sourceMessageId":"ΣΊΣΥΦΟΣ","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","a😀b","a😀b😀c"],"ok":{"state":"a","sourceMessageId":"a😀b","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","﻿bom","a😀b😀c"],"ok":{"state":"a","sourceMessageId":"﻿bom","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","a²b x½ y①","a😀b😀c"],"ok":{"state":"a","sourceMessageId":"a²b x½ y①","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","aⅠb Ⅻ","a😀b😀c"],"ok":{"state":"a","sourceMessageId":"aⅠb Ⅻ","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","a𐐀b 𝐀bc","a😀b😀c"],"ok":{"state":"a","sourceMessageId":"a𐐀b 𝐀bc","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","कि ٣٤","a😀b😀c"],"ok":{"state":"a","sourceMessageId":"कि ٣٤","implementationMessageId":"a😀b😀c"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","hello world",{"$undefined":true}],"ok":{"state":"a","sourceMessageId":"hello world"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","hello world","héllo wörld"],"ok":{"state":"a","sourceMessageId":"hello world","implementationMessageId":"héllo wörld"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","hello world","👍🏽 thumbs"],"ok":{"state":"a","sourceMessageId":"hello world","implementationMessageId":"👍🏽 thumbs"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","hello world","日本語"],"ok":{"state":"a","sourceMessageId":"hello world","implementationMessageId":"日本語"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","hello world",""],"ok":{"state":"a","sourceMessageId":"hello world"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","hello world","é"],"ok":{"state":"a","sourceMessageId":"hello world","implementationMessageId":"é"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","hello world","İstanbul"],"ok":{"state":"a","sourceMessageId":"hello world","implementationMessageId":"İstanbul"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","hello world","straße"],"ok":{"state":"a","sourceMessageId":"hello world","implementationMessageId":"straße"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","hello world","ılık ırmak"],"ok":{"state":"a","sourceMessageId":"hello world","implementationMessageId":"ılık ırmak"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","hello world","👨‍👩‍👧 family"],"ok":{"state":"a","sourceMessageId":"hello world","implementationMessageId":"👨‍👩‍👧 family"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","hello world","a b"],"ok":{"state":"a","sourceMessageId":"hello world","implementationMessageId":"a b"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","hello world","ΣΊΣΥΦΟΣ"],"ok":{"state":"a","sourceMessageId":"hello world","implementationMessageId":"ΣΊΣΥΦΟΣ"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","hello world","a😀b"],"ok":{"state":"a","sourceMessageId":"hello world","implementationMessageId":"a😀b"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","hello world","﻿bom"],"ok":{"state":"a","sourceMessageId":"hello world","implementationMessageId":"﻿bom"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","hello world","a²b x½ y①"],"ok":{"state":"a","sourceMessageId":"hello world","implementationMessageId":"a²b x½ y①"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","hello world","aⅠb Ⅻ"],"ok":{"state":"a","sourceMessageId":"hello world","implementationMessageId":"aⅠb Ⅻ"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","hello world","a𐐀b 𝐀bc"],"ok":{"state":"a","sourceMessageId":"hello world","implementationMessageId":"a𐐀b 𝐀bc"}}
+{"fn":"nextPlanIndicatorEntry","args":[null,"a","hello world","कि ٣٤"],"ok":{"state":"a","sourceMessageId":"hello world","implementationMessageId":"कि ٣٤"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"m1"},"proposed","m1"],"ok":{"state":"proposed","sourceMessageId":"m1"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"m1","implementationMessageId":"i1"},"implementing","m1"],"ok":{"state":"implementing","sourceMessageId":"m1","implementationMessageId":"i1"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"implementing","sourceMessageId":"m1","implementationMessageId":"i1"},"implementing","m1","i2"],"ok":{"state":"implementing","sourceMessageId":"m1","implementationMessageId":"i2"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"completed","sourceMessageId":"m1"},"proposed","m1"],"ok":{"state":"completed","sourceMessageId":"m1"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"m1"},"completed","m1"],"ok":{"state":"completed","sourceMessageId":"m1"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"m1"},"completed",{"$undefined":true}],"ok":{"state":"completed","sourceMessageId":"m1"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"m2"},"completed","m1"],"ok":{"state":"proposed","sourceMessageId":"m2"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"m1"},"completed","m2","i"],"ok":{"state":"completed","sourceMessageId":"m2","implementationMessageId":"i"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed"},"proposed",{"$undefined":true}],"ok":{"state":"proposed"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"m1"},"proposed","m1",""],"ok":{"state":"proposed","sourceMessageId":"m1"}}
+{"fn":"nextPlanIndicatorEntry","args":[{"state":"proposed","sourceMessageId":"😀"},"completed","￿"],"ok":{"state":"completed","sourceMessageId":"￿"}}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"m1"},"m2"],"ok":null}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"m2"},"m1"],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"m2"},"m2"],"ok":"proposed"}
+{"fn":"resolveEffectivePlanIndicatorState","args":[{"state":"proposed","sourceMessageId":"￿"},"😀"],"ok":"proposed"}

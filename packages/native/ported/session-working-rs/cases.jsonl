@@ -1,0 +1,1255 @@
+{"fn":"hasTerminalAssistantFinish","args":[null],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"a":{"b":"c"}}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"$undefined":true}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[[]],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[["a",1]],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"a":"b"}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":["x"],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[true],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[0],"ok":false}
+{"fn":"hasToolCallAssistantFinish","args":[[]],"ok":false}
+{"fn":"hasToolCallAssistantFinish","args":[["a",1]],"ok":false}
+{"fn":"hasToolCallAssistantFinish","args":[{"$undefined":true}],"ok":false}
+{"fn":"hasToolCallAssistantFinish","args":["x"],"ok":false}
+{"fn":"hasToolCallAssistantFinish","args":[{"a":"b"}],"ok":false}
+{"fn":"hasToolCallAssistantFinish","args":[null],"ok":false}
+{"fn":"hasToolCallAssistantFinish","args":[true],"ok":false}
+{"fn":"hasToolCallAssistantFinish","args":[{"a":{"b":"c"}}],"ok":false}
+{"fn":"hasToolCallAssistantFinish","args":[{}],"ok":false}
+{"fn":"hasToolCallAssistantFinish","args":[],"ok":false}
+{"fn":"hasToolCallAssistantFinish","args":[0],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[{"$undefined":true}],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[true],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[[]],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":["x"],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[0],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[["a",1]],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[{"a":{"b":"c"}}],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[{"a":"b"}],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[null],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[{}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"$undefined":true}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[0],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"a":"b"}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[["a",1]],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"a":{"b":"c"}}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[[]],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[null],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[true],"ok":false}
+{"fn":"isAssistantTurnComplete","args":["x"],"ok":false}
+{"fn":"isIncompleteAssistantMessage","args":[0],"ok":false}
+{"fn":"isIncompleteAssistantMessage","args":[{"a":"b"}],"ok":false}
+{"fn":"isIncompleteAssistantMessage","args":[[]],"ok":false}
+{"fn":"isIncompleteAssistantMessage","args":[],"ok":false}
+{"fn":"isIncompleteAssistantMessage","args":[{}],"ok":false}
+{"fn":"isIncompleteAssistantMessage","args":["x"],"ok":false}
+{"fn":"isIncompleteAssistantMessage","args":[null],"ok":false}
+{"fn":"isIncompleteAssistantMessage","args":[{"$undefined":true}],"ok":false}
+{"fn":"isIncompleteAssistantMessage","args":[["a",1]],"ok":false}
+{"fn":"isIncompleteAssistantMessage","args":[{"a":{"b":"c"}}],"ok":false}
+{"fn":"isIncompleteAssistantMessage","args":[true],"ok":false}
+{"fn":"hasInFlightToolParts","args":["x"],"ok":false}
+{"fn":"hasInFlightToolParts","args":[{"$undefined":true}],"ok":false}
+{"fn":"hasInFlightToolParts","args":[],"ok":false}
+{"fn":"hasInFlightToolParts","args":[0],"error":"(parts ?? []) is not iterable"}
+{"fn":"hasInFlightToolParts","args":[[]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{},true,"x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[null,0,["a",1]]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[{},{},0]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[{"a":"b"}],"error":"(parts ?? []) is not iterable"}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[null,{"a":{"b":"c"}},{}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},{"a":{"b":"c"}},"x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[true]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[null,"x"]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[0,{"a":{"b":"c"}},true]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[["x",[],{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[["x",null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[0,["a",1]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[[]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[["a",1]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"},[],true]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[true],"error":"(parts ?? []) is not iterable"}
+{"fn":"hasInFlightToolParts","args":[[0,{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"},null,{}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[true,["a",1],{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[{}],"error":"(parts ?? []) is not iterable"}
+{"fn":"hasInFlightToolParts","args":[[null,0]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[null],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"},0,null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"},0]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[["x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[true,["a",1],null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[["x",{"a":"b"},0]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[0,["a",1],{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[0]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[["a",1],{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[{"a":{"b":"c"}}],"error":"(parts ?? []) is not iterable"}
+{"fn":"hasInFlightToolParts","args":[[[],true,true]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[null,[],true]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[["x",{"a":"b"}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[[],true]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[["a",1],0,[]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[true,0,0]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"},["a",1]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[[],{},"x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[true,{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"},"x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[["a",1],{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},["a",1],true]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{},[],"x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"},{"a":"b"}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},[],"x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[[],"x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},"x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{},0,0]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[true,{"a":{"b":"c"}},{"a":"b"}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[["x",["a",1]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[[],["a",1]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[["a",1]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[true,{"a":"b"}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{},true,0]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},true]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[true,[],null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[["x","x",[]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[0,0]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[0,[]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[["x","x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[0,{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[0,[],null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[true,true,0]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[[],null,null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[{},{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[["x",[]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[true,{"a":"b"},true]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[null,{"a":{"b":"c"}},0]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"},{},["a",1]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[[],null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[["a",1],"x",true]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[null,{"a":"b"}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[{},["a",1],{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{},{},{"a":"b"}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},["a",1],0]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[true,0]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[["x",{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[["a",1],"x",{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[["a",1],{"a":"b"}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{},{"a":"b"}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[null,{"a":"b"},true]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[["a",1],null,null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[[],0]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{},{},"x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[["x",null,{}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[["a",1],{"a":"b"},"x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[[],["a",1],true]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"},{"a":"b"},0]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[0,"x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},0,null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[["a",1],[]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{},true,["a",1]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[null,null,true]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[{},["a",1]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},"x",{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[["a",1],{},{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{},[],{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[[],[]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[null,{},[]]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[true,{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[["x",true]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[null,{}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"},{"a":"b"},null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[{},["a",1],[]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"},{},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[0,null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[["a",1],true]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},0,{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"},null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},[]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{},[],{"a":"b"}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[true,["a",1]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},null,{}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[[],true,[]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[["a",1],["a",1],null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[[],true,{"a":"b"}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{},null,true]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[{},{"a":"b"},0]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"},[],"x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[null,null,{"a":"b"}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[["x",0]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{},"x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{},{"a":{"b":"c"}},null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},["a",1]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[null,null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[true,{"a":"b"},{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[true,[]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"},"x",null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[[],0,true]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[["a",1],true,"x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[null,[]]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},{"a":"b"}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[null,["a",1],null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[["a",1],true,0]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"},[],{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[true,[],{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[true,true]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[true,{"a":"b"},"x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[true,true,{"a":"b"}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[[],{"a":"b"},true]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[["x",0,null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},0]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[[],{"a":{"b":"c"}},{"a":"b"}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{},{"a":"b"},{"a":"b"}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[["a",1],0]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},true,{"a":"b"}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[[],[],["a",1]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[["a",1],["a",1]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"},[]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[["x",{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[true,"x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[true,null,{"a":"b"}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[null,["a",1]]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[{},{},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[true,{},[]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[["a",1],true,{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},["a",1],{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[true,null,{}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"},"x","x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{},"x",{"a":"b"}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"},{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[0,["a",1],true]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},{"a":{"b":"c"}},{"a":"b"}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[["a",1],"x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[0,{"a":"b"}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"},{"a":{"b":"c"}},[]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[["x",["a",1],["a",1]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[["x",null,[]]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"},true,{"a":"b"}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[true,{"a":{"b":"c"}},[]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":"b"},true,true]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{},0,null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[{},["a",1],"x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[0,{},0]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[null,null,{}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[[],["a",1],"x"]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[null,true]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[["a",1],0,null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[0,true]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[0,null,{"a":"b"}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasInFlightToolParts","args":[[{},0,{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[true,true,["a",1]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[0,0,{}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},"x",{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"a":{"b":"c"}},{"a":{"b":"c"}},[]]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{},null,null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":"b"}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[{"a":"b"}],"error":"(parts ?? []) is not iterable"}
+{"fn":"hasVisibleAssistantSummary","args":[[[],true,{}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{},true,true]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[[]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[{"$undefined":true}],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[true]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[0,{"a":"b"},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{},true]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],["a",1],[]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[["x"]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[["x","x",true]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[[],["a",1]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[true,[]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[0,[]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":"b"},{}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[0]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[null,["a",1]]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[0],"error":"(parts ?? []) is not iterable"}
+{"fn":"hasVisibleAssistantSummary","args":[{}],"error":"(parts ?? []) is not iterable"}
+{"fn":"hasVisibleAssistantSummary","args":["x"],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[0,{"a":{"b":"c"}},{}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],true]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}},["a",1]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{},[]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[0,["a",1],{}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[[],{"a":"b"}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{},0]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[{"a":{"b":"c"}}],"error":"(parts ?? []) is not iterable"}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],"x"]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}},"x",[]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],null,["a",1]]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[[],{"a":"b"},true]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[true],"error":"(parts ?? []) is not iterable"}
+{"fn":"hasVisibleAssistantSummary","args":[[[],0]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":"b"},{"a":"b"},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[["a",1]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[true,{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[[],true,null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":"b"},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[true,0,"x"]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],{"a":"b"},{"a":"b"}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[0,null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[null,true]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}},{"a":"b"}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":"b"},{},0]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[["x",[],null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[null,0]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[null,["a",1],[]]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":"b"},{"a":"b"}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":"b"},[]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[0,{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[true,{"a":{"b":"c"}},null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}},{},null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[null],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],{"a":"b"}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":"b"},0]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[0,{}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[[],{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[0,null,null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[true,null,true]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[0,true,["a",1]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[[],{},{}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[null,"x"]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[true,{"a":{"b":"c"}},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[[],{}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],["a",1]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],0,"x"]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[null,null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":"b"},{"a":{"b":"c"}},{}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{},true,{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{},["a",1]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{},["a",1],null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}},true]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[["x",[],{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[["x",{}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],true,"x"]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[[],"x",{"a":"b"}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[0,true]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[["x",true,"x"]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[["x",{"a":{"b":"c"}},["a",1]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[[],[]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[null,["a",1],"x"]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{},["a",1],true]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[true,{},true]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[null,"x",["a",1]]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{},null,{"a":{"b":"c"}}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[null,[],0]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":"b"},"x",["a",1]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[null,0,true]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[0,["a",1]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[null,null,[]]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{},"x"]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{},{}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[["x",true,{}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[null,{"a":{"b":"c"}}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],"x",true]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":"b"},null,true]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[null,{"a":"b"}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":"b"},{"a":"b"},0]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],{},null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[["x","x"]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],null,0]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[["x",null,{"a":{"b":"c"}}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}},{}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[true,"x"]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[["x",[],{"a":"b"}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[true,{"a":{"b":"c"}},{"a":"b"}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{},true,0]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}},["a",1],{"a":"b"}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{},null,{}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[[],{},[]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[0,true,{"a":"b"}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[[],["a",1],{}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[true,0]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}},0,[]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}},{"a":"b"},0]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[true,true]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[0,true,{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[null,0,{"a":"b"}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}},null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],{},"x"]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],[],"x"]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{},{"a":"b"},"x"]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}},"x"]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}},{"a":"b"},true]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{},"x",true]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[true,{},null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[true,[],[]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[["x",null,0]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{},{"a":{"b":"c"}},[]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":"b"},0,"x"]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[0,true,{}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}},true,"x"]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],[]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[null,{"a":"b"},{"a":{"b":"c"}}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":"b"},["a",1]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}},[],"x"]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[0,0,"x"]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],{}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],0,{}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}},[]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[[],null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{},["a",1],{}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}},["a",1],{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[[],{"a":{"b":"c"}},true]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[true,null,null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],"x",0]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[true,{"a":"b"},null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[["x",0]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[true,"x",null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[[],["a",1],null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}},0]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[true,{"a":"b"},["a",1]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[true,{},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[0,{"a":{"b":"c"}},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":"b"},{},true]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[true,["a",1]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[true,{"a":{"b":"c"}},"x"]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[true,["a",1],{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":"b"},"x",{"a":"b"}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{},null,{"a":"b"}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}},{"a":{"b":"c"}},[]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],null,[]]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":"b"},{},null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[{},[],{"a":"b"}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[[],"x"]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[0,{"a":"b"}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[["x",null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[0,{},0]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[[],0,{}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[true,{},{}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],true,[]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}},["a",1],"x"]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":{"b":"c"}},["a",1],null]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[null,{},{}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[[true,{},[]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[0,"x",["a",1]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[["x",0,0]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[null,{"a":{"b":"c"}},{}]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[["x",0,["a",1]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[["a",1],0]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":"b"},null,[]]],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"hasVisibleAssistantSummary","args":[["x",[]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[["x",{"a":{"b":"c"}},[]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[0,"x"]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":"b"},{"a":"b"},["a",1]]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[0,0]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{},{},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"a":"b"},[],"x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[true,[["a",1]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[true,"x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},["x","x",{}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[0]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{},{"$undefined":true}],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[true,[{"a":"b"},{},"x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},["a",1]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{},[{"a":{"b":"c"}},[],["a",1]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[[]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[[],[[],"x","x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[0,{"$undefined":true}],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":["x",[0,null]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":["x",[["a",1],null,"x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[[],[{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[["a",1],{"$undefined":true}],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[{"a":{"b":"c"}},"x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":["x"],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":"b"},[0,["a",1],{}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{}],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[["a",1],[{"a":"b"},[],{"a":"b"}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[[],"x"],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{},[]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[["a",1],null,[]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[true,[{"a":"b"}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[null,[],null]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[null],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[{},{}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[{"a":{"b":"c"}},["a",1]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":{"b":"c"}},[{},{"a":{"b":"c"}},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},["x","x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[[],true]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":"b"},[true]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[0,["a",1]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":["x",{"$undefined":true}],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":{"b":"c"}},["x",0]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[{"a":{"b":"c"}},null]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[true,{"$undefined":true}],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{},true],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[true,[0]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":["x",true],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[null,[]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[null,0]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[null,[{"a":{"b":"c"}},0,["a",1]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":["x",[]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":{"b":"c"}},[{}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true}],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":"b"},[{"a":{"b":"c"}},null,0]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[0,[]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[0,[0,{"a":"b"}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[{"a":"b"},"x",null]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":"b"},[]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{},[["a",1],{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[true,[]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":{"b":"c"}},[]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},["x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":{"b":"c"}},[0]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":"b"},[[],0]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},{"a":"b"}],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[["a",1]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":["x",[{"a":"b"}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[true,[null]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},"x"],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":"b"},[0,0,["a",1]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":["x",[{"a":{"b":"c"}},0,"x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[{"a":{"b":"c"}},[],["a",1]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[{"a":"b"},"x",["a",1]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[true,{"a":"b"}],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[null]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{},[null,[],{"a":"b"}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[["a",1],"x"],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},{"$undefined":true}],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[null,[null,[]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[["a",1],["a",1]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[["a",1],["x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[[],[]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[[],{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":{"b":"c"}},[true,[],true]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},{}],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[null,[{},true,true]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":"b"}],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{},[["a",1]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[null,[null]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":{"b":"c"}},["x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[0,{"a":"b"}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[0,[[]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{},[{"a":"b"},["a",1]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[["a",1],[{"a":"b"}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[["a",1],{"a":{"b":"c"}},{"a":"b"}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[true,["x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[null,null,0]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[true],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{},[0,null]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[{"a":"b"},null,null]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[0],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[[],[true,["a",1],{}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[["a",1],[]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[0,[{"a":"b"},0,[]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":{"b":"c"}},[true,"x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":{"b":"c"}},[{"a":"b"},true,["a",1]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[null,[{"a":"b"}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[["a",1],[["a",1],{"a":{"b":"c"}},["a",1]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[["a",1]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[0,null],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[0,0,"x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[{"a":{"b":"c"}},{},{}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{},[null]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},["x",{"a":"b"}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":{"b":"c"}},[0,[]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":["x",[{"a":{"b":"c"}},{}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{},null],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[true,{},0]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[[],[true,null]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},{"a":{"b":"c"}}],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":"b"},[{}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[null,{"$undefined":true}],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[null,[0,0]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":["x",["x","x",true]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[[],true],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[["a",1],[{"a":"b"},{"a":"b"}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[{}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[null,{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[true,[true,"x",true]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[0,[null]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[{},"x",0]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[true]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[null,[[],{"a":"b"},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[{},{"a":"b"},true]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":"b"},{"$undefined":true}],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[0,{"a":"b"},[]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":"b"},null],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[{"a":{"b":"c"}},"x",0]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[0,{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[["a",1],"x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":["x",["x",{},{}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{},[{"a":{"b":"c"}},"x","x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[true,[["a",1],0,{}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[true,"x"],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":"b"},[["a",1],["a",1]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[true,["x",0]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},["x",{"a":"b"},{}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[[]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{},[true,"x","x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":"b"},[{"a":"b"}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[0,["a",1],"x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[0,[{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[null,"x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[0,[true,"x",{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[0,true]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[{"a":"b"},{}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[null,null]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[0,[0,null]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[{"a":"b"},null,"x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[["a",1],[{},[]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[[],[{},"x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[0,[]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":["x",[0,[]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[true,[true,0,[]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},true],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[[],{},0]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},["x",null,true]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{},[["a",1],{"a":"b"}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":{"b":"c"}},{"a":"b"}],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[0,[{"a":"b"},null,{"a":"b"}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[null,[{},true]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":{"b":"c"}},[["a",1],"x",true]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":["x",[{"a":"b"},true]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":["x",[0,"x",{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":{"b":"c"}},[[],true,true]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":["x",[["a",1],{"a":"b"},{}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[["a",1],[{"a":"b"},0,0]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":{"b":"c"}},["x",true,[]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[{"a":{"b":"c"}},0]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[["a",1],["x",true,{}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":["x",[["a",1]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[0,"x",{"a":"b"}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[[],[{}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[[],{"$undefined":true}],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":["x",[{"a":"b"},"x",["a",1]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[[],[["a",1]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[0,[{}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{},[["a",1],[],true]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[0,["x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[true,[true,0,true]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[{"a":{"b":"c"}},{"a":{"b":"c"}},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},["x",true]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[0,[{},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{},[null,{"a":"b"}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":{"b":"c"}},[null,null]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":{"b":"c"}},true],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":{"b":"c"}},[["a",1]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[[],[["a",1],[]]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{},[["a",1],{}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{},[[],{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},["x",["a",1],"x"]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[null,{"a":"b"},{}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[true,{"a":{"b":"c"}}],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"a":"b"},[{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},{"$undefined":true}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[["a",1],[{}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[0],"ok":false}
+{"fn":"isLiveAssistantMessage","args":["x",[]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[null,["a",1],[]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":{"b":"c"}},[]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{"a":"b"}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[null,[]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[null,{"$undefined":true}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":"b"},[0,0,{"a":"b"}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{},{"a":"b"}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[["a",1],"x"]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},["a",1]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":"b"},{"$undefined":true}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[true,[true,null]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{},[{"a":"b"},"x",{}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},null],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":"b"},[0]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[null,[[]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[0,[true]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[["a",1],{"a":"b"}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":["x",[0,[]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[["a",1],{"$undefined":true}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":"b"},[]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":{"b":"c"}},{"$undefined":true}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[["a",1],{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[0,[["a",1]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[null,"x"]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[["a",1]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[null,[0]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":"b"},[{}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[["a",1],0]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":"b"},[0,[],0]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[0,{"$undefined":true}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[["a",1],[0,[]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},{}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{},"x"]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[["a",1],[]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[["a",1],[{"a":{"b":"c"}},{"a":{"b":"c"}},null]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{},{}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":"b"},null],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[["a",1],[[],{"a":"b"},true]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[[],{"$undefined":true}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":["x",[{"a":"b"},{},"x"]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":["x",[{},{},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":["x",[null,{},[]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":["x",[[],["a",1],{}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[true,["x"]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[["a",1],[["a",1],{"a":"b"}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{},[{"a":"b"}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[null,["x",["a",1],{}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":["x",[{"a":"b"}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":["x",[{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{},[]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[true,[]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{"a":{"b":"c"}},["a",1],0]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[0]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":{"b":"c"}},[{"a":{"b":"c"}},{"a":"b"},{"a":"b"}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[[],["x"]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":["x",[{"a":"b"},null]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[null],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[[],[{"a":{"b":"c"}},"x"]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[[],null,{"a":"b"}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{"a":{"b":"c"}},true,null]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[true],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[["a",1],[true]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[[],[]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":["x",["x",0,0]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[true,[{},["a",1]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{"a":{"b":"c"}},{"a":"b"},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[null,true]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{"a":{"b":"c"}},[]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":["x",[0]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[["a",1],[],0]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[null,["a",1],{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{},true],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{},[true,{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[true,[{},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[null,{"a":{"b":"c"}},["a",1]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":"b"},{}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":{"b":"c"}},["x",{"a":{"b":"c"}},[]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[true,[["a",1],{"a":{"b":"c"}},"x"]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[null,[],"x"]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[true,{"a":"b"},{"a":"b"}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[["a",1],[0]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[[]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{},["a",1]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[[],[{}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":{"b":"c"}},["x",0,0]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[0,{},true]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{},null],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{"a":"b"},true]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{},[0,null,["a",1]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":"b"},true],"ok":false}
+{"fn":"isLiveAssistantMessage","args":["x",{"$undefined":true}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[null,[0,"x"]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{"a":{"b":"c"}},0,{"a":"b"}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[null,[{"a":{"b":"c"}},0,{"a":"b"}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{},["a",1],{}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},["x",["a",1],null]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{"a":"b"},true,{}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{"a":{"b":"c"}},true,true]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[["a",1],{}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{},{}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[0,[0]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":{"b":"c"}},["x"]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":{"b":"c"}},["a",1]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[["a",1],["x"]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[true,[{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[[],[]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[null,[["a",1],{"a":"b"},{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{},{"a":"b"}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":["x",[{"a":{"b":"c"}},true,null]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{},{"$undefined":true}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{"a":"b"},0]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":{"b":"c"}},[null,"x"]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":"b"},[null,{"a":"b"}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":"b"}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[null]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[true]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[[],[[],["a",1]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{},[{}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[["a",1],[{"a":"b"},"x"]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[0,null]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[0,{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[[],null,[]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[0,[]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[["a",1],[0,true]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":["x",{"a":"b"}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[0,[{},{"a":"b"}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":"b"},[{"a":"b"},["a",1]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},true],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[["a",1],[{"a":{"b":"c"}},true]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[0,[[],"x",{"a":"b"}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":{"b":"c"}},[[],{}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":["x"],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},0],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[0,[[],{"a":"b"}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":"b"},[null]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[0,[],"x"]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[["a",1]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[0,["x"]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{"a":{"b":"c"}},["a",1],"x"]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},["x",["a",1],{}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[[],["x",[],0]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[true,["x",{"a":"b"}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[["a",1],[true,null]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[["a",1],[{},{"a":"b"}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":["x",[true,null]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[true,[true]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[true,{"$undefined":true}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},"x"],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[[],{"a":"b"},["a",1]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":["x",0],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[["a",1],[{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[[],null]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[true,0,"x"]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[true,true,0]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[0,[["a",1],null]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":["x",[["a",1],["a",1],{}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[true,[["a",1]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[null,["a",1]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":["x",[true,"x"]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[["a",1],true,[]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[["a",1],[[],0,0]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{},"x",true]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{},[[],{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":"b"},[{"a":{"b":"c"}},0]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{"a":"b"},"x",0]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[0,true],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[null,[{"a":"b"},{},true]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[null,true,0]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{},[true]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[0,[{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":"b"},["x",{},true]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[null,[null,[]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[["a",1],[{"a":"b"},"x","x"]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{},["a",1],{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[0,[{}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},["x",null,null]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},{"a":"b"}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[[]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{"a":{"b":"c"}},["a",1],{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},["x",["a",1]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},["x"]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[true,[0]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":"b"},[{},[],null]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[null,[true,{"a":"b"},[]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[0,[[],true]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{"a":"b"},{"a":"b"}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[true,{"a":{"b":"c"}},["a",1]]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"a":"b"},["x",{"a":{"b":"c"}}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[[],{"a":{"b":"c"}}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[0,[{},null,{"a":"b"}]],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":["a",1],"permissions":[0,["a",1]],"messages":[{"a":"b"}],"liveStreamingMessageId":"a😀b😀c","liveParts":["x"]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[0],"messages":[{"a":"b"},null,[]],"liveStreamingMessageId":"😀src/a/b.ts","liveParts":[{"a":{"b":"c"}},{"a":"b"},[]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[{},0,null],"messages":[],"liveStreamingMessageId":null,"liveParts":[["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[[]],"messages":[],"liveStreamingMessageId":null,"liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":"x","permissions":[],"messages":[[]],"liveStreamingMessageId":"﻿bom","liveParts":[["a",1],["a",1],0]}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":"x","permissions":[],"messages":[{"a":{"b":"c"}},null],"liveParts":[]}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":"x","permissions":[{"a":"b"},{"a":{"b":"c"}}],"messages":[],"liveParts":[{"a":{"b":"c"}}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":"x","permissions":[["a",1],true,{"a":{"b":"c"}}],"messages":[],"liveParts":[0,{},0]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[["a",1]],"messages":[true],"liveStreamingMessageId":null}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":"x","permissions":[true,{},["a",1]],"messages":[{"a":{"b":"c"}}],"liveParts":[{},["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":[true],"liveParts":[{"a":{"b":"c"}},[],{"a":"b"}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":["a",1],"permissions":[{"a":"b"},{"a":"b"},null],"messages":[],"liveStreamingMessageId":"a..bΣΊΣΥΦΟΣ","liveParts":[[],0]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[0,0,null],"messages":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[true,null,true],"messages":["x",0],"liveStreamingMessageId":null,"liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{},"permissions":[{"a":"b"},{},["a",1]],"messages":[],"liveStreamingMessageId":"😀","liveParts":[{}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":["x"],"error":"Cannot read properties of undefined (reading 'length')"}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":["x","x"],"messages":[{"a":{"b":"c"}},true],"liveStreamingMessageId":null,"liveParts":[["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":[{}],"liveStreamingMessageId":null,"liveParts":[[],["a",1],null]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":null,"permissions":["x",{},["a",1]],"messages":[{"a":{"b":"c"}}],"liveStreamingMessageId":null}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":true,"permissions":[true,["a",1],["a",1]],"messages":[["a",1],{"a":"b"}],"liveStreamingMessageId":"hello world","liveParts":["x"]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[0,[]],"messages":[],"liveStreamingMessageId":"key_name-1"}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":[],"permissions":[{"a":"b"},true],"messages":[{},{"a":"b"},"x"],"liveStreamingMessageId":null}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[null],"messages":["x",[]],"liveStreamingMessageId":null,"liveParts":[null,"x",{"a":"b"}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":"x","permissions":[["a",1],["a",1],null],"messages":[{"a":"b"},0,[]],"liveStreamingMessageId":null,"liveParts":[{"a":"b"},0,null]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":[],"permissions":[],"messages":[],"liveStreamingMessageId":null}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[{},"x"],"messages":[null],"liveParts":[{}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[0,true],"messages":[],"liveStreamingMessageId":"./x/**/*.jsona.b.c","liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[null],"error":"Cannot destructure property 'status' of 'object null' as it is null."}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[[],{"a":{"b":"c"}}],"messages":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[0],"error":"Cannot read properties of undefined (reading 'length')"}
+{"fn":"isSessionWorkingFromState","args":[{"status":true,"permissions":["x",{}],"messages":[],"liveStreamingMessageId":null}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":["a",1],"permissions":[0],"messages":[{},{"a":"b"},{}],"liveStreamingMessageId":null,"liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{},"permissions":[true,{"a":{"b":"c"}}],"messages":[["a",1],true,{}],"liveStreamingMessageId":null}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":0,"permissions":[[],["a",1]],"messages":[true,null,["a",1]],"liveParts":[["a",1],true]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":["x",{}],"liveStreamingMessageId":":","liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":["a",1],"permissions":[],"messages":[[],["a",1]],"liveStreamingMessageId":"HELLO"}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":["a",1],"permissions":[{"a":"b"},{}],"messages":[],"liveParts":[[]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[["a",1]],"error":"Cannot read properties of undefined (reading 'length')"}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[{"a":"b"}],"messages":[{"a":"b"},true],"liveStreamingMessageId":null}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"a":{"b":"c"}},"permissions":[null,{"a":{"b":"c"}},["a",1]],"messages":["x",[]],"liveStreamingMessageId":null,"liveParts":[{}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":[{},0,{"a":"b"}],"liveStreamingMessageId":"ünïcödé","liveParts":["x"]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":[null,null],"liveStreamingMessageId":"a","liveParts":[true,"x",["a",1]]}],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[null],"messages":[true,null,"x"],"liveStreamingMessageId":"straße"}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{},"permissions":[0,"x"],"messages":[0,0,["a",1]],"liveStreamingMessageId":"hello world","liveParts":[{"a":{"b":"c"}},{"a":{"b":"c"}},null]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[0,true,["a",1]],"messages":[{}],"liveStreamingMessageId":"İstanbul","liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":true,"permissions":[null],"messages":[true,["a",1]],"liveStreamingMessageId":null,"liveParts":["x",["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"a":"b"},"permissions":[{"a":"b"},["a",1]],"messages":[["a",1],"x"],"liveStreamingMessageId":null}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"a":"b"},"permissions":[true],"messages":["x",{"a":"b"}],"liveStreamingMessageId":null,"liveParts":[["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{}],"error":"Cannot read properties of undefined (reading 'length')"}
+{"fn":"isSessionWorkingFromState","args":[{"status":true,"permissions":[{"a":{"b":"c"}},[],[]],"messages":[[],{},null],"liveStreamingMessageId":".leading","liveParts":[{"a":{"b":"c"}}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":[],"permissions":[0],"messages":[{"a":{"b":"c"}}],"liveParts":[{"a":"b"},{},null]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[0],"messages":["x"],"liveStreamingMessageId":null,"liveParts":["x",[],["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":["x",true,{"a":"b"}],"liveStreamingMessageId":null,"liveParts":[[]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[true],"messages":[],"liveStreamingMessageId":"emoji 👍🏽 mixİstanbul"}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{},"permissions":[{"a":"b"},0],"messages":[true,"x",[]],"liveParts":["x"]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":0,"permissions":[[],{},{"a":"b"}],"messages":[[],0,null],"liveStreamingMessageId":"﻿bom","liveParts":[null]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":"x","permissions":[{"a":{"b":"c"}},true],"messages":[],"liveParts":[0]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":true,"permissions":[{"a":{"b":"c"}},["a",1],null],"messages":["x",["a",1],["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[0],"messages":[],"liveStreamingMessageId":"ΣΊΣΥΦΟΣ","liveParts":[{"a":{"b":"c"}},{"a":{"b":"c"}}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":["a",1],"permissions":[null,["a",1]],"messages":[0],"liveStreamingMessageId":":","liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[{},"x"],"messages":[null],"liveStreamingMessageId":null,"liveParts":[[],["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":[null,[]],"liveStreamingMessageId":"emoji 👍🏽 mix","liveParts":[[],null]}],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"isSessionWorkingFromState","args":[{"a":"b"}],"error":"Cannot read properties of undefined (reading 'length')"}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[{"a":"b"},true],"messages":[[],[]],"liveStreamingMessageId":null,"liveParts":[null]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[[],0,null],"messages":[],"liveStreamingMessageId":null,"liveParts":[{"a":"b"}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":true,"permissions":[],"messages":[true,true,{"a":{"b":"c"}}],"liveStreamingMessageId":null,"liveParts":[null]}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":{},"permissions":[null],"messages":[true,true,"x"],"liveStreamingMessageId":null,"liveParts":[{},0]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"a":{"b":"c"}},"permissions":[],"messages":[[],null],"liveStreamingMessageId":"ns:key.path","liveParts":[{"a":{"b":"c"}}]}],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[null,{},true],"messages":[],"liveStreamingMessageId":"src/a/b.tsline1\nline2","liveParts":[0]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":["a",1],"permissions":[],"messages":[],"liveStreamingMessageId":null}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":["x",[],"x"],"liveStreamingMessageId":null,"liveParts":["x"]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":[],"liveStreamingMessageId":"emoji 👍🏽 mix","liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":0,"permissions":[],"messages":[null,{}],"liveStreamingMessageId":null,"liveParts":[["a",1],["a",1],{"a":{"b":"c"}}]}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[[]],"messages":[{},{},{"a":{"b":"c"}}],"liveStreamingMessageId":null,"liveParts":[0,"x"]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":[],"permissions":[0,{"a":"b"},null],"messages":[],"liveStreamingMessageId":"trailing."}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"a":{"b":"c"}}],"error":"Cannot read properties of undefined (reading 'length')"}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[{"a":{"b":"c"}},[],{"a":"b"}],"messages":[],"liveStreamingMessageId":null,"liveParts":["x",{}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":0,"permissions":[[]],"messages":[null],"liveStreamingMessageId":null,"liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{},"permissions":[{"a":"b"}],"messages":[{"a":{"b":"c"}},["a",1],0],"liveStreamingMessageId":"a","liveParts":[true,true]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[[],null],"messages":[[],{},{}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":[{"a":"b"},{"a":"b"},{}],"liveStreamingMessageId":"ns:key.pathtrailing.","liveParts":[{"a":"b"},0]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":"x","permissions":[null,{"a":{"b":"c"}},"x"],"messages":[],"liveParts":[{"a":"b"},"x",[]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{},"permissions":[],"messages":[null,[]],"liveStreamingMessageId":null,"liveParts":["x"]}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"a":{"b":"c"}},"permissions":[{},0,true],"messages":[[]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":["x",0],"messages":[{"a":"b"},"x",null],"liveStreamingMessageId":"tab\tseparated"}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":["a",1],"permissions":[],"messages":[[],{},0],"liveStreamingMessageId":"./x/**/*.json","liveParts":[true,{"a":{"b":"c"}},{}]}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":["x"],"messages":[],"liveStreamingMessageId":"{name} has {count} items{name} has {count} items","liveParts":[["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[["a",1],true,["a",1]],"messages":[true],"liveStreamingMessageId":"trailing.line1\nline2","liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":[],"permissions":[[]],"messages":[[]],"liveParts":[["a",1],0,true]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[{},true,{"a":"b"}],"messages":[{"a":"b"},{"a":"b"},[]],"liveStreamingMessageId":null}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[[],[],"x"],"messages":[["a",1],{"a":{"b":"c"}},true],"liveStreamingMessageId":null,"liveParts":[["a",1],["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[null],"messages":[],"liveParts":[{},{},true]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":["x",null],"messages":[],"liveStreamingMessageId":null,"liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"a":{"b":"c"}},"permissions":[["a",1],[]],"messages":[null,true],"liveStreamingMessageId":"ünïcödé"}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[0],"messages":[{},0,{"a":{"b":"c"}}],"liveStreamingMessageId":null,"liveParts":["x",["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[{},{"a":"b"},{"a":"b"}],"messages":[{"a":"b"},"x",true],"liveParts":[["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":"x","permissions":[{"a":"b"},null,{}],"messages":[],"liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":[],"liveParts":[[]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[{"a":{"b":"c"}},{"a":{"b":"c"}}],"messages":[["a",1],{}],"liveParts":[{},[],{"a":{"b":"c"}}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[{"a":"b"}],"messages":[0,["a",1]],"liveStreamingMessageId":"a.b.c"}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":"x","permissions":[{},{},null],"messages":[null,"x",["a",1]],"liveStreamingMessageId":null,"liveParts":[0]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":"x","permissions":[true],"messages":[[]],"liveStreamingMessageId":"key_name-1ΣΊΣΥΦΟΣ","liveParts":[null,{"a":"b"}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":["a",1],"permissions":[0,{},[]],"messages":[["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":0,"permissions":[true,"x","x"],"messages":[],"liveStreamingMessageId":"hello.leading","liveParts":[{},true,"x"]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{},"permissions":[[]],"messages":[],"liveStreamingMessageId":"abca😀b😀c","liveParts":[{},{},null]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":"x","permissions":[0],"messages":[null],"liveStreamingMessageId":null,"liveParts":[null,{"a":"b"},[]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"a":{"b":"c"}},"permissions":[{}],"messages":[],"liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"a":{"b":"c"}},"permissions":[null],"messages":["x"],"liveStreamingMessageId":"src/a/b.ts","liveParts":[{"a":{"b":"c"}}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[{}],"messages":[["a",1]],"liveParts":["x"]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":[{},0,["a",1]],"liveStreamingMessageId":"İstanbul","liveParts":[null]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[0,true,true],"messages":[{"a":"b"},0],"liveStreamingMessageId":null}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[{},true],"messages":[null],"liveStreamingMessageId":"é","liveParts":[[],{"a":"b"},null]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":0,"permissions":[{"a":{"b":"c"}}],"messages":[{"a":"b"},{"a":{"b":"c"}}],"liveStreamingMessageId":null,"liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[[],[],"x"],"messages":[],"liveStreamingMessageId":null,"liveParts":["x"]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{},"permissions":[],"messages":[true,[]],"liveStreamingMessageId":"  padded  ","liveParts":[{},["a",1],true]}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[null],"messages":[null,0,0],"liveStreamingMessageId":null,"liveParts":["x",null,0]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":[],"permissions":[{"a":{"b":"c"}},0,{"a":{"b":"c"}}],"messages":[{"a":"b"},"x",[]],"liveStreamingMessageId":null,"liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":[{},["a",1],0],"liveStreamingMessageId":"日本語のテキストsrc/a/b.ts","liveParts":[["a",1],true]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[null],"messages":["x",null,{"a":"b"}],"liveStreamingMessageId":null}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":["x"],"messages":[],"liveStreamingMessageId":"tab\tseparatedhello world","liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[true],"error":"Cannot read properties of undefined (reading 'length')"}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"a":{"b":"c"}},"permissions":[],"messages":[{"a":"b"},true],"liveParts":[{"a":{"b":"c"}},{}]}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[{},{"a":{"b":"c"}},{"a":{"b":"c"}}],"messages":[{},null,null],"liveStreamingMessageId":null,"liveParts":[{"a":{"b":"c"}},{"a":{"b":"c"}}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[[]],"error":"Cannot read properties of undefined (reading 'length')"}
+{"fn":"isSessionWorkingFromState","args":[{"status":[],"permissions":[0,{"a":"b"},[]],"messages":[0,{"a":"b"},{"a":{"b":"c"}}],"liveStreamingMessageId":null}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":true,"permissions":[["a",1],[]],"messages":[true],"liveStreamingMessageId":null,"liveParts":[null]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"a":{"b":"c"}},"permissions":[],"messages":[true,null,{"a":"b"}],"liveStreamingMessageId":""}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[true],"messages":["x",{"a":"b"}],"liveStreamingMessageId":null}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":null,"permissions":[[],{"a":"b"}],"messages":[{"a":"b"},"x"],"liveStreamingMessageId":"﻿bom"}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":null,"permissions":[],"messages":[{"a":"b"}],"liveStreamingMessageId":"  padded  ","liveParts":[]}],"error":"Cannot read properties of null (reading 'type')"}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":["x",0,"x"],"messages":[{"a":"b"}],"liveStreamingMessageId":"  padded  ","liveParts":[["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":[],"permissions":[],"messages":[],"liveStreamingMessageId":"éabc"}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[{"a":{"b":"c"}},"x"],"messages":["x",null,["a",1]],"liveStreamingMessageId":"a.b.c","liveParts":[{"a":{"b":"c"}},"x",[]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[null,true,0],"messages":[],"liveStreamingMessageId":"HELLO"}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":0,"permissions":[{"a":"b"},{"a":"b"}],"messages":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[0,["a",1],{"a":{"b":"c"}}],"messages":[],"liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":[],"permissions":[0,"x"],"messages":[],"liveStreamingMessageId":"ünïcödé","liveParts":[{"a":"b"},{"a":"b"}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":[],"liveStreamingMessageId":".leading"}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":["a",1],"permissions":[],"messages":[["a",1],{}],"liveStreamingMessageId":null,"liveParts":[[]]}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[{"a":"b"}],"messages":[0,{}],"liveStreamingMessageId":"日本語のテキスト","liveParts":[null,"x"]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":[{},{},{}],"liveParts":["x","x"]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{},"permissions":[[],[],[]],"messages":["x",{}],"liveStreamingMessageId":null,"liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"a":{"b":"c"}},"permissions":[{"a":{"b":"c"}},true,{"a":"b"}],"messages":[true,["a",1]],"liveStreamingMessageId":"İstanbul","liveParts":[{"a":"b"},{"a":"b"}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[["a",1],0],"messages":[0,null,0],"liveStreamingMessageId":"😀a","liveParts":[["a",1],["a",1],0]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":["a",1],"permissions":[],"messages":[["a",1],{},["a",1]],"liveStreamingMessageId":"key_name-1"}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"a":"b"},"permissions":[{},{}],"messages":[["a",1],["a",1],{"a":{"b":"c"}}],"liveStreamingMessageId":null}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"a":"b"},"permissions":[[]],"messages":[],"liveStreamingMessageId":null,"liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[["a",1],{}],"messages":[[],{},{}],"liveStreamingMessageId":"ünïcödé","liveParts":[null]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{},"permissions":[null],"messages":[{"a":"b"}],"liveStreamingMessageId":null,"liveParts":[{"a":"b"}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[[]],"messages":[[],{"a":"b"},[]],"liveParts":[0,["a",1],["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"a":{"b":"c"}},"permissions":[],"messages":[["a",1],0,0],"liveParts":[{"a":"b"},true]}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":["a",1],"permissions":[],"messages":[0,null,{"a":"b"}],"liveStreamingMessageId":null,"liveParts":["x"]}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"a":{"b":"c"}},"permissions":[0,true,{}],"messages":[["a",1],{"a":{"b":"c"}}],"liveStreamingMessageId":""}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":0,"permissions":[[],null],"messages":[[],0],"liveParts":[null,["a",1],null]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":"x","permissions":["x",["a",1],0],"messages":[{"a":{"b":"c"}},{"a":"b"}],"liveStreamingMessageId":".leading","liveParts":[{},[],[]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[{"a":"b"},0,null],"messages":[{"a":{"b":"c"}},null],"liveStreamingMessageId":"a😀b😀cns:key.path","liveParts":[{}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":"x","permissions":[{"a":"b"}],"messages":[{"a":{"b":"c"}},null],"liveStreamingMessageId":"abc"}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[["a",1],{},{}],"messages":[{}],"liveStreamingMessageId":null,"liveParts":["x",{"a":"b"},["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[[],{},null],"messages":["x",true,true],"liveStreamingMessageId":null}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":["a",1],"permissions":[["a",1],"x"],"messages":[[]],"liveStreamingMessageId":"İstanbul","liveParts":[null,{"a":"b"}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[0,0,"x"],"messages":[0,["a",1]],"liveParts":[[],["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":null,"permissions":[["a",1],"x"],"messages":[{}],"liveParts":[{"a":{"b":"c"}},["a",1],null]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":[],"permissions":[{"a":"b"}],"messages":[[],{"a":{"b":"c"}}],"liveStreamingMessageId":null,"liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":[{"a":"b"},{"a":"b"},{"a":{"b":"c"}}],"liveStreamingMessageId":null,"liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":["x",{"a":{"b":"c"}},{}],"messages":["x"],"liveParts":[{}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"a":"b"},"permissions":[],"messages":[{"a":"b"}],"liveStreamingMessageId":null,"liveParts":[]}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":true,"permissions":[0,["a",1]],"messages":[null,0],"liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":"x","permissions":[{},["a",1],{}],"messages":[[]],"liveStreamingMessageId":"emoji 👍🏽 mix","liveParts":[[],0,true]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"a":{"b":"c"}},"permissions":[],"messages":[["a",1],0,true],"liveParts":["x"]}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[0,"x",["a",1]],"messages":[0],"liveStreamingMessageId":null,"liveParts":[["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":[{"a":"b"},0]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{},"permissions":[{},"x"],"messages":[],"liveStreamingMessageId":null,"liveParts":[{"a":"b"},{"a":"b"}]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[null,0,[]],"messages":[{"a":"b"},{"a":{"b":"c"}}],"liveStreamingMessageId":null,"liveParts":[["a",1],["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":["a",1],"permissions":[],"messages":[],"liveStreamingMessageId":null,"liveParts":[{"a":{"b":"c"}}]}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":true,"permissions":[null,{"a":"b"},"x"],"messages":[{"a":{"b":"c"}},{"a":{"b":"c"}}],"liveStreamingMessageId":null,"liveParts":[["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[["a",1]],"messages":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[{"a":"b"},["a",1],true],"messages":[{},0],"liveStreamingMessageId":""}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[{"a":{"b":"c"}},{"a":"b"}],"messages":[[]],"liveStreamingMessageId":null,"liveParts":["x"]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[["a",1],null],"messages":[{"a":"b"},true],"liveStreamingMessageId":"a:b:c","liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[[],null],"messages":[0],"liveStreamingMessageId":null,"liveParts":["x",true]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{},"permissions":[["a",1],{"a":"b"},{"a":{"b":"c"}}],"messages":[{"a":"b"},true,0],"liveStreamingMessageId":null}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":null,"permissions":[{"a":{"b":"c"}},null],"messages":["x",{"a":"b"},{}],"liveStreamingMessageId":null,"liveParts":[]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":[],"liveParts":["x"]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[["a",1]],"messages":[],"liveStreamingMessageId":"ΣΊΣΥΦΟΣ﻿bom","liveParts":[{"a":{"b":"c"}},{},[]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":null,"permissions":[["a",1],null],"messages":[{"a":"b"},[],null],"liveParts":[true,0,["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":[null,null,{}],"liveStreamingMessageId":"emoji 👍🏽 mix","liveParts":[[],{"a":"b"},null]}],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"isSessionWorkingFromState","args":[{"status":[],"permissions":[],"messages":[[],null,["a",1]]}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":0,"permissions":[null,["a",1]],"messages":[{}],"liveStreamingMessageId":"tab\tseparatedhello world","liveParts":[0,["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":[{"a":"b"},[],true],"liveStreamingMessageId":null,"liveParts":["x"]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[0,{"a":"b"},{"a":"b"}],"messages":[true,{"a":{"b":"c"}},{"a":"b"}],"liveStreamingMessageId":":"}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":[],"liveStreamingMessageId":null,"liveParts":[[],{"a":{"b":"c"}},0]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[["a",1],0],"messages":[0],"liveParts":[["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":0,"permissions":[{"a":"b"},null],"messages":[true,{"a":{"b":"c"}},{}],"liveParts":["x",null,0]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"a":"b"},"permissions":[],"messages":[true,0,true],"liveStreamingMessageId":null}],"ok":true}
+{"fn":"isSessionWorkingFromState","args":[{"status":{},"permissions":[],"messages":[null],"liveStreamingMessageId":"HELLO","liveParts":[0,["a",1]]}],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[[],{},{"a":{"b":"c"}}],"messages":[["a",1],0,{}],"liveStreamingMessageId":null}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":["x",null,"x"],"messages":[],"liveStreamingMessageId":null,"liveParts":[null,null,0]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"$undefined":true},"permissions":[],"messages":[["a",1],"x"],"liveStreamingMessageId":null,"liveParts":[[],{"a":{"b":"c"}},[]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":null,"permissions":[{"a":"b"}],"messages":[["a",1]],"liveStreamingMessageId":null,"liveParts":[["a",1]]}],"ok":false}
+{"fn":"isSessionWorkingFromState","args":[{"status":{"a":"b"},"permissions":[["a",1],null,[]],"messages":[{"a":{"b":"c"}},{"a":"b"},[]],"liveParts":[{},0,[]]}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"$undefined":true}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_u","sessionID":"ses_1","role":"user","time":{"created":1},"finish":"stop"}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1}}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":1}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":null}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":true}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":""}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":" \t\n"}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":" "}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"tool-calls"}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"  TOOL-CALLS  "}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"}],"ok":true}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"length"}],"ok":true}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"error"}],"ok":true}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"unknown"}],"ok":true}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"STOP"}],"ok":true}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":" stop "}],"ok":true}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"tool_calls"}],"ok":true}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"toolcalls"}],"ok":true}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"tool-calls."}],"ok":true}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"​"}],"ok":true}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":{"$utf16":[55296]}}],"ok":true}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2}}],"ok":false}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"tool-calls"}],"ok":true}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":" Tool-Calls\n"}],"ok":true}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"tool_calls"}],"ok":false}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"tool-call"}],"ok":false}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"}],"ok":false}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":""}],"ok":false}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":0}],"ok":false}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1}}],"ok":false}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_u","sessionID":"ses_1","role":"user","time":{"created":1},"finish":"tool-calls"}],"ok":false}
+{"fn":"hasToolCallAssistantFinish","args":[{"$undefined":true}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"$undefined":true}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_u","sessionID":"ses_1","role":"user","time":{"created":1,"completed":2},"status":"done"}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"streaming":true,"status":"completed","finish":"stop"}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":"true","finish":"stop"}],"ok":true}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":"true","finish":"stop"}],"ok":true}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":"true","finish":"stop"}],"ok":true}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":1,"finish":"stop"}],"ok":true}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":1,"finish":"stop"}],"ok":true}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":1,"finish":"stop"}],"ok":true}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":false}],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":false}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":false}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"status":"running","finish":"stop"}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"status":"pending","finish":"stop"}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"status":"streaming","finish":"stop"}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"status":" RUNNING ","finish":"stop"}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"status":"Pending","finish":"stop"}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"complete"}],"ok":true}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"completed"}],"ok":true}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"done"}],"ok":true}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":" DONE "}],"ok":true}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"done","finish":"tool-calls"}],"ok":true}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"in_progress"}],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"in_progress"}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"in_progress"}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"in_progress","finish":"stop"}],"ok":true}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"in_progress","finish":"stop"}],"ok":true}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"in_progress","finish":"stop"}],"ok":true}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"error"}],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"error"}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"error"}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":3},"status":""}],"ok":true}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":3},"status":""}],"ok":true}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":5,"finish":"stop"}],"ok":true}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":5,"finish":"stop"}],"ok":true}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":5,"finish":"stop"}],"ok":true}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":5}],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":5}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":5}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":1}}],"ok":true}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":1}}],"ok":true}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":0.5}}],"ok":true}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":0.5}}],"ok":true}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":1.7976931348623157e+308}}],"ok":true}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":1.7976931348623157e+308}}],"ok":true}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":0}}],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":0}}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":0}}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":{"$num":"-0"}}}],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":{"$num":"-0"}}}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":{"$num":"-0"}}}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":-1}}],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":-1}}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":-1}}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":{"$num":"NaN"}}}],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":{"$num":"NaN"}}}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":{"$num":"NaN"}}}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":{"$num":"Infinity"}}}],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":{"$num":"Infinity"}}}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":{"$num":"Infinity"}}}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":"2"}}],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":"2"}}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":"2"}}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":null}}],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":null}}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":null}}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"$undefined":true}}],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"$undefined":true}}],"ok":false}
+{"fn":"hasTerminalAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"$undefined":true}}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"}],"ok":true}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"}],"ok":true}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"tool-calls"}],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"tool-calls"}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"tool-calls"}],"ok":true}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"tool-calls"}],"ok":true}
+{"fn":"isIncompleteAssistantMessage","args":[{"$undefined":true}],"ok":false}
+{"fn":"isIncompleteAssistantMessage","args":[{"id":"msg_u","sessionID":"ses_1","role":"user","time":{"created":1}}],"ok":false}
+{"fn":"isIncompleteAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1}}],"ok":true}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1}}],"ok":false}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1}}],"ok":false}
+{"fn":"isIncompleteAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"tool-calls"}],"ok":true}
+{"fn":"isIncompleteAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":true,"finish":"stop"}],"ok":true}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":true,"finish":"stop"}],"ok":false}
+{"fn":"isIncompleteAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"}],"ok":false}
+{"fn":"isIncompleteAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"done"}],"ok":false}
+{"fn":"hasInFlightToolParts","args":[{"$undefined":true}],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"hi"},{"id":"p2","sessionID":"ses_1","messageID":"msg_a","type":"reasoning","text":"think","state":{"status":"running"}},{"id":"p3","sessionID":"ses_1","messageID":"msg_a","type":"step-start","state":{"status":"running"}}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running","time":{"start":1}}}]],"ok":true}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"pending"}}]],"ok":true}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"queued"}}]],"ok":true}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash"}]],"ok":true}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":null}]],"ok":true}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"completed"}}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"error","time":{"start":1,"end":2}}}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running","time":{"start":1,"end":2}}}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"completed","time":{"start":5,"end":1}}}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running","time":{"start":5,"end":1}}}]],"ok":true}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"completed"}},{"id":"t2","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running"}}]],"ok":true}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t2","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running"}},{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"completed"}}]],"ok":true}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"completed"}},{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"completed"}}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[{"$undefined":true}],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"Done."}]],"ok":true}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"reasoning","text":"  thinking  "}]],"ok":true}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":""}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":" \n\t"}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"  ﻿"}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"​"}]],"ok":true}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":{"$utf16":[55296]}}]],"ok":true}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"😀"}]],"ok":true}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"  ","output":"result"}]],"ok":true}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"reasoning","output":"result"}]],"ok":true}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":3,"output":" x "}]],"ok":true}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"","output":"  "}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","output":42}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"tool","text":"hello","output":"hello"},{"id":"p2","sessionID":"ses_1","messageID":"msg_a","type":"step-finish","text":"hello"},{"id":"p3","sessionID":"ses_1","messageID":"msg_a","type":"file","text":"hello"}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":""},{"id":"p2","sessionID":"ses_1","messageID":"msg_a","type":"tool","text":"x"},{"id":"p3","sessionID":"ses_1","messageID":"msg_a","type":"reasoning","text":"seen"}]],"ok":true}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]],"ok":true}
+{"fn":"hasInFlightToolParts","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]],"ok":true}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2}},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]],"ok":true}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2}}],"ok":true}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2}}],"ok":true}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2}}],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"done"},[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"completed"}},{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]],"ok":true}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"done"}],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"completed"}},{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"completed"}},{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]],"ok":true}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1}},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"streaming":true,"finish":"stop"},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"$undefined":true},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_u","sessionID":"ses_1","role":"user","time":{"created":1},"finish":"stop"},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_u","sessionID":"ses_1","role":"user","time":{"created":1},"finish":"stop"}],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"tool-calls"},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]],"ok":false}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"tool-calls"}],"ok":true}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"completed","finish":"TOOL-CALLS"},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."}]],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"completed","finish":"TOOL-CALLS"}],"ok":true}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"completed","finish":"TOOL-CALLS"}],"ok":true}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."},{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running"}}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":"All done."},{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running"}}]],"ok":true}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":" "},{"id":"p2","sessionID":"ses_1","messageID":"msg_a","type":"reasoning","text":"Summary in reasoning."}]],"ok":true}
+{"fn":"hasInFlightToolParts","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":" "},{"id":"p2","sessionID":"ses_1","messageID":"msg_a","type":"reasoning","text":"Summary in reasoning."}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":" "},{"id":"p2","sessionID":"ses_1","messageID":"msg_a","type":"reasoning","text":"Summary in reasoning."}]],"ok":true}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"}],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"},[]],"ok":false}
+{"fn":"isFinalAssistantSummaryMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"stop"},[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":" "}]],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":" "}]],"ok":false}
+{"fn":"hasVisibleAssistantSummary","args":[[{"id":"p1","sessionID":"ses_1","messageID":"msg_a","type":"text","text":" "}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"$undefined":true},[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running"}}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_u","sessionID":"ses_1","role":"user","time":{"created":1}},[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running"}}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1}}],"ok":true}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1}},[]],"ok":true}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"finish":"tool-calls"}],"ok":true}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"tool-calls"},[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running"}}]],"ok":true}
+{"fn":"isIncompleteAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"tool-calls"}],"ok":false}
+{"fn":"hasInFlightToolParts","args":[[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running"}}]],"ok":true}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"tool-calls"},[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash"}]],"ok":true}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"tool-calls"},[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"completed"}}]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"tool-calls"},[]],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"tool-calls"}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"stop"},[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running"}}]],"ok":false}
+{"fn":"isIncompleteAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"stop"}],"ok":false}
+{"fn":"isAssistantTurnComplete","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"stop"}],"ok":true}
+{"fn":"isTerminalAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"stop"}],"ok":true}
+{"fn":"hasToolCallAssistantFinish","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1,"completed":2},"finish":"stop"}],"ok":false}
+{"fn":"isLiveAssistantMessage","args":[{"id":"msg_a","sessionID":"ses_1","role":"assistant","time":{"created":1},"status":"done"},[{"id":"t1","sessionID":"ses_1","messageID":"msg_a","type":"tool","tool":"bash","state":{"status":"running"}}]],"ok":false}

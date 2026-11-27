@@ -1,0 +1,49 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "optimistic.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "optimistic-rs",
+  "exports": [
+    {
+      "name": "mergeOptimisticPage",
+      "file": "optimistic.ts",
+      "line": 54,
+      "params": [
+        {
+          "name": "page",
+          "ts_type": "{\n  session: Message[]\n  part: { id: string; part: Part[] }[]\n  cursor?: string\n  complete: boolean\n}",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "items",
+          "ts_type": "{\n  message: Message\n  parts: Part[]\n}[]",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "applyOptimisticAdd",
+      "file": "optimistic.ts",
+      "line": 86,
+      "reason": "mutates its draft argument in place; record keeps only return values, so a port cannot be proven"
+    },
+    {
+      "name": "applyOptimisticRemove",
+      "file": "optimistic.ts",
+      "line": 100,
+      "reason": "mutates its draft argument in place; record keeps only return values, so a port cannot be proven"
+    }
+  ]
+}

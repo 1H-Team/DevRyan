@@ -1,0 +1,90 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "plan-indicator.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "plan-indicator-rs",
+  "exports": [
+    {
+      "name": "getPlanIndicatorTone",
+      "file": "plan-indicator.ts",
+      "line": 11,
+      "params": [
+        {
+          "name": "state",
+          "ts_type": "(\"proposed\" | \"implementing\" | \"completed\")",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "(\"warning\" | \"success\")",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "resolveEffectivePlanIndicatorState",
+      "file": "plan-indicator.ts",
+      "line": 23,
+      "params": [
+        {
+          "name": "entry",
+          "ts_type": "{\n  state: (\"proposed\" | \"implementing\" | \"completed\")\n  sourceMessageId?: string\n  implementationMessageId?: string\n} | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "latestPlanModeUserMessageId",
+          "ts_type": "string",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "(\"proposed\" | \"implementing\" | \"completed\") | null",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "nextPlanIndicatorEntry",
+      "file": "plan-indicator.ts",
+      "line": 55,
+      "params": [
+        {
+          "name": "current",
+          "ts_type": "{\n  state: (\"proposed\" | \"implementing\" | \"completed\")\n  sourceMessageId?: string\n  implementationMessageId?: string\n} | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "nextState",
+          "ts_type": "(\"proposed\" | \"implementing\" | \"completed\")",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "sourceMessageId",
+          "ts_type": "string",
+          "optional": true,
+          "rest": false
+        },
+        {
+          "name": "implementationMessageId",
+          "ts_type": "string",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "{\n  state: (\"proposed\" | \"implementing\" | \"completed\")\n  sourceMessageId?: string\n  implementationMessageId?: string\n} | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

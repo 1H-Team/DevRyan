@@ -1,0 +1,43 @@
+{
+  "unit": "message-fetch.ts",
+  "files": 1,
+  "fingerprint": "b922dc506fa4d4e6",
+  "cases": 875,
+  "cases_hash": "48e978f692b67624",
+  "coverage": {
+    "lines": 473,
+    "reached": 170,
+    "files": [
+      {
+        "file": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/lib/messages/nativeCursorText.ts",
+        "lines": 10,
+        "reached": 5,
+        "missed": "7-11"
+      },
+      {
+        "file": "debug.ts",
+        "lines": 80,
+        "reached": 66,
+        "missed": "19-26, 32-37"
+      },
+      {
+        "file": "message-fetch.ts",
+        "lines": 85,
+        "reached": 50,
+        "missed": "58-62, 64-67, 69-74, 76-77, 80-84, 86-91, 93-95, 98-101"
+      },
+      {
+        "file": "part-delta.ts",
+        "lines": 276,
+        "reached": 47,
+        "missed": "21-31, 33-39, 41-42, 47-49, 51-53, 55-60, 62-68, 70-71, 73-75, 77-79, 81-90, 92-95, 97-98, 103-108, 114-117, 119-120, 122-137, 139-142, 144-146, 148-149, 152-154, 156-165, 175-177, 179-184, 186, 188-194, 196-197, 199-200, 202-207, 210-216, 218-220, 222-223, 225-227, 229-230, 232-239, 241-243, 245-249, 251-252, 254-255, 257-263, 266-269, 272-273, 276-279, 283-287, 292-294, 297-300, 302-305, 307-317, 322-325, 328-331"
+      },
+      {
+        "file": "sdk-result.ts",
+        "lines": 22,
+        "reached": 2,
+        "missed": "4-16, 18-22, 24-25"
+      }
+    ]
+  }
+}

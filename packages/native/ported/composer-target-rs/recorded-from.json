@@ -1,0 +1,19 @@
+{
+  "unit": "composer-target.ts",
+  "files": 1,
+  "fingerprint": "54842be858baceb7",
+  "cases": 1075,
+  "cases_hash": "a851c45084d76ad7",
+  "coverage": {
+    "lines": 22,
+    "reached": 22,
+    "files": [
+      {
+        "file": "composer-target.ts",
+        "lines": 22,
+        "reached": 22,
+        "missed": ""
+      }
+    ]
+  }
+}

@@ -1,0 +1,228 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "revert-transactions.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "revert-transactions-rs",
+  "exports": [
+    {
+      "name": "beginCommittedRevertResend",
+      "file": "revert-transactions.ts",
+      "line": 25,
+      "params": [
+        {
+          "name": "sessionID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "messageID",
+          "ts_type": "string | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "void",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "endCommittedRevertResend",
+      "file": "revert-transactions.ts",
+      "line": 30,
+      "params": [
+        {
+          "name": "sessionID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "messageID",
+          "ts_type": "string | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "void",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "clearCommittedRevertResendsForSessions",
+      "file": "revert-transactions.ts",
+      "line": 35,
+      "params": [
+        {
+          "name": "sessionIDs",
+          "ts_type": "Iterable<string>",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "void",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isCommittedRevertResendInFlight",
+      "file": "revert-transactions.ts",
+      "line": 47,
+      "params": [
+        {
+          "name": "sessionID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "messageID",
+          "ts_type": "string | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getSessionRevertMessageID",
+      "file": "revert-transactions.ts",
+      "line": 52,
+      "params": [
+        {
+          "name": "session",
+          "ts_type": "Session | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "string | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "getEffectiveSessionRevertMessageID",
+      "file": "revert-transactions.ts",
+      "line": 56,
+      "params": [
+        {
+          "name": "state",
+          "ts_type": "({\n  session?: Session[]\n  message?: Record<string, Message[] | undefined>\n  revert_transaction?: Record<string, {\n  messageID: string\n  hiddenMessageIDs?: ReadonlySet<string>\n  version: number\n  status: (\"pending\" | \"confirmed\" | \"failed\")\n  startedAt: number\n  serverAcknowledged?: boolean\n} | undefined>\n})",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "sessionID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "session",
+          "ts_type": "Session",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "string | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isMessageHiddenByRevert",
+      "file": "revert-transactions.ts",
+      "line": 71,
+      "params": [
+        {
+          "name": "state",
+          "ts_type": "({\n  session?: Session[]\n  message?: Record<string, Message[] | undefined>\n  revert_transaction?: Record<string, {\n  messageID: string\n  hiddenMessageIDs?: ReadonlySet<string>\n  version: number\n  status: (\"pending\" | \"confirmed\" | \"failed\")\n  startedAt: number\n  serverAcknowledged?: boolean\n} | undefined>\n})",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "sessionID",
+          "ts_type": "string | undefined",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "messageID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "isMessageHiddenByAnyActiveRevert",
+      "file": "revert-transactions.ts",
+      "line": 89,
+      "params": [
+        {
+          "name": "state",
+          "ts_type": "({\n  session?: Session[]\n  message?: Record<string, Message[] | undefined>\n  revert_transaction?: Record<string, {\n  messageID: string\n  hiddenMessageIDs?: ReadonlySet<string>\n  version: number\n  status: (\"pending\" | \"confirmed\" | \"failed\")\n  startedAt: number\n  serverAcknowledged?: boolean\n} | undefined>\n})",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "messageID",
+          "ts_type": "string",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "boolean",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "filterMessagesForRevert",
+      "file": "revert-transactions.ts",
+      "line": 107,
+      "params": [
+        {
+          "name": "messages",
+          "ts_type": "readonly Message[]",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "revertMessageID",
+          "ts_type": "string | undefined",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "Message[] | readonly Message[]",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

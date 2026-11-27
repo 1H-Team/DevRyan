@@ -1,0 +1,36 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-client/packages/ui/src/sync",
+  "unit": "event-pipeline-connection-state.ts",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "event-pipeline-connection-state-rs",
+  "exports": [
+    {
+      "name": "resolveEventPipelineConnectionUpdate",
+      "file": "event-pipeline-connection-state.ts",
+      "line": 18,
+      "params": [
+        {
+          "name": "state",
+          "ts_type": "{\n  isConnected: boolean\n  hasEverConnected: boolean\n}",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "event",
+          "ts_type": "(| { type: \"reconnected\" }\n  | { type: \"disconnected\"; reason: string }\n  | { type: \"transport-switched\" })",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "({\n  isConnected: boolean\n  hasEverConnected?: boolean\n  connectionPhase: \"connecting\" | \"connected\" | \"reconnecting\"\n  lastDisconnectReason?: string\n}) | undefined",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

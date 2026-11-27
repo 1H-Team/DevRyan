@@ -1,0 +1,230 @@
+{"fn":"getAssistantResponseAt","args":[["a",1]],"ok":{"$undefined":true}}
+{"fn":"getAssistantResponseAt","args":[{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"getAssistantResponseAt","args":[{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"getAssistantResponseAt","args":[0],"ok":{"$undefined":true}}
+{"fn":"getAssistantResponseAt","args":[[]],"ok":{"$undefined":true}}
+{"fn":"getAssistantResponseAt","args":[true],"ok":{"$undefined":true}}
+{"fn":"getAssistantResponseAt","args":[{}],"ok":{"$undefined":true}}
+{"fn":"getAssistantResponseAt","args":["x"],"ok":{"$undefined":true}}
+{"fn":"getAssistantResponseAt","args":[null],"error":"Cannot read properties of null (reading 'time')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},null],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[true,{"a":{"b":"c"}},0]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{}],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},["x",true]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[{"a":{"b":"c"}},{},null]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[0,{},{}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[["a",1],0,{"a":"b"}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},0],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[0,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},true],"error":"visibleMessages is not iterable"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":["x",[{"a":"b"},[],null]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[true,["x"]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[null],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[null,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":["x",[0,[],{}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":["x",{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[["a",1],null],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[true,0],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[null,[{},[],[]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":["x",[null,{}]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[null,["a",1],true]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[null]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":{"b":"c"}}],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},["x",["a",1]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},["a",1]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[true],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[true,[]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[[],"x"]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[["a",1],{"a":"b"}],"error":"visibleMessages is not iterable"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[null,{}],"error":"visibleMessages is not iterable"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{},[]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[null,[]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":["x",{}],"error":"visibleMessages is not iterable"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{},[{"a":{"b":"c"}},{"a":{"b":"c"}},["a",1]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[null,null],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[0,true,0]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},{"a":"b"}],"error":"visibleMessages is not iterable"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[["a",1]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[[],[null,[],[]]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[null,{},["a",1]]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[true,{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[[]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[["a",1],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":["x",[]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[["a",1],[{},null]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[true,true,{}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[[],{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":{"b":"c"}},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[{"a":{"b":"c"}},0,["a",1]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[{}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":["x"],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[["a",1],0]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},"x"],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[0]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":{"b":"c"}},{"a":"b"}],"error":"visibleMessages is not iterable"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":{"b":"c"}},{"a":{"b":"c"}}],"error":"visibleMessages is not iterable"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[true,"x"]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[{"a":"b"},true]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[{"a":{"b":"c"}},["a",1]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[{"a":"b"}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},{}],"error":"visibleMessages is not iterable"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[0,"x"],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":{"b":"c"}},[]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":{"b":"c"}},[[],{"a":"b"}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":"b"}],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[[],[],0]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[["a",1],["a",1]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":"b"},null],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[["a",1],true]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":["x",[0]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[[]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[0,null],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[[],["x",{},{"a":"b"}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[null,[null]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[true,["a",1]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[[],null]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":"b"},[]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{},[{}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[null,"x"],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[{},null]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[["a",1],[true]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{},null],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[{"a":{"b":"c"}},0]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[{"a":{"b":"c"}},{}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":["x",[{"a":"b"},[]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[0],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[[],null],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[[],[["a",1]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},{"a":{"b":"c"}}],"error":"visibleMessages is not iterable"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[true,[0,"x"]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[null,[true]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[0,[["a",1],0,[]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":"b"},[true,{"a":{"b":"c"}}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[["a",1],[[]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":["x",["x",[],"x"]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[true,true]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[null,null]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[true,["x",{"a":{"b":"c"}}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[{"a":"b"},[],[]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":{"b":"c"}},[{"a":{"b":"c"}},null]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{},[{"a":{"b":"c"}}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{},[true,["a",1]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{},[0,0,null]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[[],[{"a":"b"},"x",[]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":"b"},{"$undefined":true}],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":{"b":"c"}},[{"a":{"b":"c"}},{}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[["a",1],{"a":"b"},{}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[{"a":"b"},["a",1],{"a":{"b":"c"}}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[0,[{},{}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[0,[]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[["a",1],[{"a":{"b":"c"}}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[null,{"a":"b"}],"error":"visibleMessages is not iterable"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[{"a":"b"},[]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[true,["x",[],0]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":["x",[0,[],0]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[0,[true,true]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[{"a":{"b":"c"}}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[["a",1],true,[]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":{"b":"c"}},"x"],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[[],[0,[],[]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[null,{"a":"b"},"x"]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[null,0],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[["a",1],{}],"error":"visibleMessages is not iterable"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":"b"},["x",null,{}]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[0,[true,[]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[0,[{"a":{"b":"c"}},true,[]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[{"a":"b"},{"a":"b"},true]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":{"b":"c"}},[["a",1]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[["a",1],[],null]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{},[true,"x",{"a":"b"}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":"b"},[{}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[{},"x","x"]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{},{"a":{"b":"c"}}],"error":"visibleMessages is not iterable"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[true,["a",1]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[[],[]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[[],null,{"a":"b"}]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[null,[["a",1]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[[],0,{"a":"b"}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":{"b":"c"}},[null]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[[],"x"],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{},[["a",1]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":["x",[null,true]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[[],{"a":{"b":"c"}}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[null,true]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[{},0]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[true,"x"],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[["a",1],[]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[[],[null]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":["x",[{"a":"b"},true,{}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":"b"},["x"]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[[],0]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[true,null],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[null,[{"a":"b"},null]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[true,true],"error":"visibleMessages is not iterable"}
+{"fn":"getLastVisibleAssistantResponseAt","args":["x",["a",1]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[null,[["a",1],null]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[[],0,{"a":{"b":"c"}}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[["a",1],{"a":{"b":"c"}},{"a":{"b":"c"}}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},["x"]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[[],{}],"error":"visibleMessages is not iterable"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[{},["a",1]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":["x",{"a":{"b":"c"}}],"error":"visibleMessages is not iterable"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[0,["x",[],null]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[null,true],"error":"visibleMessages is not iterable"}
+{"fn":"getLastVisibleAssistantResponseAt","args":["x",[[],{"a":"b"},[]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[["a",1]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[true,0,{"a":{"b":"c"}}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":{"b":"c"}},[true,{}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":"b"},["x",[]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":{"b":"c"}},[{},0]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},["x",{},{}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[0,[{"a":"b"},{"a":"b"},{"a":"b"}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[{},true]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},["x",null,null]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[[],[{},0]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":"b"},true],"error":"visibleMessages is not iterable"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[true]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[["a",1],{"a":"b"},["a",1]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[[],[true,["a",1],null]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":"b"},[0,{},[]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[0,{}],"error":"visibleMessages is not iterable"}
+{"fn":"getLastVisibleAssistantResponseAt","args":["x",["x",null]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[null,[0]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[["a",1],{"a":"b"}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[["a",1],["a",1]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[0,true],"error":"visibleMessages is not iterable"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[null,[0,{}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[[],{"a":"b"}],"error":"visibleMessages is not iterable"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[{"a":"b"},0,null]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":["x",[true]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"$undefined":true},[[],0,0]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":"b"},[["a",1],[]]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":"b"},{"a":{"b":"c"}}],"error":"visibleMessages is not iterable"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"a":{"b":"c"}},[{"a":"b"},null,0]],"error":"Cannot read properties of null (reading 'role')"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[[],[{"a":{"b":"c"}}]],"ok":{"$undefined":true}}
+{"fn":"getAssistantResponseAt","args":[{"id":"m","role":"assistant","time":{"completed":5}}],"ok":5}
+{"fn":"getAssistantResponseAt","args":[{"id":"m","role":"assistant","time":{"completed":"7"}}],"ok":7}
+{"fn":"getAssistantResponseAt","args":[{"id":"m","role":"assistant","time":{"completed":" 0x10 "}}],"ok":16}
+{"fn":"getAssistantResponseAt","args":[{"id":"m","role":"assistant","time":{"completed":"  "}}],"ok":{"$undefined":true}}
+{"fn":"getAssistantResponseAt","args":[{"id":"m","role":"assistant","time":{"completed":"abc","updated":3}}],"ok":3}
+{"fn":"getAssistantResponseAt","args":[{"id":"m","role":"assistant","time":{"updated":"1e3"}}],"ok":1000}
+{"fn":"getAssistantResponseAt","args":[{"id":"m","role":"assistant","time":{"created":{"$num":"-0"}}}],"ok":{"$num":"-0"}}
+{"fn":"getAssistantResponseAt","args":[{"id":"m","role":"assistant","time":{"created":{"$num":"Infinity"},"updated":"Infinity"}}],"ok":{"$undefined":true}}
+{"fn":"getAssistantResponseAt","args":[{"id":"m","role":"assistant","time":{"completed":null,"created":"-5"}}],"ok":-5}
+{"fn":"getAssistantResponseAt","args":[{"id":"m","role":"assistant","time":{}}],"ok":{"$undefined":true}}
+{"fn":"getAssistantResponseAt","args":[{"id":"m","role":"assistant","time":null}],"ok":{"$undefined":true}}
+{"fn":"getAssistantResponseAt","args":[{"id":"m","role":"assistant","time":{"completed":true}}],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[null,[{"id":"m1","role":"assistant","time":{"created":1}},{"id":"m2","role":"assistant","time":{"completed":9}},{"id":"u","role":"user","time":{"created":20}},{"id":"m3","role":"assistant","time":{"updated":"4"}}]],"ok":9}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"revert":{"messageID":"m2"}},[{"id":"m1","role":"assistant","time":{"created":1}},{"id":"m2","role":"assistant","time":{"completed":9}},{"id":"u","role":"user","time":{"created":20}},{"id":"m3","role":"assistant","time":{"updated":"4"}}]],"ok":1}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"revert":{"messageID":"m3"}},[{"id":"m1","role":"assistant","time":{"created":1}},{"id":"m2","role":"assistant","time":{"completed":9}},{"id":"u","role":"user","time":{"created":20}},{"id":"m3","role":"assistant","time":{"updated":"4"}}]],"ok":9}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"revert":{"messageID":"zz"}},[{"id":"m1","role":"assistant","time":{"created":1}},{"id":"m2","role":"assistant","time":{"completed":9}},{"id":"u","role":"user","time":{"created":20}},{"id":"m3","role":"assistant","time":{"updated":"4"}}]],"ok":9}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"revert":{"messageID":"m1"}},[{"id":"m1","role":"assistant","time":{"created":1}},{"id":"m2","role":"assistant","time":{"completed":9}},{"id":"u","role":"user","time":{"created":20}},{"id":"m3","role":"assistant","time":{"updated":"4"}}]],"ok":{"$undefined":true}}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"revert":{"messageID":""}},[{"id":"m1","role":"assistant","time":{"created":1}},{"id":"m2","role":"assistant","time":{"completed":9}},{"id":"u","role":"user","time":{"created":20}},{"id":"m3","role":"assistant","time":{"updated":"4"}}]],"ok":9}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"revert":{}},[{"id":"x","role":"assistant","time":{"created":0}},{"id":"y","role":"assistant","time":{"created":{"$num":"-0"}}}]],"ok":0}
+{"fn":"getLastVisibleAssistantResponseAt","args":[{"revert":{"messageID":"x"}},{"a":1}],"error":"messages.findIndex is not a function"}
+{"fn":"getLastVisibleAssistantResponseAt","args":[null,[]],"ok":{"$undefined":true}}

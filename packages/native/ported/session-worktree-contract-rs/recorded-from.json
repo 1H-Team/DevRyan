@@ -1,0 +1,19 @@
+{
+  "unit": "session-worktree-contract.ts",
+  "files": 1,
+  "fingerprint": "cc6a5b237953806a",
+  "cases": 1360,
+  "cases_hash": "7eb2f314ab5e63db",
+  "coverage": {
+    "lines": 204,
+    "reached": 202,
+    "files": [
+      {
+        "file": "session-worktree-contract.ts",
+        "lines": 204,
+        "reached": 202,
+        "missed": "54-55"
+      }
+    ]
+  }
+}

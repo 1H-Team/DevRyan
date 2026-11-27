@@ -1,0 +1,19 @@
+{
+  "unit": "live-aggregate.ts",
+  "files": 1,
+  "fingerprint": "d0fd8776d7bb3fd7",
+  "cases": 868,
+  "cases_hash": "2c626cf9d9e0b767",
+  "coverage": {
+    "lines": 193,
+    "reached": 185,
+    "files": [
+      {
+        "file": "live-aggregate.ts",
+        "lines": 193,
+        "reached": 185,
+        "missed": "44-45, 48-49, 122-123, 172-173"
+      }
+    ]
+  }
+}

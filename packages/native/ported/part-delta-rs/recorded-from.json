@@ -1,0 +1,25 @@
+{
+  "unit": "part-delta.ts",
+  "files": 1,
+  "fingerprint": "6ba16e4982e8ee1e",
+  "cases": 4404,
+  "cases_hash": "7cf58fc6fdb2f740",
+  "coverage": {
+    "lines": 356,
+    "reached": 349,
+    "files": [
+      {
+        "file": "debug.ts",
+        "lines": 80,
+        "reached": 75,
+        "missed": "23-24, 34-36"
+      },
+      {
+        "file": "part-delta.ts",
+        "lines": 276,
+        "reached": 274,
+        "missed": "28-29"
+      }
+    ]
+  }
+}
