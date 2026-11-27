@@ -21,12 +21,14 @@
 //!   the methods and the worker's options.
 //! - `git`, `store`, `durability`: the Git runner, the change store and the
 //!   object directory's sync (plan package L3b), ported and proven against
-//!   the JavaScript; no method calls them yet.
+//!   the JavaScript; `objects`: the content object store (plan package
+//!   L3c); no method calls them yet.
 //! - With the `test-hooks` feature only: `stub` (the stub methods of the
 //!   conformance suite), `program` (the job-order programs' interpreter),
 //!   `io_program` (the `node` module's programs and file-system steps),
 //!   `child_program` (its child-process cases and programs),
-//!   `store_program` (the Git runner's and the store's requests), `seams`
+//!   `store_program` (the Git runner's and the store's requests),
+//!   `object_program` (the content object store's requests), `seams`
 //!   (what those tests observe the product through; without the feature
 //!   `seams_off.rs`, whose functions do nothing) and
 //!   `virtual_host` (a clock tests move by hand).
@@ -45,6 +47,7 @@ pub mod iopool;
 pub mod js;
 pub mod methods;
 pub mod node;
+pub mod objects;
 pub mod process;
 pub mod proto;
 pub mod runtime;
@@ -63,6 +66,8 @@ pub mod wire;
 pub mod child_program;
 #[cfg(feature = "test-hooks")]
 pub mod io_program;
+#[cfg(feature = "test-hooks")]
+pub mod object_program;
 #[cfg(feature = "test-hooks")]
 pub mod program;
 #[cfg(feature = "test-hooks")]

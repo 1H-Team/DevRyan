@@ -33,6 +33,7 @@ export const LEDGER_NATIVE_INPUTS = Object.freeze([
   'packages/harness-runtime/lib/session-changes-git.js',
   'packages/harness-runtime/lib/session-changes-store.js',
   'packages/harness-runtime/lib/session-changes-trees.js',
+  'packages/harness-runtime/lib/session-mutation-files.js',
   'packages/harness-runtime/lib/session-mutation-wire.js',
   'packages/harness-runtime/lib/session-mutation-worker.js',
   'packages/harness-runtime/lib/session-mutations.js',

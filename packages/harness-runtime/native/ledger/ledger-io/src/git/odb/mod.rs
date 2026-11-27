@@ -124,6 +124,31 @@ impl ObjectFormat {
     }
 }
 
+/// `crypto.createHash('sha256')` fed piece by piece (`update`), then
+/// `digest('hex')`: the content object store hashes a file as it reads it.
+#[derive(Clone, Default)]
+pub struct Sha256Stream(sha2::Sha256);
+
+impl Sha256Stream {
+    pub fn new() -> Sha256Stream {
+        Sha256Stream::default()
+    }
+
+    /// `hash.update(bytes)`.
+    pub fn update(&mut self, bytes: &[u8]) {
+        use sha2::Digest as _;
+        self.0.update(bytes);
+    }
+
+    /// `hash.digest('hex')`.
+    pub fn hex(self) -> String {
+        use sha2::Digest as _;
+        Oid::from_raw(&self.0.finalize())
+            .expect("a SHA-256 digest is 32 bytes")
+            .hex()
+    }
+}
+
 /// An object id: 20 or 32 raw bytes.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Oid {

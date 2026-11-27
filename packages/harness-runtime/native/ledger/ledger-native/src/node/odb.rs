@@ -20,8 +20,9 @@
 //!   fails it (`crate::git`).
 //! - [`write_loose_object`]: `writeLooseObject` of `session-changes-trees.js`
 //!   (L3a's `write_loose_object`, call for call), its failure as Node's error.
-//! - [`object_id`], [`sha256_hex`], [`random_uuid`]: the synchronous
-//!   `crypto` calls the store makes (`objectID`, `changeKey`,
+//! - [`object_id`], [`sha256_hex`], [`Sha256`], [`random_uuid`]: the
+//!   synchronous `crypto` calls the store and the content object store make
+//!   (`objectID`, `changeKey`, `createHash('sha256')` fed piece by piece,
 //!   `crypto.randomUUID()`), inline as in JavaScript.
 #![forbid(unsafe_code)]
 
@@ -287,6 +288,27 @@ pub fn object_id(kind: &str, content: &[u8], oid_length: usize) -> String {
 /// `crypto.createHash('sha256').update(bytes).digest('hex')`.
 pub fn sha256_hex(bytes: &[u8]) -> String {
     ObjectFormat::Sha256.hash(&[bytes]).hex()
+}
+
+/// `crypto.createHash('sha256')` fed as a file is read (`update`), then
+/// `digest('hex')`: synchronous, inline, as in JavaScript.
+#[derive(Clone, Default)]
+pub struct Sha256(ledger_io::git::odb::Sha256Stream);
+
+impl Sha256 {
+    pub fn new() -> Sha256 {
+        Sha256::default()
+    }
+
+    /// `hash.update(bytes)`.
+    pub fn update(&mut self, bytes: &[u8]) {
+        self.0.update(bytes);
+    }
+
+    /// `hash.digest('hex')`.
+    pub fn digest_hex(self) -> String {
+        self.0.hex()
+    }
 }
 
 /// `crypto.randomUUID()`: synchronous, as in JavaScript.

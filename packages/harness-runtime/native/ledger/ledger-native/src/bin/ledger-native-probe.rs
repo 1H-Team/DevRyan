@@ -34,6 +34,9 @@
 //!   ledger-native-probe store            stdin: one Git runner or store request per
 //!                                        line (scripts/ledger-native/store-js-arm.mjs);
 //!                                        stdout: its outcome per line
+//!   ledger-native-probe objects          stdin: one content object store request per
+//!                                        line (scripts/ledger-native/object-js-arm.mjs);
+//!                                        stdout: its outcome per line
 //!   ledger-native-probe jobs             stdin: one job-order program per line
 //!                                        (scripts/ledger-native/jobs-programs.mjs);
 //!                                        stdout: its trace per line, as
@@ -100,6 +103,15 @@ fn main() {
             // (own `__proto__` keys too, which the line codec drops).
             ledger_native::store_program::serve(lines, print_json, |line| decode_line(line).ok());
         }
+        Some("objects") => {
+            let stdin = std::io::stdin();
+            let lines = stdin
+                .lock()
+                .split(b'\n')
+                .map(|line| line.expect("stdin"))
+                .filter(|line| !line.is_empty());
+            ledger_native::object_program::serve(lines, print_json, |line| decode_line(line).ok());
+        }
         Some("child-emfile-uncaught") => ledger_native::child_program::emfile_uncaught(),
         Some("transcript") => transcript(),
         Some("jobs") => {
@@ -112,7 +124,7 @@ fn main() {
         }
         _ => {
             eprintln!(
-                "usage: ledger-native-probe codec | generate <seed> <count> | scenarios | transcript | fs-steps | fs-programs | child-cases | child-programs | child-emfile-uncaught | store | jobs [node26]"
+                "usage: ledger-native-probe codec | generate <seed> <count> | scenarios | transcript | fs-steps | fs-programs | child-cases | child-programs | child-emfile-uncaught | store | objects | jobs [node26]"
             );
             std::process::exit(2);
         }

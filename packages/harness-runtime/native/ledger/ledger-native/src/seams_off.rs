@@ -14,3 +14,20 @@ pub fn durability_opened(_directory: &str) {}
 pub fn durability_outcome(_op: &str, _directory: &str, outcome: Result<(), W>) -> Result<(), W> {
     outcome
 }
+
+#[inline(always)]
+pub fn content_opened(_temporary: &str) {}
+
+#[inline(always)]
+pub fn content_outcome(_op: &str, _temporary: &str, outcome: Result<(), W>) -> Result<(), W> {
+    outcome
+}
+
+#[inline(always)]
+pub fn crash_point(_point: &str) {}
+
+#[inline(always)]
+pub fn observation(_event: &str, _path: &str) {}
+
+#[inline(always)]
+pub fn content_linked(_temporary: &str, _outcome: &str) {}

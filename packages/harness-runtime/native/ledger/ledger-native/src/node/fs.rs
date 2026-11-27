@@ -38,6 +38,8 @@ use ledger_io::fs as lio;
 
 pub use ledger_io::fs::DirentKind;
 pub use ledger_io::fs::constants;
+/// `fs.constants.COPYFILE_EXCL` and `COPYFILE_FICLONE` (`copyFile`'s mode).
+pub use ledger_io::fs::{COPYFILE_EXCL, COPYFILE_FICLONE};
 
 use super::{IoError, fulfilled, io, io_with, rejected};
 use crate::js::{Promise, Resolvers};
@@ -507,6 +509,24 @@ pub fn lstat(path: &str, bigint: bool) -> Promise<Stats, W> {
     let path = path.to_owned();
     checked!([("path", &path)], || {
         io(move || lio::lstat(&path).map(|raw| Stats { raw, bigint }))
+    })
+}
+
+/// `fs.promises.lstat(path, { bigint })` whose value is made into `T` as it
+/// settles, in the same unit (no job between): for a port whose promise
+/// holds one type for its other values too (`return fs.lstat(…)` from an
+/// async function that may also return `null`).
+pub fn lstat_into<T: Clone + 'static>(
+    path: &str,
+    bigint: bool,
+    into: impl FnOnce(Stats) -> T + 'static,
+) -> Promise<T, W> {
+    let path = path.to_owned();
+    checked!([("path", &path)], || {
+        io_with(
+            move || lio::lstat(&path),
+            move |raw| Ok(into(Stats { raw, bigint })),
+        )
     })
 }
 

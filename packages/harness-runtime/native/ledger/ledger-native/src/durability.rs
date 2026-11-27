@@ -59,6 +59,7 @@ pub fn sync_pending_object_directory(root: &str) -> WPromise {
                     let handle = nfs::open(&directory, Flags::Str("r"), None).await?;
                     // The durability tests' seams (nothing, in the product).
                     crate::seams::durability_opened(&directory);
+                    crate::seams::crash_point("directory-sync:before");
                     let body = handle.sync().await;
                     let body = crate::seams::durability_outcome("sync", &directory, body);
                     let closed = handle.close().await;

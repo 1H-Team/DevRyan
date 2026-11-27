@@ -2685,6 +2685,73 @@ them, and the product is unchanged.
   Linux and on macOS; every failing comparison of the store differential
   prints the platform, the installed Git and both arms' raw values.
 
+### The content object store
+
+`ledger-native/src/objects.rs` (plan package L3c) ports
+`lib/session-mutation-files.js` (`inspectMutationFile`, `mutationFileStamp`,
+`mutationStatStamp`, `requireMutationSpace`, `createViewMaterializer`,
+`copyMutationObject`, `resetVerifiedMutationObjects`, the verified-objects
+record), `hasDirectoryAncestors` of `lib/session-changes-snapshot.js` and
+`bytesFor` of `lib/session-mutations.js` onto the job layer, by the same
+porting rule, beside `durability.rs`. **Nothing calls it**: no method of the
+process is wired to it, and the product is unchanged.
+
+- **Install.** The file is read once to hash it (a stable observation: its
+  bigint lstat stamp checked against its handle before and after the reads,
+  and by path afterwards; a link's target read as raw bytes); content already
+  present by name and size is reused, its directory marked pending when it
+  may be younger than this process's last directory sync. Otherwise
+  `objects/` is made (`0o700`), the space probed (`statfs`, 1 MiB spare), and
+  the file read again into `.pending-<uuid>` (`wx`, `0o600`), checked again,
+  synced, closed, linked to `objects/<sha256>` (`EEXIST` means present), the
+  directory marked pending, the temporary unlinked and the identity appended
+  to `verified-objects.v1`; the `finally` closes and unlinks again.
+  `ENOSPC` and `EDQUOT` are `storage_unavailable` (503); a changed or
+  vanished file is `observation_changed`. The text classifier is the fatal
+  streaming UTF-8 decoder with the NUL and 8 MiB rules.
+- **Verification and views.** An object is re-hashed (its read stream) unless
+  its identity (`dev:ino:size:mtimeNs:ctimeNs`) was verified in this process
+  or in `verified-objects.v1` (loaded once per root, compacted past 1,024
+  lines and twice the live count, `DEVRYAN_PERSISTENT_OBJECT_VERIFY=0` read
+  per use); a mismatch is `invalid_change_record`. The materializer creates
+  each directory once (a failure stays its answer, a link where a directory
+  should be is `unsupported_path`) and copies with `copyFile(COPYFILE_EXCL |
+  COPYFILE_FICLONE)`, which is libuv's copy (`node::fs`; a clone only on
+  Linux), so a copy's modification time is the copy's for any content and the
+  object's for empty content; an existing entry or a link entry is `null`.
+  `copyMutationObject` copies disposable views with `copyFile` (unless
+  `DEVRYAN_VIEW_CLONE=0`) and otherwise reads, hashes and writes
+  `<target>.devryan-<uuid>`, synced when durable, then renames.
+- **Defects kept** (the JavaScript's, reproduced on purpose): an object of
+  the right name and size is reused without a hash, so a same-size corrupt
+  object is trusted at install time; the installed temporary is unlinked
+  twice (the second an `ENOENT`); a `close` failing in the `finally` replaces
+  the call's outcome and leaves `.pending-<uuid>` behind; a crash between
+  write and unlink leaves `.pending-<uuid>` forever (nothing removes stale
+  ones); `verified-objects.v1` lines with a negative device number never
+  load; the appends are not synced.
+- **Not ported.** The Windows branches, and `putBytes` of
+  `session-mutations.js`, which writes through `writeFileAtomic` (not on the
+  job layer yet).
+- **Tests.** `scripts/ledger-native/object-differential.mjs` (in the verify)
+  runs the product's modules under Electron's Node and the Rust
+  (`ledger-native-probe objects`) on the inputs and views suites' shapes
+  (empty, small, large, binary, invalid and split UTF-8, links, duplicate
+  and concurrent content, vanished and corrupt objects, refusals), a file
+  changed at each of the six stamp checks (a hook on both arms), a 32 KiB
+  file-size limit, a sync shim on the object directory's, the temporaries'
+  and the copies' handles with injected faults, settle orders against job
+  chains where no I/O intervenes, the system calls of each install, sync and
+  copy (macOS, interposed), and the dual-run crash points
+  `content-object-link:{before,after}` and `directory-sync:before`, which
+  the probe honours (`LEDGER_DUAL_RUN_CRASH`): after each crash the disk is
+  the JavaScript's, and the next run recovers identically. Compared: results
+  and errors field by field, and every entry under the scenario (names with
+  their UUIDs masked, types, permission bits, sizes, hashes, a view file's
+  modification-time class, `verified-objects.v1` as a set). The extended run
+  adds seeded files. `scripts/ledger-native/object-planted.mjs` (by hand)
+  plants 40 bugs and reports the named test that catches each.
+
 ## Registered host-dependent operations
 
 `lib/registered-host-operations.js` loads the private administrator file
