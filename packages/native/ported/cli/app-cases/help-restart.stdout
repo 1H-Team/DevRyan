@@ -1,0 +1,43 @@
+
+ DevRyan - Web interface for the OpenCode AI coding agent
+
+USAGE:
+  devryan [COMMAND] [OPTIONS]
+  (openchamber is an accepted alias for devryan)
+
+COMMANDS:
+  serve          Start the web server (daemon default)
+  stop           Stop running instance(s)
+  restart        Stop and start the server
+  status         Show server status
+  tunnel         Tunnel lifecycle commands
+  runtime bundle resume --expected-revision N   Resume the retained runtime after blocked rollback
+  enroll-owner   Create a two-minute local-owner enrollment link (--port)
+  logs           Tail DevRyan logs
+  update         Check for a newer release (install it from the DMG)
+
+OPTIONS:
+  -p, --port              Web server port (default: 3000)
+  --host                  Bind address (default: 127.0.0.1)
+  --ui-password           Protect browser UI with single password
+  --foreground            Run server in foreground (use with systemd/process managers)
+  --no-daemon             Alias for --foreground
+  -h, --help              Show help
+  -v, --version           Show version
+
+ENVIRONMENT:
+  DEVRYAN_HOST             Bind address (e.g. 0.0.0.0 for all interfaces)
+  DEVRYAN_UI_PASSWORD      Alternative to --ui-password flag
+  DEVRYAN_DATA_DIR         Override DevRyan data directory
+
+RUNTIME:
+  DevRyan serves its bundled native OpenCode 2.2.0 runtime.
+  Update DevRyan to update the bundled runtime.
+
+EXAMPLES:
+  devryan                    # Start in daemon mode on default port 3000 (or free port)
+  devryan --port 8080        # Start on port 8080 (daemon)
+  devryan serve --foreground # Start in foreground (for systemd Type=simple)
+  devryan tunnel help        # Show tunnel lifecycle help
+  devryan logs               # Follow logs for latest running instance
+

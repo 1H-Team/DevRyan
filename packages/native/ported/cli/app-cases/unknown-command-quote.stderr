@@ -1,0 +1,3 @@
+Error: Unknown command 'it's'. Did you mean 'stop'?
+Use --help to see available commands
+[run-root] test-isolation failed; its files were removed. Re-run with --keep-artifacts to keep [..].

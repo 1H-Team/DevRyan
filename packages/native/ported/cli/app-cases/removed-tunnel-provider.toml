@@ -1,0 +1,4 @@
+bin.name = "devryan"
+args = ["--tunnel-provider", "cloudflare"]
+status.code = 1
+fs.sandbox = true

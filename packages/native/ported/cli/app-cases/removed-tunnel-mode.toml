@@ -1,0 +1,4 @@
+bin.name = "devryan"
+args = ["serve", "--tunnel-mode", "quick"]
+status.code = 1
+fs.sandbox = true

@@ -1,0 +1,37 @@
+{
+  "schema": "rust-anything/front-door@1",
+  "name": "devryan",
+  "commands": [
+    "enroll-owner",
+    "frobnicate",
+    "logs",
+    "restart",
+    "runtime",
+    "serve",
+    "status",
+    "stop",
+    "tunnel",
+    "update"
+  ],
+  "units": [
+    {
+      "name": "cli-pure",
+      "crate": "cli-pure",
+      "path": "../cli-pure",
+      "commands": [
+        "devryan",
+        "tunnel",
+        "runtime",
+        "serve",
+        "stop",
+        "restart",
+        "status",
+        "logs",
+        "update",
+        "enroll-owner",
+        "frobnicate"
+      ],
+      "switch": "RUST_ANYTHING_UNIT_CLI_PURE"
+    }
+  ]
+}

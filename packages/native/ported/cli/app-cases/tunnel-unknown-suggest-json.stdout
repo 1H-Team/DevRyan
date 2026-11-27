@@ -1,0 +1,6 @@
+{
+  "status": "error",
+  "error": {
+    "message": "Unknown tunnel subcommand 'statu'. Did you mean 'status'? Use 'devryan tunnel help'."
+  }
+}

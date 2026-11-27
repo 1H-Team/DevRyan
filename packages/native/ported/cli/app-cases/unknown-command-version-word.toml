@@ -1,0 +1,4 @@
+bin.name = "devryan"
+args = ["version"]
+status.code = 2
+fs.sandbox = true

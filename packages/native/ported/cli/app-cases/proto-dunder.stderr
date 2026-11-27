@@ -1,0 +1,2 @@
+Error: commands[command] is not a function
+[run-root] test-isolation failed; its files were removed. Re-run with --keep-artifacts to keep [..].

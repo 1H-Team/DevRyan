@@ -1,0 +1,13 @@
+{
+  "status": "error",
+  "error": {
+    "message": "Unknown command 'frobnicate'."
+  },
+  "messages": [
+    {
+      "level": "info",
+      "code": "USAGE_HELP",
+      "message": "Use --help to see available commands"
+    }
+  ]
+}

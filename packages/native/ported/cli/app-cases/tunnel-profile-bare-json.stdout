@@ -1,0 +1,10 @@
+{
+  "status": "ok",
+  "command": "tunnel profile",
+  "subcommands": [
+    "list",
+    "show",
+    "add",
+    "remove"
+  ]
+}

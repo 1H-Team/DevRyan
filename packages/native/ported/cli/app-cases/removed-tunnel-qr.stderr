@@ -1,0 +1,2 @@
+Error: `--tunnel-qr` was removed. Use: devryan tunnel start ... --qr
+[run-root] test-isolation failed; its files were removed. Re-run with --keep-artifacts to keep [..].

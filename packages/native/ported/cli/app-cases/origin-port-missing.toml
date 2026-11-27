@@ -1,0 +1,4 @@
+bin.name = "devryan"
+args = ["tunnel", "start", "--origin-port"]
+status.code = 2
+fs.sandbox = true

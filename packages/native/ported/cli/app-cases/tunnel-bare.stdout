@@ -1,0 +1,75 @@
+
+ Tunnel Lifecycle Commands
+
+USAGE:
+  devryan tunnel <SUBCOMMAND> [OPTIONS]
+
+SUBCOMMANDS:
+  help        Show this tunnel help
+  providers   Show available tunnel providers and capabilities
+  ready       Check tunnel readiness for a provider
+  doctor      Run deep tunnel diagnostics
+  status      Show tunnel status
+  start       Start a tunnel
+  stop        Stop active tunnel (keep server running)
+  profile     Manage saved managed-remote profiles
+
+COMMON OPTIONS:
+  -p, --port              Target DevRyan instance port
+  --json                  Output machine-readable JSON
+  --all                   Apply to all running instances (doctor default, stop)
+
+START OPTIONS:
+  --provider <id>         Tunnel provider id (default: cloudflare)
+  --mode <id>             Tunnel mode (default: quick)
+  --profile <name>        Start tunnel from saved profile name
+  --config [path]         Managed-local config path (optional)
+  --token <token>         Managed-remote token (visible in process list)
+  --token-file <path>     Read token from file (recommended)
+  --token-stdin           Read token from stdin
+  --hostname <hostname>   Managed-remote hostname
+  --origin-port <port>    Fixed Cloudflare origin port (default: 3000)
+  --connect-ttl <value>   Connect-link TTL (15m)
+  --session-ttl <value>   Session TTL (7d)
+  --qr                    Print QR code for resulting tunnel URL
+  --no-qr                 Disable QR output
+  --dry-run               Validate inputs without applying changes
+
+OUTPUT OPTIONS:
+  --show-secrets          Show full tokens in output (default: redacted)
+  --plain                 Disable colors and decorations
+  -q, --quiet             Suppress non-essential output
+  --json                  Output machine-readable JSON
+
+BEHAVIOR NOTES:
+  - One active tunnel per DevRyan instance.
+  - Starting a different mode/provider replaces the current tunnel and revokes old connect links/sessions.
+  - Connect links are one-time; generating a new link revokes the previous unused link.
+
+PROFILE USAGE:
+  devryan tunnel profile list [--provider <id>] [--json]
+  devryan tunnel profile show --name <name> [--provider <id>] [--json]
+  devryan tunnel profile add --provider <id> --mode managed-remote --name <name> --hostname <host> --origin-port <port> --token <token> [--force] [--json]
+  devryan tunnel profile add --provider <id> --mode managed-remote --name <name> --hostname <host> --origin-port <port> --token-file <path> [--force] [--json]
+  devryan tunnel profile remove --name <name> [--provider <id>] [--json]
+
+SHELL COMPLETION:
+  devryan tunnel completion bash   Generate Bash completion script
+  devryan tunnel completion zsh    Generate Zsh completion script
+  devryan tunnel completion fish   Generate Fish completion script
+
+EXAMPLES:
+  devryan tunnel providers
+  devryan tunnel ready --provider cloudflare
+  devryan tunnel doctor --provider cloudflare
+  devryan tunnel status
+  devryan tunnel start --qr
+  devryan tunnel start --profile prod-main
+  devryan tunnel start --provider cloudflare --mode managed-remote --token-file ~/.secrets/cf-token --hostname app.example.com --origin-port 3000
+  devryan tunnel start --provider cloudflare --mode managed-local --config ~/.cloudflared/config.yml
+  devryan tunnel start --dry-run --provider cloudflare --mode managed-remote --token-file ~/.secrets/cf-token --hostname app.example.com --origin-port 3000
+  echo "$TOKEN" | devryan tunnel profile add --provider cloudflare --mode managed-remote --name prod-main --hostname app.example.com --origin-port 3000 --token-stdin
+  devryan tunnel profile list --provider cloudflare
+  devryan tunnel profile list --json --show-secrets
+  devryan tunnel stop --port 3000
+

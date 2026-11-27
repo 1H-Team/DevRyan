@@ -1,0 +1,2 @@
+bundle_command_invalid
+[run-root] test-isolation failed; its files were removed. Re-run with --keep-artifacts to keep [..].

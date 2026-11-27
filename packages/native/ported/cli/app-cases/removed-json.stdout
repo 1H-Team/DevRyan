@@ -1,0 +1,9 @@
+{
+  "status": "error",
+  "error": {
+    "message": "`--try-cf-tunnel` was removed. Use: devryan tunnel start --provider cloudflare --mode quick",
+    "details": [
+      "`--try-cf-tunnel` was removed. Use: devryan tunnel start --provider cloudflare --mode quick"
+    ]
+  }
+}

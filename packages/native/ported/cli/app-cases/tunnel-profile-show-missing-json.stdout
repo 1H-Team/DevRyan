@@ -1,0 +1,6 @@
+{
+  "status": "error",
+  "error": {
+    "message": "No tunnel profile found for name 'ghost'. Run 'devryan tunnel profile list'."
+  }
+}

@@ -1,0 +1,2 @@
+Error: Unknown option: --frobnicate
+[run-root] test-isolation failed; its files were removed. Re-run with --keep-artifacts to keep [..].

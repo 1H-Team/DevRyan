@@ -1,0 +1,9 @@
+{
+  "status": "error",
+  "error": {
+    "message": "Unknown option: --x\"y",
+    "details": [
+      "Unknown option: --x\"y"
+    ]
+  }
+}

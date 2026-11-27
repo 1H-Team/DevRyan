@@ -1,0 +1,4 @@
+bin.name = "devryan"
+args = ["tunnel", "profile", "list", "--json"]
+status.code = 0
+fs.sandbox = true

@@ -1,0 +1,4 @@
+bin.name = "devryan"
+args = ["logs", "--expected-revision", "1", "--json"]
+status.code = 1
+fs.sandbox = true
