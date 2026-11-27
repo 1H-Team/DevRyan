@@ -1,0 +1,25 @@
+{
+  "unit": "native-credential-mutation-owner.js",
+  "files": 1,
+  "fingerprint": "ed3010a9e33a08e9",
+  "cases": 177,
+  "cases_hash": "f9fed12aefdb7ccb",
+  "coverage": {
+    "lines": 135,
+    "reached": 74,
+    "files": [
+      {
+        "file": "native-credential-mutation-owner.js",
+        "lines": 113,
+        "reached": 53,
+        "missed": "10, 59-117"
+      },
+      {
+        "file": "native-provider-integrations.js",
+        "lines": 22,
+        "reached": 21,
+        "missed": "23"
+      }
+    ]
+  }
+}

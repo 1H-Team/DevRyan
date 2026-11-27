@@ -1,8 +1,8 @@
-//! The Rust port of `opencode/v2/projection/messages.js` (13 of 20 functions) over any JS value.
+//! The Rust port of `opencode/v2/projection/messages.js` (14 of 20 functions) over any JS value.
 //! Kept in JS: `toV1AssistantInfo`, `toV1CompactionRecords`, `projectMessagePage` and
 //! `projectSingleMessage` (they hand the caller's `errorOptions.isContextOverflow` callback to
-//! `toV1Error`), `toV1AssistantParts` (not attempted: the assistant content projection), and the
-//! async `fillMessagePage`; the two error classes stay JS. `userTextSegments` is `ids.js`'s, as
+//! `toV1Error`) and the async `fillMessagePage`; `toV1AssistantParts` uses `tools.js` and the cursor
+//! part ids of `ids.js`, ported alongside; the two error classes stay JS. `userTextSegments` is `ids.js`'s, as
 //! in `opencode-v2-projection-ids-rs`; `toV1PathInfo` is Node's POSIX path over UTF-16 units;
 //! `<`/`>` against a number use JS `ToNumber`. `turnSummaryDiffs` returns a `Map`, which the
 //! binary wire cannot carry back, and stays in JS.
@@ -555,4 +555,477 @@ pub fn is_dropped_message_type(message: Value) -> Result<Value, String> {
         Some("system" | "idle" | "agent-switched" | "model-switched" | "location-switched")
     );
     Ok((is_record(&message) && dropped).into())
+}
+
+fn cursor_part_id(metadata: &Value, item: &Value) -> Option<Value> {
+    let cursor = field(&field(metadata, "devryan"), "cursor");
+    if !is_record(metadata)
+        || !is_record(&field(metadata, "devryan"))
+        || !is_record(&cursor)
+        || field(&cursor, "source").as_str() != Some("cursor-acp")
+        || !is_record(item)
+    {
+        return None;
+    }
+    let native = field(item, "native");
+    let state = if !nullish(&native) {
+        native
+    } else if field(item, "type").as_str() == Some("tool") {
+        field(item, "providerState")
+    } else {
+        field(item, "state")
+    };
+    let sc = field(&field(&state, "devryan"), "cursor");
+    let id = field(&sc, "partID");
+    let ok =
+        is_record(&state) && is_record(&field(&state, "devryan")) && is_record(&sc) && js::string_units(&id).is_some_and(|u| !u.is_empty() && u.len() <= 256);
+    ok.then_some(id)
+}
+
+fn cursor_assistant(message: &Value) -> bool {
+    let (model, metadata) = (field(message, "model"), field(message, "metadata"));
+    let cursor = field(&field(&metadata, "devryan"), "cursor");
+    is_record(message)
+        && is_record(&model)
+        && field(&model, "providerID").as_str() == Some("cursor-acp")
+        && is_record(&metadata)
+        && is_record(&field(&metadata, "devryan"))
+        && is_record(&cursor)
+        && field(&cursor, "source").as_str() == Some("cursor-acp")
+}
+
+fn part_time(start: Value, end: Option<Value>) -> Value {
+    end.map_or_else(|| json!({ "start": start }), |e| json!({ "start": start, "end": e }))
+}
+
+/// Port of `toV1AssistantParts` (`messages.js:425`).
+pub fn to_v1_assistant_parts(message: Value, context: Value) -> Result<Value, String> {
+    let message_id = js::utf16_string(&text(&read_member(&message, "id")?));
+    if nullish(&context) {
+        let shown = if context.is_null() { "null" } else { "undefined" };
+        return Err(format!("Cannot destructure property 'sessionID' of '{shown}' as it is {shown}.")); // recorded-literal: V8 TypeError text
+    }
+    let session_id = field(&context, "sessionID");
+    let time = field(&message, "time");
+    let completed = finite(&field(&time, "completed")).filter(|_| is_record(&time)).map(js::number);
+    let snapshot = field(&message, "snapshot");
+    let snap = |k: &str| Some(field(&snapshot, k)).filter(|v| is_record(&snapshot) && non_empty_string(v));
+    let cursor = cursor_assistant(&message);
+    let base = |id: Value, kind: &str| json!({ "id": id, "sessionID": session_id, "messageID": message_id, "type": kind });
+    let mut parts = Vec::new();
+    if !cursor {
+        let mut start = base(join(&[&message_id], &[":step-start"]), "step-start");
+        if let Some(v) = snap("start") {
+            start["snapshot"] = v;
+        }
+        parts.push(start);
+    }
+    let content = field(&message, "content").as_array().cloned().unwrap_or_default();
+    let metadata = if cursor { field(&message, "metadata") } else { js::undefined() };
+    let (mut texts, mut reasonings) = (0usize, 0usize);
+    let tool_context = json!({ "messageID": message_id, "sessionID": session_id });
+    let created = field(&context, "created");
+    for item in &content {
+        let kind = field(item, "type");
+        if !is_record(item) {
+            continue;
+        }
+        let state = || {
+            let n = field(item, "native");
+            if nullish(&n) { field(item, "state") } else { n }
+        };
+        let words = || Some(field(item, "text")).filter(|t| js::string_units(t).is_some()).unwrap_or_else(|| "".into());
+        match kind.as_str() {
+            Some("text") => {
+                let id = cursor_part_id(&metadata, item).unwrap_or_else(|| join(&[&message_id, &json!(texts)], &[":text:"]));
+                texts += 1;
+                let mut part = base(id, "text");
+                part["text"] = words();
+                part["time"] = part_time(created.clone(), completed.clone());
+                if let Some(p) = tools::provider_state(&state()) {
+                    part["metadata"] = json!({ "providerState": p });
+                }
+                parts.push(part);
+            }
+            Some("reasoning") => {
+                let id = cursor_part_id(&metadata, item).unwrap_or_else(|| join(&[&message_id, &json!(reasonings)], &[":reasoning:"]));
+                reasonings += 1;
+                let time = Some(field(item, "time")).filter(is_record).unwrap_or_else(|| json!({}));
+                let start = finite(&field(&time, "created")).map_or_else(|| created.clone(), js::number);
+                let end = finite(&field(&time, "completed")).map(js::number).or_else(|| completed.clone());
+                let mut part = base(id, "reasoning");
+                part["text"] = words();
+                part["time"] = part_time(start, end);
+                if let Some(p) = tools::provider_state(&state()) {
+                    part["metadata"] = p;
+                }
+                parts.push(part);
+            }
+            Some("tool") if non_empty_string(&field(item, "id")) => {
+                let id = cursor_part_id(&metadata, item).unwrap_or_else(|| join(&[&message_id, &field(item, "id")], &[":tool:"]));
+                let mut tool = tools::to_v1_tool_part(item.clone(), tool_context.clone())?;
+                if !tool.is_null() {
+                    tool["id"] = id;
+                    parts.push(tool);
+                }
+            }
+            _ => {}
+        }
+    }
+    let finish = field(&message, "finish");
+    if !cursor && (completed.is_some() || js::string_units(&finish).is_some()) {
+        let mut end = base(join(&[&message_id], &[":step-finish"]), "step-finish");
+        end["reason"] = if js::string_units(&finish).is_some() { finish } else { "stop".into() };
+        end["cost"] = finite(&field(&message, "cost")).map_or_else(|| json!(0), js::number);
+        end["tokens"] = to_v1_tokens(field(&message, "tokens"))?;
+        if let Some(v) = snap("end") {
+            end["snapshot"] = v;
+        }
+        parts.push(end);
+    }
+    Ok(Value::Array(parts))
+}
+
+/// `tools.js`'s `toV1ToolPart` and `projectProviderState`, as ported in `opencode-v2-projection-tools-rs`.
+mod tools {
+    use serde_json::{Map, Value, json};
+
+    use crate::js;
+
+    const MARKERS: [&str; 5] = ["$utf16", "$num", "$undefined", "$function", "$bigint"];
+
+    fn marker(value: &Value) -> Option<&str> {
+        value
+            .as_object()
+            .filter(|o| o.len() == 1)
+            .and_then(|o| o.keys().next())
+            .map(String::as_str)
+            .filter(|k| k.starts_with('$'))
+    }
+
+    fn is_record(value: &Value) -> bool {
+        value.is_object() && !marker(value).is_some_and(|m| MARKERS.contains(&m))
+    }
+
+    fn plain(value: &Value) -> Option<&Map<String, Value>> {
+        value.as_object().filter(|_| marker(value).is_none())
+    }
+
+    fn field(value: &Value, key: &str) -> Value {
+        plain(value).and_then(|o| o.get(key)).cloned().unwrap_or_else(js::undefined)
+    }
+
+    fn has_own(value: &Value, key: &str) -> bool {
+        plain(value).is_some_and(|o| o.contains_key(key))
+    }
+
+    fn has_key(value: &Value, key: &str) -> bool {
+        has_own(value, key) && !js::is_undefined(&field(value, key))
+    }
+
+    fn non_empty_string(value: &Value) -> bool {
+        js::string_units(value).is_some_and(|u| !u.is_empty())
+    }
+
+    fn finite(value: &Value) -> Option<f64> {
+        js::as_number(value).filter(|n| n.is_finite())
+    }
+
+    fn nullish(value: &Value) -> bool {
+        value.is_null() || js::is_undefined(value)
+    }
+
+    /// The value handed back unchanged (a number marker crosses back as a number).
+    fn same(value: Value) -> Value {
+        js::as_number(&value).map_or(value, js::number)
+    }
+
+    /// `String(value)` as UTF-16 units.
+    fn text(value: &Value) -> Vec<u16> {
+        if let Some(units) = js::string_units(value) {
+            return units;
+        }
+        let s = match value {
+            Value::Null => "null".to_string(),
+            _ if js::is_undefined(value) => "undefined".to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::Array(items) => {
+                return items
+                    .iter()
+                    .map(|v| if nullish(v) { Vec::new() } else { text(v) })
+                    .collect::<Vec<_>>()
+                    .join(&[0x2c][..]);
+            }
+            _ if marker(value) == Some("$map") => "[object Map]".into(),
+            _ if marker(value) == Some("$set") => "[object Set]".into(),
+            _ if marker(value) == Some("$bigint") => field_str(value, "$bigint"),
+            _ => js::as_number(value).map_or_else(|| "[object Object]".into(), js::number_to_string),
+        };
+        s.encode_utf16().collect()
+    }
+
+    fn field_str(value: &Value, key: &str) -> String {
+        value.get(key).and_then(Value::as_str).unwrap_or_default().to_string()
+    }
+
+    fn template(parts: &[&Value], seps: &[&str]) -> Value {
+        let mut out = text(parts[0]);
+        for (part, sep) in parts[1..].iter().zip(seps) {
+            out.extend(sep.encode_utf16());
+            out.extend(text(part));
+        }
+        js::utf16_string(&out)
+    }
+
+    fn v1_name(name: &Value) -> Value {
+        match name.as_str() {
+            Some("shell") => "bash".into(),
+            Some("subagent") => "task".into(),
+            Some("patch") => "apply_patch".into(),
+            _ => same(name.clone()),
+        }
+    }
+
+    fn aliases(name: &Value) -> &'static [(&'static str, &'static str)] {
+        match v1_name(name).as_str() {
+            Some("read" | "edit" | "write") => &[("path", "filePath")],
+            Some("task") => &[("agent", "subagent_type")],
+            Some("skill") => &[("id", "name")],
+            _ => &[],
+        }
+    }
+
+    fn reviewed_skill_id(value: &Value) -> bool {
+        value
+            .as_str()
+            .and_then(|s| s.strip_prefix("devryan-"))
+            .is_some_and(|h| h.len() == 32 && h.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+    }
+
+    fn copy(value: &Value) -> Map<String, Value> {
+        plain(value).cloned().unwrap_or_default()
+    }
+
+    /// `toV1ToolInput` from `tools.js`.
+    fn to_v1_tool_input(name: Value, input: Value) -> Result<Value, String> {
+        if !is_record(&input) {
+            return Ok(same(input));
+        }
+        let mut projected: Option<Map<String, Value>> = None;
+        for (v2, v1) in aliases(&name) {
+            if !has_key(&input, v2) || has_key(&input, v1) || (*v1 == "name" && reviewed_skill_id(&field(&input, v2))) {
+                continue;
+            }
+            projected.get_or_insert_with(|| copy(&input)).insert((*v1).into(), field(&input, v2));
+        }
+        Ok(projected.map_or(input, Value::Object))
+    }
+
+    fn first_file_diff(metadata: &Value) -> Option<Value> {
+        match field(metadata, "files") {
+            Value::Array(files) => files.first().filter(|f| is_record(f)).cloned(),
+            _ => None,
+        }
+    }
+
+    fn file_diff_tool(name: &Value) -> bool {
+        matches!(v1_name(name).as_str(), Some("edit" | "write"))
+    }
+
+    /// `toV1ToolMetadata` from `tools.js`.
+    fn to_v1_tool_metadata(name: Value, metadata: Value) -> Result<Value, String> {
+        if !is_record(&metadata) {
+            return Ok(same(metadata));
+        }
+        if v1_name(&name).as_str() == Some("task") {
+            if !non_empty_string(&field(&metadata, "sessionID")) || has_key(&metadata, "sessionId") {
+                return Ok(metadata);
+            }
+            let mut out = copy(&metadata);
+            out.insert("sessionId".into(), field(&metadata, "sessionID"));
+            return Ok(Value::Object(out));
+        }
+        let Some(file) = first_file_diff(&metadata).filter(|_| file_diff_tool(&name)) else {
+            return Ok(metadata);
+        };
+        let mut out: Option<Map<String, Value>> = None;
+        if js::string_units(&field(&file, "patch")).is_some() && !has_key(&metadata, "diff") {
+            out.get_or_insert_with(|| copy(&metadata)).insert("diff".into(), field(&file, "patch"));
+        }
+        if !has_key(&metadata, "filediff") {
+            let diff = json!({ "file": field(&file, "file"), "additions": field(&file, "additions"), "deletions": field(&file, "deletions") });
+            out.get_or_insert_with(|| copy(&metadata)).insert("filediff".into(), diff);
+        }
+        Ok(out.map_or(metadata, Value::Object))
+    }
+
+    fn title_of(input: &Value) -> Value {
+        if !is_record(input) {
+            return js::undefined();
+        }
+        ["description", "command", "filePath", "path"]
+            .iter()
+            .map(|k| field(input, k))
+            .find(non_empty_string)
+            .unwrap_or_else(js::undefined)
+    }
+
+    fn or_undefined(value: Option<f64>) -> Value {
+        value.map_or_else(js::undefined, js::number)
+    }
+
+    fn content_text(content: &Value) -> Value {
+        let Value::Array(items) = content else { return "".into() };
+        let texts: Vec<Vec<u16>> = items
+            .iter()
+            .filter(|i| is_record(i) && field(i, "type").as_str() == Some("text"))
+            .filter_map(|i| js::string_units(&field(i, "text")))
+            .collect();
+        js::utf16_string(&texts.join(&[0x0a][..]))
+    }
+
+    fn context_field(context: &Value, key: &str) -> Result<Value, String> {
+        if nullish(context) {
+            let shown = if context.is_null() { "null" } else { "undefined" };
+            return Err(format!("Cannot read properties of {shown} (reading '{key}')")); // recorded-literal: V8 TypeError text
+        }
+        Ok(field(context, key))
+    }
+
+    fn content_attachments(content: &Value, call_id: &Value, context: &Value) -> Result<Vec<Value>, String> {
+        let mut attachments = Vec::new();
+        for item in content.as_array().into_iter().flatten() {
+            if !is_record(item) || field(item, "type").as_str() != Some("file") || js::string_units(&field(item, "uri")).is_none() {
+                continue;
+            }
+            let message_id = context_field(context, "messageID")?;
+            let index = js::number(attachments.len() as f64);
+            let mime = Some(field(item, "mime"))
+                .filter(|m| js::string_units(m).is_some())
+                .unwrap_or_else(|| "application/octet-stream".into());
+            let mut attachment = Map::new();
+            attachment.insert("id".into(), template(&[&message_id, call_id, &index], &[":tool:", ":file:"]));
+            attachment.insert("sessionID".into(), field(context, "sessionID"));
+            attachment.extend([
+                ("messageID".into(), message_id),
+                ("type".into(), "file".into()),
+                ("mime".into(), mime),
+                ("url".into(), field(item, "uri")),
+            ]);
+            if non_empty_string(&field(item, "name")) {
+                attachment.insert("filename".into(), field(item, "name"));
+            }
+            attachments.push(Value::Object(attachment));
+        }
+        Ok(attachments)
+    }
+
+    fn with(mut base: Value, key: &str, value: Value) -> Value {
+        if let Value::Object(o) = &mut base {
+            o.insert(key.into(), value);
+        }
+        base
+    }
+
+    /// `toV1ToolState` from `tools.js`.
+    fn to_v1_tool_state(tool: Value, context: Value) -> Result<Value, String> {
+        let state = field(&tool, "state");
+        if !is_record(&tool) || !is_record(&state) {
+            return Ok(Value::Null);
+        }
+        let name = Some(field(&tool, "name"))
+            .filter(|n| js::string_units(n).is_some())
+            .unwrap_or_else(|| "".into());
+        let call_id = Some(field(&tool, "id")).filter(|n| js::string_units(n).is_some()).unwrap_or_else(|| "".into());
+        let time = field(&tool, "time");
+        let start = finite(&field(&time, "ran")).or_else(|| finite(&field(&time, "created")));
+        let (start, end) = (or_undefined(start), finite(&field(&time, "completed")));
+        let status = field(&state, "status");
+        if status.as_str() == Some("streaming") {
+            let raw = Some(field(&state, "input"))
+                .filter(|r| js::string_units(r).is_some())
+                .unwrap_or_else(|| "".into());
+            return Ok(json!({ "status": "pending", "input": {}, "raw": raw }));
+        }
+        let raw_input = Some(field(&state, "input")).filter(is_record).unwrap_or_else(|| json!({}));
+        let metadata = Some(field(&state, "metadata"))
+            .filter(is_record)
+            .map(|m| to_v1_tool_metadata(name.clone(), m))
+            .transpose()?;
+        let mut input = to_v1_tool_input(name.clone(), raw_input.clone())?;
+        let skill_name = metadata
+            .as_ref()
+            .map(|m| field(m, "name"))
+            .filter(|n| v1_name(&name).as_str() == Some("skill") && non_empty_string(n));
+        if let Some(skill) = skill_name.as_ref().filter(|_| !has_key(&raw_input, "name")) {
+            input = with(Value::Object(copy(&input)), "name", skill.clone());
+        }
+        let title = skill_name.clone().unwrap_or_else(|| title_of(&input));
+        let metadata_or_empty = metadata.clone().unwrap_or_else(|| json!({}));
+        let until = end.map_or_else(|| start.clone(), js::number);
+        Ok(match status.as_str() {
+            Some("running") => {
+                let running = json!({ "status": "running", "input": input, "metadata": metadata_or_empty, "time": { "start": start } });
+                if js::is_undefined(&title) { running } else { with(running, "title", title) }
+            }
+            Some("completed") => {
+                let title = if js::is_undefined(&title) { "".into() } else { title };
+                let completed = json!({ "status": "completed", "input": input, "output": content_text(&field(&state, "content")), "title": title, "metadata": metadata_or_empty, "time": { "start": start, "end": until } });
+                let attachments = content_attachments(&field(&state, "content"), &call_id, &context)?;
+                if attachments.is_empty() {
+                    completed
+                } else {
+                    with(completed, "attachments", Value::Array(attachments))
+                }
+            }
+            Some("error") => {
+                let error = field(&state, "error");
+                let message = match (
+                    is_record(&error),
+                    js::string_units(&field(&error, "message")).is_some(),
+                    js::string_units(&error).is_some(),
+                ) {
+                    (true, true, _) => field(&error, "message"),
+                    (_, _, true) => error,
+                    _ => "".into(),
+                };
+                let failed = json!({ "status": "error", "input": input, "error": message, "time": { "start": start, "end": until } });
+                metadata.map_or(failed.clone(), |m| with(failed, "metadata", m))
+            }
+            _ => Value::Null,
+        })
+    }
+
+    pub(super) fn provider_state(state: &Value) -> Option<Value> {
+        (is_record(state) && is_record(&field(state, "devryan"))).then(|| json!({ "devryan": field(state, "devryan") }))
+    }
+
+    /// `toV1ToolPart` from `tools.js`.
+    pub(super) fn to_v1_tool_part(tool: Value, context: Value) -> Result<Value, String> {
+        let (id, name) = (field(&tool, "id"), field(&tool, "name"));
+        if !is_record(&tool) || !non_empty_string(&id) || js::string_units(&name).is_none() {
+            return Ok(Value::Null);
+        }
+        let state = to_v1_tool_state(tool.clone(), context.clone())?;
+        if state.is_null() {
+            return Ok(Value::Null);
+        }
+        let native = field(&tool, "native");
+        let provider = provider_state(&if nullish(&native) { field(&tool, "providerState") } else { native });
+        let metadata = match provider {
+            Some(p) => json!({ "opencodeTool": name, "providerState": p }),
+            None => json!({ "opencodeTool": name }),
+        };
+        let message_id = context_field(&context, "messageID")?;
+        Ok(json!({
+            "id": template(&[&message_id, &id], &[":tool:"]),
+            "sessionID": field(&context, "sessionID"),
+            "messageID": message_id,
+            "type": "tool",
+            "callID": id,
+            "tool": v1_name(&name),
+            "state": state,
+            "metadata": metadata,
+        }))
+    }
 }

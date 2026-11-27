@@ -161,6 +161,17 @@ pub fn is_dropped_message_type(message: String) -> napi::Result<String> {
     })
 }
 
+/// `toV1AssistantParts`.
+#[napi(js_name = "toV1AssistantParts")]
+pub fn to_v1_assistant_parts(message: String, context: String) -> napi::Result<String> {
+    run(move || {
+        let message = crate::js::from_json(&message)?;
+        let context = crate::js::from_json(&context)?;
+        let out = port::to_v1_assistant_parts(message, context)?;
+        crate::js::to_json(&out)
+    })
+}
+
 // ---- the binary wire ------------------------------------------------------------------------
 
 type WireBuffers = (
@@ -430,6 +441,22 @@ pub fn is_dropped_message_type_wire() -> napi::Result<f64> {
         let message: Value = wire::read_value(r, &S_IS_DROPPED_MESSAGE_TYPE_0)?;
         let out = &port::is_dropped_message_type(message)?;
         wire::write_value(w, out, &S_IS_DROPPED_MESSAGE_TYPE_OUT)?;
+        Ok(())
+    })
+}
+
+static S_TO_V1_ASSISTANT_PARTS_0: wire::Schema = wire::Schema::Dyn;
+static S_TO_V1_ASSISTANT_PARTS_1: wire::Schema = wire::Schema::Dyn;
+static S_TO_V1_ASSISTANT_PARTS_OUT: wire::Schema = wire::Schema::Dyn;
+
+/// `toV1AssistantParts` over the binary wire.
+#[napi(js_name = "toV1AssistantPartsWire")]
+pub fn to_v1_assistant_parts_wire() -> napi::Result<f64> {
+    wire_io(|r, w| {
+        let message: Value = wire::read_value(r, &S_TO_V1_ASSISTANT_PARTS_0)?;
+        let context: Value = wire::read_value(r, &S_TO_V1_ASSISTANT_PARTS_1)?;
+        let out = &port::to_v1_assistant_parts(message, context)?;
+        wire::write_value(w, out, &S_TO_V1_ASSISTANT_PARTS_OUT)?;
         Ok(())
     })
 }

@@ -34,6 +34,16 @@
       "sample": "Cannot read properties of undefined (reading 'id')"
     },
     {
+      "site": "packages/web/server/lib/opencode/v2/projection/messages.js:426",
+      "class": "TypeError",
+      "sample": "Cannot read properties of undefined (reading 'id')"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/v2/projection/messages.js:427",
+      "class": "TypeError",
+      "sample": "Cannot destructure property 'sessionID' of 'context' as it is undefined."
+    },
+    {
       "site": "packages/web/server/lib/opencode/v2/projection/messages.js:669",
       "class": "TypeError",
       "sample": "Cannot read properties of null (reading 'userID')"

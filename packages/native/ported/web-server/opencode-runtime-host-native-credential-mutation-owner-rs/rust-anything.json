@@ -1,0 +1,61 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode/runtime-host",
+  "unit": "native-credential-mutation-owner.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "native-credential-mutation-owner-rs",
+  "exports": [
+    {
+      "name": "parseCredentialMutationBinding",
+      "file": "native-credential-mutation-owner.js",
+      "line": 15,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "parseCredentialResolutionBinding",
+      "file": "native-credential-mutation-owner.js",
+      "line": 38,
+      "params": [
+        {
+          "name": "value",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "credentialMutationFingerprint",
+      "file": "native-credential-mutation-owner.js",
+      "line": 12,
+      "reason": "kept on request"
+    },
+    {
+      "name": "createNativeCredentialMutationOwner",
+      "file": "native-credential-mutation-owner.js",
+      "line": 58,
+      "reason": "kept on request"
+    }
+  ]
+}

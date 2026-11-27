@@ -60,6 +60,7 @@ const specs = {
   encodeMessageCursor: [[1], 'json', false],
   decodeMessageCursor: [[1], 'json', false],
   isDroppedMessageType: [[1], 'json', false],
+  toV1AssistantParts: [[1, 1], 'json', false],
 }
 const classes = {
 
@@ -496,6 +497,31 @@ return t
 module.exports.isDroppedMessageType = function isDroppedMessageType (a0) {
   try {
     if (arguments.length <= 1 && encode(a0) && wireCall(call)) return decode()
+    return json(...arguments)
+  } catch (e) {
+    throw jsError(e)
+  }
+}
+}
+
+// `toV1AssistantParts`: binary wire; the JSON version handles inputs of other shapes.
+{
+const json = module.exports.toV1AssistantParts
+const call = native.toV1AssistantPartsWire
+const encode = (a0, a1) => {
+at = 0
+if (!wDyn(a0)) return false
+if (!wDyn(a1)) return false
+return true
+}
+const decode = () => {
+let t
+t = rDyn()
+return t
+}
+module.exports.toV1AssistantParts = function toV1AssistantParts (a0, a1) {
+  try {
+    if (arguments.length <= 2 && encode(a0, a1) && wireCall(call)) return decode()
     return json(...arguments)
   } catch (e) {
     throw jsError(e)

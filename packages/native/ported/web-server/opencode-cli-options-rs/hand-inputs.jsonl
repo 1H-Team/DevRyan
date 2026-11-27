@@ -1,0 +1,85 @@
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": [], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--port", "4000"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--port=5000"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["-p", "1"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--p", "7"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--port"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--port", "--host", "h"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--port", "abc"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--port", " 12x"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--port", "-0"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--port", "+9"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--port", "1e3"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--port", "9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--port=", "x"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--port", "\u00a012"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--host", " example.test "], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--host", "  "], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--host"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--host=a=b"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--ui-password", "secret"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--ui-password"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--ui-password=", "x"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--try-cf-tunnel", "x"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--try-cf-tunnel=no"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-provider", "ngrok"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-provider"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-mode=m"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-config", " /c "], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-config"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-token", "t"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-hostname", "h"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel", "/cfg.yml"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel", "--port", "1"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["positional", "--unknown", "v", "--port", "2"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["-", "--", "--=x", "---port", "3"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--port", "1", "--port", "2"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": [5], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": [null], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["ok", 5], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--port", 5], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--PORT", "9"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--port\u0000", "9"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-provider", {"$utf16": [55296]}], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-provider", "x"], "env": {"$undefined": true}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "env": {"$undefined": true}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-provider", "x"], "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "env": {}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-provider", "x"], "env": {"DEVRYAN_UI_PASSWORD": "p1", "OPENCODE_UI_PASSWORD": "p2"}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "env": {"DEVRYAN_UI_PASSWORD": "p1", "OPENCODE_UI_PASSWORD": "p2"}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-provider", "x"], "env": {"DEVRYAN_UI_PASSWORD": "", "OPENCODE_UI_PASSWORD": "p2"}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "env": {"DEVRYAN_UI_PASSWORD": "", "OPENCODE_UI_PASSWORD": "p2"}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-provider", "x"], "env": {"DEVRYAN_UI_PASSWORD": 0, "OPENCODE_UI_PASSWORD": ""}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "env": {"DEVRYAN_UI_PASSWORD": 0, "OPENCODE_UI_PASSWORD": ""}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-provider", "x"], "env": {"DEVRYAN_TRY_CF_TUNNEL": "true"}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "env": {"DEVRYAN_TRY_CF_TUNNEL": "true"}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-provider", "x"], "env": {"DEVRYAN_TRY_CF_TUNNEL": "TRUE"}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "env": {"DEVRYAN_TRY_CF_TUNNEL": "TRUE"}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-provider", "x"], "env": {"DEVRYAN_TRY_CF_TUNNEL": true}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "env": {"DEVRYAN_TRY_CF_TUNNEL": true}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-provider", "x"], "env": {"DEVRYAN_TUNNEL_PROVIDER": "cf", "DEVRYAN_TUNNEL_MODE": "quick", "DEVRYAN_TUNNEL_CONFIG": "  /x  ", "DEVRYAN_TUNNEL_TOKEN": "tok", "DEVRYAN_TUNNEL_HOSTNAME": "host"}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "env": {"DEVRYAN_TUNNEL_PROVIDER": "cf", "DEVRYAN_TUNNEL_MODE": "quick", "DEVRYAN_TUNNEL_CONFIG": "  /x  ", "DEVRYAN_TUNNEL_TOKEN": "tok", "DEVRYAN_TUNNEL_HOSTNAME": "host"}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-provider", "x"], "env": {"DEVRYAN_TUNNEL_CONFIG": "   "}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "env": {"DEVRYAN_TUNNEL_CONFIG": "   "}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-provider", "x"], "env": {"DEVRYAN_TUNNEL_CONFIG": 5}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "env": {"DEVRYAN_TUNNEL_CONFIG": 5}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-provider", "x"], "env": {"DEVRYAN_TUNNEL_PROVIDER": ""}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "env": {"DEVRYAN_TUNNEL_PROVIDER": ""}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-provider", "x"], "env": null}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "env": null}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-provider", "x"], "env": "str"}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "env": "str"}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "argv": ["--tunnel-provider", "x"], "env": {"$map": []}}]}
+{"fn": "parseServeCliOptions", "args": [{"defaultPort": 3000, "cloudflareProvider": "cloudflare", "managedLocalMode": "managed-local", "env": {"$map": []}}]}
+{"fn": "parseServeCliOptions", "args": [{"$undefined": true}]}
+{"fn": "parseServeCliOptions", "args": [null]}
+{"fn": "parseServeCliOptions", "args": [{}]}
+{"fn": "parseServeCliOptions", "args": ["x"]}
+{"fn": "parseServeCliOptions", "args": [5]}
+{"fn": "parseServeCliOptions", "args": [[]]}
+{"fn": "parseServeCliOptions", "args": [{"argv": "x"}]}
+{"fn": "parseServeCliOptions", "args": [{"argv": ["--port", "1"]}]}
+{"fn": "parseServeCliOptions", "args": [{"argv": ["--port", "x"], "defaultPort": {"$num": "NaN"}}]}
+{"fn": "parseServeCliOptions", "args": [{"argv": ["--tunnel"], "cloudflareProvider": {"a": 1}}]}
+{"fn": "parseServeCliOptions", "args": []}

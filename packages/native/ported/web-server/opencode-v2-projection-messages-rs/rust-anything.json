@@ -263,6 +263,30 @@
       "is_generator": false,
       "type_params": [],
       "uses_instanceof": false
+    },
+    {
+      "name": "toV1AssistantParts",
+      "file": "messages.js",
+      "line": 425,
+      "params": [
+        {
+          "name": "message",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "context",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
     }
   ],
   "classes": [],
@@ -283,12 +307,6 @@
       "name": "toV1AssistantInfo",
       "file": "messages.js",
       "line": 391,
-      "reason": "kept on request"
-    },
-    {
-      "name": "toV1AssistantParts",
-      "file": "messages.js",
-      "line": 425,
       "reason": "kept on request"
     },
     {

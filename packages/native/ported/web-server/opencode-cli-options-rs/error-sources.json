@@ -1,0 +1,22 @@
+{
+  "note": "Throw sites of the original reached by this crate's recorded throws. product: the code constructs the error (class and message must match); engine: V8 throws it (judged by throw and class). Reviewed against the source; regenerate with scripts/rust-anything/error-texts.mjs --write.",
+  "unitThrowStatements": [],
+  "product": [],
+  "engine": [
+    {
+      "site": "packages/web/server/lib/opencode/cli-options.js:10",
+      "class": "TypeError",
+      "sample": "Cannot read properties of null (reading 'DEVRYAN_UI_PASSWORD')"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/cli-options.js:2",
+      "class": "TypeError",
+      "sample": "Cannot read properties of undefined (reading 'argv')"
+    },
+    {
+      "site": "packages/web/server/lib/opencode/cli-options.js:48",
+      "class": "TypeError",
+      "sample": "arg.startsWith is not a function"
+    }
+  ]
+}
