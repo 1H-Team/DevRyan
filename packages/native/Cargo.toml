@@ -2,7 +2,7 @@
 # ships in the app; packaging excludes the whole folder.
 [workspace]
 resolver = "3"
-members = ["crates/client-engine", "crates/client-engine-runner", "crates/config-text", "crates/front", "crates/route-common", "crates/route-magic-prompts", "crates/route-session-folders"]
+members = ["crates/client-engine", "crates/client-engine-runner", "crates/config-text", "crates/front", "crates/js-layer", "crates/route-common", "crates/route-magic-prompts", "crates/route-session-folders", "crates/scheduler-policy"]
 
 [workspace.package]
 edition = "2024"
@@ -21,6 +21,9 @@ httparse = { version = "=1.10.1", default-features = false, features = ["std"] }
 libc = { version = "=0.2.191", default-features = false, features = ["std"] }
 serde_json = { version = "=1.0.154", default-features = false, features = ["std"] }
 devryan-route-common = { path = "crates/route-common", version = "=0.1.0" }
+# This workspace's own crates (path dependencies, no version).
+devryan-js-layer = { path = "crates/js-layer" }
+devryan-scheduler-policy = { path = "crates/scheduler-policy" }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

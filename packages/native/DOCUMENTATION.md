@@ -1,6 +1,6 @@
 # packages/native
 
-The product's Cargo workspace. It pins Rust in `rust-toolchain.toml`, tracks `Cargo.lock`, and has seven crates: `crates/front` ([devryan-front](#devryan-front)), `crates/config-text` ([devryan-config-text](#devryan-config-text)), `crates/route-common` ([devryan-route-common](#devryan-route-common)), `crates/route-magic-prompts` ([devryan-route-magic-prompts](#devryan-route-magic-prompts)), `crates/route-session-folders` ([devryan-route-session-folders](#devryan-route-session-folders)), and `crates/client-engine` with `crates/client-engine-runner` ([devryan-client-engine](#devryan-client-engine-and-its-runner)). Nothing here ships in the app, and nothing in the product starts or calls it.
+The product's Cargo workspace. It pins Rust in `rust-toolchain.toml`, tracks `Cargo.lock`, and has nine crates: `crates/front` ([devryan-front](#devryan-front)), `crates/config-text` ([devryan-config-text](#devryan-config-text)), `crates/route-common` ([devryan-route-common](#devryan-route-common)), `crates/route-magic-prompts` ([devryan-route-magic-prompts](#devryan-route-magic-prompts)), `crates/route-session-folders` ([devryan-route-session-folders](#devryan-route-session-folders)), `crates/client-engine` with `crates/client-engine-runner` ([devryan-client-engine](#devryan-client-engine-and-its-runner)), and `crates/js-layer` ([devryan-js-layer](#devryan-js-layer)) with `crates/scheduler-policy` ([devryan-scheduler-policy](#devryan-scheduler-policy)). Nothing here ships in the app, and nothing in the product starts or calls it.
 
 ## devryan-front
 
@@ -291,3 +291,57 @@ node scripts/client-conformance/client-differential.mjs [--calls=N] [--profile=b
 ### Tests and gates
 
 `cargo test` covers the JavaScript semantics (number layout, `StringToNumber`, `trim`, case mapping, `JSON.stringify`, Dates, the sort), the plants list against the sources, the ledger core's V8 vectors (`crates/client-engine/tests/ledger_vectors.rs`, `crates/client-engine-runner/tests/ledger_vectors.rs`), V8's sort call for call (`crates/client-engine/tests/sort_vectors.rs` over `crates/client-engine/tests/sort-vectors.tsv`, written by `crates/client-engine/tests/generate-sort-vectors.mjs` under Electron's Node), the JSON reader and writer, the codec (round trips, identity numbering across slots, refusals, reconciling a known object, change sets; `crates/client-engine-runner/tests/codec_fuzz.rs`: 4,000 seeded trees well-formed and not, hole counts at and past the array bound, no panic and no allocation by count), the protocol on fixed requests (`crates/client-engine-runner/tests/protocol.rs`), and **the client-engine vectors** (`crates/client-engine-runner/tests/client_vectors.rs` over `crates/client-engine-runner/tests/client-vectors/<family>.ndjson`: 1,857 generated calls (96 of them witnesses of planted differences) with the answers each family's TypeScript gives under V8, replayed through the runner with no recording, no Bun and no Node; written by `scripts/client-conformance/client-vectors.mjs`, docs/TESTING.md "Client-engine differential and vectors"). `node scripts/check-native.mjs` runs them with fmt, clippy and the licence check, as for every crate here, in the static job. The judgement against recordings stays the manual command above (docs/TESTING.md says why it is not wired into a lane).
+
+## devryan-js-layer
+
+`crates/js-layer` (`devryan-js-layer`) compiles two of the native ledger's own source files by path, never copied, for the scheduler crates: `jobs` is `packages/harness-runtime/native/ledger/ledger-native/src/js.rs` (JavaScript's jobs: promises with ordered reactions, one microtask queue, async functions that start at the call, awaits that always suspend) and `js` is `packages/harness-runtime/native/ledger-core/src/js/` (JavaScript strings, numbers, values and `JSON.stringify`). **Nothing in the product calls it, and it is not shipped.** It adds no code of its own and has no dependency.
+
+Why by path and not a Cargo path dependency: the ledger crates carry no licence field (the licence check refuses such a package), `ledger-native` depends on `ledger-io` and with it on `libc`, `sha1`, `sha2` and `miniz_oxide`, which would enter this workspace's lock, and adding the scheduler crates to the ledger's own workspace would change what its verify builds. Including the files touches none of the ledger's files. The ledger's unit tests of these files need its other modules and run in the ledger's crates, so a test build of this crate leaves both modules out (`cfg(not(test))`, and the library has no test target); `rustfmt::skip` keeps this workspace's formatting off the ledger's files, and `dead_code` is allowed because the ledger's other modules use what the scheduler does not. A change to those files that names another ledger module breaks this crate's build, loudly.
+
+## devryan-scheduler-policy
+
+`crates/scheduler-policy` (`devryan-scheduler-policy`, plan package OR1) holds the orchestration scheduler's pure policy modules of `packages/orchestration-runtime`, ported to Rust as library code on the JavaScript layer `devryan-js-layer` (`js::Value`, `JsStr`, exact `JSON.stringify`). **Nothing in the product calls it, and it is not shipped.** It has no other dependency and no `unsafe` code, and makes no system call.
+
+### What it holds
+
+One module per JavaScript file, each function with the JavaScript's checks in the JavaScript's order and the same error name, message and `code`:
+
+| Module | JavaScript |
+|---|---|
+| `codec` | `codec.js` `decodeLedgerSnapshot` (with `requireResultEnvelopes` and a caller's `createError`), `encodeLedgerSnapshot`, `decodeManagedTaskRecord`, `decodeResultEnvelope` |
+| `contract` | `contract.js` `validateManagedTaskRecord`, `createManagedTaskRecord`, `truncateManagedText`, `isTerminalManagedTaskStatus`, the stop and recovery predicates, `toManagedTaskEvent`, `toManagedTaskRemovalEvent` |
+| `envelope` | `result-envelope.js` (all four exports) |
+| `checks`, `leaves` | `required-checks.js` and `check-correction.js` validators, `task-prerequisites.js`, `approved-plan.js` `validateApprovedPlanRef`, `designer-step-budget.js` `validatePrimaryStepBudget`, `native-job-segments.js`, `transport-recovery.js` validation and backup eligibility |
+| `persistence` | `persistence.js` `compactManagedOrchestrationState`, `isManagedNativeJobTombstone` |
+| `transitions` | `transitions.js` (both exports) |
+| `retry` | `provider-retry-policy.js` (every classifier and the formatter), with `shared-runtime/lib/upstream-stall.js` and `provider-capabilities.js` `supportsManagedReadOnlyProvider` |
+| `auto_resume` | `auto-resume-policy.js` |
+| `proof_store` | `native-job-proof-store.js` |
+| `primitives` | `codec-primitives.js` constants, `isManagedTaskId`, `findManagedResultPayloadMismatch`; `scheduler.js` `compareManagedTaskQueueOrder` and `DUPLICATE_DISPATCH_WINDOW_MS` |
+
+A JavaScript throw is `Failure::Throw` (name, message, `code`). An input this port does not reproduce is refused with `Failure::Unsupported(<what>)`, never answered differently: two objects compared by reference (a `Value` has no identity; `transitions::assert_managed_task_transition` takes the caller's answer for which fields share their object instead), `ToNumber` of a string or object in arithmetic or a comparison, `ToString` of an object with its own `toString` or `valueOf`, JSON nested deeper than the JavaScript layer's bound, `localeCompare` outside `[_0-9a-z]`, compaction without `options.now` (the JavaScript reads the wall clock) or outside its typed domain (see `persistence.rs`), a `priorTaskId` cycle the JavaScript never leaves, and auto-resume with a `now` that is not a number. The regular expressions are the JavaScript sources copied verbatim and run by a small backtracking engine with ECMAScript's non-Unicode semantics for the subset they use (`regex.rs`); `toLowerCase` is reproduced only where its result meets ASCII text.
+
+`localeCompare` on task IDs is not code-unit order: ICU puts `_` before the digits (`dvr_task_1` sorts before `dvr_task01`), and the crate implements that order for `[_0-9a-z]`; the generator checks it against Node's `localeCompare` (every string of up to three units over `_09az` and three thousand random pairs) and fails when they disagree.
+
+### Not ported
+
+- `codec.js` wire decoders for host payloads (`decodeTaskEventRecord`, `decodeResultEnvelopePayload`, `decodeTaskEventPayload`, `decodeSnapshotPayload`, `decodeManagedTaskAutoResume`, `decodeManagedTaskWaitingReason`) and the `required-checks.js` projections they use; `contract.js` `formatManagedTaskDisplayName` and `isManagedTaskPlaceholderSession` (`toLocaleLowerCase` depends on the locale); `approved-plan.js` `scopedApprovedPlanContent` and `verifyApprovedPlanRef` (SHA-256); `transport-recovery.js` `createManagedRecoveryMessageId` (random); the base64url helpers and `stableStringify` (nothing ported needs them). None has a Rust entry point.
+- The scheduler's own identifiers come from `createRandomId` in `scheduler.js`, which is not exported: an ID is its prefix and `crypto.randomUUID()` without dashes. `primitives::is_scheduler_random_id` states that shape, and `primitives::SCHEDULER_RANDOM_ID_SOURCE` holds the function's text, which a vector row pins against `scheduler.js`.
+- Everything inside the `createManagedTaskScheduler` closure (admission retry, leases, deadlines, follow-up windows) is left to the scheduler core.
+
+### Vectors and planted bugs
+
+| File | Rows | Size | What |
+|---|---|---|---|
+| `retry.jsonl` | 1334 | 0.26 MB | every classifier on each phrase of every pattern, its variants (case, punctuation, word edges, quoting, Unicode spaces, U+0130 and U+212A, lone surrogates), combinations and the 16 KiB bound; the formatter on error-shaped objects |
+| `primitives.jsonl` | 930 | 0.12 MB | truncation at every byte limit, task IDs, queue order (ties, NaN, -0, the `_`-before-digits order), shards, constants, payload mismatches |
+| `records.jsonl` | 1626 | 0.58 MB | every field of a task, envelope and auto-resume block mutated, neighbours in validation order, every leaf validator, the constructors, the predicates around configurations where each holds, task events |
+| `codec.jsonl` | 115 | 0.18 MB | ledgers the real scheduler saved, older records without later fields, every structural failure and envelope mismatch, a caller's `createError` |
+| `persistence.jsonl` | 62 | 0.25 MB | seeded ledgers under random caps, a long lineage, boundaries of age, activity and bytes, tombstones, the scheduler's ledger |
+| `transitions.jsonl` | 240 | 0.06 MB | every status pair, prototype keys, every immutable field, deadlines, receipts, corrections, shared and copied fields |
+| `auto-resume.jsonl` | 267 | 0.23 MB | initial states, rejections, attempt plans over breakers, backups, resets and the backoff ladder |
+| `proof-store.jsonl` | 35 | 0.06 MB | shard documents built from real tombstones, broken documents, encoding order |
+
+- `crates/scheduler-policy/tests/generate-vectors.mjs` calls the real modules on seeded inputs and on ledgers it captures from the real scheduler driven under Node (a scripted executor, a virtual clock, the harness's identifiers), and writes `tests/vectors/*.jsonl` (format: `crates/scheduler-policy/tests/vector-format.mjs`; a row is a call and the JavaScript's value or error; `undefined`, `-0`, NaN, the infinities, key order and lone surrogates survive). `node crates/scheduler-policy/tests/generate-vectors.mjs` rewrites them; `--check` exits 1 when a file differs. The contract in `scripts/check-native.test.mjs` regenerates them in memory and requires the tracked bytes, without Rust.
+- `cargo test -p devryan-scheduler-policy` runs every row (`crates/scheduler-policy/tests/policy_vectors.rs`): the Rust outcome must be the JavaScript's exactly, rows marked `refuse` must be refused and no other row may be.
+- `node crates/scheduler-policy/tests/scheduler-policy-planted-bugs.mjs [--only <id>,...] [--shard <i>/<n>]` plants 285 single bugs (at least three per ported function; `--shard` splits the list across parallel runs) in a copy of the crate, in a private folder under the OS temp dir that it removes on success, failure and interruption, and requires the vectors to catch each one. It is run by hand; the contract checks that every planting site still exists once.

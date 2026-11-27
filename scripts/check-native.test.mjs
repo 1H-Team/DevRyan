@@ -21,6 +21,9 @@ import { GENERATOR as yamlStringifyVectors } from '../packages/native/crates/con
 import { GENERATOR as frontMatterVectors } from '../packages/native/crates/config-text/tests/generate-config-front-matter.mjs';
 import { vectorProblems as routeVectorProblems } from '../packages/native/crates/route-magic-prompts/tests/generate-vectors.mjs';
 import { vectorProblems as sessionFoldersVectorProblems } from '../packages/native/crates/route-session-folders/tests/generate-vectors.mjs';
+import { VECTOR_FILES as schedulerPolicyVectorFiles, renderVectors as renderSchedulerPolicyVectors } from '../packages/native/crates/scheduler-policy/tests/generate-vectors.mjs';
+import { PLANTED_BUGS as SCHEDULER_POLICY_PLANTS, plantingProblems as schedulerPolicyPlantingProblems }
+  from '../packages/native/crates/scheduler-policy/tests/scheduler-policy-planted-bugs.mjs';
 
 const read = file => readFileSync(path.join(repositoryRoot, NATIVE_DIR, file), 'utf8');
 const tracked = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '--', NATIVE_DIR], { cwd: repositoryRoot, encoding: 'utf8' }).split('\n').filter(Boolean);
@@ -215,6 +218,28 @@ describe('packages/native Cargo workspace', () => {
     assert.ok(PLANTED_BUGS.length >= 15, 'at least fifteen planted bugs');
     assert.equal(new Set(PLANTED_BUGS.map(([id]) => id)).size, PLANTED_BUGS.length, 'planted bug ids are unique');
     assert.deepEqual(plantingProblems(), []);
+  });
+
+  test('the scheduler-policy vectors are what packages/orchestration-runtime gives the generator', async () => {
+    // The crate is held to these files row for row (its cargo test reads
+    // them); a change to the JavaScript policy modules fails here, without Rust.
+    const rendered = await renderSchedulerPolicyVectors();
+    assert.deepEqual([...rendered.keys()], schedulerPolicyVectorFiles);
+    for (const [name, text] of rendered) {
+      const file = `crates/scheduler-policy/tests/vectors/${name}`;
+      assert.ok(tracked.includes(`${NATIVE_DIR}/${file}`), `${file} is tracked`);
+      assert.ok(read(file) === text, `${file} is not what packages/orchestration-runtime gives; if the change is intended, regenerate it with:\n  node ${NATIVE_DIR}/crates/scheduler-policy/tests/generate-vectors.mjs\nand make the crate match (cargo test -p devryan-scheduler-policy).`);
+    }
+  });
+
+  test('every planted scheduler-policy bug still has its one planting site', () => {
+    assert.ok(SCHEDULER_POLICY_PLANTS.length >= 150, 'at least one hundred and fifty planted bugs');
+    assert.equal(new Set(SCHEDULER_POLICY_PLANTS.map(([id]) => id)).size, SCHEDULER_POLICY_PLANTS.length, 'planted bug ids are unique');
+    const perFunction = new Map();
+    for (const [, , , , target] of SCHEDULER_POLICY_PLANTS) perFunction.set(target, (perFunction.get(target) ?? 0) + 1);
+    const thin = [...perFunction].filter(([target, count]) => count < 3 && !['DUPLICATE_DISPATCH_WINDOW_MS', 'scheduler random IDs'].includes(target));
+    assert.deepEqual(thin, [], 'every ported function has at least three planted bugs');
+    assert.deepEqual(schedulerPolicyPlantingProblems(), []);
   });
 
   test('builds stay out of git and nothing here is a workspace package', () => {
