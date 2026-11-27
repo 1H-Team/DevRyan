@@ -1,0 +1,5 @@
+bin.name = "devryan"
+args = ["status", "-q"]
+status.code = 0
+fs.sandbox = true
+fs.base = "status-stale-records-quiet.in"

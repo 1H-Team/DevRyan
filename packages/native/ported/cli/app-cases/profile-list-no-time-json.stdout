@@ -1,0 +1,16 @@
+{
+  "status": "ok",
+  "profiles": [
+    {
+      "id": "p-1",
+      "name": "no-time",
+      "provider": "cloudflare",
+      "mode": "managed-remote",
+      "hostname": "app.example.com",
+      "originPort": 3000,
+      "token": "***************1111",
+      "createdAt": [..],
+      "updatedAt": 1600000000500
+    }
+  ]
+}

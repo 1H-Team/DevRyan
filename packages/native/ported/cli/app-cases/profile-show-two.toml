@@ -1,0 +1,5 @@
+bin.name = "devryan"
+args = ["tunnel", "profile", "show", "--name", "staging"]
+status.code = 0
+fs.sandbox = true
+fs.base = "profile-show-two.in"

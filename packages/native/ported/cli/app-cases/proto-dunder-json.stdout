@@ -1,0 +1,6 @@
+{
+  "status": "error",
+  "error": {
+    "message": "commands[command] is not a function"
+  }
+}

@@ -1,0 +1,5 @@
+bin.name = "devryan"
+args = ["tunnel", "profile", "list", "-q"]
+status.code = 0
+fs.sandbox = true
+fs.base = "profile-list-mixed-quiet.in"

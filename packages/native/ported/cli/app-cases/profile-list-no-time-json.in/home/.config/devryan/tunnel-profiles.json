@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "profiles": [
+    {
+      "id": "p-1",
+      "name": "no-time",
+      "provider": "cloudflare",
+      "mode": "managed-remote",
+      "hostname": "app.example.com",
+      "originPort": 3000,
+      "token": "fake-token-aaaa1111",
+      "createdAt": "yesterday",
+      "updatedAt": 1600000000500
+    }
+  ]
+}

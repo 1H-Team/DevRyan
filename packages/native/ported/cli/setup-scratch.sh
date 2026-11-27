@@ -8,7 +8,7 @@ WT=$(cd "$HERE/../../../.." && pwd)
 SCRATCH=${1:-${TMPDIR%/}/ra-cli-repo}
 if [ -e "$SCRATCH" ]; then echo "setup-scratch.sh: $SCRATCH exists; choose another folder" >&2; exit 1; fi
 mkdir -p "$SCRATCH/rust"
-cp "$HERE/gen-inputs.mjs" "$HERE/inputs.jsonl" "$HERE/allowed.txt" "$SCRATCH/"
+cp "$HERE/gen-inputs.mjs" "$HERE/inputs.jsonl" "$HERE/allowed.txt" "$HERE/seed.sh" "$SCRATCH/"
 sed -e "s#^HERE=.*#HERE=$SCRATCH#" -e "s#^WT=.*#WT=$WT#" "$HERE/run.sh" > "$SCRATCH/run.sh"
 chmod +x "$SCRATCH/run.sh"
 cp -R "$HERE/app-cases" "$SCRATCH/rust/app-cases"

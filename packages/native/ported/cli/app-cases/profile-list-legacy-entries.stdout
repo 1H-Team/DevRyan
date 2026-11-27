@@ -1,0 +1,16 @@
+{
+  "status": "ok",
+  "profiles": [
+    {
+      "id": "l",
+      "name": "legacy",
+      "provider": "cloudflare",
+      "mode": "managed-remote",
+      "hostname": "l.example.com",
+      "originPort": 3000,
+      "token": "*******gacy",
+      "createdAt": 1,
+      "updatedAt": 1
+    }
+  ]
+}

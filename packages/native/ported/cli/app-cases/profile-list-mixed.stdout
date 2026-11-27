@@ -1,0 +1,16 @@
+┌  Tunnel Profiles
+│
+◆  kept (cloudflare/managed-remote)
+│  app.example.com origin:1024 token:present
+│
+◆  other-provider (ngrok/managed-remote)
+│  app.example.com origin:3000 token:present
+│
+◆  kept (ngrok/managed-remote)
+│  app.example.com origin:3000 token:present
+│
+◆  unicode-ünï (cloudflare/managed-remote)
+│  ü.example.com origin:3000 token:present
+│
+└  4 profile(s)
+

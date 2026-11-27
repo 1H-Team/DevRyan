@@ -1,0 +1,5 @@
+bin.name = "devryan"
+args = ["logs", "--all", "--lines", "3"]
+status.code = 1
+fs.sandbox = true
+fs.base = "logs-shapes-all.in"

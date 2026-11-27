@@ -161,3 +161,72 @@ runtime	bundle	resume	--expected-revision	-1
 it's	
 a"b\c	--json	
 --json	--x"y	
+valueOf	
+isPrototypeOf	
+propertyIsEnumerable	
+toLocaleString	
+__defineGetter__	
+__defineSetter__	
+__lookupGetter__	
+__lookupSetter__	
+__proto__	--json	
+--json	__defineGetter__	
+toString	--json	
+status	
+status	--json	
+status	-q	
+status	
+status	--json	
+status	
+status	--json	
+status	
+status	-q	
+status	
+status	--json	
+status	
+logs	
+logs	--json	--no-follow	
+logs	--port	3000	
+logs	--no-follow	
+logs	--all	--no-follow	--json	
+logs	--no-follow	
+logs	--all	--lines	3	
+logs	--port	3001	--json	--no-follow	
+tunnel	profile	list	
+tunnel	profile	list	--json	
+tunnel	profile	list	-q	
+tunnel	profile	list	--show-secrets	
+tunnel	profile	list	--json	--show-secrets	
+tunnel	profile	list	--provider	 CLOUDFLARE 	
+tunnel	profile	list	--provider	ngrok	--json	
+tunnel	profile	show	--name	staging	
+tunnel	profile	show	--name	 prod-main 	--json	
+tunnel	profile	show	--name	PROD-MAIN	-q	--show-secrets	
+tunnel	profile	show	--name	staging	--provider	ngrok	
+tunnel	profile	show	--name	  	
+tunnel	profile	remove	--name	ghost	--json	
+tunnel	profile	remove	--name	staging	
+tunnel	profile	  	
+tunnel	profile	LISTS	
+tunnel	profile	list	
+tunnel	profile	list	--json	
+tunnel	profile	list	--quiet	
+tunnel	profile	nope	
+tunnel	profile	list	
+tunnel	profile	list	--json	
+tunnel	profile	list	-q	
+tunnel	profile	show	--name	kept	
+tunnel	profile	show	--name	UNICODE-ÜNÏ	--json	
+tunnel	profile	list	
+tunnel	profile	list	--json	
+tunnel	profile	list	--json	
+tunnel	profile	list	--json	
+tunnel	profile	list	--json	
+tunnel	profile	list	
+tunnel	profile	list	--json	
+tunnel	profile	list	-q	
+tunnel	profile	list	--json	
+tunnel	profile	list	--json	--show-secrets	
+tunnel	profile	list	--json	
+tunnel	profile	list	--json	
+tunnel	profile	list	

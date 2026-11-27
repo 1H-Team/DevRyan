@@ -1,0 +1,5 @@
+bin.name = "devryan"
+args = ["tunnel", "profile", "nope"]
+status.code = 2
+fs.sandbox = true
+fs.base = "profile-unknown-world-readable.in"

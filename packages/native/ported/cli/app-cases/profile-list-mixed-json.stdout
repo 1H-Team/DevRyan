@@ -1,0 +1,49 @@
+{
+  "status": "ok",
+  "profiles": [
+    {
+      "id": "k-1",
+      "name": "kept",
+      "provider": "cloudflare",
+      "mode": "managed-remote",
+      "hostname": "app.example.com",
+      "originPort": 1024,
+      "token": "***************1111",
+      "createdAt": 1e+21,
+      "updatedAt": 12
+    },
+    {
+      "id": "k-3",
+      "name": "other-provider",
+      "provider": "ngrok",
+      "mode": "managed-remote",
+      "hostname": "app.example.com",
+      "originPort": 3000,
+      "token": "***************1111",
+      "createdAt": 1600000000000,
+      "updatedAt": 1600000000500
+    },
+    {
+      "id": "k-4",
+      "name": "kept",
+      "provider": "ngrok",
+      "mode": "managed-remote",
+      "hostname": "app.example.com",
+      "originPort": 3000,
+      "token": "*",
+      "createdAt": 1600000000000,
+      "updatedAt": 1600000000500
+    },
+    {
+      "id": "[..]",
+      "name": "unicode-ünï",
+      "provider": "cloudflare",
+      "mode": "managed-remote",
+      "hostname": "ü.example.com",
+      "originPort": 3000,
+      "token": "****n-ßß",
+      "createdAt": 5,
+      "updatedAt": 6
+    }
+  ]
+}

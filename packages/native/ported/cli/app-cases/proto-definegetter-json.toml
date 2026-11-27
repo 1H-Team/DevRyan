@@ -1,0 +1,4 @@
+bin.name = "devryan"
+args = ["--json", "__defineGetter__"]
+status.code = 1
+fs.sandbox = true

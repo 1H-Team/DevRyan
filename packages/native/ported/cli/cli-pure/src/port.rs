@@ -1,11 +1,14 @@
-//! The pure part of the `devryan` CLI, ported from `packages/web/bin/cli.js`.
+//! The `devryan` CLI's commands that need no process, port or network, ported from
+//! `packages/web/bin/cli.js`.
 //!
-//! `answer` mirrors `parseArgs` and the first steps of `main()` and answers only what needs no
-//! file, process or network: `--version`, `--help`, removed and unknown flags, the parser's
-//! argument errors, unknown commands, unknown tunnel subcommands, `tunnel completion` and the
-//! argument checks of `runtime bundle resume`. Every other path returns `None` and the original
-//! answers (serve, stop, restart, status, logs, update, enroll-owner, tunnel profile and the
-//! tunnel network commands, a valid `runtime bundle resume`).
+//! `answer` mirrors `parseArgs` and `main()` and answers `--version`, `--help`, removed and
+//! unknown flags, the parser's argument errors, unknown commands (object-prototype names
+//! included), unknown tunnel subcommands, `tunnel completion`, the argument checks of
+//! `runtime bundle resume`, and, reading the data root (`state.rs`), `status` and `logs` when no
+//! record holds a pid to check and `tunnel profile` list/show/errors when nothing would be written.
+//! Every other path returns `None` and the original answers (serve, stop, restart, update,
+//! enroll-owner, the tunnel network commands, `tunnel profile add` and a removing `remove`, a
+//! valid `runtime bundle resume`, any pid record with a positive pid).
 //!
 //! JavaScript rules kept on purpose: `String.prototype.trim` whitespace, `parseInt` and
 //! `Number` on digit strings (f64), `Number#toString` for the port error, UTF-16 lengths and
@@ -18,8 +21,8 @@ const COMPLETION_BASH: &str = include_str!("../texts/completion-bash.txt");
 const COMPLETION_ZSH: &str = include_str!("../texts/completion-zsh.txt");
 const COMPLETION_FISH: &str = include_str!("../texts/completion-fish.txt");
 
-const EXIT_GENERAL_ERROR: u8 = 1;
-const EXIT_USAGE_ERROR: u8 = 2;
+pub(crate) const EXIT_GENERAL_ERROR: u8 = 1;
+pub(crate) const EXIT_USAGE_ERROR: u8 = 2;
 
 /// What the original reads besides its arguments.
 pub struct Context<'a> {
@@ -29,6 +32,13 @@ pub struct Context<'a> {
     pub migration_quiet: bool,
     /// `process.stdout.isTTY`: errors from `main().catch` are drawn with clack then.
     pub stdout_is_tty: bool,
+    /// `<HOME>/.config/devryan` when that is the data root for sure (no legacy folder or link, no
+    /// explicit data root, a normalized absolute UTF-8 HOME); `None` sends file-reading commands back.
+    pub data_root: Option<&'a std::path::Path>,
+    /// clack's `util.styleText` writes no colour: stdout is not a terminal and FORCE_COLOR is unset.
+    pub plain_styles: bool,
+    /// `TERM=linux`: clack draws ASCII symbols.
+    pub ascii_symbols: bool,
 }
 
 /// The whole observable result of one run.
@@ -110,9 +120,13 @@ pub fn answer(args: &[String], ctx: &Context) -> Option<Answer> {
     match command {
         "tunnel" => tunnel(&parsed, has_plain_flag, ctx),
         "runtime" => runtime(&parsed),
-        "enroll-owner" | "serve" | "stop" | "restart" | "status" | "logs" | "update" => None,
+        "status" => crate::state::status(&parsed, ctx),
+        "logs" => crate::state::logs(&parsed, has_plain_flag, ctx),
+        "enroll-owner" | "serve" | "stop" | "restart" | "update" => None,
         // `commands[command]` finds these on Object.prototype and calls (or fails to call) them.
-        name if OBJECT_PROTOTYPE_NAMES.contains(&name) => None,
+        name if OBJECT_PROTOTYPE_NAMES.contains(&name) => {
+            prototype_call(name, &parsed, has_plain_flag, ctx)
+        }
         unknown => {
             let known = [
                 "serve",
@@ -165,7 +179,31 @@ const OBJECT_PROTOTYPE_NAMES: [&str; 12] = [
     "toLocaleString",
 ];
 
-fn out(stdout: String, code: u8) -> Answer {
+/// `await commands[name](options)` for a name `commands` inherits from Object.prototype.
+fn prototype_call(
+    name: &str,
+    parsed: &Parsed,
+    has_plain_flag: bool,
+    ctx: &Context,
+) -> Option<Answer> {
+    let message = match name {
+        "__defineGetter__" | "__defineSetter__" => {
+            format!("Object.prototype.{name}: Expecting function")
+        }
+        "__proto__" => "commands[command] is not a function".to_string(),
+        // Called with the options object; they return without output.
+        _ => return Some(out(String::new(), 0)),
+    };
+    caught(
+        &message,
+        EXIT_GENERAL_ERROR,
+        parsed.json,
+        has_plain_flag,
+        ctx,
+    )
+}
+
+pub(crate) fn out(stdout: String, code: u8) -> Answer {
     Answer {
         stdout,
         stderr: String::new(),
@@ -175,7 +213,7 @@ fn out(stdout: String, code: u8) -> Answer {
 
 /// `main().catch`: JSON when the options are known and ask for it, clack frames on a TTY
 /// without `--plain` (left to the original), else `Error: <message>` on stderr.
-fn caught(
+pub(crate) fn caught(
     message: &str,
     code: u8,
     json: bool,
@@ -217,7 +255,8 @@ fn tunnel(parsed: &Parsed, has_plain_flag: bool, ctx: &Context) -> Option<Answer
             };
             Some(out(script.to_string(), 0))
         }
-        "profile" | "providers" | "ready" | "doctor" | "status" | "start" | "stop" => None,
+        "profile" => crate::state::profile(parsed, has_plain_flag, ctx),
+        "providers" | "ready" | "doctor" | "status" | "start" | "stop" => None,
         unknown => {
             let known = [
                 "help",
@@ -279,19 +318,27 @@ fn runtime(parsed: &Parsed) -> Option<Answer> {
 // ── parseArgs ────────────────────────────────────────────────────────────────────────────────
 
 #[derive(Default)]
-struct Parsed {
-    positionals: Vec<String>,
-    option_names: Vec<String>,
-    expected_revision: Option<String>,
-    json: bool,
-    removed: Vec<String>,
-    help: bool,
-    version: bool,
+pub(crate) struct Parsed {
+    pub(crate) positionals: Vec<String>,
+    pub(crate) option_names: Vec<String>,
+    pub(crate) expected_revision: Option<String>,
+    pub(crate) json: bool,
+    pub(crate) quiet: bool,
+    pub(crate) all: bool,
+    pub(crate) show_secrets: bool,
+    /// `--port` as given (the default 3000 is not needed: only an explicit port is printed).
+    pub(crate) explicit_port: Option<f64>,
+    /// `options.provider` / `options.name`: the last value given (a flag without one keeps it).
+    pub(crate) provider: Option<String>,
+    pub(crate) name: Option<String>,
+    pub(crate) removed: Vec<String>,
+    pub(crate) help: bool,
+    pub(crate) version: bool,
 }
 
 impl Parsed {
     /// `positional[i] || fallback`: an empty word counts as missing.
-    fn positional_or(&self, index: usize) -> Option<&str> {
+    pub(crate) fn positional_or(&self, index: usize) -> Option<&str> {
         self.positionals
             .get(index)
             .map(String::as_str)
@@ -371,6 +418,7 @@ fn parse_args(args: &[String]) -> Result<Parsed, String> {
                 if !(1.0..=65535.0).contains(&port) {
                     return Err(format!("Invalid port value: {}", js_number_to_string(port)));
                 }
+                parsed.explicit_port = Some(port);
             }
             "host" => {
                 let (value, next) = consume(i, inline);
@@ -391,15 +439,27 @@ fn parse_args(args: &[String]) -> Result<Parsed, String> {
                     return Err("Managed remote origin port must be an integer between 1024 and 65535.".to_string());
                 }
             }
-            "ui-password" | "provider" | "mode" | "profile" | "name" | "config" | "token" | "token-file" | "hostname"
-            | "connect-ttl" | "session-ttl" | "lines" => {
+            "provider" | "name" => {
+                let (value, next) = consume(i, inline);
+                i = next;
+                if let Some(value) = value {
+                    if name == "provider" {
+                        parsed.provider = Some(value);
+                    } else {
+                        parsed.name = Some(value);
+                    }
+                }
+            }
+            "ui-password" | "mode" | "profile" | "config" | "token" | "token-file" | "hostname" | "connect-ttl" | "session-ttl" | "lines" => {
                 i = consume(i, inline).1;
             }
             "json" => parsed.json = true,
             "help" | "h" => parsed.help = true,
             "version" | "v" => parsed.version = true,
-            "token-stdin" | "all" | "no-follow" | "qr" | "no-qr" | "force" | "show-secrets" | "dry-run" | "plain"
-            | "quiet" | "q" | "foreground" | "no-daemon" | "daemon" | "d" => {}
+            "quiet" | "q" => parsed.quiet = true,
+            "all" => parsed.all = true,
+            "show-secrets" => parsed.show_secrets = true,
+            "token-stdin" | "no-follow" | "qr" | "no-qr" | "force" | "dry-run" | "plain" | "foreground" | "no-daemon" | "daemon" | "d" => {}
             "try-cf-tunnel" => parsed
                 .removed
                 .push("`--try-cf-tunnel` was removed. Use: devryan tunnel start --provider cloudflare --mode quick".to_string()),
@@ -445,7 +505,7 @@ fn is_integer_text(text: &str) -> bool {
 }
 
 /// WhiteSpace and LineTerminator as `String.prototype.trim` and `parseInt` know them.
-fn is_js_whitespace(c: char) -> bool {
+pub(crate) fn is_js_whitespace(c: char) -> bool {
     matches!(
         c,
         '\u{0009}'..='\u{000D}' | '\u{0020}' | '\u{00A0}' | '\u{1680}' | '\u{2000}'..='\u{200A}' | '\u{2028}' | '\u{2029}'
@@ -453,17 +513,17 @@ fn is_js_whitespace(c: char) -> bool {
     )
 }
 
-fn js_trim(text: &str) -> &str {
+pub(crate) fn js_trim(text: &str) -> &str {
     text.trim_matches(is_js_whitespace)
 }
 
 /// A string of ASCII digits as the nearest f64 (`Number`, and `parseInt` in V8).
-fn digits_to_f64(digits: &str) -> f64 {
+pub(crate) fn digits_to_f64(digits: &str) -> f64 {
     digits.parse::<f64>().unwrap_or(f64::NAN)
 }
 
 /// `parseInt(text, 10)` for text whose trimmed form is `-?\d+`.
-fn js_parse_int(text: &str) -> f64 {
+pub(crate) fn js_parse_int(text: &str) -> f64 {
     let rest = text.trim_start_matches(is_js_whitespace);
     let (negative, rest) = match rest.strip_prefix('-') {
         Some(r) => (true, r),
@@ -481,7 +541,7 @@ fn js_parse_int(text: &str) -> f64 {
 }
 
 /// `Number.prototype.toString()` for a finite number.
-fn js_number_to_string(value: f64) -> String {
+pub(crate) fn js_number_to_string(value: f64) -> String {
     if value.is_nan() {
         return "NaN".to_string();
     }
@@ -517,7 +577,7 @@ fn js_number_to_string(value: f64) -> String {
 }
 
 /// `findClosestMatch(input, candidates)` as the ` Did you mean '<x>'?` suffix, or empty.
-fn suggestion_hint(input: &str, candidates: &[&str]) -> String {
+pub(crate) fn suggestion_hint(input: &str, candidates: &[&str]) -> String {
     if input.is_empty() {
         return String::new();
     }
@@ -558,20 +618,22 @@ fn levenshtein(a: &[u16], b: &[u16]) -> usize {
 
 // ── printJson ────────────────────────────────────────────────────────────────────────────────
 
-enum Json {
+pub(crate) enum Json {
     Str(String),
+    /// A finite number, written as `Number#toString` writes it.
+    Num(f64),
     Arr(Vec<Json>),
     Obj(Vec<(&'static str, Json)>),
 }
 
 impl Json {
-    fn str(text: &str) -> Json {
+    pub(crate) fn str(text: &str) -> Json {
         Json::Str(text.to_string())
     }
 }
 
 /// `printJson(payload)` for a payload whose `status` is already first and valid.
-fn print_json(fields: Vec<(&'static str, Json)>) -> String {
+pub(crate) fn print_json(fields: Vec<(&'static str, Json)>) -> String {
     let mut text = String::new();
     write_json(&Json::Obj(fields), 0, &mut text);
     text.push('\n');
@@ -583,6 +645,7 @@ fn write_json(value: &Json, depth: usize, text: &mut String) {
     let indent = |level: usize| "  ".repeat(level);
     match value {
         Json::Str(s) => write_json_string(s, text),
+        Json::Num(n) => text.push_str(&js_number_to_string(*n)),
         Json::Arr(items) if items.is_empty() => text.push_str("[]"),
         Json::Obj(fields) if fields.is_empty() => text.push_str("{}"),
         Json::Arr(items) => {
@@ -614,7 +677,7 @@ fn write_json(value: &Json, depth: usize, text: &mut String) {
     }
 }
 
-fn write_json_string(s: &str, text: &mut String) {
+pub(crate) fn write_json_string(s: &str, text: &mut String) {
     text.push('"');
     for c in s.chars() {
         match c {

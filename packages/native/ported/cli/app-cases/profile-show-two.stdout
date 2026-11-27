@@ -1,0 +1,7 @@
+┌  Tunnel Profile
+│
+◆  Staging (cloudflare/managed-remote)
+│  stage.example.com origin:1024 token:present
+│
+└  show complete
+

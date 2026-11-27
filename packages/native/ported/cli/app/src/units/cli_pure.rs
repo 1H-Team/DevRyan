@@ -1,6 +1,7 @@
 //! Glue from the front door to `cli-pure`: read what the original reads besides its arguments
-//! (package.json's version, whether the data-root migration has anything to do, whether stdout
-//! is a terminal), call `cli_pure::answer`, print its answer and return its exit code. Anything
+//! (package.json's version, whether the data-root migration has anything to do, the data root,
+//! whether stdout is a terminal and clack would colour or use ASCII), call `cli_pure::answer`,
+//! print its answer and return its exit code. Anything
 //! the port does not answer goes back with `crate::original::run(&argv[1..])`.
 
 use std::ffi::OsString;
@@ -28,10 +29,15 @@ pub fn run(_command: &str, _matches: &ArgMatches) -> ExitCode {
     let version = std::fs::read_to_string(PACKAGE_JSON)
         .ok()
         .and_then(|text| top_level_string(&text, "version"));
+    let stdout_is_tty = std::io::stdout().is_terminal();
+    let data_root = data_root();
     let context = cli_pure::Context {
         version: version.as_deref(),
         migration_quiet: migration_quiet(),
-        stdout_is_tty: std::io::stdout().is_terminal(),
+        stdout_is_tty,
+        data_root: data_root.as_deref(),
+        plain_styles: !stdout_is_tty && std::env::var_os("FORCE_COLOR").is_none(),
+        ascii_symbols: std::env::var_os("TERM").is_some_and(|term| term == "linux"),
     };
     let Some(answer) = cli_pure::answer(&args, &context) else {
         return crate::original::run(&argv[1..]);
@@ -72,6 +78,30 @@ fn migration_quiet() -> bool {
     let root = config.join("devryan");
     missing(&config.join("openchamber"))
         && (missing(&root) || missing(&root.join(".devryan-migration.json")))
+}
+
+/// `resolveDevRyanDataRoot()` when it is surely `<HOME>/.config/devryan`, as `path.join` writes it:
+/// no explicit data root, no `~/.config/openchamber` (folder or link), and a HOME that is absolute,
+/// UTF-8 and already normalized (no empty, `.` or `..` component, no trailing slash).
+fn data_root() -> Option<PathBuf> {
+    if ["DEVRYAN_DATA_DIR", "OPENCHAMBER_DATA_DIR"]
+        .iter()
+        .any(|name| std::env::var_os(name).is_some())
+    {
+        return None;
+    }
+    let home = std::env::var("HOME").ok()?;
+    let normalized = home.starts_with('/')
+        && home.len() > 1
+        && home[1..]
+            .split('/')
+            .all(|part| !part.is_empty() && part != "." && part != "..");
+    if !normalized {
+        return None;
+    }
+    let config = Path::new(&home).join(".config");
+    let legacy_missing = matches!(std::fs::symlink_metadata(config.join("openchamber")), Err(e) if e.kind() == std::io::ErrorKind::NotFound);
+    legacy_missing.then(|| config.join("devryan"))
 }
 
 /// The last top-level `"<key>": "<string>"` of a JSON object (as `JSON.parse` keeps the last),

@@ -1,0 +1,5 @@
+bin.name = "devryan"
+args = ["tunnel", "profile", "show", "--name", " prod-main ", "--json"]
+status.code = 0
+fs.sandbox = true
+fs.base = "profile-show-two-json.in"

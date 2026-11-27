@@ -70,7 +70,15 @@ DevRyan and OpenCode configuration, tunnels, updates), so:
   at all (that is `serve`), is refused with exit 97. Never add a vector that reaches `serve`, `stop`,
   `restart`, `update`, `enroll-owner`, the tunnel network commands, `tunnel profile add` or a valid
   `runtime bundle resume`; an empty first word and a port-only vector are `serve`.
-- Every build runs under the guard too (`--build "node scripts/test-isolation-guard.mjs <binary>"`).
+- Every build is replayed through `packages/native/ported/cli/replay-build.sh <binary>`: the guard,
+  then `seed.sh`, which copies a case's `./home` fixture into the private home (and refuses any HOME
+  that is not one), then the binary. A build run under the guard alone sees an empty private home and
+  fails the `tunnel profile` fixture cases it answers itself (204/232).
+- Fixture pid records hold pids of processes that are not running (`free-pids.txt`): check each with
+  `ps -p <pid>` (it must print nothing) before recording or replaying, and pick others if one is
+  taken. The original sends them `process.kill(pid, 0)`; a `logs` case with them uses `--no-follow`
+  (`gen-inputs.mjs` refuses one without). Never put a valid `desktopLocalPort` in a fixture: the
+  original would probe that port.
 - `app record` and `app front-door` write `<repo>/rust/`, so they run on a scratch repository in the
   OS temp folder, never on the worktree. `app lift`, `app shadow`, `enable`, `setup`, `package`, `go`
   and `mcp` are not run here.
@@ -82,16 +90,20 @@ From the repository root, with `rust-anything` and the pinned Rust toolchain on 
 C="$PWD/packages/native/ported/cli"
 (cd "$C" && node gen-inputs.mjs)                    # after editing the vectors: inputs.jsonl, allowed.txt
 S=$(sh "$C/setup-scratch.sh")                       # <tmp>/ra-cli-repo: run.sh with absolute paths, rust/{app-cases,app,cli-pure}
+for pid in $(cat "$C/free-pids.txt"); do ps -p "$pid" >/dev/null && echo "pid $pid is taken"; done
 rust-anything app record "$S" --inputs "$S/inputs.jsonl" --no-traps --name devryan \
-  --normalize 'runroot=/[^ ]*/devryan-test/run-[A-Za-z0-9]+' -- ./run.sh
+  --normalize 'runroot=/[^ ]*/devryan-test/run-[A-Za-z0-9]+' --normalize uuids --normalize 'nowms=17[0-9]{11}' -- ./run.sh
 rust-anything app replay "$S"                       # the original: every case must pass
 (cd "$C/app" && RUST_ANYTHING_REPO="$C" cargo build)  # the in-tree front door; it falls back through $C/run.sh
-rust-anything app replay "$S" --build "node $PWD/scripts/test-isolation-guard.mjs $CARGO_TARGET_DIR/debug/devryan"
-RUST_ANYTHING_UNIT_CLI_PURE=original rust-anything app replay "$S" --build "..."   # unit off: 100% fallback
+rust-anything app replay "$S" --build "sh $C/replay-build.sh $CARGO_TARGET_DIR/debug/devryan"
+RUST_ANYTHING_UNIT_CLI_PURE=original rust-anything app replay "$S" --build "sh $C/replay-build.sh $CARGO_TARGET_DIR/debug/devryan"   # unit off: 100% fallback
 ```
 
 `app record` runs about five cases at once (about 75 MB each). Copy a new recording back with
-`cp "$S"/rust/app-cases/*.{toml,stdout,stderr} "$S"/rust/app-cases/rust-anything.json "$C/app-cases/"`.
+`cp "$S"/rust/app-cases/*.{toml,stdout,stderr} "$S"/rust/app-cases/rust-anything.json "$C/app-cases/"`
+and `cp -R "$S"/rust/app-cases/*.in "$C/app-cases/"` (the working folders of the fixture cases).
+Inside the tree `cargo fmt` uses `packages/native/rustfmt.toml` (width 160); these crates are kept at
+the default width the tool generates them with: `rustfmt --edition 2024 --config max_width=100 <file>`.
 A front door built inside the scratch repository needs `RA_CLI_PACKAGE_JSON=$PWD/packages/web/package.json`
 at build time (the glue reads the version there; in the tree it finds it by path). `app wire` was run
 with `--skip-gate`: the unit has no function of `cli.js` to bridge without changing `packages/web`, so

@@ -1,0 +1,5 @@
+bin.name = "devryan"
+args = ["logs", "--json", "--no-follow"]
+status.code = 1
+fs.sandbox = true
+fs.base = "logs-stale-records-json.in"
