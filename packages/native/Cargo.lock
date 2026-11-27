@@ -74,6 +74,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "devryan-scheduler-core"
+version = "0.1.0"
+dependencies = [
+ "devryan-js-layer",
+ "devryan-scheduler-policy",
+]
+
+[[package]]
 name = "devryan-scheduler-policy"
 version = "0.1.0"
 dependencies = [

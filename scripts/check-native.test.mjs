@@ -24,6 +24,8 @@ import { vectorProblems as sessionFoldersVectorProblems } from '../packages/nati
 import { VECTOR_FILES as schedulerPolicyVectorFiles, renderVectors as renderSchedulerPolicyVectors } from '../packages/native/crates/scheduler-policy/tests/generate-vectors.mjs';
 import { PLANTED_BUGS as SCHEDULER_POLICY_PLANTS, plantingProblems as schedulerPolicyPlantingProblems }
   from '../packages/native/crates/scheduler-policy/tests/scheduler-policy-planted-bugs.mjs';
+import { PLANTED_BUGS as SCHEDULER_CORE_PLANTS, PLANT_SCENARIOS as SCHEDULER_CORE_PLANT_SCENARIOS, plantingProblems as schedulerCorePlantingProblems }
+  from '../packages/native/crates/scheduler-core/tests/scheduler-core-plants.mjs';
 
 const read = file => readFileSync(path.join(repositoryRoot, NATIVE_DIR, file), 'utf8');
 const tracked = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '--', NATIVE_DIR], { cwd: repositoryRoot, encoding: 'utf8' }).split('\n').filter(Boolean);
@@ -240,6 +242,13 @@ describe('packages/native Cargo workspace', () => {
     const thin = [...perFunction].filter(([target, count]) => count < 3 && !['DUPLICATE_DISPATCH_WINDOW_MS', 'scheduler random IDs'].includes(target));
     assert.deepEqual(thin, [], 'every ported function has at least three planted bugs');
     assert.deepEqual(schedulerPolicyPlantingProblems(), []);
+  });
+
+  test('every planted scheduler-core bug still has its one planting site and names a plant scenario', () => {
+    assert.ok(SCHEDULER_CORE_PLANTS.length >= 15, 'at least fifteen planted bugs');
+    assert.equal(new Set(SCHEDULER_CORE_PLANTS.map(([id]) => id)).size, SCHEDULER_CORE_PLANTS.length, 'planted bug ids are unique');
+    for (const [id, , , , expected] of SCHEDULER_CORE_PLANTS) assert.ok(SCHEDULER_CORE_PLANT_SCENARIOS.includes(expected.split(':')[0]), `${id} names a scenario the plants run on`);
+    assert.deepEqual(schedulerCorePlantingProblems(), []);
   });
 
   test('builds stay out of git and nothing here is a workspace package', () => {

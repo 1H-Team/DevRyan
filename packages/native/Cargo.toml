@@ -2,7 +2,7 @@
 # ships in the app; packaging excludes the whole folder.
 [workspace]
 resolver = "3"
-members = ["crates/client-engine", "crates/client-engine-runner", "crates/config-text", "crates/front", "crates/js-layer", "crates/route-common", "crates/route-magic-prompts", "crates/route-session-folders", "crates/scheduler-policy"]
+members = ["crates/client-engine", "crates/client-engine-runner", "crates/config-text", "crates/front", "crates/js-layer", "crates/route-common", "crates/route-magic-prompts", "crates/route-session-folders", "crates/scheduler-core", "crates/scheduler-policy"]
 
 [workspace.package]
 edition = "2024"

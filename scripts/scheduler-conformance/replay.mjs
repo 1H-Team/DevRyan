@@ -42,7 +42,8 @@
 // first busy input); crossed (its first input is busy: nothing compared);
 // unrecordable (the recording's own flags, or a value the replay cannot place,
 // named); empty (the test built no scheduler); different (a named check, with
-// the first differing event).
+// the first differing event); not-ported (a candidate other than the
+// JavaScript scheduler refused what the case needs: not judged, never a pass).
 //
 // Comparison is exact. Each event is compared when it is produced (its kind,
 // construction, numbers, names and every value, each value alone); at the end
@@ -75,7 +76,7 @@ export const PACKAGE_DIR = path.join(REPOSITORY_ROOT, 'packages/orchestration-ru
 export const TARGET_SPEC = path.join(HARNESS_DIR, 'target.json');
 const REPLAY_FILE = realpathSync(fileURLToPath(import.meta.url));
 
-export const OUTCOMES = Object.freeze(['reproduced', 'partial', 'crossed', 'unrecordable', 'empty', 'different', 'inconclusive']);
+export const OUTCOMES = Object.freeze(['reproduced', 'partial', 'crossed', 'unrecordable', 'empty', 'different', 'inconclusive', 'not-ported']);
 /**
  * How a case is compared (compare.mjs). `compare`: the comparer's rules and
  * oracles run on what was compared (default on); `reads`: `exact` (the
@@ -104,6 +105,8 @@ export const REPLAY_CHECKS = Object.freeze({
   compare: 'the comparer (compare.mjs) finds no failure on what was compared: its rules, oracles and global assertions, each reported by its own name (`rule`)',
   'option-varies': 'read mode free only: the recording reads one option key with more than one value, so the count and position of its reads are contract (inconclusive)',
   'option-unread': 'read mode free only: the candidate reads an option key the recording never read, whose value the host cannot give (inconclusive)',
+  'not-ported': 'a candidate that is not the JavaScript scheduler refused what the case needs (a member or path it does not reproduce): the case is not judged, never a pass (not-ported)',
+  'candidate-process': 'a candidate in another process answers by its protocol, within its deadline, and does not end while the case runs',
 });
 
 /** An input that arrives on its own (the host delivers it), not one the candidate asks for. */
@@ -415,10 +418,20 @@ class Host {
     this.unhandled = 0;
     this.live = true;
     liveHost = this;
-    this.candidate = makeCandidate({ factory: copy.factory, host: this, names: this.names, rawOf: this.rawOf, clock: header.clock, sites: copy.sites, exportName: copy.exportName, savedState: reference ? { port: reference.port, arg: reference.arg } : null });
+    this.candidate = makeCandidate({ factory: copy.factory, host: this, names: this.names, rawOf: this.rawOf, clock: header.clock, sites: copy.sites, exportName: copy.exportName, savedState: reference ? { port: reference.port, arg: reference.arg } : null, exports: copy.exports });
   }
 
-  close() { this.live = false; if (liveHost === this) liveHost = null; }
+  close() {
+    this.live = false;
+    if (liveHost === this) liveHost = null;
+    this.candidate.close?.();
+  }
+
+  /** Whether the recording places an input in the continuation of call `call`'s settlement (`returnedPromise` delivers it). */
+  continuationPlaced(c, call) {
+    const settle = this.expected.findIndex((event) => event.c === c && event.kind === 'settle' && event.call === call);
+    return settle >= 0 && this.placements.get(settle + 1) === 'after-settle' && this.expected[settle + 1].after === call;
+  }
 
   /**
    * A member's promise the candidate returned (candidate.mjs `run`, right after its own observer): when the
@@ -958,7 +971,11 @@ class Host {
     const partial = this.stopped?.outcome === 'partial';
     // A candidate stopped for `missing` was quiescent: its trace is complete up to there.
     if (this.stopped && !partial) return this.judged(this.result(), this.stopped.check === 'missing');
-    // The whole case, or its compared prefix: the final checks run on what was compared.
+    // The whole case, or its compared prefix: the final checks run on what was compared. A candidate in another
+    // process first writes what it holds into the live objects that crossed (process-candidate.mjs).
+    try { this.candidate.settleValues?.(); } catch (error) {
+      if (!(error instanceof ReplayStop)) { this.stopped = { outcome: 'different', check: 'candidate-process', detail: String(error?.message ?? error), at: this.produced.length + 1 }; return this.judged(this.result(), false); }
+    }
     const found = this.finalChecks();
     if (found) { this.stopped = { outcome: 'different', ...found }; return this.judged(this.result(), false); }
     if (partial && this.produced.length !== this.limit) { this.stopped = { outcome: 'different', check: 'missing', detail: `the compared prefix ends after ${this.limit} events; the candidate produced ${this.produced.length}`, at: this.produced.length + 1 }; return this.judged(this.result(), false); }
@@ -1005,7 +1022,7 @@ class Host {
   compared(result, complete, observed = null) {
     const uses = this.independenceUses;
     const readMode = this.reads ? { recorded: this.reads.count, served: this.freeReads } : null;
-    if (this.mode.compare === false || result.outcome === 'unrecordable') return { ...result, ...(uses.length ? { independence: uses.length } : {}), ...(readMode ? { readMode } : {}) };
+    if (this.mode.compare === false || result.outcome === 'unrecordable' || result.outcome === 'not-ported') return { ...result, ...(uses.length ? { independence: uses.length } : {}), ...(readMode ? { readMode } : {}) };
     return judgeComparison(result, {
       uses: uses.length,
       readMode,
