@@ -453,8 +453,16 @@ export function broken(entries) {
       const first = entries.find((entry) => entry.strand === strand);
       const kind = strand.slice(name.length + 1);
       if (first.index < start.index) problems.push(`${strand}: before its start`);
+      // Node writes to the socket at once (`uv_try_write`): a child whose stdin
+      // closed before a write of its starting checkpoint fails it EPIPE at
+      // once, the error and the pipeline's rejection then on ticks of that
+      // checkpoint (Electron's Node too: the JavaScript arm numbers each
+      // listener a unit of its own, the Rust its checkpoint). Admitted there.
+      const syncWriteFailure = (kind === '0' && first.text.startsWith(`${name}.0.error=EPIPE@`)) || (kind === 'w' && first.text.startsWith(`${name}.w=!EPIPE@`));
       if (SAME_CHECKPOINT.has(kind)) {
         if (first.unit !== start.unit) problems.push(`${strand}: not on a tick of the checkpoint that started it (#${start.unit}, #${first.unit})`);
+      } else if (syncWriteFailure) {
+        // In the starting checkpoint or later, never before the start (checked above).
       } else if (kind !== 'kill') {
         if (first.unit === start.unit) problems.push(`${strand}: settled in the checkpoint that started it (#${start.unit})`);
         if (first.index < lastOfStart) problems.push(`${strand}: before the end of its starting checkpoint`);
@@ -541,7 +549,7 @@ function comparePrograms(programs, tag, names = []) {
     const strip = (list) => list.map((entry) => `${entry.strand ?? ''}:${entry.text}`).join(' ');
     if (strip(parsed.electron) === strip(parsed.rust)) identical += 1;
   });
-  return { problems, identical, entries, nodeDiffers };
+  return { problems, identical, entries, nodeDiffers, traces };
 }
 
 describe('child processes: programs on Electron\'s Node, this Node and the Rust', () => {
@@ -549,6 +557,18 @@ describe('child processes: programs on Electron\'s Node, this Node and the Rust'
     const { problems, identical, entries, nodeDiffers } = comparePrograms(FIXED_PROGRAMS.map((entry) => entry.program), 'named', FIXED_PROGRAMS.map((entry) => entry.name));
     assert.deepEqual(problems.slice(0, 5), [], `${problems.length} problems`);
     console.log(`${FIXED_PROGRAMS.length} named child programs, ${entries} entries: all admissible; ${identical} in Electron's own interleaving too; this Node differs in ${nodeDiffers} (information)`);
+  });
+  test('a write failing EPIPE at once (the child closed its stdin during the checkpoint that spawned it) settles in that turn, before its immediate, on every arm, as Node\'s synchronous uv_try_write failure does', () => {
+    const entry = FIXED_PROGRAMS.find((fixed) => fixed.name.startsWith('rule 1 exception'));
+    const { problems, traces } = comparePrograms([entry.program], 'epipe', [entry.name]);
+    assert.deepEqual(problems, [], `${problems.length} problems`);
+    for (const [arm, list] of Object.entries(traces)) {
+      const raws = list[0].split(' ');
+      const at = (text) => raws.findIndex((raw) => raw.includes(text));
+      const turn = at('next-turn@');
+      assert.ok(turn > 0 && at('k0.0.error=EPIPE') !== -1 && at('k0.0.error=EPIPE') < turn && at('k0.w=!EPIPE') !== -1 && at('k0.w=!EPIPE') < turn,
+        `[${process.platform} ${process.arch}] ${arm}: the EPIPE is not in the turn that spawned the child: ${list[0]}`);
+    }
   });
   for (const seed of SEEDS) {
     test(`${PER_SEED} random child programs of seed ${seed} keep rules 1 and 2, and their pure part and strands are Electron's`, () => {

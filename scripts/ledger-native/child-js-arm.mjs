@@ -371,6 +371,15 @@ function programs() {
       case 'tick': process.nextTick(() => exec(ctx, st.body)); return;
       case 'micro': queueMicrotask(() => exec(ctx, st.body)); return;
       case 'immediate': setImmediate(() => { bump(); exec(ctx, st.body); }); return;
+      // The loop blocked until the file `until` exists (a long checkpoint), within `ms`.
+      case 'block': {
+        const deadline = Date.now() + (st.ms ?? 30_000);
+        while (!fs.existsSync(st.until)) {
+          if (Date.now() > deadline) throw new Error(`block: ${st.until} did not appear within ${st.ms ?? 30_000} ms`);
+          blockLoop(5);
+        }
+        return;
+      }
       case 'timeout': setTimeout(() => { bump(); exec(ctx, st.body); }, st.ms); return;
       case 'run': FRAME.run(st.v, () => exec(ctx, st.body)); return;
       case 'call': void callFn(ctx, st.f); return;

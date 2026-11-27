@@ -11,6 +11,7 @@
 // A program: `{ files: [{ name, size, seed }], fns: [{ body }], main, until }`.
 // Statements of any body:
 //   { s: 'log' | 'chain' | 'tick' | 'micro' | 'immediate' | 'timeout' | 'run' | 'call' }   as in fs-programs.mjs
+//   { s: 'block', until, ms }   the loop blocked (a long checkpoint) until the file `until` exists, within `ms`
 //   { s: 'io', op, a, l, body }      a file call: lstat, readFile, readdir, writeFile
 //   { s: 'spawn', l, file, args, env, input, consume, kill, onExit, onClose, onEnd }
 //        logs `l>`; every event is an entry of its own strand: `l.spawn`, `l.error=<code>`,
@@ -186,6 +187,12 @@ const gitOf = (name, extra) => ({ s: 'git', ...command(name), ...extra });
 
 /** The hand-written programs: one per rule and per shape the ledger's sites take. */
 export const FIXED_PROGRAMS = Object.freeze([
+  // Node's write tries the socket at once (`uv_try_write`): when the child
+  // closed its stdin during the checkpoint that spawned it, the write fails
+  // EPIPE synchronously and the error comes on a tick of that checkpoint.
+  { name: 'rule 1 exception: a child closes its stdin during the long checkpoint that spawned it: EPIPE in that checkpoint', program: {
+    main: [{ s: 'spawn', l: 'k0', file: 'sh', args: ['-c', 'exec 0<&-; : > "$EPIPE_MARK"'], env: [['EPIPE_MARK', '<dir>/stdin-closed']], input: { gen: ['a\n', 'b'] }, consume: 'data' },
+      { s: 'block', until: '<dir>/stdin-closed', ms: 30_000 }, { s: 'immediate', body: [{ s: 'log', l: 'next-turn' }] }, { s: 'log', l: 'after' }] } },
   { name: 'rule 1: Promise.all of a child\'s close and five jobs: the jobs first', program: {
     main: [spawnOf('out', { l: 'k0', input: 'none', consume: 'data', onClose: [{ s: 'log', l: 'drawA' }] }), { s: 'chain', n: 5, l: 'drawB' }] } },
   { name: 'rule 1: spawn is on a tick of its checkpoint, every other event later, after a long chain', program: {

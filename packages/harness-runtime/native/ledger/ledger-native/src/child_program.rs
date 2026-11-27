@@ -912,6 +912,23 @@ fn step(run: &Rc<Run>, ctx: &Ctx, statement: &W) {
             let (run, ctx) = (run.clone(), ctx.clone());
             let _ = host::set_immediate(move || exec(&run, &ctx, &body));
         }
+        // The loop blocked until the file `until` exists (a long checkpoint).
+        "block" => {
+            let until = text(&statement.get("until"));
+            let ms = match statement.get("ms") {
+                W::Number(ms) => ms,
+                _ => 30_000.0,
+            };
+            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(ms as u64);
+            while !exists(&until) {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "block: {until} did not appear within {ms} ms"
+                );
+                // port: sync call (Atomics.wait)
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        }
         "timeout" => {
             let (run, ctx) = (run.clone(), ctx.clone());
             let _ = host::set_timeout(to_number(&statement.get("ms")), move || {

@@ -245,6 +245,11 @@ export const BUGS = Object.freeze([
   { name: 'F09 an error nobody listens to swallowed (the worker would go on, F2)', file: CHILD,
     find: '    if let Err(error) = child.0.emitter.emit(event, value) {', replace: '    if let Err(error) = child.0.emitter.emit(event, value).map(|_| ()).or(Ok::<(), W>(())) {',
     named: /an error nobody listens to|F2/ },
+  // L3b follow-up: a write's immediate failure (EPIPE) settles in the turn that wrote, as Node's.
+  { name: 'L01 a write that fails at once reported a turn later (not on ticks of the writing turn)', file: NET,
+    find: '        Err(errno) => onwrite(stream, Some(errno_exception(errno, "write"))),',
+    replace: '        Err(errno) => {\n            let later = stream.clone();\n            let _ = crate::host::set_timeout(1.0, move || onwrite(&later, Some(errno_exception(errno, "write"))));\n        }',
+    named: /a write failing EPIPE at once/ },
 ]);
 
 function run(command, args, options) {
