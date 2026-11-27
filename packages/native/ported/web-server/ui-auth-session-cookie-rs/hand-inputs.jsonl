@@ -1,0 +1,12 @@
+{"fn": "requestUiSessionCookieName", "args": [null]}
+{"fn": "requestUiSessionCookieName", "args": [{}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": 3000}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": 0}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": 65535}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": 65536}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": 1.5}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": "3000"}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": null}]}
+{"fn": "requestUiSessionCookieName", "args": ["s"]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": {"$num": "-0"}}}]}
+{"fn": "requestUiSessionCookieName", "args": [{"socket": {"localPort": 1}}]}

@@ -1,0 +1,19 @@
+{
+  "unit": "legacy-api-path.js",
+  "files": 1,
+  "fingerprint": "ca4ab78d81a8bd88",
+  "cases": 24,
+  "cases_hash": "19dd44f186f1f849",
+  "coverage": {
+    "lines": 22,
+    "reached": 15,
+    "files": [
+      {
+        "file": "legacy-api-path.js",
+        "lines": 22,
+        "reached": 15,
+        "missed": "18-24"
+      }
+    ]
+  }
+}

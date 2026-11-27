@@ -1,0 +1,19 @@
+{"fn": "normalizeSessionPageLimit", "args": []}
+{"fn": "normalizeSessionPageLimit", "args": [50]}
+{"fn": "normalizeSessionPageLimit", "args": [0]}
+{"fn": "normalizeSessionPageLimit", "args": [-5]}
+{"fn": "normalizeSessionPageLimit", "args": [1.9]}
+{"fn": "normalizeSessionPageLimit", "args": [5000]}
+{"fn": "normalizeSessionPageLimit", "args": ["20"]}
+{"fn": "normalizeSessionPageLimit", "args": [" 7 "]}
+{"fn": "normalizeSessionPageLimit", "args": ["x"]}
+{"fn": "normalizeSessionPageLimit", "args": [[3]]}
+{"fn": "normalizeSessionPageLimit", "args": [[1, 2]]}
+{"fn": "normalizeSessionPageLimit", "args": [{}]}
+{"fn": "normalizeSessionPageLimit", "args": [true]}
+{"fn": "normalizeSessionPageLimit", "args": [{"$num": "NaN"}]}
+{"fn": "normalizeSessionPageLimit", "args": [{"$num": "Infinity"}]}
+{"fn": "normalizeSessionPageLimit", "args": [-0.5]}
+{"fn": "normalizeSessionPageLimit", "args": ["0x10"]}
+{"fn": "normalizeSessionPageLimit", "args": [[]]}
+{"fn": "normalizeSessionPageLimit", "args": [null]}

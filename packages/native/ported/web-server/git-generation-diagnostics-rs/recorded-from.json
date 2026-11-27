@@ -1,0 +1,19 @@
+{
+  "unit": "generation-diagnostics.js",
+  "files": 1,
+  "fingerprint": "bb4d807d6fe35ea3",
+  "cases": 102,
+  "cases_hash": "c5043ec853a7c77d",
+  "coverage": {
+    "lines": 31,
+    "reached": 31,
+    "files": [
+      {
+        "file": "generation-diagnostics.js",
+        "lines": 31,
+        "reached": 31,
+        "missed": ""
+      }
+    ]
+  }
+}

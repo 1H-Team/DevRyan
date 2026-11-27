@@ -1,0 +1,19 @@
+{
+  "unit": "event-dialect.js",
+  "files": 1,
+  "fingerprint": "c592fb10eeeaa9c2",
+  "cases": 121,
+  "cases_hash": "0299e340cb73c766",
+  "coverage": {
+    "lines": 31,
+    "reached": 23,
+    "files": [
+      {
+        "file": "event-dialect.js",
+        "lines": 31,
+        "reached": 23,
+        "missed": "14-21"
+      }
+    ]
+  }
+}

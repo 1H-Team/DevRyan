@@ -1,0 +1,30 @@
+{"fn": "omitToolPartOutput", "args": [{"id": "p", "type": "tool", "tool": "read", "state": {"status": "completed", "output": "hello é😀", "title": "t"}}]}
+{"fn": "omitToolPartOutput", "args": [{"id": "p", "type": "tool", "tool": "bash", "state": {"status": "completed", "output": "hello é😀", "title": "t"}}]}
+{"fn": "omitToolPartOutput", "args": [{"id": "p", "type": "tool", "tool": "read", "state": {"status": "running", "output": "hello é😀", "title": "t"}}]}
+{"fn": "omitToolPartOutput", "args": [{"id": "p", "type": "tool", "tool": "read", "state": {"status": "completed", "output": "", "title": "t"}}]}
+{"fn": "omitToolPartOutput", "args": [{"id": "p", "type": "tool", "tool": "read", "state": {"status": "completed", "output": "hello é😀", "title": "t", "outputOmitted": true}}]}
+{"fn": "omitToolPartOutput", "args": [{"id": "p", "type": "tool", "tool": "read", "state": {"status": "completed", "output": 5, "title": "t"}}]}
+{"fn": "omitToolPartOutput", "args": [{"id": "p", "type": "tool", "tool": "websearch", "state": {"status": "completed", "output": {"$utf16": [65, 55296]}, "title": "t"}}]}
+{"fn": "omitToolPartOutput", "args": [{"id": "p", "type": "tool", "tool": "read", "state": null}]}
+{"fn": "omitToolPartOutput", "args": [{"type": "text"}]}
+{"fn": "omitToolPartOutput", "args": []}
+{"fn": "omitToolPartOutput", "args": ["s"]}
+{"fn": "omitToolPartOutput", "args": [[1]]}
+{"fn": "omitToolPartOutput", "args": [{"id": "p", "type": "tool", "tool": "ls", "state": {"status": "completed", "output": "hello é😀", "title": "t", "outputBytes": 1, "outputOmitted": false}}]}
+{"fn": "omitToolPartOutput", "args": [{"$map": []}]}
+{"fn": "omitMessageToolOutput", "args": [{"info": {"id": "m"}, "parts": [{"id": "p", "type": "tool", "tool": "read", "state": {"status": "completed", "output": "hello é😀", "title": "t"}}, {"id": "p", "type": "tool", "tool": "bash", "state": {"status": "completed", "output": "hello é😀", "title": "t"}}, {"id": "p", "type": "tool", "tool": "read", "state": {"status": "running", "output": "hello é😀", "title": "t"}}]}]}
+{"fn": "omitMessageToolOutput", "args": [{"info": {}, "parts": [{"id": "p", "type": "tool", "tool": "bash", "state": {"status": "completed", "output": "hello é😀", "title": "t"}}]}]}
+{"fn": "omitMessageToolOutput", "args": [{"parts": "x"}]}
+{"fn": "omitMessageToolOutput", "args": []}
+{"fn": "omitMessageToolOutput", "args": [{"parts": []}]}
+{"fn": "omitMessageToolOutput", "args": [[1]]}
+{"fn": "omitMessageToolOutput", "args": [{"z": 1, "parts": [{"id": "p", "type": "tool", "tool": "read", "state": {"status": "completed", "output": "hello é😀", "title": "t"}}], "a": 2}]}
+{"fn": "readToolOutputMode", "args": []}
+{"fn": "readToolOutputMode", "args": [{}]}
+{"fn": "readToolOutputMode", "args": [{"toolOutput": "omit"}]}
+{"fn": "readToolOutputMode", "args": [{"toolOutput": "full"}]}
+{"fn": "readToolOutputMode", "args": [{"toolOutput": null}]}
+{"fn": "readToolOutputMode", "args": [{"toolOutput": {"$undefined": true}}]}
+{"fn": "readToolOutputMode", "args": ["str"]}
+{"fn": "readToolOutputMode", "args": [5]}
+{"fn": "readToolOutputMode", "args": [{"toolOutput": "OMIT"}]}

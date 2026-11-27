@@ -1,0 +1,19 @@
+{
+  "unit": "forwarded-request.js",
+  "files": 1,
+  "fingerprint": "726fcdae9771d503",
+  "cases": 29,
+  "cases_hash": "f427ca5ddbeddfb9",
+  "coverage": {
+    "lines": 7,
+    "reached": 7,
+    "files": [
+      {
+        "file": "forwarded-request.js",
+        "lines": 7,
+        "reached": 7,
+        "missed": ""
+      }
+    ]
+  }
+}

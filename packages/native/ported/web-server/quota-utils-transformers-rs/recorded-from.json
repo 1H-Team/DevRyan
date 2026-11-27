@@ -1,0 +1,19 @@
+{
+  "unit": "transformers.js",
+  "files": 1,
+  "fingerprint": "2f72c6345867f8ab",
+  "cases": 179,
+  "cases_hash": "6d59daeb5699d4f2",
+  "coverage": {
+    "lines": 38,
+    "reached": 29,
+    "files": [
+      {
+        "file": "transformers.js",
+        "lines": 38,
+        "reached": 29,
+        "missed": "21-29"
+      }
+    ]
+  }
+}

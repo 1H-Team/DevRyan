@@ -1,0 +1,43 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib",
+  "unit": "http-cache-policy.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "http-cache-policy-rs",
+  "exports": [
+    {
+      "name": "shouldDisableHttpCache",
+      "file": "http-cache-policy.js",
+      "line": 5,
+      "params": [
+        {
+          "name": "originalUrl",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": [
+    {
+      "name": "applyDynamicNoStoreHeaders",
+      "file": "http-cache-policy.js",
+      "line": 11,
+      "reason": "writes response headers"
+    },
+    {
+      "name": "dynamicNoStoreMiddleware",
+      "file": "http-cache-policy.js",
+      "line": 23,
+      "reason": "middleware, calls next"
+    }
+  ]
+}

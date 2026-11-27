@@ -1,0 +1,9 @@
+{"fn": "resolveManagedTaskTurnBudget", "args": [null]}
+{"fn": "resolveManagedTaskTurnBudget", "args": [{}]}
+{"fn": "resolveManagedTaskTurnBudget", "args": [{"agent": "designer"}]}
+{"fn": "resolveManagedTaskTurnBudget", "args": [{"agent": " Fixer "}]}
+{"fn": "resolveManagedTaskTurnBudget", "args": [{"agent": "builder"}]}
+{"fn": "resolveManagedTaskTurnBudget", "args": [{"agent": 5}]}
+{"fn": "resolveManagedTaskTurnBudget", "args": ["designer"]}
+{"fn": "resolveManagedTaskTurnBudget", "args": [{"agent": "DESIGNER﻿"}]}
+{"fn": "resolveManagedTaskTurnBudget", "args": [{"agent": "fixer"}]}

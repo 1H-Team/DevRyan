@@ -1,0 +1,19 @@
+{
+  "unit": "terminal-ws-protocol.js",
+  "files": 1,
+  "fingerprint": "cbee818034160382",
+  "cases": 377,
+  "cases_hash": "fc3be85612413a7a",
+  "coverage": {
+    "lines": 53,
+    "reached": 16,
+    "files": [
+      {
+        "file": "terminal-ws-protocol.js",
+        "lines": 53,
+        "reached": 16,
+        "missed": "6-8, 10-14, 18-20, 22-24, 26, 30-32, 34, 38-40, 42-45, 47-55, 59-60"
+      }
+    ]
+  }
+}

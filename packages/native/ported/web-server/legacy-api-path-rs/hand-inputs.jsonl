@@ -1,0 +1,12 @@
+{"fn": "canonicalApiUrl", "args": ["/api/openchamber"]}
+{"fn": "canonicalApiUrl", "args": ["/api/openchamber/x"]}
+{"fn": "canonicalApiUrl", "args": ["/api/openchamber?q"]}
+{"fn": "canonicalApiUrl", "args": ["/api/openchamberx"]}
+{"fn": "canonicalApiUrl", "args": ["/api/devryan/x"]}
+{"fn": "canonicalApiUrl", "args": ["/API/openchamber"]}
+{"fn": "canonicalApiUrl", "args": []}
+{"fn": "canonicalApiUrl", "args": [5]}
+{"fn": "canonicalApiUrl", "args": [""]}
+{"fn": "canonicalApiUrl", "args": ["/api/openchamber//"]}
+{"fn": "canonicalApiUrl", "args": [{"$utf16": [47, 97, 112, 105, 47, 111, 112, 101, 110, 99, 104, 97, 109, 98, 101, 114, 47, 55296]}]}
+{"fn": "canonicalApiUrl", "args": [null]}

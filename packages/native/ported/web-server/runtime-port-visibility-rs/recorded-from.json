@@ -1,0 +1,19 @@
+{
+  "unit": "runtime-port-visibility.js",
+  "files": 1,
+  "fingerprint": "e2b1983ea1207762",
+  "cases": 144,
+  "cases_hash": "4bbf6d05538d0447",
+  "coverage": {
+    "lines": 6,
+    "reached": 6,
+    "files": [
+      {
+        "file": "runtime-port-visibility.js",
+        "lines": 6,
+        "reached": 6,
+        "missed": ""
+      }
+    ]
+  }
+}

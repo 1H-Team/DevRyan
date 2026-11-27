@@ -18,25 +18,15 @@
 //
 // Crates that are not built (`rust-anything build <crate>`) or have no recording are listed and
 // skipped. Exit status 1 on any failure.
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire, register } from 'node:module'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 process.env.RA_UI_SRC ??= path.join(repo, 'packages/ui/src')
-register(new URL('./alias-hooks.mjs', import.meta.url))
-// Extensionless relative imports (`./guards`), as the bundler and rust-anything's recorder allow.
-register(`data:text/javascript,${encodeURIComponent(`
-export async function resolve(specifier, context, next) {
-  try { return await next(specifier, context) } catch (error) {
-    if (error?.code !== 'ERR_MODULE_NOT_FOUND' || !/^\\.{1,2}\\//.test(specifier)) throw error
-    for (const suffix of ['.ts', '.tsx', '.js', '/index.ts', '/index.js']) {
-      try { return await next(specifier + suffix, context) } catch {}
-    }
-    throw error
-  }
-}`)}`)
 
 const args = process.argv.slice(2)
 const write = args.includes('--write')
@@ -54,6 +44,54 @@ const findCrates = (dir) => {
   return out
 }
 const crates = named.length ? named : findCrates(path.join(repo, 'packages/native/ported')).sort()
+
+// Originals Node's type stripping refuses (namespaces, parameter properties) load as JavaScript
+// Bun builds: each such crate lists the files in a tracked `ts-overrides.json`
+// (`{"files": [{"file": "<repo-relative .ts>", "bundle": false}]}`; `bundle` for a file with
+// relative imports), or, for a crate whose folder another lane owns, in
+// `scripts/rust-anything/ts-overrides.json` under its path (`{"<crate>": {"files": [...]}}`).
+// They are built into a temp folder, removed on exit, and handed to the alias loader.
+const sharedOverrides = (() => {
+  const file = path.join(repo, 'scripts/rust-anything/ts-overrides.json')
+  return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {}
+})()
+const overridesFor = (dir) => {
+  const own = path.join(dir, 'ts-overrides.json')
+  const label = path.relative(path.join(repo, 'packages/native/ported'), dir)
+  return (existsSync(own) ? JSON.parse(readFileSync(own, 'utf8')) : sharedOverrides[label])?.files ?? []
+}
+const wanted = new Map()
+for (const dir of crates) for (const entry of overridesFor(dir)) wanted.set(entry.file, Boolean(entry.bundle))
+const existingOverrides = (process.env.RA_TS_OVERRIDES ?? '').split(';').filter(Boolean)
+let overrideDir = null
+if (wanted.size > 0) {
+  overrideDir = mkdtempSync(path.join(os.tmpdir(), 'ra-ts-overrides-'))
+  process.on('exit', () => rmSync(overrideDir, { recursive: true, force: true }))
+  for (const [file, bundle] of wanted) {
+    const source = path.join(repo, file)
+    const out = path.join(overrideDir, `${path.basename(file, '.ts')}-${wanted.size}-${existingOverrides.length}.mjs`)
+    const built = spawnSync('bun', ['build', source, ...(bundle ? [] : ['--no-bundle']), '--target=node', '--format=esm', '--outfile', out],
+      { cwd: path.join(repo, 'packages/ui'), encoding: 'utf8' })
+    if (built.status !== 0) {
+      console.error(`bun build ${file} failed:\n${built.stderr}`)
+      process.exit(1)
+    }
+    existingOverrides.push(`${source}=${out}`)
+  }
+}
+process.env.RA_TS_OVERRIDES = existingOverrides.join(';')
+register(new URL('./alias-hooks.mjs', import.meta.url))
+// Extensionless relative imports (`./guards`), as the bundler and rust-anything's recorder allow.
+register(`data:text/javascript,${encodeURIComponent(`
+export async function resolve(specifier, context, next) {
+  try { return await next(specifier, context) } catch (error) {
+    if (error?.code !== 'ERR_MODULE_NOT_FOUND' || !/^\\.{1,2}\\//.test(specifier)) throw error
+    for (const suffix of ['.ts', '.tsx', '.js', '/index.ts', '/index.js']) {
+      try { return await next(specifier + suffix, context) } catch {}
+    }
+    throw error
+  }
+}`)}`)
 
 // The recording's value markers (as rust-anything's record.mjs decodes them).
 const MARKERS = ['$undefined', '$num', '$bigint', '$utf16', '$map', '$set', '$date', '$bytes', '$buffer', '$typed', '$object']

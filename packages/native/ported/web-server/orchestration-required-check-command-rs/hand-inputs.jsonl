@@ -1,0 +1,48 @@
+{"fn": "requiredCheckCommandIssue", "args": ["bun run test"]}
+{"fn": "requiredCheckCommandIssue", "args": ["npm test && npm run lint"]}
+{"fn": "requiredCheckCommandIssue", "args": ["FOO=1 bun test"]}
+{"fn": "requiredCheckCommandIssue", "args": ["FOO=1"]}
+{"fn": "requiredCheckCommandIssue", "args": ["echo hi | cat"]}
+{"fn": "requiredCheckCommandIssue", "args": ["a;b"]}
+{"fn": "requiredCheckCommandIssue", "args": ["a & b"]}
+{"fn": "requiredCheckCommandIssue", "args": ["a && && b"]}
+{"fn": "requiredCheckCommandIssue", "args": ["&& a"]}
+{"fn": "requiredCheckCommandIssue", "args": ["a &&"]}
+{"fn": "requiredCheckCommandIssue", "args": ["bash -c x"]}
+{"fn": "requiredCheckCommandIssue", "args": ["env -S 'a b'"]}
+{"fn": "requiredCheckCommandIssue", "args": ["env --split-string=x a"]}
+{"fn": "requiredCheckCommandIssue", "args": ["/usr/bin/env FOO=1 make"]}
+{"fn": "requiredCheckCommandIssue", "args": ["timeout 5 /bin/sh -c x"]}
+{"fn": "requiredCheckCommandIssue", "args": ["'' x"]}
+{"fn": "requiredCheckCommandIssue", "args": ["x 'it''s' \"a\\$b\""]}
+{"fn": "requiredCheckCommandIssue", "args": ["\"a\\nb\" c"]}
+{"fn": "requiredCheckCommandIssue", "args": ["\"unterminated"]}
+{"fn": "requiredCheckCommandIssue", "args": ["a\\"]}
+{"fn": "requiredCheckCommandIssue", "args": ["$(x)"]}
+{"fn": "requiredCheckCommandIssue", "args": ["`x`"]}
+{"fn": "requiredCheckCommandIssue", "args": ["x\ny"]}
+{"fn": "requiredCheckCommandIssue", "args": ["x\ry"]}
+{"fn": "requiredCheckCommandIssue", "args": ["x\u0000y"]}
+{"fn": "requiredCheckCommandIssue", "args": ["   "]}
+{"fn": "requiredCheckCommandIssue", "args": [""]}
+{"fn": "requiredCheckCommandIssue", "args": []}
+{"fn": "requiredCheckCommandIssue", "args": [5]}
+{"fn": "requiredCheckCommandIssue", "args": ["if true"]}
+{"fn": "requiredCheckCommandIssue", "args": ["./script.sh arg"]}
+{"fn": "requiredCheckCommandIssue", "args": ["PWSH.EXE -c"]}
+{"fn": "requiredCheckCommandIssue", "args": ["x　y"]}
+{"fn": "requiredCheckCommandIssue", "args": ["cmd.exe /c dir"]}
+{"fn": "requiredCheckCommandIssue", "args": ["node -e '1>2'"]}
+{"fn": "requiredCheckCommandIssue", "args": ["a\\ b"]}
+{"fn": "requiredCheckCommandIssue", "args": ["make  &&  make  install"]}
+{"fn": "requiredCheckCommandIssue", "args": ["x #c"]}
+{"fn": "requiredCheckCommandIssue", "args": ["!x"]}
+{"fn": "requiredCheckCommandIssue", "args": ["x>y"]}
+{"fn": "requiredCheckCommandIssue", "args": ["(x)"]}
+{"fn": "requiredCheckCommandIssue", "args": ["{x}"]}
+{"fn": "requiredCheckCommandIssue", "args": ["fish"]}
+{"fn": "requiredCheckCommandIssue", "args": ["./fish"]}
+{"fn": "requiredCheckCommandIssue", "args": ["A_B9=2 C=3 run"]}
+{"fn": "requiredCheckCommandIssue", "args": ["1A=2 run"]}
+{"fn": "requiredCheckCommandIssue", "args": ["=x run"]}
+{"fn": "requiredCheckCommandIssue", "args": ["source .env"]}

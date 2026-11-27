@@ -1,0 +1,107 @@
+{"fn":"currentHunkPatch","args":[0,true],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{"a":"b"},{"a":{"b":"c"}}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{},true],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[null,null],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{"a":"b"},["a",1]],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":["x",{"a":{"b":"c"}}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[[],true],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[[],["a",1]],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{},"x"],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{"a":{"b":"c"}},null],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[true,{}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[[],[]],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{"a":"b"},null],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[["a",1],"x"],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{"a":"b"},{"a":"b"}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[[],"x"],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[["a",1],0],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[[],{"a":{"b":"c"}}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":["x",{}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[true,0],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[null,true],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":["x",0],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[["a",1],{"a":{"b":"c"}}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{"a":{"b":"c"}},[]],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[0,{"a":"b"}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":["x","x"],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{"a":{"b":"c"}},{"a":"b"}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[null,[]],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[true,{"a":{"b":"c"}}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{},["a",1]],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[true,true],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":["x",true],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{},null],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{"a":{"b":"c"}},{}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[[],null],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[true,"x"],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{"a":"b"},0],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[["a",1],[]],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[null,["a",1]],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[0,{"a":{"b":"c"}}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[null,0],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{},{"a":{"b":"c"}}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{"a":{"b":"c"}},{"a":{"b":"c"}}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{"a":"b"},{}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[["a",1],null],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{"a":{"b":"c"}},"x"],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":["x",["a",1]],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[0,[]],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[0,"x"],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[["a",1],true],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[[],0],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[0,{}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[null,{}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{"a":{"b":"c"}},["a",1]],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[true,{"a":"b"}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[true,null],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{"a":{"b":"c"}},true],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[null,{"a":{"b":"c"}}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{},{}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[["a",1],{"a":"b"}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[true,["a",1]],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[0,null],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{"a":"b"},"x"],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{"a":"b"},[]],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[0,0],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":["x",[]],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[0,["a",1]],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{"a":{"b":"c"}},0],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{},0],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[["a",1],{}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[null,"x"],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":["x",{"a":"b"}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":["x",null],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[["a",1],["a",1]],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[[],{"a":"b"}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{"a":"b"},true],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{},{"a":"b"}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[[],{}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[true,[]],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{},[]],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[null,{"a":"b"}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":["x","X"],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":["X","x"],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6},true],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7},true],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[[3,1,2],true],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[0,{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[0,{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[0,[3,1,2]],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n@@ -5 +5 @@\n-c\n+d","diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n"],"ok":"diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n"}
+{"fn":"currentHunkPatch","args":["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n@@ -5 +5 @@\n-c\n+d","diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -5 +5 @@\n-c\n+d\n"],"ok":"diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -5 +5 @@\n-c\n+d\n"}
+{"fn":"currentHunkPatch","args":["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n@@ -5 +5 @@\n-c\n+d","diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -5 +5 @@\n-c\n+d"],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n@@ -5 +5 @@\n-c\n+d","x"],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n@@ -5 +5 @@\n-c\n+d","diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n@@ -1 +1 @@\n-a\n+b\n"],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n@@ -5 +5 @@\n-c\n+d",null],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n@@ -5 +5 @@\n-c\n+d",5],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\nold mode 100644\n@@ -1 +1 @@\n-a\n+b\n","diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n"],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n","diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n"],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":[null,"diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n"],"error":"Cannot read properties of null (reading 'search')"}
+{"fn":"currentHunkPatch","args":[5,"diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n"],"error":"current.search is not a function"}
+{"fn":"currentHunkPatch","args":[["@@ x"],"diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n"],"error":"current.search is not a function"}
+{"fn":"currentHunkPatch","args":["diff --git a\r@@ q",""],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":["diff --git a/f b/f\r\nindex 1..2 100644\r\n--- a/f\r\n+++ b/f\r\n@@ -1 +1 @@\r\n-a\r\n+b\r\n@@ -5 +5 @@\r\n-c\r\n+d","diff --git a/f b/f\r\nindex 1..2 100644\r\n--- a/f\r\n+++ b/f\r\n@@ -1 +1 @@\r\n-a\r\n+b\r\n"],"ok":"diff --git a/f b/f\r\nindex 1..2 100644\r\n--- a/f\r\n+++ b/f\r\n@@ -1 +1 @@\r\n-a\r\n+b\r\n"}
+{"fn":"currentHunkPatch","args":["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n@@ -5 +5 @@\n-c\n+d","diff --git a\n@@ x\n@@ y"],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":["@@ a\n","diff --git b\n@@ c\n"],"error":"Hunk changed or is unsupported. Refresh and try again."}
+{"fn":"currentHunkPatch","args":["diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n@@ -5 +5 @@\n-c\n+d @@ z","diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ z\n"],"ok":"diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ z\n"}
+{"fn":"currentHunkPatch","args":["@@ only\n","@@ only\n"],"error":"Hunk changed or is unsupported. Refresh and try again."}

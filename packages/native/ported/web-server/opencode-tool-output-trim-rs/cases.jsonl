@@ -1,0 +1,66 @@
+{"fn":"readToolOutputMode","args":[{"a":"b"}],"ok":"full"}
+{"fn":"readToolOutputMode","args":[null],"ok":"full"}
+{"fn":"readToolOutputMode","args":[{}],"ok":"full"}
+{"fn":"readToolOutputMode","args":["x"],"ok":"full"}
+{"fn":"readToolOutputMode","args":[0],"ok":"full"}
+{"fn":"readToolOutputMode","args":[{"a":{"b":"c"}}],"ok":"full"}
+{"fn":"readToolOutputMode","args":[true],"ok":"full"}
+{"fn":"readToolOutputMode","args":[["a",1]],"ok":"full"}
+{"fn":"readToolOutputMode","args":[[]],"ok":"full"}
+{"fn":"readToolOutputMode","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":"full"}
+{"fn":"readToolOutputMode","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":"full"}
+{"fn":"readToolOutputMode","args":[[3,1,2]],"ok":"full"}
+{"fn":"omitToolPartOutput","args":[["a",1]],"ok":["a",1]}
+{"fn":"omitToolPartOutput","args":[[]],"ok":[]}
+{"fn":"omitToolPartOutput","args":["x"],"ok":"x"}
+{"fn":"omitToolPartOutput","args":[{"a":"b"}],"ok":{"a":"b"}}
+{"fn":"omitToolPartOutput","args":[null],"ok":null}
+{"fn":"omitToolPartOutput","args":[true],"ok":true}
+{"fn":"omitToolPartOutput","args":[{}],"ok":{}}
+{"fn":"omitToolPartOutput","args":[{"a":{"b":"c"}}],"ok":{"a":{"b":"c"}}}
+{"fn":"omitToolPartOutput","args":[0],"ok":0}
+{"fn":"omitToolPartOutput","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}}
+{"fn":"omitToolPartOutput","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}}
+{"fn":"omitToolPartOutput","args":[[3,1,2]],"ok":[3,1,2]}
+{"fn":"omitMessageToolOutput","args":[true],"ok":true}
+{"fn":"omitMessageToolOutput","args":["x"],"ok":"x"}
+{"fn":"omitMessageToolOutput","args":[["a",1]],"ok":["a",1]}
+{"fn":"omitMessageToolOutput","args":[{"a":{"b":"c"}}],"ok":{"a":{"b":"c"}}}
+{"fn":"omitMessageToolOutput","args":[[]],"ok":[]}
+{"fn":"omitMessageToolOutput","args":[null],"ok":null}
+{"fn":"omitMessageToolOutput","args":[{}],"ok":{}}
+{"fn":"omitMessageToolOutput","args":[0],"ok":0}
+{"fn":"omitMessageToolOutput","args":[{"a":"b"}],"ok":{"a":"b"}}
+{"fn":"omitMessageToolOutput","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}}
+{"fn":"omitMessageToolOutput","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}}
+{"fn":"omitMessageToolOutput","args":[[3,1,2]],"ok":[3,1,2]}
+{"fn":"omitToolPartOutput","args":[{"id":"p","type":"tool","tool":"read","state":{"status":"completed","output":"hello é😀","title":"t"}}],"ok":{"id":"p","type":"tool","tool":"read","state":{"status":"completed","output":"","title":"t","outputOmitted":true,"outputBytes":12}}}
+{"fn":"omitToolPartOutput","args":[{"id":"p","type":"tool","tool":"bash","state":{"status":"completed","output":"hello é😀","title":"t"}}],"ok":{"id":"p","type":"tool","tool":"bash","state":{"status":"completed","output":"hello é😀","title":"t"}}}
+{"fn":"omitToolPartOutput","args":[{"id":"p","type":"tool","tool":"read","state":{"status":"running","output":"hello é😀","title":"t"}}],"ok":{"id":"p","type":"tool","tool":"read","state":{"status":"running","output":"hello é😀","title":"t"}}}
+{"fn":"omitToolPartOutput","args":[{"id":"p","type":"tool","tool":"read","state":{"status":"completed","output":"","title":"t"}}],"ok":{"id":"p","type":"tool","tool":"read","state":{"status":"completed","output":"","title":"t"}}}
+{"fn":"omitToolPartOutput","args":[{"id":"p","type":"tool","tool":"read","state":{"status":"completed","output":"hello é😀","title":"t","outputOmitted":true}}],"ok":{"id":"p","type":"tool","tool":"read","state":{"status":"completed","output":"hello é😀","title":"t","outputOmitted":true}}}
+{"fn":"omitToolPartOutput","args":[{"id":"p","type":"tool","tool":"read","state":{"status":"completed","output":5,"title":"t"}}],"ok":{"id":"p","type":"tool","tool":"read","state":{"status":"completed","output":5,"title":"t"}}}
+{"fn":"omitToolPartOutput","args":[{"id":"p","type":"tool","tool":"websearch","state":{"status":"completed","output":{"$utf16":[65,55296]},"title":"t"}}],"ok":{"id":"p","type":"tool","tool":"websearch","state":{"status":"completed","output":"","title":"t","outputOmitted":true,"outputBytes":4}}}
+{"fn":"omitToolPartOutput","args":[{"id":"p","type":"tool","tool":"read","state":null}],"ok":{"id":"p","type":"tool","tool":"read","state":null}}
+{"fn":"omitToolPartOutput","args":[{"type":"text"}],"ok":{"type":"text"}}
+{"fn":"omitToolPartOutput","args":[],"ok":{"$undefined":true}}
+{"fn":"omitToolPartOutput","args":["s"],"ok":"s"}
+{"fn":"omitToolPartOutput","args":[[1]],"ok":[1]}
+{"fn":"omitToolPartOutput","args":[{"id":"p","type":"tool","tool":"ls","state":{"status":"completed","output":"hello é😀","title":"t","outputBytes":1,"outputOmitted":false}}],"ok":{"id":"p","type":"tool","tool":"ls","state":{"status":"completed","output":"","title":"t","outputBytes":12,"outputOmitted":true}}}
+{"fn":"omitToolPartOutput","args":[{"$map":[]}],"ok":{"$map":[]}}
+{"fn":"omitMessageToolOutput","args":[{"info":{"id":"m"},"parts":[{"id":"p","type":"tool","tool":"read","state":{"status":"completed","output":"hello é😀","title":"t"}},{"id":"p","type":"tool","tool":"bash","state":{"status":"completed","output":"hello é😀","title":"t"}},{"id":"p","type":"tool","tool":"read","state":{"status":"running","output":"hello é😀","title":"t"}}]}],"ok":{"info":{"id":"m"},"parts":[{"id":"p","type":"tool","tool":"read","state":{"status":"completed","output":"","title":"t","outputOmitted":true,"outputBytes":12}},{"id":"p","type":"tool","tool":"bash","state":{"status":"completed","output":"hello é😀","title":"t"}},{"id":"p","type":"tool","tool":"read","state":{"status":"running","output":"hello é😀","title":"t"}}]}}
+{"fn":"omitMessageToolOutput","args":[{"info":{},"parts":[{"id":"p","type":"tool","tool":"bash","state":{"status":"completed","output":"hello é😀","title":"t"}}]}],"ok":{"info":{},"parts":[{"id":"p","type":"tool","tool":"bash","state":{"status":"completed","output":"hello é😀","title":"t"}}]}}
+{"fn":"omitMessageToolOutput","args":[{"parts":"x"}],"ok":{"parts":"x"}}
+{"fn":"omitMessageToolOutput","args":[],"ok":{"$undefined":true}}
+{"fn":"omitMessageToolOutput","args":[{"parts":[]}],"ok":{"parts":[]}}
+{"fn":"omitMessageToolOutput","args":[[1]],"ok":[1]}
+{"fn":"omitMessageToolOutput","args":[{"z":1,"parts":[{"id":"p","type":"tool","tool":"read","state":{"status":"completed","output":"hello é😀","title":"t"}}],"a":2}],"ok":{"z":1,"parts":[{"id":"p","type":"tool","tool":"read","state":{"status":"completed","output":"","title":"t","outputOmitted":true,"outputBytes":12}}],"a":2}}
+{"fn":"readToolOutputMode","args":[],"ok":"full"}
+{"fn":"readToolOutputMode","args":[{}],"ok":"full"}
+{"fn":"readToolOutputMode","args":[{"toolOutput":"omit"}],"ok":"omit"}
+{"fn":"readToolOutputMode","args":[{"toolOutput":"full"}],"error":"toolOutput must be omit"}
+{"fn":"readToolOutputMode","args":[{"toolOutput":null}],"error":"toolOutput must be omit"}
+{"fn":"readToolOutputMode","args":[{"toolOutput":{"$undefined":true}}],"ok":"full"}
+{"fn":"readToolOutputMode","args":["str"],"ok":"full"}
+{"fn":"readToolOutputMode","args":[5],"ok":"full"}
+{"fn":"readToolOutputMode","args":[{"toolOutput":"OMIT"}],"error":"toolOutput must be omit"}

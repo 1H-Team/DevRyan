@@ -1,0 +1,19 @@
+{
+  "unit": "branch-name.js",
+  "files": 1,
+  "fingerprint": "f883c0e942deb91c",
+  "cases": 23,
+  "cases_hash": "a69f3aff0ea96269",
+  "coverage": {
+    "lines": 42,
+    "reached": 16,
+    "files": [
+      {
+        "file": "branch-name.js",
+        "lines": 42,
+        "reached": 16,
+        "missed": "16-41"
+      }
+    ]
+  }
+}

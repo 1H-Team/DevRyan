@@ -1,0 +1,17 @@
+{"fn": "hasForwardingHeaders", "args": []}
+{"fn": "hasForwardingHeaders", "args": [{}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"Forwarded": "x"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"X-Forwarded-For": "1"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"x-forwardedfor": "1"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"CF-Ray": "r"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"cfray": "r"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"host": "a", "accept": "b"}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": "forwarded"}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": ["cf-x"]}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": null}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"$map": [["forwarded", 1]]}}]}
+{"fn": "hasForwardingHeaders", "args": ["str"]}
+{"fn": "hasForwardingHeaders", "args": [5]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"İforwarded": 1}}]}
+{"fn": "hasForwardingHeaders", "args": [{"headers": {"FORWARDED": 1}}]}

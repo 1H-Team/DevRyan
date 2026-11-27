@@ -1,0 +1,19 @@
+{
+  "unit": "session-visibility.js",
+  "files": 1,
+  "fingerprint": "c3409a05165a5577",
+  "cases": 31,
+  "cases_hash": "0c745b97979f90cd",
+  "coverage": {
+    "lines": 73,
+    "reached": 21,
+    "files": [
+      {
+        "file": "session-visibility.js",
+        "lines": 73,
+        "reached": 21,
+        "missed": "5-7, 23-26, 28-31, 33-35, 37-41, 43-48, 50-56, 58-65, 67-68, 76-85"
+      }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "unit": "required-check-command.js",
+  "files": 1,
+  "fingerprint": "752875f56c5d1ec4",
+  "cases": 60,
+  "cases_hash": "170f85868dcd606d",
+  "coverage": {
+    "lines": 50,
+    "reached": 50,
+    "files": [
+      {
+        "file": "required-check-command.js",
+        "lines": 50,
+        "reached": 50,
+        "missed": ""
+      }
+    ]
+  }
+}

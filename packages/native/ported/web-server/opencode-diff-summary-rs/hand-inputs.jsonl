@@ -1,0 +1,77 @@
+{"fn": "stripMessageDiffSummary", "args": [{"info": {"id": "m", "summary": {"title": "t", "diffs": [{"file": "a.ts", "additions": 1, "patch": "@@"}, {"file": "a.ts", "additions": 1, "before": "x", "after": "y"}]}}}]}
+{"fn": "stripMessageDiffContent", "args": [{"info": {"id": "m", "summary": {"title": "t", "diffs": [{"file": "a.ts", "additions": 1, "patch": "@@"}, {"file": "a.ts", "additions": 1, "before": "x", "after": "y"}]}}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "message.updated", "properties": {"info": {"id": "m", "summary": {"title": "t", "diffs": [{"file": "a.ts", "additions": 1, "patch": "@@"}, {"file": "a.ts", "additions": 1, "before": "x", "after": "y"}]}}}}]}
+{"fn": "stripMessageDiffSummary", "args": [{"info": {"id": "m", "summary": {"title": "t", "diffs": [{"file": "a.ts", "additions": 1}]}}}]}
+{"fn": "stripMessageDiffContent", "args": [{"info": {"id": "m", "summary": {"title": "t", "diffs": [{"file": "a.ts", "additions": 1}]}}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "message.updated", "properties": {"info": {"id": "m", "summary": {"title": "t", "diffs": [{"file": "a.ts", "additions": 1}]}}}}]}
+{"fn": "stripMessageDiffSummary", "args": [{"info": {"id": "m", "summary": {"title": "t", "diffs": [{"file": "a.ts", "additions": 1, "patch": 5}]}}}]}
+{"fn": "stripMessageDiffContent", "args": [{"info": {"id": "m", "summary": {"title": "t", "diffs": [{"file": "a.ts", "additions": 1, "patch": 5}]}}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "message.updated", "properties": {"info": {"id": "m", "summary": {"title": "t", "diffs": [{"file": "a.ts", "additions": 1, "patch": 5}]}}}}]}
+{"fn": "stripMessageDiffSummary", "args": [{"info": {"id": "m", "summary": {"title": "t", "diffs": "x"}}}]}
+{"fn": "stripMessageDiffContent", "args": [{"info": {"id": "m", "summary": {"title": "t", "diffs": "x"}}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "message.updated", "properties": {"info": {"id": "m", "summary": {"title": "t", "diffs": "x"}}}}]}
+{"fn": "stripMessageDiffSummary", "args": [{"info": {"id": "m", "summary": {"title": "t", "diffs": [null, "s", {"file": "a.ts", "additions": 1, "to": "z", "from": 1}]}}}]}
+{"fn": "stripMessageDiffContent", "args": [{"info": {"id": "m", "summary": {"title": "t", "diffs": [null, "s", {"file": "a.ts", "additions": 1, "to": "z", "from": 1}]}}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "message.updated", "properties": {"info": {"id": "m", "summary": {"title": "t", "diffs": [null, "s", {"file": "a.ts", "additions": 1, "to": "z", "from": 1}]}}}}]}
+{"fn": "stripMessageDiffSummary", "args": [{"info": {"id": "m", "summary": {"diffs": [{"file": "a.ts", "additions": 1, "patch": {"$utf16": [55296]}}]}}}]}
+{"fn": "stripMessageDiffContent", "args": [{"info": {"id": "m", "summary": {"diffs": [{"file": "a.ts", "additions": 1, "patch": {"$utf16": [55296]}}]}}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "message.updated", "properties": {"info": {"id": "m", "summary": {"diffs": [{"file": "a.ts", "additions": 1, "patch": {"$utf16": [55296]}}]}}}}]}
+{"fn": "stripMessageDiffSummary", "args": [{"info": {"id": "m", "summary": null}}]}
+{"fn": "stripMessageDiffContent", "args": [{"info": {"id": "m", "summary": null}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "message.updated", "properties": {"info": {"id": "m", "summary": null}}}]}
+{"fn": "stripMessageDiffSummary", "args": [{"info": {"id": "m", "summary": "str"}}]}
+{"fn": "stripMessageDiffContent", "args": [{"info": {"id": "m", "summary": "str"}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "message.updated", "properties": {"info": {"id": "m", "summary": "str"}}}]}
+{"fn": "stripMessageDiffSummary", "args": [{"info": {"id": "m", "summary": {"$map": []}}}]}
+{"fn": "stripMessageDiffContent", "args": [{"info": {"id": "m", "summary": {"$map": []}}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "message.updated", "properties": {"info": {"id": "m", "summary": {"$map": []}}}}]}
+{"fn": "stripMessageDiffSummary", "args": [{"info": {"id": "m"}}]}
+{"fn": "stripMessageDiffContent", "args": [{"info": {"id": "m"}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "message.updated", "properties": {"info": {"id": "m"}}}]}
+{"fn": "stripMessageDiffSummary", "args": [{"info": null}]}
+{"fn": "stripMessageDiffContent", "args": [{"info": null}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "message.updated", "properties": {"info": null}}]}
+{"fn": "stripMessageDiffSummary", "args": []}
+{"fn": "stripMessageDiffContent", "args": []}
+{"fn": "stripEventDiffContent", "args": [{"type": "message.updated", "properties": null}]}
+{"fn": "stripMessageDiffSummary", "args": ["s"]}
+{"fn": "stripMessageDiffContent", "args": ["s"]}
+{"fn": "stripEventDiffContent", "args": [{"type": "message.updated", "properties": "s"}]}
+{"fn": "stripMessageDiffSummary", "args": [{"info": {"summary": {"$undefined": true}}}]}
+{"fn": "stripMessageDiffContent", "args": [{"info": {"summary": {"$undefined": true}}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "message.updated", "properties": {"info": {"summary": {"$undefined": true}}}}]}
+{"fn": "stripMessageDiffSummary", "args": [{"info": "str"}]}
+{"fn": "stripMessageDiffContent", "args": [{"info": "str"}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "message.updated", "properties": {"info": "str"}}]}
+{"fn": "stripSessionDiffContent", "args": [{"id": "s", "summary": {"title": "t", "diffs": [{"file": "a.ts", "additions": 1, "patch": "@@"}, {"file": "a.ts", "additions": 1, "before": "x", "after": "y"}]}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "session.updated", "properties": {"info": {"id": "s", "summary": {"title": "t", "diffs": [{"file": "a.ts", "additions": 1, "patch": "@@"}, {"file": "a.ts", "additions": 1, "before": "x", "after": "y"}]}}, "x": 1}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "other", "properties": {"info": {"summary": {"title": "t", "diffs": [{"file": "a.ts", "additions": 1, "patch": "@@"}, {"file": "a.ts", "additions": 1, "before": "x", "after": "y"}]}}}}]}
+{"fn": "stripSessionDiffContent", "args": [{"id": "s", "summary": {"title": "t", "diffs": [{"file": "a.ts", "additions": 1}]}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "session.updated", "properties": {"info": {"id": "s", "summary": {"title": "t", "diffs": [{"file": "a.ts", "additions": 1}]}}, "x": 1}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "other", "properties": {"info": {"summary": {"title": "t", "diffs": [{"file": "a.ts", "additions": 1}]}}}}]}
+{"fn": "stripSessionDiffContent", "args": [{"id": "s", "summary": {"title": "t", "diffs": [{"file": "a.ts", "additions": 1, "patch": 5}]}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "session.updated", "properties": {"info": {"id": "s", "summary": {"title": "t", "diffs": [{"file": "a.ts", "additions": 1, "patch": 5}]}}, "x": 1}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "other", "properties": {"info": {"summary": {"title": "t", "diffs": [{"file": "a.ts", "additions": 1, "patch": 5}]}}}}]}
+{"fn": "stripSessionDiffContent", "args": [{"id": "s", "summary": {"title": "t", "diffs": "x"}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "session.updated", "properties": {"info": {"id": "s", "summary": {"title": "t", "diffs": "x"}}, "x": 1}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "other", "properties": {"info": {"summary": {"title": "t", "diffs": "x"}}}}]}
+{"fn": "stripSessionDiffContent", "args": [{"id": "s", "summary": {"title": "t", "diffs": [null, "s", {"file": "a.ts", "additions": 1, "to": "z", "from": 1}]}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "session.updated", "properties": {"info": {"id": "s", "summary": {"title": "t", "diffs": [null, "s", {"file": "a.ts", "additions": 1, "to": "z", "from": 1}]}}, "x": 1}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "other", "properties": {"info": {"summary": {"title": "t", "diffs": [null, "s", {"file": "a.ts", "additions": 1, "to": "z", "from": 1}]}}}}]}
+{"fn": "stripSessionDiffContent", "args": [{"id": "s", "summary": {"diffs": [{"file": "a.ts", "additions": 1, "patch": {"$utf16": [55296]}}]}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "session.updated", "properties": {"info": {"id": "s", "summary": {"diffs": [{"file": "a.ts", "additions": 1, "patch": {"$utf16": [55296]}}]}}, "x": 1}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "other", "properties": {"info": {"summary": {"diffs": [{"file": "a.ts", "additions": 1, "patch": {"$utf16": [55296]}}]}}}}]}
+{"fn": "stripSessionDiffContent", "args": [{"id": "s", "summary": null}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "session.updated", "properties": {"info": {"id": "s", "summary": null}, "x": 1}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "other", "properties": {"info": {"summary": null}}}]}
+{"fn": "stripSessionDiffContent", "args": [{"id": "s", "summary": "str"}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "session.updated", "properties": {"info": {"id": "s", "summary": "str"}, "x": 1}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "other", "properties": {"info": {"summary": "str"}}}]}
+{"fn": "stripSessionDiffContent", "args": [{"id": "s", "summary": {"$map": []}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "session.updated", "properties": {"info": {"id": "s", "summary": {"$map": []}}, "x": 1}}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "other", "properties": {"info": {"summary": {"$map": []}}}}]}
+{"fn": "stripSessionDiffContent", "args": [null]}
+{"fn": "stripSessionDiffContent", "args": ["s"]}
+{"fn": "stripEventDiffContent", "args": [null]}
+{"fn": "stripEventDiffContent", "args": [{"type": "session.updated", "properties": null}]}
+{"fn": "stripEventDiffContent", "args": [{"type": "session.updated", "properties": {}}]}

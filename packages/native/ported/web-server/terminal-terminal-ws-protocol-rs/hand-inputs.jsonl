@@ -1,0 +1,77 @@
+{"fn": "pruneRebindTimestamps", "args": [[1, 5, 9, 10], 10, 5]}
+{"fn": "pruneRebindTimestamps", "args": [[1, 5, 9, 10], 10, "5"]}
+{"fn": "pruneRebindTimestamps", "args": [[1, 5, 9, 10], "10", null]}
+{"fn": "pruneRebindTimestamps", "args": [[1, 5, 9, 10], 10, {"$num": "NaN"}]}
+{"fn": "pruneRebindTimestamps", "args": [[1, 5, 9, 10], 10, [4]]}
+{"fn": "isRebindRateLimited", "args": [[1, 5, 9, 10], 3]}
+{"fn": "isRebindRateLimited", "args": [[1, 5, 9, 10], 0]}
+{"fn": "isRebindRateLimited", "args": [[1, 5, 9, 10], "2"]}
+{"fn": "isRebindRateLimited", "args": [[1, 5, 9, 10], null]}
+{"fn": "isRebindRateLimited", "args": [[1, 5, 9, 10], {"$num": "NaN"}]}
+{"fn": "isRebindRateLimited", "args": [[1, 5, 9, 10], [1]]}
+{"fn": "pruneRebindTimestamps", "args": [[], 10, 5]}
+{"fn": "pruneRebindTimestamps", "args": [[], 10, "5"]}
+{"fn": "pruneRebindTimestamps", "args": [[], "10", null]}
+{"fn": "pruneRebindTimestamps", "args": [[], 10, {"$num": "NaN"}]}
+{"fn": "pruneRebindTimestamps", "args": [[], 10, [4]]}
+{"fn": "isRebindRateLimited", "args": [[], 3]}
+{"fn": "isRebindRateLimited", "args": [[], 0]}
+{"fn": "isRebindRateLimited", "args": [[], "2"]}
+{"fn": "isRebindRateLimited", "args": [[], null]}
+{"fn": "isRebindRateLimited", "args": [[], {"$num": "NaN"}]}
+{"fn": "isRebindRateLimited", "args": [[], [1]]}
+{"fn": "pruneRebindTimestamps", "args": [["5", null, [8], {}], 10, 5]}
+{"fn": "pruneRebindTimestamps", "args": [["5", null, [8], {}], 10, "5"]}
+{"fn": "pruneRebindTimestamps", "args": [["5", null, [8], {}], "10", null]}
+{"fn": "pruneRebindTimestamps", "args": [["5", null, [8], {}], 10, {"$num": "NaN"}]}
+{"fn": "pruneRebindTimestamps", "args": [["5", null, [8], {}], 10, [4]]}
+{"fn": "isRebindRateLimited", "args": [["5", null, [8], {}], 3]}
+{"fn": "isRebindRateLimited", "args": [["5", null, [8], {}], 0]}
+{"fn": "isRebindRateLimited", "args": [["5", null, [8], {}], "2"]}
+{"fn": "isRebindRateLimited", "args": [["5", null, [8], {}], null]}
+{"fn": "isRebindRateLimited", "args": [["5", null, [8], {}], {"$num": "NaN"}]}
+{"fn": "isRebindRateLimited", "args": [["5", null, [8], {}], [1]]}
+{"fn": "pruneRebindTimestamps", "args": [null, 10, 5]}
+{"fn": "pruneRebindTimestamps", "args": [null, 10, "5"]}
+{"fn": "pruneRebindTimestamps", "args": [null, "10", null]}
+{"fn": "pruneRebindTimestamps", "args": [null, 10, {"$num": "NaN"}]}
+{"fn": "pruneRebindTimestamps", "args": [null, 10, [4]]}
+{"fn": "isRebindRateLimited", "args": [null, 3]}
+{"fn": "isRebindRateLimited", "args": [null, 0]}
+{"fn": "isRebindRateLimited", "args": [null, "2"]}
+{"fn": "isRebindRateLimited", "args": [null, null]}
+{"fn": "isRebindRateLimited", "args": [null, {"$num": "NaN"}]}
+{"fn": "isRebindRateLimited", "args": [null, [1]]}
+{"fn": "pruneRebindTimestamps", "args": ["str", 10, 5]}
+{"fn": "pruneRebindTimestamps", "args": ["str", 10, "5"]}
+{"fn": "pruneRebindTimestamps", "args": ["str", "10", null]}
+{"fn": "pruneRebindTimestamps", "args": ["str", 10, {"$num": "NaN"}]}
+{"fn": "pruneRebindTimestamps", "args": ["str", 10, [4]]}
+{"fn": "isRebindRateLimited", "args": ["str", 3]}
+{"fn": "isRebindRateLimited", "args": ["str", 0]}
+{"fn": "isRebindRateLimited", "args": ["str", "2"]}
+{"fn": "isRebindRateLimited", "args": ["str", null]}
+{"fn": "isRebindRateLimited", "args": ["str", {"$num": "NaN"}]}
+{"fn": "isRebindRateLimited", "args": ["str", [1]]}
+{"fn": "pruneRebindTimestamps", "args": [{"length": 3}, 10, 5]}
+{"fn": "pruneRebindTimestamps", "args": [{"length": 3}, 10, "5"]}
+{"fn": "pruneRebindTimestamps", "args": [{"length": 3}, "10", null]}
+{"fn": "pruneRebindTimestamps", "args": [{"length": 3}, 10, {"$num": "NaN"}]}
+{"fn": "pruneRebindTimestamps", "args": [{"length": 3}, 10, [4]]}
+{"fn": "isRebindRateLimited", "args": [{"length": 3}, 3]}
+{"fn": "isRebindRateLimited", "args": [{"length": 3}, 0]}
+{"fn": "isRebindRateLimited", "args": [{"length": 3}, "2"]}
+{"fn": "isRebindRateLimited", "args": [{"length": 3}, null]}
+{"fn": "isRebindRateLimited", "args": [{"length": 3}, {"$num": "NaN"}]}
+{"fn": "isRebindRateLimited", "args": [{"length": 3}, [1]]}
+{"fn": "pruneRebindTimestamps", "args": [5, 10, 5]}
+{"fn": "pruneRebindTimestamps", "args": [5, 10, "5"]}
+{"fn": "pruneRebindTimestamps", "args": [5, "10", null]}
+{"fn": "pruneRebindTimestamps", "args": [5, 10, {"$num": "NaN"}]}
+{"fn": "pruneRebindTimestamps", "args": [5, 10, [4]]}
+{"fn": "isRebindRateLimited", "args": [5, 3]}
+{"fn": "isRebindRateLimited", "args": [5, 0]}
+{"fn": "isRebindRateLimited", "args": [5, "2"]}
+{"fn": "isRebindRateLimited", "args": [5, null]}
+{"fn": "isRebindRateLimited", "args": [5, {"$num": "NaN"}]}
+{"fn": "isRebindRateLimited", "args": [5, [1]]}

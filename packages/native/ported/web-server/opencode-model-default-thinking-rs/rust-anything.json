@@ -1,0 +1,54 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/opencode",
+  "unit": "model-default-thinking.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "model-default-thinking-rs",
+  "exports": [
+    {
+      "name": "resolveModelDefaultThinking",
+      "file": "model-default-thinking.js",
+      "line": 7,
+      "params": [
+        {
+          "name": "provider",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "model",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "annotateModelDefaultThinking",
+      "file": "model-default-thinking.js",
+      "line": 51,
+      "params": [
+        {
+          "name": "payload",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

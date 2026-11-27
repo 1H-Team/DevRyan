@@ -1,0 +1,19 @@
+{
+  "unit": "diff-summary.js",
+  "files": 1,
+  "fingerprint": "00cccc4a52cddc0c",
+  "cases": 125,
+  "cases_hash": "6864975e028cb505",
+  "coverage": {
+    "lines": 85,
+    "reached": 85,
+    "files": [
+      {
+        "file": "diff-summary.js",
+        "lines": 85,
+        "reached": 85,
+        "missed": ""
+      }
+    ]
+  }
+}

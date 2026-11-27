@@ -1,0 +1,72 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "/Users/zoubair/Repositories/DevRyan/.claude/worktrees/lane-x/packages/web/server/lib/event-stream",
+  "unit": "payload-serialization.js",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "payload-serialization-rs",
+  "exports": [
+    {
+      "name": "serializeEventPayload",
+      "file": "payload-serialization.js",
+      "line": 35,
+      "params": [
+        {
+          "name": "payload",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "dialect",
+          "ts_type": "unknown",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "eventPayloadBytes",
+      "file": "payload-serialization.js",
+      "line": 38,
+      "params": [
+        {
+          "name": "payload",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "eventEntryBytes",
+      "file": "payload-serialization.js",
+      "line": 41,
+      "params": [
+        {
+          "name": "entry",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

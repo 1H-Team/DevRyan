@@ -33,7 +33,9 @@ class is reported as information. Each crate keeps its reviewed throw sites in
 rewritten with `--write`. The bindings `bridge` generates throw a plain `Error` for every Rust
 error, so a V8 `TypeError` always differs in class; a product error of another class than `Error`
 cannot match without changing the bindings. A crate that is not built or has no recording is
-listed and skipped; set `RA_TS_OVERRIDES` (below) for units Node's type stripping refuses.
+listed and skipped. A crate whose original Node's type stripping refuses lists the files in its
+`ts-overrides.json` (or, for a crate another lane owns, `scripts/rust-anything/ts-overrides.json`);
+the checker builds them with Bun into a temp folder and sets `RA_TS_OVERRIDES` (below) itself.
 
 Set `CARGO_TARGET_DIR` to a folder outside the repository. After every `record`, `git status
 --short -- packages/ui` must print nothing. A recording over a few megabytes is not tracked (the

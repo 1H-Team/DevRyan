@@ -1,0 +1,23 @@
+{"fn":"isAnthropicProviderId","args":[{"a":"b"}],"ok":false}
+{"fn":"isAnthropicProviderId","args":[null],"ok":false}
+{"fn":"isAnthropicProviderId","args":[0],"ok":false}
+{"fn":"isAnthropicProviderId","args":[{}],"ok":false}
+{"fn":"isAnthropicProviderId","args":[["a",1]],"ok":false}
+{"fn":"isAnthropicProviderId","args":["x"],"ok":false}
+{"fn":"isAnthropicProviderId","args":[true],"ok":false}
+{"fn":"isAnthropicProviderId","args":[{"a":{"b":"c"}}],"ok":false}
+{"fn":"isAnthropicProviderId","args":[[]],"ok":false}
+{"fn":"isAnthropicProviderId","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":false}
+{"fn":"isAnthropicProviderId","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":false}
+{"fn":"isAnthropicProviderId","args":[[3,1,2]],"ok":false}
+{"fn":"isAnthropicProviderId","args":["anthropic"],"ok":true}
+{"fn":"isAnthropicProviderId","args":[" Claude "],"ok":true}
+{"fn":"isAnthropicProviderId","args":["ANTHROPIC-OAUTH"],"ok":true}
+{"fn":"isAnthropicProviderId","args":["opencode-with-claude"],"ok":true}
+{"fn":"isAnthropicProviderId","args":["claude-agent"],"ok":false}
+{"fn":"isAnthropicProviderId","args":["openai"],"ok":false}
+{"fn":"isAnthropicProviderId","args":[""],"ok":false}
+{"fn":"isAnthropicProviderId","args":[null],"ok":false}
+{"fn":"isAnthropicProviderId","args":[5],"ok":false}
+{"fn":"isAnthropicProviderId","args":[["claude"]],"ok":false}
+{"fn":"isAnthropicProviderId","args":["﻿claude"],"ok":false}

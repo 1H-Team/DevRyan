@@ -1,0 +1,19 @@
+{
+  "unit": "managed-task-turn-budget.js",
+  "files": 1,
+  "fingerprint": "2a02d691986dfafc",
+  "cases": 21,
+  "cases_hash": "7479ce31e9068746",
+  "coverage": {
+    "lines": 10,
+    "reached": 10,
+    "files": [
+      {
+        "file": "managed-task-turn-budget.js",
+        "lines": 10,
+        "reached": 10,
+        "missed": ""
+      }
+    ]
+  }
+}

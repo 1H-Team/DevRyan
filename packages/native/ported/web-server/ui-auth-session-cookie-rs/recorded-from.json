@@ -1,0 +1,19 @@
+{
+  "unit": "session-cookie.js",
+  "files": 1,
+  "fingerprint": "6af24113f15aba9a",
+  "cases": 24,
+  "cases_hash": "e657537accdf1298",
+  "coverage": {
+    "lines": 10,
+    "reached": 10,
+    "files": [
+      {
+        "file": "session-cookie.js",
+        "lines": 10,
+        "reached": 10,
+        "missed": ""
+      }
+    ]
+  }
+}

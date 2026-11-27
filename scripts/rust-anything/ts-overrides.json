@@ -1,0 +1,6 @@
+{
+  "note": "TypeScript files Node's type stripping refuses, per crate, for crates whose folder another lane owns (otherwise the crate's own ts-overrides.json). The error-text checker builds them with Bun into a temp folder.",
+  "event-reducer-rs/mutation": {
+    "files": [{ "file": "packages/ui/src/sync/binary.ts", "bundle": false }]
+  }
+}
